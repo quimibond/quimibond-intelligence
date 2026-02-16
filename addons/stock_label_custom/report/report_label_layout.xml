@@ -1,0 +1,17 @@
+<odoo>
+  <!-- Layout PDF Dymo -->
+  <record id="stock_label_layout_dymo_pdf" model="stock.label.layout">
+    <field name="name">DYMO PDF</field>
+    <field name="report_id" ref="action_stock_label_custom_pdf"/>
+    <field name="report_type">pdf</field>
+    <field name="active" eval="True"/>
+  </record>
+
+  <!-- Layout ZPL Dymo -->
+  <record id="stock_label_layout_dymo_zpl" model="stock.label.layout">
+    <field name="name">DYMO ZPL</field>
+    <field name="report_id" ref="action_stock_label_custom_zpl"/>
+    <field name="report_type">zpl</field>
+    <field name="active" eval="True"/>
+  </record>
+</odoo>
