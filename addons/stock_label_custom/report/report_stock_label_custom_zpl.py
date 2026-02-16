@@ -6,6 +6,7 @@ class ReportStockLabelCustomZPL(models.AbstractModel):
     _description = 'Custom ZPL Label Report'
 
     def _get_report_values(self, docids, data=None):
+        print("DEBUG ZPL REPORT CALLED", docids)
         docs = self.env['stock.move.line'].browse(docids)
         res = []
         for line in docs:
@@ -17,6 +18,7 @@ class ReportStockLabelCustomZPL(models.AbstractModel):
                 'product_qty': line.product_qty or 0,
                 'caja': (lot.name or '')[-4:],
             })
+        print("DEBUG DOCS:", res)    
         return {
             'doc_ids': docids,
             'doc_model': 'stock.move.line',
