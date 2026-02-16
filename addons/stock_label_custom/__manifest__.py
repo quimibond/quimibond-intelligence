@@ -5,7 +5,7 @@
     'license': 'LGPL-3',
     'depends': ['stock'],
     'data': [
-        'report/report.xml'
+        'report/report.xml',
         'report/stock_label_custom_pdf.xml',
         'report/stock_label_custom_zpl.xml',
         # Vista con botones de impresión directa
