@@ -1,0 +1,32 @@
+<odoo>
+  <template id="report_stock_label_custom_pdf" inherit_id="stock.report_lot_label">
+    <!-- Reemplazamos el bucle completo -->
+    <xpath expr="//div[@class='o_label_sheet']/table" position="replace">
+      <div class="custom_label_sheet">
+        <t t-foreach="docs" t-as="o">
+          <div style="width:70mm; height:45mm; border:1px solid black; margin:5mm auto; padding:3mm; font-size:10pt; page-break-inside:avoid;">
+            <!-- Primera línea: referencia centrada -->
+            <div style="text-align:center; font-weight:bold; font-size:12pt;">
+              <t t-esc="o.product_id.default_code"/>
+            </div>
+            <!-- Segunda línea: descripción centrada -->
+            <div style="text-align:center;">
+              <t t-esc="o.product_id.name"/>
+            </div>
+            <!-- Tercera línea: lote izquierda, cantidad centrada, caja derecha -->
+            <div style="display:flex; justify-content:space-between; margin-top:2mm;">
+              <span style="text-align:left;">Lote: <t t-esc="o.name"/></span>
+              <span style="text-align:center;">Cant: <t t-esc="o.product_qty"/></span>
+              <span style="text-align:right;">Caja: <t t-esc="o.name[-4:]"/></span>
+            </div>
+            <!-- Cuarta línea: código de barras -->
+            <div style="margin-top:3mm; text-align:center;">
+              <span t-esc="o.name"
+                    t-options="{'widget': 'barcode', 'symbology': 'Code128', 'img_style': 'width:90%; height:20mm'}"/>
+            </div>
+          </div>
+        </t>
+      </div>
+    </xpath>
+  </template>
+</odoo>

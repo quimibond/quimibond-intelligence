@@ -1,0 +1,17 @@
+<odoo>
+  <template id="report_stock_label_custom_zpl" inherit_id="stock.label_lot_template_view">
+    <xpath expr="//t[@t-foreach='docs']" position="replace">
+      <t t-foreach="docs" t-as="o">
+        ^XA
+        ^FO100,50^A0N,40,40^FD<t t-esc="o.product_id.default_code"/>^FS
+        ^FO100,100^A0N,30,30^FD<t t-esc="o.product_id.name"/>^FS
+        ^FO50,150^A0N,25,25^FDLote: <t t-esc="o.name"/>^FS
+        ^FO300,150^A0N,25,25^FDCant: <t t-esc="o.product_qty"/>^FS
+        ^FO550,150^A0N,25,25^FDCaja: <t t-esc="o.name[-4:]"/>^FS
+        ^FO100,200^BY2^BCN,120,Y,N,N
+        ^FD<t t-esc="o.name"/>^FS
+        ^XZ
+      </t>
+    </xpath>
+  </template>
+</odoo>
