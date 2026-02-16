@@ -1,17 +1,15 @@
 <odoo>
-  <template id="report_stock_label_custom_zpl" inherit_id="stock.label_lot_template_view">
-    <xpath expr="//t[@t-foreach='docs']" position="replace">
-      <t t-foreach="docs" t-as="o">
-        ^XA
-        ^FO100,50^A0N,20,20^FD<t t-esc="o['product_code']"/>^FS
-        ^FO100,80^A0N,20,20^FD<t t-esc="o['product_name']"/>^FS
-        ^FO50,110^A0N,20,20^FDLote: <t t-esc="o['name']"/>^FS
-        ^FO300,110^A0N,20,20^FDCant: <t t-esc="o['product_qty']"/>^FS
-        ^FO550,110^A0N,20,20^FDCaja: <t t-esc="o['caja']"/>^FS
-        ^FO100,150^BY2^BCN,120,Y,N,N
-        ^FD<t t-esc="o['name']"/>^FS
-        ^XZ
-      </t>
-    </xpath>
+  <template id="report_stock_label_custom_zpl">
+    <t t-foreach="docs" t-as="o">
+      ^XA
+      ^FO100,50^A0N,20,20^FD<t t-esc="o['product_code']"/>^FS
+      ^FO100,80^A0N,20,20^FD<t t-esc="o['product_name']"/>^FS
+      ^FO50,110^A0N,20,20^FDLote: <t t-esc="o['name']"/>^FS
+      ^FO300,110^A0N,20,20^FDCant: <t t-esc="o['product_qty']"/>^FS
+      ^FO550,110^A0N,20,20^FDCaja: <t t-esc="o['caja']"/>^FS
+      ^FO100,150^BY2^BCN,120,Y,N,N
+      ^FD<t t-esc="o['name']"/>^FS
+      ^XZ
+    </t>
   </template>
 </odoo>
