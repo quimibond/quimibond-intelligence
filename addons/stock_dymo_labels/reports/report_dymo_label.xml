@@ -1,43 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <template id="report_label_dymo_custom">
-        <t t-call="web.basic_layout">
-            <style>
-                .page {
-                    width: 57mm;
-                    height: 32mm;
-                    padding: 1mm;
-                    font-family: 'Helvetica';
-                    font-size: 8px; /* Tamaño optimizado */
-                    overflow: hidden;
-                }
-                .label-title {
-                    font-weight: bold;
-                    font-size: 7px;
-                    text-overflow: ellipsis;
-                }
-                .label-ref {
-                    font-size: 9px;
-                    font-weight: bold;
-                    margin-bottom: 2px;
-                }
-                .barcode-container {
-                    text-align: center;
-                    margin-top: 2px;
-                }
-            </style>
+        <t t-call="web.html_container">
+            <t t-foreach="docs" t-as="line">
+                <t t-call="web.basic_layout">
+                    <style>
+                        .page {
+                            width: 57mm;
+                            height: 32mm;
+                            padding: 1mm;
+                            font-family: 'Helvetica';
+                            font-size: 8px;
+                            overflow: hidden;
+                        }
+                        .label-title {
+                            font-weight: bold;
+                            white-space: nowrap;
+                            overflow: hidden;
+                        }
+                        .label-ref {
+                            font-size: 10px;
+                            font-weight: bold;
+                        }
+                        .barcode-container {
+                            text-align: center;
+                            margin-top: 2px;
+                        }
+                    </style>
 
-            <div class="page">
-                <div class="label-ref">Ref: <t t-out="doc.ref"/></div> <div class="label-title"><t t-out="doc.name"/></div> <div style="margin-top: 2px;">
-                    <strong>Lote:</strong> <t t-out="doc.lot_id.name"/><br/> <strong>Cant:</strong> <t t-out="doc.qty"/> 
-                    <strong>Caja:</strong> <t t-out="doc.box_number"/> </div>
+                    <div class="page">
+                        <div class="label-ref">Ref: <t t-esc="line.product_id.default_code or 'N/A'"/></div>
+                        
+                        <div class="label-title"><t t-esc="line.product_id.name"/></div>
+                        
+                        <div style="margin-top: 1px;">
+                            <strong>Lote:</strong> <t t-esc="line.lot_id.name"/>
+                        </div>
+                        
+                        <div>
+                            <strong>Cant:</strong> <t t-esc="line.quantity"/> 
+                            <strong>Caja:</strong> <t t-esc="line.lot_id.name[-4:] if line.lot_id.name else ''"/>
+                        </div>
 
-                <div class="barcode-container"> 
-                    <img t-if="doc.lot_id.name" 
-                         t-att-src="'/report/barcode/?type=Code128&amp;value=' + quote_plus(doc.lot_id.name) + '&amp;width=400&amp;height=50'" 
-                        style="width: 100%; height: 8mm;"/>
-                </div>
-            </div>
-         </t>
+                        <div class="barcode-container">
+                            <div t-if="line.lot_id.name" 
+                                 t-field="line.lot_id.name" 
+                                 t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 400, 'height': 50, 'img_style': 'width:100%;height:8mm;'}"/>
+                            <div style="font-size: 6px;"><t t-esc="line.lot_id.name"/></div>
+                        </div>
+                    </div>
+                </t>
+            </t>
+        </t>
     </template>
 </odoo>
