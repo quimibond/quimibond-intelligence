@@ -1,0 +1,19 @@
+<odoo>
+  <record id="view_picking_form_inherit_dymo" model="ir.ui.view">
+    <field name="name">stock.picking.form.inherit.dymo</field>
+    <field name="model">stock.picking</field>
+    <field name="inherit_id" ref="stock.view_picking_form"/>
+    <field name="arch" type="xml">
+      <xpath expr="//header" position="inside">
+        <button name="action_print_dymo_pdf"
+                type="object"
+                string="Imprimir PDF Dymo"
+                class="btn-primary"/>
+        <button name="action_print_dymo_zpl"
+                type="object"
+                string="Imprimir ZPL Zebra"
+                class="btn-secondary"/>
+      </xpath>
+    </field>
+  </record>
+</odoo>
