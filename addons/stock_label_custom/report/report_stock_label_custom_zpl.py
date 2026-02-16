@@ -16,7 +16,7 @@ class ReportStockLabelCustomZPL(models.AbstractModel):
                 'name': lot.name or '',
                 'product_code': line.product_id.default_code or '',
                 'product_name': line.product_id.name or '',
-                'product_qty': line.product_qty or 0,
+                'product_qty': line.qty_done or 0,
                 'caja': (lot.name or '')[-4:],
             })
 
@@ -27,7 +27,7 @@ class ReportStockLabelCustomZPL(models.AbstractModel):
         )
 
         # Enviamos el ZPL directamente a la impresora Zebra
-        self._send_to_printer('192.168.1.50', 9100, zpl_string)
+        self._send_to_printer('192.168.1.15', 9100, zpl_string)
 
         return {
             'doc_ids': docids,
