@@ -3,13 +3,8 @@
     <xpath expr="//t[@t-foreach='docs']" position="replace">
       <t t-foreach="docs" t-as="o">
         ^XA
-        ^FO100,50^A0N,20,20^FD<t t-esc="o['product_id'][1]"/>^FS
-        ^FO100,80^A0N,20,20^FD<t t-esc="o['product_id'][0]"/>^FS
-        ^FO50,110^A0N,20,20^FDLote: <t t-esc="o['name']"/>^FS
-        ^FO300,110^A0N,20,20^FDCant: <t t-esc="o['product_qty']"/>^FS
-        ^FO550,110^A0N,20,20^FDCaja: <t t-esc="o['name'][-4:]"/>^FS
-        ^FO100,150^BY2^BCN,120,Y,N,N
-        ^FD<t t-esc="o['name']"/>^FS
+        ^FO50,50^A0N,20,20^FDDEBUG:^FS
+        ^FO50,80^A0N,20,20^FD<t t-esc="o"/>^FS
         ^XZ
       </t>
     </xpath>
