@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <template id="report_dymo_label_template">
+        <t t-call="web.basic_layout">
+            <div class="page">
+                <t t-foreach="docs" t-as="line">
+                    <div style="page-break-after: always; font-family: 'Arial'; font-size: 11px; line-height: 1.1;">
+                        <div style="font-weight: bold;">Ref: <t t-esc="line.product_id.default_code or ''"/></div>
+                        
+                        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                            <t t-esc="line.product_id.name"/>
+                        </div>
+                        
+                        <div>Lote: <t t-esc="line.lot_id.name"/></div>
+                        
+                        <div>
+                            Cant: <t t-esc="line.quantity"/> 
+                            - Caja: <t t-esc="line.lot_id.name[-4:] if line.lot_id.name else '0000'"/>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 2px;">
+                            <span t-field="line.lot_id.name" 
+                                  t-options="{'widget': 'barcode', 'symbology': 'auto', 'width': 400, 'height': 80, 'img_style': 'width:90%;height:35px;'}"/>
+                            <div style="font-size: 8px;"><t t-esc="line.lot_id.name"/></div>
+                        </div>
+                    </div>
+                </t>
+            </div>
+        </t>
+    </template>
+</odoo>
