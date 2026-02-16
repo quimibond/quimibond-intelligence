@@ -1,31 +1,43 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <template id="report_dymo_label_template">
+    <template id="report_label_dymo_custom">
         <t t-call="web.basic_layout">
+            <style>
+                .page {
+                    width: 57mm;
+                    height: 32mm;
+                    padding: 1mm;
+                    font-family: 'Helvetica';
+                    font-size: 8px; /* Tamaño optimizado */
+                    overflow: hidden;
+                }
+                .label-title {
+                    font-weight: bold;
+                    font-size: 7px;
+                    text-overflow: ellipsis;
+                }
+                .label-ref {
+                    font-size: 9px;
+                    font-weight: bold;
+                    margin-bottom: 2px;
+                }
+                .barcode-container {
+                    text-align: center;
+                    margin-top: 2px;
+                }
+            </style>
+
             <div class="page">
-                <t t-foreach="docs" t-as="line">
-                    <div style="page-break-after: always; font-family: 'Arial'; font-size: 11px; line-height: 1.1;">
-                        <div style="font-weight: bold;">Ref: <t t-esc="line.product_id.default_code or ''"/></div>
-                        
-                        <div style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                            <t t-esc="line.product_id.name"/>
-                        </div>
-                        
-                        <div>Lote: <t t-esc="line.lot_id.name"/></div>
-                        
-                        <div>
-                            Cant: <t t-esc="line.quantity"/> 
-                            - Caja: <t t-esc="line.lot_id.name[-4:] if line.lot_id.name else '0000'"/>
-                        </div>
-                        
-                        <div style="text-align: center; margin-top: 2px;">
-                            <span t-field="line.lot_id.name" 
-                                  t-options="{'widget': 'barcode', 'symbology': 'auto', 'width': 400, 'height': 80, 'img_style': 'width:90%;height:35px;'}"/>
-                            <div style="font-size: 8px;"><t t-esc="line.lot_id.name"/></div>
-                        </div>
-                    </div>
-                </t>
+                <div class="label-ref">Ref: <t t-out="doc.ref"/></div> <div class="label-title"><t t-out="doc.name"/></div> <div style="margin-top: 2px;">
+                    <strong>Lote:</strong> <t t-out="doc.lot_id.name"/><br/> <strong>Cant:</strong> <t t-out="doc.qty"/> 
+                    <strong>Caja:</strong> <t t-out="doc.box_number"/> </div>
+
+                <div class="barcode-container"> 
+                    <img t-if="doc.lot_id.name" 
+                         t-att-src="'/report/barcode/?type=Code128&amp;value=' + quote_plus(doc.lot_id.name) + '&amp;width=400&amp;height=50'" 
+                        style="width: 100%; height: 8mm;"/>
+                </div>
             </div>
-        </t>
+         </t>
     </template>
 </odoo>

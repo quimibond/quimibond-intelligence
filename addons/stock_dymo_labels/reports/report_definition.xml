@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="paperformat_dymo" model="report.paperformat">
-        <field name="name">Dymo Label 89x28mm</field>
-        <field name="default">True</field>
+    <record id="paperformat_dymo_57x32" model="report.paperformat">
+        <field name="name">Dymo 57x32mm</field>
+        <field name="default" eval="True" />
         <field name="format">custom</field>
-        <field name="page_height">28</field>
-        <field name="page_width">89</field>
-        <field name="orientation">Landscape</field>
-        <field name="margin_top">1</field>
-        <field name="margin_bottom">1</field>
-        <field name="margin_left">1</field>
-        <field name="margin_right">1</field>
-        <field name="header_line" eval="False"/>
+        <field name="page_height">32</field>
+        <field name="page_width">57</field>
+        <field name="orientation">Portrait</field>
+        <field name="margin_top">0</field>
+        <field name="margin_bottom">0</field>
+        <field name="margin_left">0</field>
+        <field name="margin_right">0</field>
+        <field name="header_line" eval="False" />
         <field name="header_spacing">0</field>
-        <field name="dpi">300</field>
+        <field name="dpi">90</field>
     </record>
 
     <record id="action_report_dymo_picking_label" model="ir.actions.report">
