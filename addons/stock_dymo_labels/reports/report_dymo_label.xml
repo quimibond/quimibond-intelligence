@@ -15,13 +15,13 @@
                             text-align: center; 
                         }
                         .label-ref {
-                            font-size: 32px;
+                            font-size: 42px;
                             font-weight: bold;
                             margin-bottom: 5px;
                             display: block;
                         }
                         .label-name {
-                            font-size: 32px;
+                            font-size: 42px;
                             line-height: 1.2;
                             margin-bottom: 8px;
                             display: block;
@@ -29,12 +29,12 @@
                             word-wrap: break-word;
                         }
                         .label-data {
-                            font-size: 32px;
+                            font-size: 42px;
                             margin-bottom: 5px;
                             display: block;
                         }
                         .barcode-box {
-                            margin-top: 15px;
+                            margin-top: 20px;
                             width: 100%;
                             display: flex;
                             flex-direction: column;
