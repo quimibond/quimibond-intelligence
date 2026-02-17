@@ -14,14 +14,14 @@
                             padding-top: 2mm; /* Reducido para dar espacio abajo */
                         }
                         .label-ref {
-                            font-size: 26px;
+                            font-size: 42px;
                             font-weight: bold;
                             margin-bottom: 10px;
                             display: block;
                             text-transform: uppercase;
                         }
                         .label-name {
-                            font-size: 18px;
+                            font-size: 42px;
                             line-height: 1.2;
                             margin-bottom: 12px;
                             display: block;
@@ -30,7 +30,7 @@
                             overflow: hidden;
                         }
                         .label-data {
-                            font-size: 18px;
+                            font-size: 42px;
                             margin-bottom: 10px;
                             display: block;
                         }
