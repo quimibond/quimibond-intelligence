@@ -70,7 +70,7 @@
                             </span>
                         </span>
                         
-                        <span class="label-data" style="font-size: 20px;">
+                        <span class="label-data" style="font-size: 42px;">
                             <strong>Nº CAJA:</strong> 
                             <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/>
                         </span>
