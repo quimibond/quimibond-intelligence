@@ -11,44 +11,51 @@
                             font-family: 'Helvetica', Arial, sans-serif;
                             text-align: center;
                             padding-top: 5mm;
+                            color: black;
                         }
-                        .label-ref { font-size: 42px; font-weight: bold; display: block; margin-bottom: 5px; }
-                        .label-name { font-size: 42px; display: block; margin-bottom: 10px; height: 40px; overflow: hidden; }
-                        .label-data { font-size: 42px; font-weight: bold; display: block; margin-bottom: 5px; }
+                        .label-ref { font-size: 24px; font-weight: bold; display: block; margin-bottom: 8px; }
+                        .label-name { font-size: 18px; display: block; margin-bottom: 12px; max-height: 45px; overflow: hidden; line-height: 1.2; }
+                        .label-data { font-size: 19px; font-weight: bold; display: block; margin-bottom: 8px; }
                         
-                        /* Contenedor del código de barras optimizado */
-                        .barcode-container {
-                            margin: 15px auto 0 auto;
-                            width: 90%; /* Deja un 5% de margen blanco a cada lado (Quiet Zone) */
-                            background-color: white;
+                        /* Contenedor optimizado para lectura láser */
+                        .barcode-box {
+                            margin: 10px auto;
+                            width: 94%; /* Espacio de silencio (Quiet Zone) a los lados */
                         }
-                        .barcode-container img {
+                        
+                        /* Forzar que el widget de Odoo se expanda correctamente */
+                        .barcode-box img {
                             width: 100% !important;
-                            height: 35mm !important; /* Altura generosa para fácil lectura */
+                            height: 38mm !important; /* Altura suficiente para el lector */
                             display: block;
                             margin: 0 auto;
                         }
                         .lot-footer {
-                            font-size: 16px;
+                            font-size: 18px;
                             font-weight: bold;
-                            margin-top: 10px;
+                            margin-top: 8px;
+                            letter-spacing: 2px;
                         }
                     </style>
 
                     <div class="label-container">
                         <span class="label-ref">REF: <t t-esc="line.product_id.default_code or 'N/A'"/></span>
+                        
                         <span class="label-name"><t t-esc="line.product_id.name"/></span>
                         
+                        <span class="label-data">LOTE: <t t-esc="line.lot_id.name"/></span>
+                        
                         <span class="label-data">
-                            LOTE: <t t-esc="line.lot_id.name"/> | CANT: <t t-esc="line.quantity"/>
-                        </span>
-                        <span class="label-data" style="font-size: 42px;">
-                            CAJA: <t t-esc="line.lot_id.name[-4:] if line.lot_id else '0000'"/>
+                            CANT: <t t-esc="line.quantity"/> 
+                            <span style="margin-left: 20px;">
+                                CAJA: <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/>
+                            </span>
                         </span>
 
-                        <div class="barcode-container">
+                        <div class="barcode-box">
                             <t t-if="line.lot_id">
-                                <img t-att-src="'/report/barcode/?symbology=Code128&amp;value=' + str(line.lot_id.name) + '&amp;width=1200&amp;height=300'"/>
+                                <span t-field="line.lot_id.name" 
+                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 1200, 'height': 300, 'img_style': 'width:100%; height:38mm;'}"/>
                                 <div class="lot-footer">
                                     <t t-esc="line.lot_id.name"/>
                                 </div>
