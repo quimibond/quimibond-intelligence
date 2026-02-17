@@ -1,5 +1,5 @@
 {
-    'name': 'Dymo Labels for Receipts',
+    'name': 'Etiquetas Dymo Recepción MP',
     'version': '1.0',
     'category': 'Inventory',
     'summary': 'Genera etiquetas Dymo desde la recepción de mercancía',

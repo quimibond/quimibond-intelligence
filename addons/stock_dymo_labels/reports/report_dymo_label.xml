@@ -6,11 +6,11 @@
                 <t t-call="web.basic_layout">
                     <style>
                         .page {
-                            width: 57mm;
-                            height: 32mm;
+                            width: 100mm;
+                            height: 76mm;
                             padding: 1mm;
                             font-family: 'Helvetica';
-                            font-size: 8px;
+                            font-size: 12px;
                             overflow: hidden;
                         }
                         .label-title {
@@ -19,7 +19,7 @@
                             overflow: hidden;
                         }
                         .label-ref {
-                            font-size: 10px;
+                            font-size: 12px;
                             font-weight: bold;
                         }
                         .barcode-container {

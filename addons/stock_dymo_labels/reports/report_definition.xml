@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <record id="paperformat_dymo_57x32" model="report.paperformat">
-        <field name="name">Dymo 57x32mm</field>
+    <record id="paperformat_dymo_100x76" model="report.paperformat">
+        <field name="name">Dymo 100x76mm</field>
         <field name="default" eval="True" />
         <field name="format">custom</field>
-        <field name="page_height">32</field>
-        <field name="page_width">57</field>
+        <field name="page_height"></field>
+        <field name="page_width">100</field>
         <field name="orientation">Portrait</field>
         <field name="margin_top">0</field>
         <field name="margin_bottom">0</field>
@@ -22,7 +22,7 @@
         <field name="report_type">qweb-pdf</field>
         <field name="report_name">stock_dymo_labels.report_label_dymo_custom</field>
         <field name="report_file">stock_dymo_labels.report_label_dymo_custom</field>
-        <field name="paperformat_id" ref="paperformat_dymo_57x32"/>
+        <field name="paperformat_id" ref="paperformat_dymo_100x76"/>
         <field name="binding_model_id" eval="False"/>
     </record>
 </odoo>
