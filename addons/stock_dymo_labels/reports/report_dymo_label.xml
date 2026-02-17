@@ -9,77 +9,47 @@
                             width: 100%;
                             height: 72mm;
                             font-family: 'Helvetica', Arial, sans-serif;
-                            color: black;
                             text-align: center;
-                            padding-top: 2mm; /* Reducido para dar espacio abajo */
+                            padding-top: 5mm;
                         }
-                        .label-ref {
-                            font-size: 42px;
-                            font-weight: bold;
-                            margin-bottom: 10px;
-                            display: block;
-                            text-transform: uppercase;
+                        .label-ref { font-size: 42px; font-weight: bold; display: block; margin-bottom: 5px; }
+                        .label-name { font-size: 42px; display: block; margin-bottom: 10px; height: 40px; overflow: hidden; }
+                        .label-data { font-size: 42px; font-weight: bold; display: block; margin-bottom: 5px; }
+                        
+                        /* Contenedor del código de barras optimizado */
+                        .barcode-container {
+                            margin: 15px auto 0 auto;
+                            width: 90%; /* Deja un 5% de margen blanco a cada lado (Quiet Zone) */
+                            background-color: white;
                         }
-                        .label-name {
-                            font-size: 42px;
-                            line-height: 1.2;
-                            margin-bottom: 12px;
-                            display: block;
-                            padding: 0 4mm;
-                            max-height: 40px;
-                            overflow: hidden;
-                        }
-                        .label-data {
-                            font-size: 42px;
-                            margin-bottom: 10px;
-                            display: block;
-                        }
-                        .barcode-box {
-                            margin-top: 10px;
-                            width: 100%;
-                            display: block;
-                        }
-                        /* Ajuste dinámico de la imagen del código de barras */
-                        .barcode-box img {
+                        .barcode-container img {
+                            width: 100% !important;
+                            height: 35mm !important; /* Altura generosa para fácil lectura */
                             display: block;
                             margin: 0 auto;
-                            width: 95% !important;
-                            height: 42mm !important; /* Altura considerablemente mayor */
                         }
-                        .lot-text {
+                        .lot-footer {
                             font-size: 16px;
                             font-weight: bold;
-                            margin-top: 5px;
-                            letter-spacing: 1px;
+                            margin-top: 10px;
                         }
                     </style>
 
                     <div class="label-container">
-                        <span class="label-ref">
-                            REF: <t t-esc="line.product_id.default_code or 'N/A'"/>
-                        </span>
-                        
-                        <span class="label-name">
-                            <t t-esc="line.product_id.name"/>
-                        </span>
+                        <span class="label-ref">REF: <t t-esc="line.product_id.default_code or 'N/A'"/></span>
+                        <span class="label-name"><t t-esc="line.product_id.name"/></span>
                         
                         <span class="label-data">
-                            <strong>Lote:</strong> <t t-esc="line.lot_id.name"/>
-                            <span style="margin-left: 15px;">
-                                <strong>Cant:</strong> <t t-esc="line.quantity"/>
-                            </span>
+                            LOTE: <t t-esc="line.lot_id.name"/> | CANT: <t t-esc="line.quantity"/>
                         </span>
-                        
                         <span class="label-data" style="font-size: 42px;">
-                            <strong>Nº CAJA:</strong> 
-                            <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/>
+                            CAJA: <t t-esc="line.lot_id.name[-4:] if line.lot_id else '0000'"/>
                         </span>
 
-                        <div class="barcode-box">
-                            <t t-if="line.lot_id.name">
-                                <span t-field="line.lot_id.name" 
-                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 800, 'height': 250, 'img_style': 'width:95%;height:42mm;'}"/>
-                                <div class="lot-text">
+                        <div class="barcode-container">
+                            <t t-if="line.lot_id">
+                                <img t-att-src="'/report/barcode/?symbology=Code128&amp;value=' + str(line.lot_id.name) + '&amp;width=1200&amp;height=300'"/>
+                                <div class="lot-footer">
                                     <t t-esc="line.lot_id.name"/>
                                 </div>
                             </t>
