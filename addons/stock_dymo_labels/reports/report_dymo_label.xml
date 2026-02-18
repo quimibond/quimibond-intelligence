@@ -62,7 +62,7 @@
                         <div class="barcode-zone">
                             <t t-if="line.lot_id">
                                 <span t-field="line.lot_id.name" 
-                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 800, 'height': 250, 'img_style': 'width:60%; height:22mm;'}"/>
+                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 400, 'height': 80, 'img_style': 'width:90%; height:35px;'}"/>
                             </t>
                         </div>
                         <div class="lot-footer">
