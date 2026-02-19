@@ -1,43 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
     <template id="report_label_dymo_custom">
-        <t t-call="web.basic_layout">
+        <t t-call="web.html_container">
             <t t-foreach="docs" t-as="line">
-                <div class="page" style="width: 100mm; height: 76mm; padding: 2mm; box-sizing: border-box; font-family: sans-serif; color: black; overflow: hidden;">
-                    
-                    <table style="width: 100%; table-layout: fixed; border-collapse: collapse;">
-                        <tr>
-                            <td style="text-align: center; vertical-align: middle;">
-                                <div style="font-size: 42px; font-weight: bold; line-height: 45px; margin-bottom: 2px;">
-                                     <t t-esc="line.product_id.default_code or 'SIN REF'"/>
-                                </div>
-                                
-                                <div style="font-size: 38px; font-weight: bold; line-height: 40px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                    <t t-esc="line.product_id.name"/>
-                                </div>
-                                
-                                <div style="font-size: 40px; font-weight: bold; line-height: 42px;">
-                                    Lote: <t t-esc="line.lot_id.name or 'N/A'"/>
-                                </div>
-                                
-                                <div style="font-size: 40px; font-weight: bold; line-height: 42px;">
-                                    Caja: <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/> 
-                                    <span style="margin-left: 15px;">Cant: <t t-esc="int(line.quantity)"/></span>
-                                </div>
-                            </td>
-                        </tr>
-                    </table>
-
-                    <div style="position: absolute; bottom: 5mm; left: 0; width: 100%; text-align: center;">
-                        <t t-if="line.lot_id">
-                            <div t-field="line.lot_id.name" 
-                                 t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 600, 'height': 120, 'img_style': 'width:75%; height:18mm; margin: 0 auto;'}"/>
-                            <div style="font-size: 20px; font-weight: bold; margin-top: 2px;">
-                                <t t-esc="line.lot_id.name"/>
+                <t t-call="web.basic_layout">
+                    <div class="page" style="width: 100mm; height: 76mm; padding: 5mm; font-family: sans-serif; color: black; text-align: center; box-sizing: border-box;">
+                        
+                        <div style="height: 45mm; overflow: hidden;">
+                            <div style="font-size: 42px; font-weight: bold; line-height: 48px; margin-bottom: 5px;">
+                                <t t-esc="line.product_id.default_code or 'SIN REF'"/>
                             </div>
-                        </t>
+                            
+                            <div style="font-size: 38px; font-weight: bold; line-height: 42px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                                <t t-esc="line.product_id.name"/>
+                            </div>
+                            
+                            <div style="font-size: 40px; font-weight: bold; line-height: 44px; margin-top: 5px;">
+                                Lote: <t t-esc="line.lot_id.name or 'N/A'"/>
+                            </div>
+                            
+                            <div style="font-size: 40px; font-weight: bold; line-height: 44px;">
+                                Caja: <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/> 
+                                <span style="margin-left: 15px;">Cant: <t t-esc="int(line.quantity)"/></span>
+                            </div>
+                        </div>
+
+                        <div style="margin-top: 10px; width: 100%;">
+                            <t t-if="line.lot_id">
+                                <div t-field="line.lot_id.name" 
+                                     t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 600, 'height': 120, 'img_style': 'width:80%; height:15mm; margin: 0 auto; display: block;'}"/>
+                                <div style="font-size: 24px; font-weight: bold; margin-top: 5px;">
+                                    <t t-esc="line.lot_id.name"/>
+                                </div>
+                            </t>
+                        </div>
                     </div>
-                </div>
+                </t>
             </t>
         </t>
     </template>
