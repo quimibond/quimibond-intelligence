@@ -11,8 +11,9 @@
                             font-family: 'Helvetica', Arial, sans-serif;
                             color: black;
                             text-align: center;
-                            padding-top: 2mm; /* Reducido para dar espacio abajo */
+                            padding-top: 2mm;
                         }
+                        /* Mantenemos tus estilos originales de texto */
                         .label-ref {
                             font-size: 42px;
                             font-weight: bold;
@@ -39,18 +40,20 @@
                             width: 100%;
                             display: block;
                         }
-                        /* Ajuste dinámico de la imagen del código de barras */
+                        /* CORRECCIÓN PARA ZEBRA ZT410: Nitidez extrema */
                         .barcode-box img {
                             display: block;
                             margin: 0 auto;
-                            width: 95% !important;
-                            height: 42mm !important; /* Altura considerablemente mayor */
+                            /* Forzamos que la Zebra no suavice las barras */
+                            image-rendering: pixelated;
+                            image-rendering: crisp-edges;
+                            width: 80% !important; /* Quiet Zone necesaria para lectura 128 */
+                            height: 25mm !important;
                         }
                         .lot-text {
                             font-size: 16px;
                             font-weight: bold;
                             margin-top: 5px;
-                            letter-spacing: 1px;
                         }
                     </style>
 
@@ -66,11 +69,11 @@
                         <span class="label-data">
                             <strong>Lote:</strong> <t t-esc="line.lot_id.name"/>
                             <span style="margin-left: 15px;">
-                                <strong>Cant:</strong> <t t-esc="line.quantity"/>
+                                <strong>Cant:</strong> <t t-esc="int(line.quantity)"/>
                             </span>
                         </span>
                         
-                        <span class="label-data" style="font-size: 42px;">
+                        <span class="label-data">
                             <strong>Nº CAJA:</strong> 
                             <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/>
                         </span>
@@ -78,7 +81,7 @@
                         <div class="barcode-box">
                             <t t-if="line.lot_id.name">
                                 <span t-field="line.lot_id.name" 
-                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 800, 'height': 250, 'img_style': 'width:100%;height:20mm;'}"/>
+                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 1400, 'height': 300, 'img_style': 'width:80%; height:25mm;'}"/>
                                 <div class="lot-text">
                                     <t t-esc="line.lot_id.name"/>
                                 </div>
