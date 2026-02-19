@@ -4,32 +4,82 @@
         <t t-call="web.html_container">
             <t t-foreach="docs" t-as="line">
                 <t t-call="web.basic_layout">
-                    <div class="page" style="width: 100mm; height: 76mm; padding: 5mm; font-family: sans-serif; color: black; text-align: center; box-sizing: border-box;">
-                        
-                        <div style="height: 45mm; overflow: hidden;">
-                            <div style="font-size: 42px; font-weight: bold; line-height: 48px; margin-bottom: 5px;">
-                                <t t-esc="line.product_id.default_code or 'SIN REF'"/>
-                            </div>
-                            
-                            <div style="font-size: 38px; font-weight: bold; line-height: 42px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
-                                <t t-esc="line.product_id.name"/>
-                            </div>
-                            
-                            <div style="font-size: 40px; font-weight: bold; line-height: 44px; margin-top: 5px;">
-                                Lote: <t t-esc="line.lot_id.name or 'N/A'"/>
-                            </div>
-                            
-                            <div style="font-size: 40px; font-weight: bold; line-height: 44px;">
-                                Caja: <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/> 
-                                <span style="margin-left: 15px;">Cant: <t t-esc="int(line.quantity)"/></span>
-                            </div>
-                        </div>
+                    <style>
+                        .label-container {
+                            width: 100%;
+                            height: 72mm;
+                            font-family: 'Helvetica', Arial, sans-serif;
+                            color: black;
+                            text-align: center;
+                            padding-top: 2mm; /* Reducido para dar espacio abajo */
+                        }
+                        .label-ref {
+                            font-size: 42px;
+                            font-weight: bold;
+                            margin-bottom: 10px;
+                            display: block;
+                            text-transform: uppercase;
+                        }
+                        .label-name {
+                            font-size: 42px;
+                            line-height: 1.2;
+                            margin-bottom: 12px;
+                            display: block;
+                            padding: 0 4mm;
+                            max-height: 40px;
+                            overflow: hidden;
+                        }
+                        .label-data {
+                            font-size: 42px;
+                            margin-bottom: 10px;
+                            display: block;
+                        }
+                        .barcode-box {
+                            margin-top: 10px;
+                            width: 100%;
+                            display: block;
+                        }
+                        /* Ajuste dinámico de la imagen del código de barras */
+                        .barcode-box img {
+                            display: block;
+                            margin: 0 auto;
+                            width: 95% !important;
+                            height: 42mm !important; /* Altura considerablemente mayor */
+                        }
+                        .lot-text {
+                            font-size: 16px;
+                            font-weight: bold;
+                            margin-top: 5px;
+                            letter-spacing: 1px;
+                        }
+                    </style>
 
-                        <div style="margin-top: 10px; width: 100%;">
-                            <t t-if="line.lot_id">
-                                <div t-field="line.lot_id.name" 
-                                     t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 600, 'height': 120, 'img_style': 'width:80%; height:15mm; margin: 0 auto; display: block;'}"/>
-                                <div style="font-size: 24px; font-weight: bold; margin-top: 5px;">
+                    <div class="label-container">
+                        <span class="label-ref">
+                            REF: <t t-esc="line.product_id.default_code or 'N/A'"/>
+                        </span>
+                        
+                        <span class="label-name">
+                            <t t-esc="line.product_id.name"/>
+                        </span>
+                        
+                        <span class="label-data">
+                            <strong>Lote:</strong> <t t-esc="line.lot_id.name"/>
+                            <span style="margin-left: 15px;">
+                                <strong>Cant:</strong> <t t-esc="line.quantity"/>
+                            </span>
+                        </span>
+                        
+                        <span class="label-data" style="font-size: 42px;">
+                            <strong>Nº CAJA:</strong> 
+                            <t t-esc="line.lot_id.name[-4:] if line.lot_id and line.lot_id.name else '0000'"/>
+                        </span>
+
+                        <div class="barcode-box">
+                            <t t-if="line.lot_id.name">
+                                <span t-field="line.lot_id.name" 
+                                      t-options="{'widget': 'barcode', 'symbology': 'Code128', 'width': 800, 'height': 250, 'img_style': 'width:95%;height:42mm;'}"/>
+                                <div class="lot-text">
                                     <t t-esc="line.lot_id.name"/>
                                 </div>
                             </t>
