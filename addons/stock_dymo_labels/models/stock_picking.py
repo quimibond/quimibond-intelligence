@@ -5,7 +5,7 @@ from odoo import models, fields, _, exceptions
 class StockPicking(models.Model):
     _inherit = 'stock.picking'
 
-    # MÉTODO 1: Tu impresión original a PDF (Dymo)
+    # MÉTODO 1: Impresión original a PDF (Dymo)
     def action_print_dymo_labels(self):
         self.ensure_one()
         move_lines = self.move_line_ids.filtered(lambda l: l.lot_id)
@@ -21,7 +21,7 @@ class StockPicking(models.Model):
         if not move_lines:
             raise exceptions.UserError(_("No hay líneas con lote para imprimir."))
 
-        printer_ip = "192.168.1.15"
+        printer_ip = "192.168.1.4"
         printer_port = 9100
 
         zpl_body = ""
