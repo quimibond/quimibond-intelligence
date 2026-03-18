@@ -50,6 +50,6 @@ class StockPicking(models.Model):
             'tag': 'print_zpl_usb',
             'params': {
                 'zpl_data': zpl_body,
-                'printer_name': 'ZT410',
+                'printer_name': 'ZD230',
             }
         }
