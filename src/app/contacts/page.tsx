@@ -24,8 +24,9 @@ interface Contact {
   risk_level: string;
   sentiment_score: number;
   relationship_score: number;
-  last_interaction: string;
-  total_emails: number;
+  last_activity: string;
+  total_sent: number;
+  total_received: number;
   tags: string[];
 }
 
@@ -64,7 +65,7 @@ export default function ContactsPage() {
       const { data } = await supabase
         .from("contacts")
         .select("*")
-        .order("last_interaction", { ascending: false })
+        .order("last_activity", { ascending: false })
         .limit(100);
       setContacts(data || []);
       setLoading(false);
@@ -193,9 +194,9 @@ export default function ContactsPage() {
                       </div>
                       <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)] mt-0.5">
                         <span className="truncate">{contact.company || contact.email}</span>
-                        <span className="hidden md:inline">{contact.total_emails} emails</span>
-                        {contact.last_interaction && (
-                          <span className="hidden lg:inline">{timeAgo(contact.last_interaction)}</span>
+                        <span className="hidden md:inline">{(contact.total_sent || 0) + (contact.total_received || 0)} emails</span>
+                        {contact.last_activity && (
+                          <span className="hidden lg:inline">{timeAgo(contact.last_activity)}</span>
                         )}
                       </div>
                     </div>

@@ -38,7 +38,7 @@ interface ActionItem {
   action_type: string;
   description: string;
   contact_name: string | null;
-  contact_id: string | null;
+  related_entity_id: string | null;
   contact_company: string | null;
   priority: string;
   due_date: string | null;
@@ -324,20 +324,10 @@ export default function ActionsPage() {
               {action.contact_name && (
                 <span className="flex items-center gap-1">
                   <Building2 className="h-3.5 w-3.5" />
-                  {action.contact_id ? (
-                    <Link
-                      href={`/contacts/${action.contact_id}`}
-                      className="underline underline-offset-2 hover:text-[var(--foreground)] transition-colors"
-                    >
-                      {action.contact_name}
-                      {action.contact_company ? ` — ${action.contact_company}` : ""}
-                    </Link>
-                  ) : (
-                    <span>
-                      {action.contact_name}
-                      {action.contact_company ? ` — ${action.contact_company}` : ""}
-                    </span>
-                  )}
+                  <span>
+                    {action.contact_name}
+                    {action.contact_company ? ` — ${action.contact_company}` : ""}
+                  </span>
                 </span>
               )}
 

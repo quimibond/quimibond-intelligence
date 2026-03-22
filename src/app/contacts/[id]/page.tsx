@@ -37,29 +37,34 @@ interface Contact {
   email: string;
   company: string;
   contact_type: string;
+  department: string;
   risk_level: string;
   sentiment_score: number;
   relationship_score: number;
-  last_interaction: string;
-  total_emails: number;
-  tags: string[];
-  phone: string;
-  city: string;
-  country: string;
+  last_activity: string;
+  total_sent: number;
+  total_received: number;
+  score_breakdown: Record<string, number> | null;
+  odoo_partner_id: number | null;
+  is_customer: boolean;
+  is_supplier: boolean;
+  notes: string;
 }
 
 interface PersonProfile {
   id: string;
-  contact_id: string;
   name: string;
+  email: string;
+  company: string;
   role: string;
   department: string;
   decision_power: string;
   communication_style: string;
-  personality_traits: string[];
-  interests: string[];
-  decision_factors: string[];
-  summary: string;
+  negotiation_style: string;
+  response_pattern: string;
+  key_interests: string[];
+  personality_notes: string;
+  influence_on_deals: string;
 }
 
 interface Alert {
@@ -139,21 +144,40 @@ export default function ContactDetailPage() {
 
   useEffect(() => {
     async function fetchAll() {
-      const [contactRes, profileRes, alertsRes, actionsRes, factsRes, patternsRes] = await Promise.all([
-        supabase.from("contacts").select("*").eq("id", params.id).single(),
-        supabase.from("person_profiles").select("*").eq("contact_id", params.id).maybeSingle(),
-        supabase.from("alerts").select("*").eq("contact_id", params.id).order("created_at", { ascending: false }).limit(10),
-        supabase.from("action_items").select("*").eq("contact_id", params.id).order("created_at", { ascending: false }).limit(10),
-        supabase.from("facts").select("*").eq("contact_id", params.id).order("created_at", { ascending: false }).limit(15),
-        supabase.from("communication_patterns").select("*").eq("contact_id", params.id).limit(10),
+      // First get the contact to know their name and email
+      const contactRes = await supabase.from("contacts").select("*").eq("id", params.id).single();
+      if (!contactRes.data) {
+        setLoading(false);
+        return;
+      }
+      setContact(contactRes.data);
+      const contactName = contactRes.data.name;
+      const contactEmail = contactRes.data.email;
+
+      // Use name/email to query related tables (no FK joins available)
+      const [profileRes, alertsRes, actionsRes, factsRes] = await Promise.all([
+        supabase.from("person_profiles").select("*").eq("email", contactEmail).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+        supabase.from("alerts").select("*").eq("contact_name", contactName).order("created_at", { ascending: false }).limit(10),
+        supabase.from("action_items").select("*").eq("contact_name", contactName).order("created_at", { ascending: false }).limit(10),
+        // Facts are linked via entities, not contacts — search by entity name
+        supabase.rpc("get_contact_intelligence", { p_contact_email: contactEmail }),
       ]);
 
-      setContact(contactRes.data);
       setProfile(profileRes.data);
       setAlerts(alertsRes.data || []);
       setActions(actionsRes.data || []);
-      setFacts(factsRes.data || []);
-      setPatterns(patternsRes.data || []);
+
+      // Extract facts from RPC if available
+      const intel = factsRes.data as Record<string, unknown> | null;
+      if (intel) {
+        // RPC doesn't return facts directly, but we can query entities
+        const entityRes = await supabase.from("entities").select("id").ilike("email", `%${contactEmail}%`).limit(1);
+        if (entityRes.data?.length) {
+          const entityFactsRes = await supabase.from("facts").select("*").eq("entity_id", entityRes.data[0].id).order("created_at", { ascending: false }).limit(15);
+          setFacts(entityFactsRes.data || []);
+        }
+      }
+
       setLoading(false);
     }
     fetchAll();
@@ -195,7 +219,7 @@ export default function ContactDetailPage() {
   const stats = [
     { label: "Sentimiento", value: Math.round(((sentiment + 1) / 2) * 100), icon: Heart, raw: sentiment.toFixed(2) },
     { label: "Relacion", value: Math.round(relationship), icon: Swords, raw: relationship.toFixed(0) },
-    { label: "Actividad", value: Math.min(100, Math.round((contact.total_emails / 50) * 100)), icon: Zap, raw: `${contact.total_emails} emails` },
+    { label: "Actividad", value: Math.min(100, Math.round(((contact.total_sent || 0) + (contact.total_received || 0) / 50) * 100)), icon: Zap, raw: `${(contact.total_sent || 0) + (contact.total_received || 0)} emails` },
     { label: "Lealtad", value: healthClamped, icon: Shield, raw: `${healthClamped}%` },
   ];
 
@@ -317,8 +341,8 @@ export default function ContactDetailPage() {
                 </span>
               </div>
 
-              {profile.summary && (
-                <p className="text-sm leading-relaxed mb-4 text-[var(--foreground)]/90">{profile.summary}</p>
+              {profile.personality_notes && (
+                <p className="text-sm leading-relaxed mb-4 text-[var(--foreground)]/90">{profile.personality_notes}</p>
               )}
 
               <div className="grid grid-cols-2 gap-4 mb-4">
@@ -342,14 +366,14 @@ export default function ContactDetailPage() {
                 )}
               </div>
 
-              {profile.personality_traits?.length > 0 && (
+              {profile.key_interests?.length > 0 && (
                 <div className="mb-3">
                   <div className="flex items-center gap-1.5 mb-2">
                     <Sparkles className="h-3 w-3 text-[var(--quest-epic)]" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Rasgos</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {profile.personality_traits.map((t, i) => (
+                    {profile.key_interests.map((t, i) => (
                       <span key={i} className="text-xs px-2 py-1 rounded-md bg-[var(--quest-epic-muted)] text-[var(--quest-epic)] border border-[color-mix(in_srgb,var(--quest-epic)_20%,transparent)]">
                         {t}
                       </span>
@@ -358,30 +382,24 @@ export default function ContactDetailPage() {
                 </div>
               )}
 
-              {profile.decision_factors?.length > 0 && (
+              {profile.influence_on_deals && (
                 <div className="mb-3">
                   <div className="flex items-center gap-1.5 mb-2">
                     <Target className="h-3 w-3 text-[var(--warning)]" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Factores de Decision</span>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Influencia en Negocios</span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {profile.decision_factors.map((f, i) => (
-                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-[var(--warning-muted)] text-[var(--warning)] border border-[color-mix(in_srgb,var(--warning)_20%,transparent)]">
-                        {f}
-                      </span>
-                    ))}
-                  </div>
+                  <p className="text-sm">{profile.influence_on_deals}</p>
                 </div>
               )}
 
-              {profile.interests?.length > 0 && (
+              {profile.key_interests?.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
                     <Heart className="h-3 w-3 text-[var(--accent-pink)]" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Intereses</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
-                    {profile.interests.map((interest, i) => (
+                    {profile.key_interests.map((interest, i) => (
                       <span key={i} className="text-xs px-2 py-1 rounded-md bg-[color-mix(in_srgb,var(--accent-pink)_15%,transparent)] text-[var(--accent-pink)] border border-[color-mix(in_srgb,var(--accent-pink)_20%,transparent)]">
                         {interest}
                       </span>
@@ -472,30 +490,25 @@ export default function ContactDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Phone className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
-                <span>{contact.phone || "—"}</span>
+                <span>{contact.department || "—"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <MapPin className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
-                <span>{contact.city || "—"}</span>
+                <span>{contact.is_customer ? "Cliente" : contact.is_supplier ? "Proveedor" : "—"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Globe className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
-                <span>{contact.country || "—"}</span>
+                <span>{contact.notes || "—"}</span>
               </div>
               <div className="flex items-center gap-2">
                 <Clock className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
                 <span className="text-xs text-[var(--muted-foreground)]">
-                  Ultima interaccion: {contact.last_interaction ? timeAgo(contact.last_interaction) : "—"}
+                  Ultima interaccion: {contact.last_activity ? timeAgo(contact.last_activity) : "—"}
                 </span>
               </div>
             </div>
-            {contact.tags?.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1">
-                {contact.tags.map((tag, i) => (
-                  <Badge key={i} variant="secondary" className="text-[10px]">{tag}</Badge>
-                ))}
-              </div>
-            )}
+            {contact.is_customer && <Badge variant="success" className="mt-3 text-[10px]">Cliente</Badge>}
+            {contact.is_supplier && <Badge variant="info" className="mt-3 text-[10px]">Proveedor</Badge>}
           </div>
 
           {/* Active Alerts */}

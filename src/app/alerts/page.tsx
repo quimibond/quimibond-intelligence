@@ -30,14 +30,14 @@ interface Alert {
   title: string;
   description: string;
   contact_name: string;
-  contact_id: string;
+  related_contact: string;
   account: string;
   state: string;
   is_read: boolean;
   created_at: string;
   resolved_at: string | null;
-  source_thread_id: string | null;
-  source_email_id: string | null;
+  related_thread_id: string | null;
+  related_email_id: string | null;
   business_impact: string | null;
   suggested_action: string | null;
 }
@@ -346,16 +346,7 @@ export default function AlertsPage() {
                         {alert.contact_name && (
                           <span className="flex items-center gap-1">
                             <User className="h-3 w-3" />
-                            {alert.contact_id ? (
-                              <a
-                                href={`/contacts/${alert.contact_id}`}
-                                className="hover:text-[var(--primary)] transition-colors underline decoration-dotted underline-offset-2"
-                              >
-                                {alert.contact_name}
-                              </a>
-                            ) : (
-                              alert.contact_name
-                            )}
+                            {alert.contact_name}
                           </span>
                         )}
                         {alert.account && (
@@ -377,7 +368,7 @@ export default function AlertsPage() {
                       </div>
 
                       {/* Expandable detail */}
-                      {alert.source_thread_id && (
+                      {alert.related_thread_id && (
                         <div className="mt-2">
                           <button
                             onClick={() => toggleExpand(alert.id)}
@@ -399,7 +390,7 @@ export default function AlertsPage() {
                                 Thread de origen vinculado a esta alerta.
                               </p>
                               <a
-                                href={`/threads/${alert.source_thread_id}`}
+                                href={`/emails?thread=${alert.related_thread_id}`}
                                 className="inline-flex items-center gap-1.5"
                               >
                                 <Button variant="outline" size="sm">

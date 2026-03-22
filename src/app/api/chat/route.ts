@@ -111,7 +111,7 @@ async function getRelevantContext(question: string): Promise<string> {
       (async () => {
         let query = supabase
           .from("contacts")
-          .select("name, email, company, risk_level, sentiment_score, relationship_score, total_emails, last_interaction, contact_type");
+          .select("name, email, company, risk_level, sentiment_score, relationship_score, total_sent, total_received, last_activity, contact_type");
 
         if (contactName) {
           query = query.ilike("name", `%${contactName}%`);
@@ -125,7 +125,7 @@ async function getRelevantContext(question: string): Promise<string> {
             "## Contactos\n" +
             data.map((c) => {
               const health = Math.round(((( c.sentiment_score ?? 0) + 1) / 2) * 50 + ((c.relationship_score ?? 50) / 100) * 50);
-              return `- ${c.name} (${c.company || c.email}) — riesgo: ${c.risk_level} — salud: ${health}% — sentimiento: ${c.sentiment_score?.toFixed(2) ?? "N/A"} — emails: ${c.total_emails} — tipo: ${c.contact_type || "N/A"} — ultima interaccion: ${c.last_interaction || "N/A"}`;
+              return `- ${c.name} (${c.company || c.email}) — riesgo: ${c.risk_level} — salud: ${health}% — sentimiento: ${c.sentiment_score?.toFixed(2) ?? "N/A"} — emails: ${(c.total_sent || 0) + (c.total_received || 0)} — tipo: ${c.contact_type || "N/A"} — ultima actividad: ${c.last_activity || "N/A"}`;
             }).join("\n"),
           );
         }
@@ -135,9 +135,9 @@ async function getRelevantContext(question: string): Promise<string> {
           const contactId = data[0] && "id" in data[0] ? (data[0] as Record<string, unknown>).id : null;
           if (contactId) {
             const [profileRes, factsRes, patternsRes] = await Promise.all([
-              supabase.from("person_profiles").select("*").eq("contact_id", contactId).maybeSingle(),
-              supabase.from("facts").select("fact_text, confidence, fact_type").eq("contact_id", contactId).order("created_at", { ascending: false }).limit(10),
-              supabase.from("communication_patterns").select("pattern_type, description, frequency, confidence").eq("contact_id", contactId).limit(5),
+              supabase.from("person_profiles").select("*").eq("email", data[0].email).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+              supabase.from("facts").select("fact_text, confidence, fact_type, entities!inner(name)").order("created_at", { ascending: false }).limit(10),
+              Promise.resolve({ data: [] as Array<{ pattern_type: string; description: string; frequency: string; confidence: number }> }),
             ]);
 
             if (profileRes.data) {
