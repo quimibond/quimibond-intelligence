@@ -10,6 +10,7 @@ import { HealthBar } from "@/components/gamified/health-bar";
 import { AchievementBadge } from "@/components/gamified/achievement-badge";
 import { AlertFeedItem } from "@/components/gamified/alert-feed";
 import { RadarWidget } from "@/components/gamified/radar-widget";
+import { UrgencyPanel } from "@/components/gamified/urgency-panel";
 import { Badge } from "@/components/ui/badge";
 import Link from "next/link";
 import {
@@ -28,6 +29,7 @@ import {
   Scroll,
   FileText,
   Activity,
+  TrendingDown,
 } from "lucide-react";
 
 interface Stats {
@@ -254,6 +256,51 @@ export default function DashboardPage() {
 
   const radarDots = generateRadarDots(recentAlerts);
 
+  // Build urgency items
+  const urgencyItems: { type: "alert" | "action" | "contact"; title: string; reason: string; urgency: number }[] = [];
+
+  // Critical/high alerts = high urgency
+  recentAlerts.forEach((alert) => {
+    if (alert.severity === "critical" && !alert.is_read) {
+      urgencyItems.push({ type: "alert", title: alert.title, reason: `Alerta critica de ${alert.contact_name || "desconocido"}`, urgency: 95 });
+    } else if (alert.severity === "high" && !alert.is_read) {
+      urgencyItems.push({ type: "alert", title: alert.title, reason: `Alerta alta de ${alert.contact_name || "desconocido"}`, urgency: 75 });
+    }
+  });
+
+  // Overdue actions = high urgency
+  const now = new Date();
+  pendingActions.forEach((action) => {
+    if (action.due_date && new Date(action.due_date) < now) {
+      const daysOverdue = Math.floor((now.getTime() - new Date(action.due_date).getTime()) / 86400000);
+      urgencyItems.push({
+        type: "action",
+        title: action.description,
+        reason: `Vencida hace ${daysOverdue} dia${daysOverdue > 1 ? "s" : ""} — ${action.contact_name}`,
+        urgency: Math.min(95, 60 + daysOverdue * 5),
+      });
+    } else if (action.priority === "high") {
+      urgencyItems.push({
+        type: "action",
+        title: action.description,
+        reason: `Mision de alta prioridad — ${action.contact_name}`,
+        urgency: 55,
+      });
+    }
+  });
+
+  // At-risk contacts
+  topContacts.forEach((c) => {
+    if (c.risk_level === "high") {
+      const health = Math.round(((( c.sentiment_score ?? 0) + 1) / 2) * 50 + ((c.relationship_score ?? 50) / 100) * 50);
+      if (health < 30) {
+        urgencyItems.push({ type: "contact", title: c.name, reason: `Salud critica: ${health}% — requiere atencion inmediata`, urgency: 85 });
+      } else {
+        urgencyItems.push({ type: "contact", title: c.name, reason: `Contacto en alto riesgo — salud: ${health}%`, urgency: 50 });
+      }
+    }
+  });
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -282,6 +329,23 @@ export default function DashboardPage() {
           label={`Nivel de Inteligencia — ${totalXP.toLocaleString()} XP total`}
         />
       </div>
+
+      {/* Urgency Panel - only show if there are urgent items */}
+      {urgencyItems.length > 0 && (
+        <div className="game-card rounded-lg bg-[var(--card)] p-4 border-l-3 border-l-red-500/50">
+          <div className="flex items-center gap-2 mb-4">
+            <TrendingDown className="h-4 w-4 text-red-400" />
+            <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              Requiere tu Atencion
+            </span>
+            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 ml-auto">
+              <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+              {urgencyItems.length} asuntos
+            </span>
+          </div>
+          <UrgencyPanel items={urgencyItems} />
+        </div>
+      )}
 
       {/* Power Stats */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
