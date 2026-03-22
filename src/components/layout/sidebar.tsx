@@ -1,8 +1,10 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 import {
   Crosshair,
   Mail,
@@ -16,20 +18,47 @@ import {
   Zap,
 } from "lucide-react";
 
+interface NavBadges {
+  alerts: number;
+  actions: number;
+  contacts: number;
+}
+
 const navItems = [
-  { href: "/dashboard", label: "Comando", icon: Crosshair, color: "text-cyan-400" },
-  { href: "/emails", label: "Emails", icon: Mail, color: "text-blue-400" },
-  { href: "/chat", label: "Preguntar", icon: MessageSquare, color: "text-purple-400" },
-  { href: "/briefings", label: "Reportes", icon: FileText, color: "text-indigo-400" },
-  { href: "/alerts", label: "Alertas", icon: AlertTriangle, color: "text-amber-400" },
-  { href: "/actions", label: "Misiones", icon: Target, color: "text-pink-400" },
-  { href: "/contacts", label: "Contactos", icon: Users, color: "text-emerald-400" },
-  { href: "/knowledge", label: "Knowledge", icon: Network, color: "text-teal-400" },
-  { href: "/system", label: "Sistema", icon: Settings, color: "text-gray-400" },
+  { href: "/dashboard", label: "Comando", icon: Crosshair, color: "text-cyan-400", badgeKey: null },
+  { href: "/emails", label: "Emails", icon: Mail, color: "text-blue-400", badgeKey: null },
+  { href: "/chat", label: "Preguntar", icon: MessageSquare, color: "text-purple-400", badgeKey: null },
+  { href: "/briefings", label: "Reportes", icon: FileText, color: "text-indigo-400", badgeKey: null },
+  { href: "/alerts", label: "Alertas", icon: AlertTriangle, color: "text-amber-400", badgeKey: "alerts" as const },
+  { href: "/actions", label: "Misiones", icon: Target, color: "text-pink-400", badgeKey: "actions" as const },
+  { href: "/contacts", label: "Contactos", icon: Users, color: "text-emerald-400", badgeKey: "contacts" as const },
+  { href: "/knowledge", label: "Knowledge", icon: Network, color: "text-teal-400", badgeKey: null },
+  { href: "/system", label: "Sistema", icon: Settings, color: "text-gray-400", badgeKey: null },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const [badges, setBadges] = useState<NavBadges>({ alerts: 0, actions: 0, contacts: 0 });
+
+  useEffect(() => {
+    async function fetchBadges() {
+      const [alertsRes, actionsRes, contactsRes] = await Promise.all([
+        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
+        supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
+        supabase.from("contacts").select("id", { count: "exact", head: true }).eq("risk_level", "high"),
+      ]);
+      setBadges({
+        alerts: alertsRes.count ?? 0,
+        actions: actionsRes.count ?? 0,
+        contacts: contactsRes.count ?? 0,
+      });
+    }
+    fetchBadges();
+
+    // Refresh badges every 60 seconds
+    const interval = setInterval(fetchBadges, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   if (pathname === "/login") return null;
 
@@ -57,6 +86,8 @@ export function Sidebar() {
         {navItems.map((item) => {
           const isActive =
             pathname === item.href || pathname?.startsWith(item.href + "/");
+          const badgeCount = item.badgeKey ? badges[item.badgeKey] : 0;
+
           return (
             <Link
               key={item.href}
@@ -70,7 +101,21 @@ export function Sidebar() {
             >
               <item.icon className={cn("h-4 w-4", isActive ? item.color : "")} />
               {item.label}
-              {isActive && (
+
+              {/* Badge */}
+              {badgeCount > 0 && (
+                <span className={cn(
+                  "ml-auto flex items-center justify-center min-w-[18px] h-[18px] rounded-full px-1 text-[10px] font-bold",
+                  item.badgeKey === "alerts" ? "bg-red-500/20 text-red-400" :
+                  item.badgeKey === "actions" ? "bg-amber-500/20 text-amber-400" :
+                  "bg-red-500/20 text-red-400",
+                )}>
+                  {badgeCount}
+                </span>
+              )}
+
+              {/* Active dot (only if no badge) */}
+              {isActive && !badgeCount && (
                 <div className="ml-auto w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
               )}
             </Link>
