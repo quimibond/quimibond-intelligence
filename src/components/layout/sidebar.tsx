@@ -19,6 +19,7 @@ import {
   Zap,
   HeartPulse,
   BarChart3,
+  Building2,
 } from "lucide-react";
 
 interface NavBadges {
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/alerts", label: "Alertas", icon: AlertTriangle, badgeKey: "alerts" as const },
   { href: "/actions", label: "Misiones", icon: Target, badgeKey: "actions" as const },
   { href: "/contacts", label: "Contactos", icon: Users, badgeKey: "contacts" as const },
+  { href: "/companies", label: "Empresas", icon: Building2, badgeKey: null },
   { href: "/knowledge", label: "Knowledge", icon: Network, badgeKey: null },
   { href: "/system", label: "Sistema", icon: Settings, badgeKey: null },
 ];
