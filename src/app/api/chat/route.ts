@@ -12,12 +12,38 @@ async function getRelevantContext(): Promise<string> {
   const supabase = getSupabase();
   const parts: string[] = [];
 
-  const [alertsRes, actionsRes, briefingsRes, contactsRes, factsRes] = await Promise.all([
-    supabase.from("alerts").select("title, description, severity, contact_name, created_at, state").order("created_at", { ascending: false }).limit(10),
-    supabase.from("action_items").select("description, contact_name, priority, due_date, state").eq("state", "pending").order("due_date", { ascending: true }).limit(10),
-    supabase.from("briefings").select("briefing_type, summary, created_at").order("created_at", { ascending: false }).limit(3),
-    supabase.from("contacts").select("name, email, company, risk_level, sentiment_score").eq("risk_level", "high").limit(10),
-    supabase.from("facts").select("fact_text, confidence, source_type").order("created_at", { ascending: false }).limit(15),
+  const [alertsRes, actionsRes, briefingsRes, contactsRes, factsRes, entitiesRes] = await Promise.all([
+    supabase
+      .from("alerts")
+      .select("title, description, severity, contact_name, created_at, state")
+      .order("created_at", { ascending: false })
+      .limit(10),
+    supabase
+      .from("action_items")
+      .select("description, contact_name, priority, due_date, state, assignee_email")
+      .eq("state", "pending")
+      .order("due_date", { ascending: true })
+      .limit(10),
+    supabase
+      .from("briefings")
+      .select("briefing_type, summary, created_at")
+      .order("created_at", { ascending: false })
+      .limit(3),
+    supabase
+      .from("contacts")
+      .select("name, email, company, risk_level, sentiment_score, relationship_score")
+      .eq("risk_level", "high")
+      .limit(10),
+    supabase
+      .from("facts")
+      .select("fact_text, confidence, source_type")
+      .order("created_at", { ascending: false })
+      .limit(15),
+    supabase
+      .from("entities")
+      .select("name, entity_type, canonical_name")
+      .order("last_seen", { ascending: false })
+      .limit(20),
   ]);
 
   if (alertsRes.data?.length) {
@@ -44,7 +70,7 @@ async function getRelevantContext(): Promise<string> {
   if (contactsRes.data?.length) {
     parts.push(
       "## Contactos en alto riesgo\n" +
-        contactsRes.data.map((c) => `- ${c.name} (${c.company || c.email}) - sentimiento: ${c.sentiment_score ?? "N/A"}`).join("\n")
+        contactsRes.data.map((c) => `- ${c.name} (${c.company || c.email}) - sentimiento: ${c.sentiment_score ?? "N/A"}, relacion: ${c.relationship_score ?? "N/A"}`).join("\n")
     );
   }
 
@@ -52,6 +78,13 @@ async function getRelevantContext(): Promise<string> {
     parts.push(
       "## Hechos recientes extraidos\n" +
         factsRes.data.map((f) => `- ${f.fact_text} (confianza: ${f.confidence}, fuente: ${f.source_type})`).join("\n")
+    );
+  }
+
+  if (entitiesRes.data?.length) {
+    parts.push(
+      "## Entidades conocidas\n" +
+        entitiesRes.data.map((e) => `- [${e.entity_type}] ${e.canonical_name || e.name}`).join("\n")
     );
   }
 
@@ -93,7 +126,7 @@ export async function POST(req: NextRequest) {
         max_tokens: 2048,
         system: `Eres el cerebro de inteligencia comercial de Quimibond, una empresa textil mexicana.
 Tu rol es responder preguntas sobre clientes, ventas, operaciones y estrategia usando los datos disponibles.
-Responde siempre en español. Se conciso y accionable. Si no tienes datos suficientes, dilo claramente.
+Responde siempre en espanol. Se conciso y accionable. Si no tienes datos suficientes, dilo claramente.
 
 Contexto actual del sistema:
 ${context}`,

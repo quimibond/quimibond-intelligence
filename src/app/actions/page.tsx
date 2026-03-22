@@ -16,8 +16,10 @@ interface ActionItem {
   priority: string;
   due_date: string;
   state: string;
+  status: string;
+  assignee_email: string;
   created_at: string;
-  completed_at: string | null;
+  completed_date: string | null;
 }
 
 const priorityVariant: Record<string, "destructive" | "warning" | "info"> = {
@@ -53,11 +55,11 @@ export default function ActionsPage() {
   async function completeAction(id: string) {
     await supabase
       .from("action_items")
-      .update({ state: "completed", completed_at: new Date().toISOString() })
+      .update({ state: "completed", completed_date: new Date().toISOString() })
       .eq("id", id);
     setActions((prev) =>
       prev.map((a) =>
-        a.id === id ? { ...a, state: "completed", completed_at: new Date().toISOString() } : a
+        a.id === id ? { ...a, state: "completed", completed_date: new Date().toISOString() } : a
       )
     );
   }
@@ -122,6 +124,9 @@ export default function ActionsPage() {
                     {action.contact_name && (
                       <span className="text-xs text-[var(--muted-foreground)]">{action.contact_name}</span>
                     )}
+                    {action.assignee_email && (
+                      <span className="text-xs text-[var(--muted-foreground)]">→ {action.assignee_email}</span>
+                    )}
                   </div>
                   <p className="text-sm">{action.description}</p>
                   <div className="mt-1 flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
@@ -132,9 +137,9 @@ export default function ActionsPage() {
                         Vence: {new Date(action.due_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                       </span>
                     )}
-                    {action.completed_at && (
+                    {action.completed_date && (
                       <span className="text-emerald-400">
-                        Completada {timeAgo(action.completed_at)}
+                        Completada {timeAgo(action.completed_date)}
                       </span>
                     )}
                   </div>
