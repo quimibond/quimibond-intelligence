@@ -10,6 +10,7 @@ import {
   CheckSquare2,
   Users,
   BookOpen,
+  Brain,
   Moon,
   Sun,
 } from 'lucide-react'
@@ -59,6 +60,14 @@ const navItems: NavItem[] = [
     label: 'Briefings',
     href: '/briefings',
     icon: <BookOpen className="w-5 h-5" />,
+  },
+]
+
+const systemItems: NavItem[] = [
+  {
+    label: 'Aprendizaje',
+    href: '/learning',
+    icon: <Brain className="w-5 h-5" />,
   },
 ]
 
@@ -150,6 +159,34 @@ export function Sidebar() {
             </Link>
           )
         })}
+
+        {/* Sistema Section */}
+        <div className="pt-6 mt-6 border-t border-border">
+          <div className="px-4 mb-3">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              Sistema
+            </p>
+          </div>
+          {systemItems.map((item) => {
+            const isActive = pathname.startsWith(item.href)
+
+            return (
+              <Link key={item.href} href={item.href}>
+                <button
+                  className={cn(
+                    'w-full flex items-center gap-3 px-4 py-2.5 rounded-md text-sm font-medium transition-colors',
+                    isActive
+                      ? 'bg-primary/10 text-primary'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-accent'
+                  )}
+                >
+                  <span className="flex-shrink-0">{item.icon}</span>
+                  <span className="flex-1 text-left">{item.label}</span>
+                </button>
+              </Link>
+            )
+          })}
+        </div>
       </nav>
 
       {/* Footer - Theme Toggle */}

@@ -4,6 +4,8 @@ import { NextRequest, NextResponse } from "next/server";
 interface ChatRequest {
   question: string;
   history?: Array<{ role: string; content: string }>;
+  saveFeedback?: boolean;
+  rating?: 'positive' | 'negative';
 }
 
 interface ChatResponse {
@@ -13,7 +15,7 @@ interface ChatResponse {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const body: ChatRequest = await request.json();
-    const { question, history = [] } = body;
+    const { question, history = [], saveFeedback = false, rating } = body;
 
     // Validate input
     if (!question || question.trim() === "") {
@@ -29,6 +31,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { error: "API key not configured" },
         { status: 500 }
       );
+    }
+
+    // Fetch chat memory for few-shot examples
+    let memoryContext = "";
+    try {
+      const { data: memories, error: memoryError } = await supabase
+        .from("chat_memory")
+        .select("question,answer")
+        .eq("thumbs_up", true)
+        .order("times_retrieved", { ascending: false })
+        .limit(3);
+
+      if (!memoryError && memories && memories.length > 0) {
+        memoryContext = "\n## Ejemplos Anteriores de Preguntas Similares\n";
+        memories.forEach((mem: any, idx: number) => {
+          memoryContext += `\nEjemplo ${idx + 1}:\nP: ${mem.question}\nR: ${mem.answer}\n`;
+        });
+      }
+    } catch (err) {
+      console.error("Error fetching chat memory:", err);
     }
 
     // Determine context fetch strategy based on question keywords
@@ -210,7 +232,7 @@ Clasifica urgencia: CRITICO / ALTO / MEDIO / BAJO
 
 Sugiere acciones concretas con responsable específico cuando sea posible.
 
-Mantén un tono profesional y ejecutivo. Los datos que ves son reales y deben tratarse con seriedad.`;
+Mantén un tono profesional y ejecutivo. Los datos que ves son reales y deben tratarse con seriedad.${memoryContext}`;
 
     // Build messages for Claude
     const messages: Array<{ role: string; content: string }> = [
@@ -252,6 +274,22 @@ Mantén un tono profesional y ejecutivo. Los datos que ves son reales y deben tr
     const result = await response.json();
     const answer =
       result.content[0].type === "text" ? result.content[0].text : "";
+
+    // Save Q&A pair to chat_memory if feedback is positive
+    if (saveFeedback && rating === "positive") {
+      try {
+        await supabase.from("chat_memory").insert({
+          question: question,
+          answer: answer,
+          thumbs_up: true,
+          times_retrieved: 0,
+          created_at: new Date().toISOString(),
+        });
+      } catch (err) {
+        console.error("Error saving chat memory:", err);
+        // Don't fail the response if memory save fails
+      }
+    }
 
     return NextResponse.json({ answer } as ChatResponse);
   } catch (err) {
