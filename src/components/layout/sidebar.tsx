@@ -6,24 +6,32 @@ import { cn } from "@/lib/utils";
 import {
   Brain,
   LayoutDashboard,
+  Mail,
   MessageSquare,
   FileText,
   AlertTriangle,
   CheckSquare,
   Users,
+  Network,
+  Settings,
 } from "lucide-react";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/emails", label: "Emails", icon: Mail },
   { href: "/chat", label: "Preguntar", icon: MessageSquare },
   { href: "/briefings", label: "Briefings", icon: FileText },
   { href: "/alerts", label: "Alertas", icon: AlertTriangle },
   { href: "/actions", label: "Acciones", icon: CheckSquare },
   { href: "/contacts", label: "Contactos", icon: Users },
+  { href: "/knowledge", label: "Knowledge", icon: Network },
+  { href: "/system", label: "Sistema", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+
+  if (pathname === "/login") return null;
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 flex w-64 flex-col border-r border-[var(--border)] bg-[var(--background)]">

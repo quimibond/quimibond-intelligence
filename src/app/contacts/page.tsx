@@ -13,8 +13,10 @@ interface Contact {
   name: string;
   email: string;
   company: string;
+  contact_type: string;
   risk_level: string;
   sentiment_score: number;
+  relationship_score: number;
   last_interaction: string;
   total_emails: number;
   tags: string[];
@@ -96,6 +98,7 @@ export default function ContactsPage() {
               <tr className="border-b border-[var(--border)] bg-[var(--card)] text-left text-xs text-[var(--muted-foreground)]">
                 <th className="px-4 py-3">Nombre</th>
                 <th className="px-4 py-3">Empresa</th>
+                <th className="px-4 py-3">Tipo</th>
                 <th className="px-4 py-3">Riesgo</th>
                 <th className="px-4 py-3">Sentimiento</th>
                 <th className="px-4 py-3">Emails</th>
@@ -113,6 +116,9 @@ export default function ContactsPage() {
                     </div>
                   </td>
                   <td className="px-4 py-3 text-[var(--muted-foreground)]">{contact.company || "—"}</td>
+                  <td className="px-4 py-3">
+                    {contact.contact_type && <Badge variant="outline">{contact.contact_type}</Badge>}
+                  </td>
                   <td className="px-4 py-3">
                     {contact.risk_level && (
                       <Badge variant={riskVariant[contact.risk_level] || "info"}>

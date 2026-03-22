@@ -1,5 +1,5 @@
--- Quimibond Intelligence - Initial Schema
--- 18 tables, 6 RPC functions, RLS policies, vector index
+-- Quimibond Intelligence - Database Schema
+-- 18 tables, 6 RPC functions, RLS policies
 -- This schema supports the commercial intelligence pipeline
 -- populated by the qb19 Odoo addon and consumed by the Next.js frontend.
 
@@ -14,18 +14,19 @@ create extension if not exists "vector";
 -- ============================================================
 create table contacts (
   id            uuid primary key default gen_random_uuid(),
-  name          text,
   email         text unique,
-  phone         text,
+  name          text,
   company       text,
-  city          text,
-  country       text,
-  odoo_partner_id integer unique,
+  contact_type  text,
   risk_level    text check (risk_level in ('low', 'medium', 'high')) default 'low',
   sentiment_score numeric(4,2),
+  relationship_score numeric(4,2),
   last_interaction timestamptz,
   total_emails  integer default 0,
   tags          text[] default '{}',
+  phone         text,
+  city          text,
+  country       text,
   created_at    timestamptz default now(),
   updated_at    timestamptz default now()
 );
@@ -38,145 +39,67 @@ create index idx_contacts_email on contacts (email);
 -- ============================================================
 create table person_profiles (
   id                  uuid primary key default gen_random_uuid(),
-  contact_id          uuid not null references contacts(id) on delete cascade,
-  personality_traits  text[] default '{}',
+  contact_id          uuid references contacts(id) on delete cascade,
+  canonical_key       text,
+  name                text,
+  email               text,
+  company             text,
+  role                text,
+  department          text,
+  decision_power      text,
   communication_style text,
+  personality_traits  text[] default '{}',
   interests           text[] default '{}',
   decision_factors    text[] default '{}',
   summary             text,
   created_at          timestamptz default now(),
-  updated_at          timestamptz default now(),
-  unique (contact_id)
+  updated_at          timestamptz default now()
 );
 
 -- ============================================================
--- 3. email_threads
+-- 3. threads
 -- ============================================================
-create table email_threads (
-  id          uuid primary key default gen_random_uuid(),
-  subject     text,
-  contact_id  uuid references contacts(id) on delete set null,
-  message_count integer default 0,
-  last_message_at timestamptz,
-  created_at  timestamptz default now()
+create table threads (
+  id                      uuid primary key default gen_random_uuid(),
+  gmail_thread_id         text unique,
+  subject                 text,
+  status                  text,
+  message_count           integer default 0,
+  participant_emails      text[] default '{}',
+  hours_without_response  numeric,
+  last_sender             text,
+  last_sender_type        text,
+  account                 text,
+  created_at              timestamptz default now()
 );
-
-create index idx_threads_contact on email_threads (contact_id);
 
 -- ============================================================
 -- 4. emails
 -- ============================================================
 create table emails (
-  id            uuid primary key default gen_random_uuid(),
-  thread_id     uuid references email_threads(id) on delete set null,
-  contact_id    uuid references contacts(id) on delete set null,
-  account_email text not null,
-  from_address  text,
-  to_addresses  text[] default '{}',
-  cc_addresses  text[] default '{}',
-  subject       text,
-  body_text     text,
-  body_html     text,
-  direction     text check (direction in ('inbound', 'outbound')) not null,
-  message_id    text unique,
-  in_reply_to   text,
-  received_at   timestamptz,
-  processed     boolean default false,
-  created_at    timestamptz default now()
+  id                bigserial primary key,
+  account           text,
+  sender            text,
+  recipient         text,
+  subject           text,
+  body              text,
+  snippet           text,
+  email_date        timestamptz,
+  gmail_message_id  text unique,
+  gmail_thread_id   text,
+  sender_type       text,
+  has_attachments   boolean default false,
+  kg_processed      boolean default false,
+  embedding         vector(1024),
+  created_at        timestamptz default now()
 );
 
-create index idx_emails_contact on emails (contact_id);
-create index idx_emails_thread on emails (thread_id);
-create index idx_emails_received on emails (received_at desc);
-create index idx_emails_processed on emails (processed) where not processed;
+create index idx_emails_date on emails (email_date desc);
+create index idx_emails_sender on emails (sender);
+create index idx_emails_thread on emails (gmail_thread_id);
 
 -- ============================================================
--- 5. email_attachments
--- ============================================================
-create table email_attachments (
-  id          uuid primary key default gen_random_uuid(),
-  email_id    uuid not null references emails(id) on delete cascade,
-  filename    text not null,
-  mime_type   text,
-  size_bytes  integer,
-  storage_path text,
-  created_at  timestamptz default now()
-);
-
--- ============================================================
--- 6. email_analyses
--- ============================================================
-create table email_analyses (
-  id            uuid primary key default gen_random_uuid(),
-  email_id      uuid not null references emails(id) on delete cascade,
-  sentiment     numeric(4,2),
-  intent        text,
-  summary       text,
-  key_phrases   text[] default '{}',
-  language      text default 'es',
-  model_used    text,
-  raw_response  jsonb,
-  created_at    timestamptz default now(),
-  unique (email_id)
-);
-
--- ============================================================
--- 7. topics
--- ============================================================
-create table topics (
-  id          uuid primary key default gen_random_uuid(),
-  name        text not null unique,
-  category    text,
-  created_at  timestamptz default now()
-);
-
--- ============================================================
--- 8. email_topics (many-to-many)
--- ============================================================
-create table email_topics (
-  email_id  uuid not null references emails(id) on delete cascade,
-  topic_id  uuid not null references topics(id) on delete cascade,
-  relevance numeric(3,2) default 1.0,
-  primary key (email_id, topic_id)
-);
-
--- ============================================================
--- 9. facts
--- ============================================================
-create table facts (
-  id            uuid primary key default gen_random_uuid(),
-  contact_id    uuid references contacts(id) on delete set null,
-  email_id      uuid references emails(id) on delete set null,
-  fact_text     text not null,
-  fact_type     text,
-  confidence    numeric(3,2) default 1.0,
-  source_type   text check (source_type in ('email', 'call', 'manual', 'system')) default 'email',
-  valid_from    timestamptz default now(),
-  valid_until   timestamptz,
-  created_at    timestamptz default now()
-);
-
-create index idx_facts_contact on facts (contact_id);
-
--- ============================================================
--- 10. contact_interactions
--- ============================================================
-create table contact_interactions (
-  id              uuid primary key default gen_random_uuid(),
-  contact_id      uuid not null references contacts(id) on delete cascade,
-  interaction_type text not null,
-  channel         text,
-  summary         text,
-  sentiment       numeric(4,2),
-  occurred_at     timestamptz not null,
-  email_id        uuid references emails(id) on delete set null,
-  created_at      timestamptz default now()
-);
-
-create index idx_interactions_contact on contact_interactions (contact_id, occurred_at desc);
-
--- ============================================================
--- 11. alerts
+-- 5. alerts
 -- ============================================================
 create table alerts (
   id            uuid primary key default gen_random_uuid(),
@@ -184,12 +107,11 @@ create table alerts (
   severity      text check (severity in ('low', 'medium', 'high', 'critical')) default 'medium',
   title         text not null,
   description   text,
-  contact_id    uuid references contacts(id) on delete set null,
   contact_name  text,
-  email_id      uuid references emails(id) on delete set null,
+  contact_id    uuid references contacts(id) on delete set null,
+  account       text,
   state         text check (state in ('new', 'acknowledged', 'resolved')) default 'new',
   is_read       boolean default false,
-  rule_id       uuid,
   created_at    timestamptz default now(),
   resolved_at   timestamptz
 );
@@ -199,45 +121,28 @@ create index idx_alerts_contact on alerts (contact_id);
 create index idx_alerts_created on alerts (created_at desc);
 
 -- ============================================================
--- 12. alert_rules
--- ============================================================
-create table alert_rules (
-  id            uuid primary key default gen_random_uuid(),
-  name          text not null,
-  description   text,
-  alert_type    text not null,
-  severity      text default 'medium',
-  conditions    jsonb not null default '{}',
-  is_active     boolean default true,
-  created_at    timestamptz default now(),
-  updated_at    timestamptz default now()
-);
-
-alter table alerts add constraint fk_alerts_rule foreign key (rule_id) references alert_rules(id) on delete set null;
-
--- ============================================================
--- 13. action_items
+-- 6. action_items
 -- ============================================================
 create table action_items (
-  id            uuid primary key default gen_random_uuid(),
-  action_type   text not null,
-  description   text not null,
-  contact_id    uuid references contacts(id) on delete set null,
-  contact_name  text,
-  email_id      uuid references emails(id) on delete set null,
-  priority      text check (priority in ('low', 'medium', 'high')) default 'medium',
-  due_date      date,
-  state         text check (state in ('pending', 'completed', 'dismissed')) default 'pending',
-  created_at    timestamptz default now(),
-  completed_at  timestamptz
+  id              uuid primary key default gen_random_uuid(),
+  action_type     text not null,
+  description     text not null,
+  contact_name    text,
+  contact_id      uuid references contacts(id) on delete set null,
+  priority        text check (priority in ('low', 'medium', 'high')) default 'medium',
+  due_date        date,
+  state           text check (state in ('pending', 'completed', 'dismissed')) default 'pending',
+  status          text,
+  assignee_email  text,
+  completed_date  timestamptz,
+  created_at      timestamptz default now()
 );
 
 create index idx_actions_state on action_items (state);
-create index idx_actions_contact on action_items (contact_id);
 create index idx_actions_due on action_items (due_date) where state = 'pending';
 
 -- ============================================================
--- 14. briefings
+-- 7. briefings
 -- ============================================================
 create table briefings (
   id              uuid primary key default gen_random_uuid(),
@@ -254,107 +159,191 @@ create table briefings (
 create index idx_briefings_created on briefings (created_at desc);
 
 -- ============================================================
--- 15. briefing_sections
+-- 8. response_metrics
 -- ============================================================
-create table briefing_sections (
-  id            uuid primary key default gen_random_uuid(),
-  briefing_id   uuid not null references briefings(id) on delete cascade,
-  section_type  text not null,
-  title         text,
-  content       text,
-  sort_order    integer default 0,
-  metadata      jsonb default '{}'
+create table response_metrics (
+  id                uuid primary key default gen_random_uuid(),
+  account           text,
+  contact_id        uuid references contacts(id) on delete set null,
+  avg_response_time numeric,
+  total_sent        integer default 0,
+  total_received    integer default 0,
+  period_start      timestamptz,
+  period_end        timestamptz,
+  created_at        timestamptz default now()
 );
 
 -- ============================================================
--- 16. embeddings
+-- 9. account_summaries
 -- ============================================================
-create table embeddings (
-  id            uuid primary key default gen_random_uuid(),
-  source_type   text not null,
-  source_id     uuid not null,
-  content_hash  text,
-  embedding     vector(1536),
-  model_used    text default 'text-embedding-3-small',
-  created_at    timestamptz default now()
-);
-
-create index idx_embeddings_source on embeddings (source_type, source_id);
-create index idx_embeddings_vector on embeddings using ivfflat (embedding vector_cosine_ops) with (lists = 100);
-
--- ============================================================
--- 17. pipeline_runs
--- ============================================================
-create table pipeline_runs (
-  id            uuid primary key default gen_random_uuid(),
-  pipeline_name text not null,
-  status        text check (status in ('running', 'completed', 'failed')) default 'running',
-  started_at    timestamptz default now(),
-  finished_at   timestamptz,
-  emails_processed integer default 0,
-  metadata      jsonb default '{}'
+create table account_summaries (
+  id              uuid primary key default gen_random_uuid(),
+  account         text,
+  period          text,
+  total_emails    integer default 0,
+  total_contacts  integer default 0,
+  summary         text,
+  created_at      timestamptz default now()
 );
 
 -- ============================================================
--- 18. pipeline_logs
+-- 10. daily_summaries
 -- ============================================================
-create table pipeline_logs (
+create table daily_summaries (
+  id              uuid primary key default gen_random_uuid(),
+  account         text,
+  summary_date    date,
+  email_count     integer default 0,
+  summary         text,
+  key_events      jsonb default '[]',
+  created_at      timestamptz default now()
+);
+
+-- ============================================================
+-- 11. entities
+-- ============================================================
+create table entities (
+  id              uuid primary key default gen_random_uuid(),
+  entity_type     text not null,
+  name            text not null,
+  canonical_name  text,
+  email           text,
+  attributes      jsonb default '{}',
+  last_seen       timestamptz,
+  created_at      timestamptz default now()
+);
+
+create index idx_entities_type on entities (entity_type);
+create index idx_entities_name on entities (canonical_name);
+
+-- ============================================================
+-- 12. entity_mentions
+-- ============================================================
+create table entity_mentions (
   id          uuid primary key default gen_random_uuid(),
-  run_id      uuid not null references pipeline_runs(id) on delete cascade,
-  level       text check (level in ('debug', 'info', 'warning', 'error')) default 'info',
-  message     text not null,
-  details     jsonb,
+  entity_id   uuid not null references entities(id) on delete cascade,
+  email_id    bigint,
+  context     text,
   created_at  timestamptz default now()
 );
 
-create index idx_plogs_run on pipeline_logs (run_id, created_at);
+-- ============================================================
+-- 13. entity_relationships
+-- ============================================================
+create table entity_relationships (
+  id                uuid primary key default gen_random_uuid(),
+  entity_a_id       uuid not null references entities(id) on delete cascade,
+  entity_b_id       uuid not null references entities(id) on delete cascade,
+  relationship_type text not null,
+  confidence        numeric(3,2) default 1.0,
+  created_at        timestamptz default now()
+);
 
 -- ============================================================
--- RLS Policies
+-- 14. facts
 -- ============================================================
--- Enable RLS on all tables (data is accessed via service key from
--- the Odoo pipeline and via anon key from the Next.js frontend).
+create table facts (
+  id            uuid primary key default gen_random_uuid(),
+  contact_id    uuid references contacts(id) on delete set null,
+  email_id      bigint,
+  fact_text     text not null,
+  fact_type     text,
+  source_type   text default 'email',
+  confidence    numeric(3,2) default 1.0,
+  created_at    timestamptz default now()
+);
 
-alter table contacts            enable row level security;
-alter table person_profiles     enable row level security;
-alter table email_threads       enable row level security;
-alter table emails              enable row level security;
-alter table email_attachments   enable row level security;
-alter table email_analyses      enable row level security;
-alter table topics              enable row level security;
-alter table email_topics        enable row level security;
-alter table facts               enable row level security;
-alter table contact_interactions enable row level security;
-alter table alerts              enable row level security;
-alter table alert_rules         enable row level security;
-alter table action_items        enable row level security;
-alter table briefings           enable row level security;
-alter table briefing_sections   enable row level security;
-alter table embeddings          enable row level security;
-alter table pipeline_runs       enable row level security;
-alter table pipeline_logs       enable row level security;
+create index idx_facts_contact on facts (contact_id);
 
--- Anon users: read-only access to business tables
-create policy "anon_read_contacts"       on contacts            for select to anon using (true);
-create policy "anon_read_profiles"       on person_profiles     for select to anon using (true);
-create policy "anon_read_threads"        on email_threads       for select to anon using (true);
-create policy "anon_read_emails"         on emails              for select to anon using (true);
-create policy "anon_read_attachments"    on email_attachments   for select to anon using (true);
-create policy "anon_read_analyses"       on email_analyses      for select to anon using (true);
-create policy "anon_read_topics"         on topics              for select to anon using (true);
-create policy "anon_read_email_topics"   on email_topics        for select to anon using (true);
-create policy "anon_read_facts"          on facts               for select to anon using (true);
-create policy "anon_read_interactions"   on contact_interactions for select to anon using (true);
-create policy "anon_read_alerts"         on alerts              for select to anon using (true);
-create policy "anon_read_alert_rules"    on alert_rules         for select to anon using (true);
-create policy "anon_read_actions"        on action_items        for select to anon using (true);
-create policy "anon_read_briefings"      on briefings           for select to anon using (true);
-create policy "anon_read_sections"       on briefing_sections   for select to anon using (true);
-create policy "anon_read_embeddings"     on embeddings          for select to anon using (true);
-create policy "anon_read_pipeline_runs"  on pipeline_runs       for select to anon using (true);
-create policy "anon_read_pipeline_logs"  on pipeline_logs       for select to anon using (true);
+-- ============================================================
+-- 15. topics
+-- ============================================================
+create table topics (
+  id          uuid primary key default gen_random_uuid(),
+  name        text not null unique,
+  category    text,
+  created_at  timestamptz default now()
+);
 
--- Anon users: can update alert state and action_item state (for the frontend UI)
+-- ============================================================
+-- 16. sync_state
+-- ============================================================
+create table sync_state (
+  id              uuid primary key default gen_random_uuid(),
+  account         text unique not null,
+  last_history_id text,
+  emails_synced   integer default 0,
+  updated_at      timestamptz default now()
+);
+
+-- ============================================================
+-- 17. communication_patterns
+-- ============================================================
+create table communication_patterns (
+  id              uuid primary key default gen_random_uuid(),
+  contact_id      uuid references contacts(id) on delete cascade,
+  pattern_type    text,
+  description     text,
+  frequency       text,
+  confidence      numeric(3,2) default 1.0,
+  created_at      timestamptz default now()
+);
+
+-- ============================================================
+-- 18. system_learning
+-- ============================================================
+create table system_learning (
+  id              uuid primary key default gen_random_uuid(),
+  learning_type   text not null,
+  key             text,
+  value           jsonb default '{}',
+  source          text,
+  created_at      timestamptz default now()
+);
+
+-- ============================================================
+-- RLS - Enable on all tables
+-- ============================================================
+alter table contacts              enable row level security;
+alter table person_profiles       enable row level security;
+alter table threads               enable row level security;
+alter table emails                enable row level security;
+alter table alerts                enable row level security;
+alter table action_items          enable row level security;
+alter table briefings             enable row level security;
+alter table response_metrics      enable row level security;
+alter table account_summaries     enable row level security;
+alter table daily_summaries       enable row level security;
+alter table entities              enable row level security;
+alter table entity_mentions       enable row level security;
+alter table entity_relationships  enable row level security;
+alter table facts                 enable row level security;
+alter table topics                enable row level security;
+alter table sync_state            enable row level security;
+alter table communication_patterns enable row level security;
+alter table system_learning       enable row level security;
+
+-- Anon: read-only on all tables
+create policy "anon_read_contacts"        on contacts              for select to anon using (true);
+create policy "anon_read_profiles"        on person_profiles       for select to anon using (true);
+create policy "anon_read_threads"         on threads               for select to anon using (true);
+create policy "anon_read_emails"          on emails                for select to anon using (true);
+create policy "anon_read_alerts"          on alerts                for select to anon using (true);
+create policy "anon_read_actions"         on action_items          for select to anon using (true);
+create policy "anon_read_briefings"       on briefings             for select to anon using (true);
+create policy "anon_read_response_metrics" on response_metrics     for select to anon using (true);
+create policy "anon_read_account_summaries" on account_summaries   for select to anon using (true);
+create policy "anon_read_daily_summaries" on daily_summaries       for select to anon using (true);
+create policy "anon_read_entities"        on entities              for select to anon using (true);
+create policy "anon_read_entity_mentions" on entity_mentions       for select to anon using (true);
+create policy "anon_read_entity_rels"     on entity_relationships  for select to anon using (true);
+create policy "anon_read_facts"           on facts                 for select to anon using (true);
+create policy "anon_read_topics"          on topics                for select to anon using (true);
+create policy "anon_read_sync_state"      on sync_state            for select to anon using (true);
+create policy "anon_read_comm_patterns"   on communication_patterns for select to anon using (true);
+create policy "anon_read_sys_learning"    on system_learning       for select to anon using (true);
+
+-- Anon: can update alert state and action_item state (frontend UI)
 create policy "anon_update_alerts"  on alerts       for update to anon using (true) with check (true);
 create policy "anon_update_actions" on action_items  for update to anon using (true) with check (true);
 
@@ -364,32 +353,80 @@ create policy "anon_update_actions" on action_items  for update to anon using (t
 -- RPC Functions
 -- ============================================================
 
--- 1. search_similar_emails: vector similarity search
+-- 1. upsert_contact
+create or replace function upsert_contact(
+  p_email text,
+  p_name text default null,
+  p_company text default null,
+  p_contact_type text default null
+)
+returns uuid
+language plpgsql
+as $$
+declare
+  v_id uuid;
+begin
+  insert into contacts (email, name, company, contact_type)
+  values (p_email, p_name, p_company, p_contact_type)
+  on conflict (email) do update set
+    name = coalesce(excluded.name, contacts.name),
+    company = coalesce(excluded.company, contacts.company),
+    contact_type = coalesce(excluded.contact_type, contacts.contact_type),
+    updated_at = now()
+  returning id into v_id;
+  return v_id;
+end;
+$$;
+
+-- 2. get_account_scorecard
+create or replace function get_account_scorecard(p_account text)
+returns json
+language plpgsql
+as $$
+declare
+  result json;
+begin
+  select json_build_object(
+    'total_emails', (select count(*) from emails where account = p_account),
+    'open_alerts', (select count(*) from alerts where account = p_account and state = 'new'),
+    'pending_actions', (select count(*) from action_items where state = 'pending'),
+    'at_risk_contacts', (select count(*) from contacts where risk_level = 'high'),
+    'sync', (select row_to_json(s) from sync_state s where s.account = p_account)
+  ) into result;
+  return result;
+end;
+$$;
+
+-- 3. search_similar_emails
 create or replace function search_similar_emails(
-  query_embedding vector(1536),
+  query_embedding vector(1024),
   match_count int default 10,
   similarity_threshold float default 0.7
 )
 returns table (
-  source_id uuid,
+  id bigint,
+  subject text,
+  snippet text,
+  sender text,
+  email_date timestamptz,
   similarity float
 )
 language plpgsql
 as $$
 begin
   return query
-    select e.source_id,
+    select e.id, e.subject, e.snippet, e.sender, e.email_date,
            1 - (e.embedding <=> query_embedding) as similarity
-    from embeddings e
-    where e.source_type = 'email'
+    from emails e
+    where e.embedding is not null
       and 1 - (e.embedding <=> query_embedding) > similarity_threshold
     order by e.embedding <=> query_embedding
     limit match_count;
 end;
 $$;
 
--- 2. get_contact_summary: aggregated contact info
-create or replace function get_contact_summary(p_contact_id uuid)
+-- 4. get_entity_intelligence
+create or replace function get_entity_intelligence(p_entity_id uuid)
 returns json
 language plpgsql
 as $$
@@ -397,164 +434,64 @@ declare
   result json;
 begin
   select json_build_object(
-    'contact', row_to_json(c),
-    'profile', (select row_to_json(pp) from person_profiles pp where pp.contact_id = c.id),
-    'open_alerts', (select count(*) from alerts a where a.contact_id = c.id and a.state = 'new'),
-    'pending_actions', (select count(*) from action_items ai where ai.contact_id = c.id and ai.state = 'pending'),
-    'recent_facts', (
-      select coalesce(json_agg(row_to_json(f)), '[]'::json)
-      from (select * from facts where contact_id = c.id order by created_at desc limit 10) f
+    'entity', row_to_json(ent),
+    'mentions', (
+      select coalesce(json_agg(row_to_json(m)), '[]'::json)
+      from (select * from entity_mentions where entity_id = ent.id order by created_at desc limit 20) m
     ),
-    'recent_interactions', (
-      select coalesce(json_agg(row_to_json(ci)), '[]'::json)
-      from (select * from contact_interactions where contact_id = c.id order by occurred_at desc limit 10) ci
+    'relationships', (
+      select coalesce(json_agg(json_build_object(
+        'type', er.relationship_type,
+        'confidence', er.confidence,
+        'other', (select row_to_json(e2) from entities e2 where e2.id = case when er.entity_a_id = ent.id then er.entity_b_id else er.entity_a_id end)
+      )), '[]'::json)
+      from entity_relationships er
+      where er.entity_a_id = ent.id or er.entity_b_id = ent.id
     )
   ) into result
-  from contacts c
-  where c.id = p_contact_id;
-
+  from entities ent
+  where ent.id = p_entity_id;
   return result;
 end;
 $$;
 
--- 3. get_dashboard_stats: KPIs for the dashboard
-create or replace function get_dashboard_stats()
+-- 5. get_my_pending_actions
+create or replace function get_my_pending_actions(p_email text default null)
 returns json
 language plpgsql
 as $$
 declare
   result json;
 begin
-  select json_build_object(
-    'total_emails', (select count(*) from emails),
-    'open_alerts', (select count(*) from alerts where state = 'new'),
-    'pending_actions', (select count(*) from action_items where state = 'pending'),
-    'at_risk_contacts', (select count(*) from contacts where risk_level = 'high'),
-    'emails_last_24h', (select count(*) from emails where received_at > now() - interval '24 hours'),
-    'pipeline_last_run', (
-      select json_build_object('status', status, 'started_at', started_at, 'emails_processed', emails_processed)
-      from pipeline_runs order by started_at desc limit 1
-    )
-  ) into result;
-
+  select coalesce(json_agg(row_to_json(a)), '[]'::json) into result
+  from (
+    select * from action_items
+    where state = 'pending'
+      and (p_email is null or assignee_email = p_email)
+    order by due_date asc nulls last
+    limit 50
+  ) a;
   return result;
 end;
 $$;
 
--- 4. get_email_thread_context: full thread with analyses
-create or replace function get_email_thread_context(p_thread_id uuid)
-returns json
-language plpgsql
-as $$
-declare
-  result json;
-begin
-  select json_build_object(
-    'thread', row_to_json(et),
-    'messages', (
-      select coalesce(json_agg(
-        json_build_object(
-          'email', row_to_json(e),
-          'analysis', (select row_to_json(ea) from email_analyses ea where ea.email_id = e.id)
-        ) order by e.received_at
-      ), '[]'::json)
-      from emails e where e.thread_id = et.id
-    )
-  ) into result
-  from email_threads et
-  where et.id = p_thread_id;
-
-  return result;
-end;
-$$;
-
--- 5. refresh_contact_scores: recalculate risk and sentiment
-create or replace function refresh_contact_scores()
-returns integer
-language plpgsql
-as $$
-declare
-  updated_count integer;
-begin
-  with scores as (
-    select
-      c.id,
-      coalesce(avg(ea.sentiment), 0) as avg_sentiment,
-      count(distinct e.id) as email_count,
-      max(e.received_at) as last_email,
-      case
-        when coalesce(avg(ea.sentiment), 0) < -0.3 then 'high'
-        when coalesce(avg(ea.sentiment), 0) < 0.1 then 'medium'
-        else 'low'
-      end as computed_risk
-    from contacts c
-    left join emails e on e.contact_id = c.id
-    left join email_analyses ea on ea.email_id = e.id
-    group by c.id
-  )
-  update contacts c
-  set
-    sentiment_score = s.avg_sentiment,
-    total_emails = s.email_count,
-    last_interaction = s.last_email,
-    risk_level = s.computed_risk,
-    updated_at = now()
-  from scores s
-  where c.id = s.id;
-
-  get diagnostics updated_count = row_count;
-  return updated_count;
-end;
-$$;
-
--- 6. get_briefing_data: gather data for briefing generation
-create or replace function get_briefing_data(
-  p_period_start timestamptz,
-  p_period_end timestamptz
+-- 6. upsert_topic
+create or replace function upsert_topic(
+  p_name text,
+  p_category text default null
 )
-returns json
+returns uuid
 language plpgsql
 as $$
 declare
-  result json;
+  v_id uuid;
 begin
-  select json_build_object(
-    'period', json_build_object('start', p_period_start, 'end', p_period_end),
-    'email_count', (
-      select count(*) from emails where received_at between p_period_start and p_period_end
-    ),
-    'new_alerts', (
-      select coalesce(json_agg(row_to_json(a)), '[]'::json)
-      from alerts a where a.created_at between p_period_start and p_period_end
-    ),
-    'completed_actions', (
-      select count(*) from action_items
-      where completed_at between p_period_start and p_period_end
-    ),
-    'top_contacts', (
-      select coalesce(json_agg(row_to_json(tc)), '[]'::json)
-      from (
-        select c.name, c.company, c.risk_level, c.sentiment_score, count(e.id) as period_emails
-        from contacts c
-        join emails e on e.contact_id = c.id
-        where e.received_at between p_period_start and p_period_end
-        group by c.id
-        order by count(e.id) desc
-        limit 10
-      ) tc
-    ),
-    'key_facts', (
-      select coalesce(json_agg(row_to_json(f)), '[]'::json)
-      from (
-        select * from facts
-        where created_at between p_period_start and p_period_end
-        order by confidence desc
-        limit 20
-      ) f
-    )
-  ) into result;
-
-  return result;
+  insert into topics (name, category)
+  values (p_name, p_category)
+  on conflict (name) do update set
+    category = coalesce(excluded.category, topics.category)
+  returning id into v_id;
+  return v_id;
 end;
 $$;
 
@@ -575,7 +512,4 @@ create trigger trg_contacts_updated before update on contacts
   for each row execute function set_updated_at();
 
 create trigger trg_profiles_updated before update on person_profiles
-  for each row execute function set_updated_at();
-
-create trigger trg_alert_rules_updated before update on alert_rules
   for each row execute function set_updated_at();

@@ -15,12 +15,13 @@ interface Contact {
   name: string;
   email: string;
   company: string;
+  contact_type: string;
   risk_level: string;
   sentiment_score: number;
+  relationship_score: number;
   last_interaction: string;
   total_emails: number;
   tags: string[];
-  odoo_partner_id: number;
   phone: string;
   city: string;
   country: string;
@@ -29,8 +30,12 @@ interface Contact {
 interface PersonProfile {
   id: string;
   contact_id: string;
-  personality_traits: string[];
+  name: string;
+  role: string;
+  department: string;
+  decision_power: string;
   communication_style: string;
+  personality_traits: string[];
   interests: string[];
   decision_factors: string[];
   summary: string;
@@ -70,7 +75,7 @@ export default function ContactDetailPage() {
     async function fetch() {
       const [contactRes, profileRes, alertsRes, actionsRes] = await Promise.all([
         supabase.from("contacts").select("*").eq("id", params.id).single(),
-        supabase.from("person_profiles").select("*").eq("contact_id", params.id).single(),
+        supabase.from("person_profiles").select("*").eq("contact_id", params.id).maybeSingle(),
         supabase.from("alerts").select("*").eq("contact_id", params.id).order("created_at", { ascending: false }).limit(10),
         supabase.from("action_items").select("*").eq("contact_id", params.id).order("created_at", { ascending: false }).limit(10),
       ]);
@@ -114,12 +119,15 @@ export default function ContactDetailPage() {
         </Link>
         <div>
           <h1 className="text-2xl font-bold">{contact.name || contact.email}</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">{contact.company}</p>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="text-sm text-[var(--muted-foreground)]">{contact.company}</span>
+            {contact.contact_type && <Badge variant="outline">{contact.contact_type}</Badge>}
+          </div>
         </div>
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
         <Card>
           <CardContent className="p-4 text-center">
             <p className="text-xs text-[var(--muted-foreground)]">Riesgo</p>
@@ -140,6 +148,14 @@ export default function ContactDetailPage() {
               (contact.sentiment_score ?? 0) <= -0.2 ? "text-red-400" : ""
             }`}>
               {contact.sentiment_score?.toFixed(2) ?? "—"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-4 text-center">
+            <p className="text-xs text-[var(--muted-foreground)]">Relacion</p>
+            <p className="mt-1 text-lg font-bold">
+              {contact.relationship_score?.toFixed(2) ?? "—"}
             </p>
           </CardContent>
         </Card>
@@ -198,12 +214,32 @@ export default function ContactDetailPage() {
           </CardHeader>
           <CardContent className="space-y-3">
             {profile.summary && <p className="text-sm">{profile.summary}</p>}
-            {profile.communication_style && (
-              <div>
-                <p className="text-xs text-[var(--muted-foreground)]">Estilo de comunicacion</p>
-                <p className="text-sm">{profile.communication_style}</p>
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-2 text-sm">
+              {profile.role && (
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Rol</p>
+                  <p>{profile.role}</p>
+                </div>
+              )}
+              {profile.department && (
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Departamento</p>
+                  <p>{profile.department}</p>
+                </div>
+              )}
+              {profile.decision_power && (
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Poder de decision</p>
+                  <p>{profile.decision_power}</p>
+                </div>
+              )}
+              {profile.communication_style && (
+                <div>
+                  <p className="text-xs text-[var(--muted-foreground)]">Estilo de comunicacion</p>
+                  <p>{profile.communication_style}</p>
+                </div>
+              )}
+            </div>
             {profile.personality_traits?.length > 0 && (
               <div>
                 <p className="text-xs text-[var(--muted-foreground)] mb-1">Rasgos</p>
@@ -220,6 +256,16 @@ export default function ContactDetailPage() {
                 <div className="flex flex-wrap gap-1">
                   {profile.decision_factors.map((f, i) => (
                     <Badge key={i} variant="outline">{f}</Badge>
+                  ))}
+                </div>
+              </div>
+            )}
+            {profile.interests?.length > 0 && (
+              <div>
+                <p className="text-xs text-[var(--muted-foreground)] mb-1">Intereses</p>
+                <div className="flex flex-wrap gap-1">
+                  {profile.interests.map((interest, i) => (
+                    <Badge key={i} variant="info">{interest}</Badge>
                   ))}
                 </div>
               </div>

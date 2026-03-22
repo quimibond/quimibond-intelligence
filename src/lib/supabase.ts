@@ -12,12 +12,10 @@ export function getSupabaseClient(): SupabaseClient {
 }
 
 // Lazy proxy so `supabase.from(...)` works without calling getSupabaseClient() everywhere
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const supabase: SupabaseClient = new Proxy({} as any, {
+export const supabase: SupabaseClient = new Proxy({} as SupabaseClient, {
   get(_, prop) {
     const client = getSupabaseClient();
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const val = (client as any)[prop];
-    return typeof val === "function" ? val.bind(client) : val;
+    const val = (client as unknown as Record<string | symbol, unknown>)[prop];
+    return typeof val === "function" ? (val as (...args: unknown[]) => unknown).bind(client) : val;
   },
 });
