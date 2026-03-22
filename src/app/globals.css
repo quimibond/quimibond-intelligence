@@ -1,10 +1,13 @@
 @import "tailwindcss";
 
 :root {
+  /* ── Core theme (shadcn standard) ─────────────────────────────── */
   --background: #09090b;
   --foreground: #fafafa;
   --card: #18181b;
   --card-foreground: #fafafa;
+  --popover: #18181b;
+  --popover-foreground: #fafafa;
   --primary: #3b82f6;
   --primary-foreground: #fafafa;
   --secondary: #27272a;
@@ -14,27 +17,73 @@
   --accent: #27272a;
   --accent-foreground: #fafafa;
   --destructive: #ef4444;
+  --destructive-foreground: #fafafa;
   --border: #27272a;
+  --input: #27272a;
   --ring: #3b82f6;
   --radius: 0.5rem;
 
-  /* Game colors */
+  /* ── Semantic: Severity levels ─────────────────────────────────── */
+  --severity-critical: #ef4444;
+  --severity-critical-foreground: #fecaca;
+  --severity-critical-muted: rgba(239, 68, 68, 0.15);
+  --severity-high: #f59e0b;
+  --severity-high-foreground: #fde68a;
+  --severity-high-muted: rgba(245, 158, 11, 0.15);
+  --severity-medium: #22d3ee;
+  --severity-medium-foreground: #a5f3fc;
+  --severity-medium-muted: rgba(34, 211, 238, 0.15);
+  --severity-low: #6b7280;
+  --severity-low-foreground: #d1d5db;
+  --severity-low-muted: rgba(107, 114, 128, 0.15);
+
+  /* ── Semantic: Status / Feedback ───────────────────────────────── */
+  --success: #10b981;
+  --success-foreground: #a7f3d0;
+  --success-muted: rgba(16, 185, 129, 0.15);
+  --warning: #f59e0b;
+  --warning-foreground: #fde68a;
+  --warning-muted: rgba(245, 158, 11, 0.15);
+  --info: #3b82f6;
+  --info-foreground: #bfdbfe;
+  --info-muted: rgba(59, 130, 246, 0.15);
+
+  /* ── Semantic: Risk levels ─────────────────────────────────────── */
+  --risk-high: var(--severity-critical);
+  --risk-high-muted: var(--severity-critical-muted);
+  --risk-medium: var(--severity-high);
+  --risk-medium-muted: var(--severity-high-muted);
+  --risk-low: var(--success);
+  --risk-low-muted: var(--success-muted);
+
+  /* ── Gamification ──────────────────────────────────────────────── */
   --xp-bar: #22d3ee;
-  --xp-glow: #06b6d4;
-  --health-high: #10b981;
-  --health-mid: #f59e0b;
-  --health-low: #ef4444;
+  --xp-glow: #818cf8;
+  --health-high: var(--success);
+  --health-mid: var(--warning);
+  --health-low: var(--destructive);
   --quest-epic: #a855f7;
-  --quest-rare: #3b82f6;
+  --quest-epic-muted: rgba(168, 85, 247, 0.15);
+  --quest-rare: var(--primary);
+  --quest-rare-muted: rgba(59, 130, 246, 0.15);
   --quest-common: #6b7280;
+  --quest-common-muted: rgba(107, 114, 128, 0.15);
   --achievement-gold: #fbbf24;
   --achievement-silver: #94a3b8;
   --achievement-bronze: #d97706;
-  --neon-cyan: #22d3ee;
-  --neon-purple: #a855f7;
-  --neon-green: #10b981;
-  --neon-red: #ef4444;
-  --neon-amber: #f59e0b;
+
+  /* ── Role colors ───────────────────────────────────────────────── */
+  --role-decisor: var(--warning);
+  --role-influencer: var(--xp-bar);
+  --role-contact: var(--muted-foreground);
+
+  /* ── Accent palette (for entity types, categories) ─────────────── */
+  --accent-cyan: #22d3ee;
+  --accent-purple: #a855f7;
+  --accent-pink: #ec4899;
+  --accent-teal: #14b8a6;
+  --accent-indigo: #6366f1;
+  --accent-blue: #3b82f6;
 }
 
 body {
@@ -48,7 +97,7 @@ body {
 ::-webkit-scrollbar-track { background: var(--background); }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
-/* === GAMIFICATION ANIMATIONS === */
+/* === ANIMATIONS === */
 
 @keyframes xp-fill {
   from { width: 0%; }
@@ -91,8 +140,8 @@ body {
 }
 
 @keyframes border-glow {
-  0%, 100% { border-color: rgba(59, 130, 246, 0.3); }
-  50% { border-color: rgba(59, 130, 246, 0.7); }
+  0%, 100% { border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--primary) 70%, transparent); }
 }
 
 @keyframes count-up {
@@ -100,7 +149,8 @@ body {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* Gamified card with glow border */
+/* === CARD EFFECTS === */
+
 .game-card {
   position: relative;
   overflow: hidden;
@@ -109,8 +159,8 @@ body {
 }
 
 .game-card:hover {
-  border-color: rgba(59, 130, 246, 0.4);
-  box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--primary) 10%, transparent);
 }
 
 .game-card::after {
@@ -129,19 +179,20 @@ body {
   opacity: 0.6;
 }
 
-/* XP Bar */
+/* === XP / HEALTH BARS === */
+
 .xp-bar-track {
   height: 8px;
   background: var(--secondary);
-  border-radius: 4px;
+  border-radius: var(--radius);
   overflow: hidden;
   position: relative;
 }
 
 .xp-bar-fill {
   height: 100%;
-  border-radius: 4px;
-  background: linear-gradient(90deg, var(--xp-bar), #818cf8);
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--xp-bar), var(--xp-glow));
   animation: xp-fill 1.2s ease-out forwards;
   position: relative;
 }
@@ -155,7 +206,6 @@ body {
   animation: shimmer 2s ease-in-out infinite;
 }
 
-/* Health bar */
 .health-bar-track {
   height: 6px;
   background: var(--secondary);
@@ -169,76 +219,57 @@ body {
   transition: width 0.8s ease-out;
 }
 
-/* Stat counter animation */
-.stat-value {
-  animation: count-up 0.6s ease-out forwards;
-}
+.health-bar-fill[data-level="high"] { background: var(--health-high); }
+.health-bar-fill[data-level="mid"]  { background: var(--health-mid); }
+.health-bar-fill[data-level="low"]  { background: var(--health-low); }
 
-/* Achievement badge */
-.achievement {
-  animation: badge-unlock 0.5s ease-out forwards;
-}
+/* === SEVERITY INDICATORS === */
 
-/* Alert pulse */
-.alert-pulse {
-  position: relative;
-}
-
-.alert-pulse::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 0;
+.severity-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  transform: translateY(-50%);
 }
 
-.alert-pulse-critical::before {
-  background: var(--neon-red);
-  box-shadow: 0 0 8px var(--neon-red);
+.severity-dot[data-severity="critical"] {
+  background: var(--severity-critical);
+  box-shadow: 0 0 8px var(--severity-critical);
 }
 
-.alert-pulse-high::before {
-  background: var(--neon-amber);
-  box-shadow: 0 0 8px var(--neon-amber);
+.severity-dot[data-severity="high"] {
+  background: var(--severity-high);
+  box-shadow: 0 0 8px var(--severity-high);
 }
 
-.alert-pulse-medium::before {
-  background: var(--neon-cyan);
-  box-shadow: 0 0 6px var(--neon-cyan);
+.severity-dot[data-severity="medium"] {
+  background: var(--severity-medium);
+  box-shadow: 0 0 6px var(--severity-medium);
 }
 
-.alert-pulse-low::before {
-  background: var(--neon-green);
-  box-shadow: 0 0 6px var(--neon-green);
+.severity-dot[data-severity="low"] {
+  background: var(--severity-low);
+  box-shadow: 0 0 6px var(--severity-low);
 }
 
-/* Mission rarity borders */
-.mission-epic {
-  border-left: 3px solid var(--quest-epic);
-}
+/* === MISSION RARITY === */
 
-.mission-rare {
-  border-left: 3px solid var(--quest-rare);
-}
+.mission-epic    { border-left: 3px solid var(--quest-epic); }
+.mission-rare    { border-left: 3px solid var(--quest-rare); }
+.mission-common  { border-left: 3px solid var(--quest-common); }
 
-.mission-common {
-  border-left: 3px solid var(--quest-common);
-}
+/* === FLOATING ANIMATIONS === */
 
-/* Floating animation for cards */
-.float-in {
-  animation: float-up 0.4s ease-out forwards;
-}
-
+.float-in { animation: float-up 0.4s ease-out forwards; }
 .float-in-delay-1 { animation-delay: 0.05s; opacity: 0; }
 .float-in-delay-2 { animation-delay: 0.1s; opacity: 0; }
 .float-in-delay-3 { animation-delay: 0.15s; opacity: 0; }
 .float-in-delay-4 { animation-delay: 0.2s; opacity: 0; }
 
-/* Radar widget */
+.stat-value { animation: count-up 0.6s ease-out forwards; }
+.achievement { animation: badge-unlock 0.5s ease-out forwards; }
+
+/* === RADAR === */
+
 .radar-container {
   position: relative;
   width: 100%;
@@ -255,7 +286,7 @@ body {
   background: conic-gradient(
     from 0deg,
     transparent 0deg,
-    rgba(34, 211, 238, 0.15) 30deg,
+    color-mix(in srgb, var(--accent-cyan) 15%, transparent) 30deg,
     transparent 60deg
   );
   animation: radar-sweep 4s linear infinite;
@@ -264,7 +295,7 @@ body {
 .radar-ring {
   position: absolute;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  border: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
 }
 
 .radar-dot {
@@ -275,36 +306,17 @@ body {
   transform: translate(-50%, -50%);
 }
 
-/* Level badge */
+/* === TEXT EFFECTS === */
+
 .level-badge {
-  background: linear-gradient(135deg, var(--xp-bar), var(--neon-purple));
+  background: linear-gradient(135deg, var(--xp-bar), var(--quest-epic));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-/* Neon text */
-.neon-text-cyan {
-  color: var(--neon-cyan);
-  text-shadow: 0 0 10px rgba(34, 211, 238, 0.5);
-}
-
-.neon-text-green {
-  color: var(--neon-green);
-  text-shadow: 0 0 10px rgba(16, 185, 129, 0.5);
-}
-
-.neon-text-red {
-  color: var(--neon-red);
-  text-shadow: 0 0 10px rgba(239, 68, 68, 0.5);
-}
-
-.neon-text-amber {
-  color: var(--neon-amber);
-  text-shadow: 0 0 10px rgba(245, 158, 11, 0.5);
-}
-
-.neon-text-purple {
-  color: var(--neon-purple);
-  text-shadow: 0 0 10px rgba(168, 85, 247, 0.5);
-}
+.neon-text-cyan   { color: var(--accent-cyan);   text-shadow: 0 0 10px color-mix(in srgb, var(--accent-cyan) 50%, transparent); }
+.neon-text-green  { color: var(--success);        text-shadow: 0 0 10px color-mix(in srgb, var(--success) 50%, transparent); }
+.neon-text-red    { color: var(--destructive);    text-shadow: 0 0 10px color-mix(in srgb, var(--destructive) 50%, transparent); }
+.neon-text-amber  { color: var(--warning);        text-shadow: 0 0 10px color-mix(in srgb, var(--warning) 50%, transparent); }
+.neon-text-purple { color: var(--quest-epic);     text-shadow: 0 0 10px color-mix(in srgb, var(--quest-epic) 50%, transparent); }

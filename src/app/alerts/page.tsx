@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -44,27 +45,12 @@ const typeLabel: Record<string, string> = {
   communication_gap: "Comunicacion",
 };
 
-const typeIcon: Record<string, string> = {
-  no_response: "clock",
-  stalled_thread: "pause",
-  competitor: "swords",
-  churn_risk: "trending-down",
-  invoice_silence: "dollar",
-  negative_sentiment: "frown",
+const severityToBadge: Record<string, "critical" | "high" | "medium" | "low"> = {
+  critical: "critical",
+  high: "high",
+  medium: "medium",
+  low: "low",
 };
-
-function getSeverityConfig(severity: string) {
-  switch (severity) {
-    case "critical":
-      return { color: "text-red-400", bg: "bg-red-500/10", border: "border-l-red-500", glow: "alert-pulse-critical", label: "CRITICO" };
-    case "high":
-      return { color: "text-amber-400", bg: "bg-amber-500/10", border: "border-l-amber-500", glow: "alert-pulse-high", label: "ALTO" };
-    case "medium":
-      return { color: "text-cyan-400", bg: "bg-cyan-500/10", border: "border-l-cyan-400", glow: "alert-pulse-medium", label: "MEDIO" };
-    default:
-      return { color: "text-gray-400", bg: "", border: "border-l-gray-500", glow: "", label: "BAJO" };
-  }
-}
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -74,7 +60,6 @@ export default function AlertsPage() {
 
   useEffect(() => {
     async function fetchAlerts() {
-      // Fetch alerts
       let query = supabase
         .from("alerts")
         .select("*")
@@ -131,17 +116,18 @@ export default function AlertsPage() {
     });
   }
 
-  // Severity distribution
-  const criticalCount = alerts.filter((a) => a.severity === "critical").length;
-  const highCount = alerts.filter((a) => a.severity === "high").length;
-  const mediumCount = alerts.filter((a) => a.severity === "medium").length;
-  const lowCount = alerts.filter((a) => a.severity === "low").length;
+  const severityCounts = {
+    critical: alerts.filter((a) => a.severity === "critical").length,
+    high: alerts.filter((a) => a.severity === "high").length,
+    medium: alerts.filter((a) => a.severity === "medium").length,
+    low: alerts.filter((a) => a.severity === "low").length,
+  };
 
   const stateFilters = [
-    { key: "new", label: "Nuevas", count: counts.new, color: "text-red-400" },
-    { key: "acknowledged", label: "Vistas", count: counts.acknowledged, color: "text-amber-400" },
-    { key: "resolved", label: "Resueltas", count: counts.resolved, color: "text-emerald-400" },
-    { key: "all", label: "Todas", count: counts.all, color: "text-[var(--muted-foreground)]" },
+    { key: "new", label: "Nuevas", count: counts.new },
+    { key: "acknowledged", label: "Vistas", count: counts.acknowledged },
+    { key: "resolved", label: "Resueltas", count: counts.resolved },
+    { key: "all", label: "Todas", count: counts.all },
   ];
 
   return (
@@ -150,7 +136,7 @@ export default function AlertsPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <Crosshair className="h-6 w-6 text-amber-400" />
+            <Crosshair className="h-6 w-6 text-[var(--warning)]" />
             <h1 className="text-2xl font-black tracking-tight">Radar de Amenazas</h1>
           </div>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
@@ -158,44 +144,42 @@ export default function AlertsPage() {
           </p>
         </div>
         {counts.new > 0 && (
-          <div className="flex items-center gap-2 text-xs text-red-400">
+          <div className="flex items-center gap-2 text-xs text-[var(--destructive)]">
             <Flame className="h-4 w-4" />
             <span className="font-bold">{counts.new} sin revisar</span>
           </div>
         )}
       </div>
 
-      {/* Severity Distribution + Filters */}
+      {/* Severity Stats + Filters */}
       <div className="flex items-center gap-4 flex-wrap">
-        {/* Severity mini stats */}
         <div className="hidden md:flex items-center gap-3 mr-auto">
-          {criticalCount > 0 && (
-            <span className="flex items-center gap-1 text-xs text-red-400 font-bold">
-              <span className="w-2 h-2 rounded-full bg-red-400 animate-pulse" />
-              {criticalCount} criticas
+          {severityCounts.critical > 0 && (
+            <span className="flex items-center gap-1.5 text-xs font-bold text-[var(--severity-critical)]">
+              <span className="severity-dot animate-pulse" data-severity="critical" />
+              {severityCounts.critical} criticas
             </span>
           )}
-          {highCount > 0 && (
-            <span className="flex items-center gap-1 text-xs text-amber-400">
-              <span className="w-2 h-2 rounded-full bg-amber-400" />
-              {highCount} altas
+          {severityCounts.high > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-[var(--severity-high)]">
+              <span className="severity-dot" data-severity="high" />
+              {severityCounts.high} altas
             </span>
           )}
-          {mediumCount > 0 && (
-            <span className="flex items-center gap-1 text-xs text-cyan-400">
-              <span className="w-2 h-2 rounded-full bg-cyan-400" />
-              {mediumCount} medias
+          {severityCounts.medium > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-[var(--severity-medium)]">
+              <span className="severity-dot" data-severity="medium" />
+              {severityCounts.medium} medias
             </span>
           )}
-          {lowCount > 0 && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <span className="w-2 h-2 rounded-full bg-gray-400" />
-              {lowCount} bajas
+          {severityCounts.low > 0 && (
+            <span className="flex items-center gap-1.5 text-xs text-[var(--severity-low)]">
+              <span className="severity-dot" data-severity="low" />
+              {severityCounts.low} bajas
             </span>
           )}
         </div>
 
-        {/* State filters */}
         <div className="flex items-center gap-1">
           {stateFilters.map((f) => (
             <button
@@ -205,11 +189,11 @@ export default function AlertsPage() {
                 "px-3 py-2 rounded-lg text-xs font-medium transition-colors",
                 stateFilter === f.key
                   ? "bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50",
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--accent)]",
               )}
             >
               {f.label}
-              <span className={cn("ml-1 tabular-nums", f.color)}>{f.count}</span>
+              <span className="ml-1 tabular-nums">{f.count}</span>
             </button>
           ))}
         </div>
@@ -218,46 +202,50 @@ export default function AlertsPage() {
       {/* Alert List */}
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Activity className="h-6 w-6 text-amber-400 animate-pulse" />
+          <Activity className="h-6 w-6 text-[var(--warning)] animate-pulse" />
         </div>
       ) : alerts.length === 0 ? (
-        <div className="game-card rounded-lg bg-[var(--card)] p-12 text-center">
-          <Shield className="h-12 w-12 mx-auto mb-3 text-emerald-400 opacity-40" />
-          <p className="text-sm font-medium">Perimetro seguro</p>
-          <p className="text-xs text-[var(--muted-foreground)] mt-1">No hay alertas en esta categoria</p>
-        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Shield className="h-12 w-12 mb-3 text-[var(--success)] opacity-40" />
+            <p className="text-sm font-medium">Perimetro seguro</p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-1">No hay alertas en esta categoria</p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-2">
           {alerts.map((alert) => {
-            const config = getSeverityConfig(alert.severity);
             const isNew = alert.state === "new" && !alert.is_read;
+            const severityVar = `var(--severity-${alert.severity || "low"})`;
+            const severityMutedVar = `var(--severity-${alert.severity || "low"}-muted)`;
 
             return (
-              <div
+              <Card
                 key={alert.id}
                 className={cn(
-                  "game-card rounded-lg bg-[var(--card)] p-4 border-l-3 transition-all",
-                  config.border,
-                  isNew && config.glow,
-                  isNew && config.bg,
+                  "transition-all",
+                  isNew && "border-l-3",
                 )}
+                style={isNew ? {
+                  borderLeftColor: severityVar,
+                  backgroundColor: severityMutedVar,
+                } : undefined}
               >
-                <div className="flex items-start gap-4">
-                  {/* Severity indicator */}
-                  <div className={cn(
-                    "w-10 h-10 rounded-lg flex items-center justify-center shrink-0",
-                    config.bg,
-                  )}>
-                    <AlertTriangle className={cn("h-5 w-5", config.color)} />
+                <CardContent className="flex items-start gap-4 p-4">
+                  {/* Severity icon */}
+                  <div
+                    className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0"
+                    style={{ backgroundColor: severityMutedVar }}
+                  >
+                    <AlertTriangle className="h-5 w-5" style={{ color: severityVar }} />
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    {/* Badges */}
                     <div className="flex flex-wrap items-center gap-2 mb-1">
-                      <span className={cn("text-[10px] font-bold uppercase tracking-wider", config.color)}>
-                        {config.label}
-                      </span>
-                      <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                      <Badge variant={severityToBadge[alert.severity] || "low"}>
+                        {alert.severity}
+                      </Badge>
+                      <Badge variant="outline">
                         {typeLabel[alert.alert_type] || alert.alert_type}
                       </Badge>
                       {alert.contact_name && (
@@ -266,20 +254,17 @@ export default function AlertsPage() {
                             <a href={`/contacts/${alert.contact_id}`} className="hover:text-[var(--primary)] transition-colors">
                               {alert.contact_name}
                             </a>
-                          ) : (
-                            alert.contact_name
-                          )}
+                          ) : alert.contact_name}
                         </span>
                       )}
                       {isNew && (
-                        <span className="flex items-center gap-1 text-[10px] font-bold text-red-400">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                        <span className="flex items-center gap-1 text-[10px] font-bold text-[var(--destructive)]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-[var(--destructive)] animate-pulse" />
                           NUEVA
                         </span>
                       )}
                     </div>
 
-                    {/* Content */}
                     <p className="text-sm font-medium">{alert.title}</p>
                     {alert.description && (
                       <p className="mt-1 text-sm text-[var(--muted-foreground)] line-clamp-2">{alert.description}</p>
@@ -287,33 +272,20 @@ export default function AlertsPage() {
                     <span className="text-[10px] text-[var(--muted-foreground)] mt-1 block">{timeAgo(alert.created_at)}</span>
                   </div>
 
-                  {/* Actions */}
                   <div className="flex shrink-0 gap-1">
                     {alert.state === "new" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => markRead(alert.id)}
-                        title="Marcar como vista"
-                        className="h-8 w-8"
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => markRead(alert.id)} title="Marcar como vista" className="h-8 w-8">
                         <Eye className="h-3.5 w-3.5" />
                       </Button>
                     )}
                     {alert.state !== "resolved" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => resolve(alert.id)}
-                        title="Resolver"
-                        className="h-8 w-8 hover:text-emerald-400"
-                      >
+                      <Button variant="ghost" size="icon" onClick={() => resolve(alert.id)} title="Resolver" className="h-8 w-8 hover:text-[var(--success)]">
                         <Check className="h-3.5 w-3.5" />
                       </Button>
                     )}
                   </div>
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             );
           })}
         </div>

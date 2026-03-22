@@ -2,16 +2,15 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/utils";
 import {
   Search,
   ChevronRight,
-  Shield,
   Users,
   AlertTriangle,
-  Crown,
   Activity,
 } from "lucide-react";
 import Link from "next/link";
@@ -30,16 +29,22 @@ interface Contact {
   tags: string[];
 }
 
+const riskToBadge: Record<string, "critical" | "high" | "medium" | "low" | "success"> = {
+  high: "critical",
+  medium: "medium",
+  low: "success",
+};
+
 function getHealthScore(sentiment: number, relationship: number): number {
   const s = sentiment ?? 0;
   const r = relationship ?? 50;
   return Math.max(0, Math.min(100, Math.round(((s + 1) / 2) * 50 + (r / 100) * 50)));
 }
 
-function getHealthColor(score: number): string {
-  if (score >= 70) return "bg-emerald-400";
-  if (score >= 40) return "bg-amber-400";
-  return "bg-red-400";
+function getHealthLevel(score: number): "high" | "mid" | "low" {
+  if (score >= 70) return "high";
+  if (score >= 40) return "mid";
+  return "low";
 }
 
 function getHealthLabel(score: number): string {
@@ -81,9 +86,9 @@ export default function ContactsPage() {
 
   const riskFilters = [
     { key: "all", label: "Todos", count: contacts.length },
-    { key: "high", label: "Alto Riesgo", count: highRisk, color: "text-red-400" },
-    { key: "medium", label: "Medio", count: medRisk, color: "text-amber-400" },
-    { key: "low", label: "Bajo", count: contacts.length - highRisk - medRisk, color: "text-emerald-400" },
+    { key: "high", label: "Alto Riesgo", count: highRisk },
+    { key: "medium", label: "Medio", count: medRisk },
+    { key: "low", label: "Bajo", count: contacts.length - highRisk - medRisk },
   ];
 
   return (
@@ -91,7 +96,7 @@ export default function ContactsPage() {
       <div className="flex items-center justify-between">
         <div>
           <div className="flex items-center gap-3">
-            <Users className="h-6 w-6 text-emerald-400" />
+            <Users className="h-6 w-6 text-[var(--success)]" />
             <h1 className="text-2xl font-black tracking-tight">Roster de Contactos</h1>
           </div>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
@@ -99,7 +104,7 @@ export default function ContactsPage() {
           </p>
         </div>
         {highRisk > 0 && (
-          <div className="hidden md:flex items-center gap-2 text-xs text-red-400">
+          <div className="hidden md:flex items-center gap-2 text-xs text-[var(--destructive)]">
             <AlertTriangle className="h-4 w-4" />
             {highRisk} en riesgo alto
           </div>
@@ -127,11 +132,11 @@ export default function ContactsPage() {
                 "px-3 py-2 rounded-lg text-xs font-medium transition-colors",
                 riskFilter === f.key
                   ? "bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/50",
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--accent)]",
               )}
             >
               {f.label}
-              <span className={cn("ml-1 tabular-nums", f.color)}>{f.count}</span>
+              <span className="ml-1 tabular-nums">{f.count}</span>
             </button>
           ))}
         </div>
@@ -139,81 +144,91 @@ export default function ContactsPage() {
 
       {loading ? (
         <div className="flex items-center justify-center py-12">
-          <Activity className="h-6 w-6 text-cyan-400 animate-pulse" />
+          <Activity className="h-6 w-6 text-[var(--primary)] animate-pulse" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="game-card rounded-lg bg-[var(--card)] p-12 text-center">
-          <Users className="h-10 w-10 mx-auto mb-3 text-[var(--muted-foreground)] opacity-30" />
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {search ? "No se encontraron contactos." : "No hay contactos aun."}
-          </p>
-        </div>
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center py-12">
+            <Users className="h-10 w-10 mb-3 text-[var(--muted-foreground)] opacity-30" />
+            <p className="text-sm text-[var(--muted-foreground)]">
+              {search ? "No se encontraron contactos." : "No hay contactos aun."}
+            </p>
+          </CardContent>
+        </Card>
       ) : (
         <div className="space-y-2">
           {filtered.map((contact) => {
             const health = getHealthScore(contact.sentiment_score, contact.relationship_score);
-            const healthColor = getHealthColor(health);
-            const healthLabel = getHealthLabel(health);
+            const level = getHealthLevel(health);
+            const label = getHealthLabel(health);
+            const riskVar = contact.risk_level === "high" ? "var(--risk-high)"
+              : contact.risk_level === "medium" ? "var(--risk-medium)" : "var(--risk-low)";
+            const riskMutedVar = contact.risk_level === "high" ? "var(--risk-high-muted)"
+              : contact.risk_level === "medium" ? "var(--risk-medium-muted)" : "var(--risk-low-muted)";
 
             return (
               <Link key={contact.id} href={`/contacts/${contact.id}`}>
-                <div className={cn(
-                  "game-card rounded-lg bg-[var(--card)] p-4 flex items-center gap-4 group cursor-pointer transition-all",
-                  contact.risk_level === "high" && "border-l-3 border-l-red-500/50",
+                <Card className={cn(
+                  "cursor-pointer transition-all hover:border-[var(--primary)]",
+                  contact.risk_level === "high" && "border-l-3 border-l-[var(--risk-high)]",
                 )}>
-                  {/* Avatar */}
-                  <div className={cn(
-                    "w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold shrink-0",
-                    contact.risk_level === "high" ? "bg-red-500/15 text-red-400" :
-                    contact.risk_level === "medium" ? "bg-amber-500/15 text-amber-400" :
-                    "bg-emerald-500/15 text-emerald-400",
-                  )}>
-                    {(contact.name || contact.email).charAt(0).toUpperCase()}
-                  </div>
-
-                  {/* Info */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold truncate group-hover:text-[var(--primary)] transition-colors">
-                        {contact.name || contact.email}
-                      </span>
-                      {contact.contact_type && (
-                        <Badge variant="outline" className="text-[10px] px-1.5 py-0 hidden sm:inline-flex">{contact.contact_type}</Badge>
-                      )}
+                  <CardContent className="flex items-center gap-4 p-4">
+                    {/* Avatar */}
+                    <div
+                      className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold shrink-0"
+                      style={{ backgroundColor: riskMutedVar, color: riskVar }}
+                    >
+                      {(contact.name || contact.email).charAt(0).toUpperCase()}
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)] mt-0.5">
-                      <span className="truncate">{contact.company || contact.email}</span>
-                      <span className="hidden md:inline">{contact.total_emails} emails</span>
-                      {contact.last_interaction && (
-                        <span className="hidden lg:inline">{timeAgo(contact.last_interaction)}</span>
-                      )}
-                    </div>
-                  </div>
 
-                  {/* Health Bar */}
-                  <div className="hidden sm:flex items-center gap-3 shrink-0 w-36">
-                    <div className="flex-1">
-                      <div className="health-bar-track">
-                        <div className={cn("health-bar-fill", healthColor)} style={{ width: `${health}%` }} />
+                    {/* Info */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold truncate">
+                          {contact.name || contact.email}
+                        </span>
+                        {contact.contact_type && (
+                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 hidden sm:inline-flex">{contact.contact_type}</Badge>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)] mt-0.5">
+                        <span className="truncate">{contact.company || contact.email}</span>
+                        <span className="hidden md:inline">{contact.total_emails} emails</span>
+                        {contact.last_interaction && (
+                          <span className="hidden lg:inline">{timeAgo(contact.last_interaction)}</span>
+                        )}
                       </div>
                     </div>
-                    <span className={cn(
-                      "text-[10px] font-bold uppercase w-16 text-right",
-                      health >= 70 ? "text-emerald-400" : health >= 40 ? "text-amber-400" : "text-red-400",
-                    )}>
-                      {healthLabel} {health}%
-                    </span>
-                  </div>
 
-                  {/* Risk Badge */}
-                  <div className="hidden md:block shrink-0">
-                    <Badge variant={contact.risk_level === "high" ? "destructive" : contact.risk_level === "medium" ? "warning" : "success"} className="text-[10px]">
-                      {contact.risk_level || "low"}
-                    </Badge>
-                  </div>
+                    {/* Health Bar */}
+                    <div className="hidden sm:flex items-center gap-3 shrink-0 w-36">
+                      <div className="flex-1">
+                        <div className="health-bar-track">
+                          <div
+                            className="health-bar-fill"
+                            data-level={level}
+                            style={{ width: `${health}%` }}
+                          />
+                        </div>
+                      </div>
+                      <span
+                        className="text-[10px] font-bold uppercase w-16 text-right"
+                        style={{ color: `var(--health-${level})` }}
+                      >
+                        {label} {health}%
+                      </span>
+                    </div>
 
-                  <ChevronRight className="h-4 w-4 text-[var(--muted-foreground)] group-hover:text-[var(--primary)] transition-colors shrink-0" />
-                </div>
+                    {/* Risk Badge */}
+                    <div className="hidden md:block shrink-0">
+                      <Badge variant={riskToBadge[contact.risk_level] || "success"}>
+                        {contact.risk_level || "low"}
+                      </Badge>
+                    </div>
+
+                    <ChevronRight className="h-4 w-4 text-[var(--muted-foreground)] shrink-0" />
+                  </CardContent>
+                </Card>
               </Link>
             );
           })}
