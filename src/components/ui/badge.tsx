@@ -1,50 +1,42 @@
-import { cn } from "@/lib/utils";
-import { type VariantProps, cva } from "class-variance-authority";
-import { HTMLAttributes } from "react";
+import * as React from 'react'
+import { cva, type VariantProps } from 'class-variance-authority'
+
+import { cn } from '@/lib/utils'
 
 const badgeVariants = cva(
-  "inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors",
+  'inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-semibold transition-colors focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2',
   {
     variants: {
       variant: {
         default:
-          "bg-[var(--primary)] text-[var(--primary-foreground)]",
+          'border border-primary/20 bg-primary/10 text-primary hover:bg-primary/20',
         secondary:
-          "bg-[var(--secondary)] text-[var(--secondary-foreground)]",
+          'border border-secondary/20 bg-secondary/10 text-secondary hover:bg-secondary/20',
         destructive:
-          "bg-[var(--severity-critical-muted)] text-[var(--severity-critical)] border border-[color-mix(in_srgb,var(--severity-critical)_30%,transparent)]",
-        warning:
-          "bg-[var(--warning-muted)] text-[var(--warning)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)]",
-        success:
-          "bg-[var(--success-muted)] text-[var(--success)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)]",
-        info:
-          "bg-[var(--info-muted)] text-[var(--info)] border border-[color-mix(in_srgb,var(--info)_30%,transparent)]",
-        outline:
-          "border border-[var(--border)] text-[var(--foreground)]",
-        // Severity-specific
+          'border border-destructive/20 bg-destructive/10 text-destructive hover:bg-destructive/20',
+        outline: 'border border-input text-foreground hover:bg-accent',
         critical:
-          "bg-[var(--severity-critical-muted)] text-[var(--severity-critical)] border border-[color-mix(in_srgb,var(--severity-critical)_30%,transparent)]",
-        high:
-          "bg-[var(--severity-high-muted)] text-[var(--severity-high)] border border-[color-mix(in_srgb,var(--severity-high)_30%,transparent)]",
+          'border border-red-300 bg-red-50 text-red-900 dark:border-red-700 dark:bg-red-900/30 dark:text-red-100',
+        high: 'border border-orange-300 bg-orange-50 text-orange-900 dark:border-orange-700 dark:bg-orange-900/30 dark:text-orange-100',
         medium:
-          "bg-[var(--severity-medium-muted)] text-[var(--severity-medium)] border border-[color-mix(in_srgb,var(--severity-medium)_30%,transparent)]",
-        low:
-          "bg-[var(--severity-low-muted)] text-[var(--severity-low)] border border-[color-mix(in_srgb,var(--severity-low)_30%,transparent)]",
-        // Quest rarity
-        epic:
-          "bg-[var(--quest-epic-muted)] text-[var(--quest-epic)] border border-[color-mix(in_srgb,var(--quest-epic)_30%,transparent)]",
+          'border border-yellow-300 bg-yellow-50 text-yellow-900 dark:border-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-100',
+        low: 'border border-blue-300 bg-blue-50 text-blue-900 dark:border-blue-700 dark:bg-blue-900/30 dark:text-blue-100',
       },
     },
-    defaultVariants: { variant: "default" },
-  },
-);
+    defaultVariants: {
+      variant: 'default',
+    },
+  }
+)
 
 export interface BadgeProps
-  extends HTMLAttributes<HTMLDivElement>,
+  extends React.HTMLAttributes<HTMLDivElement>,
     VariantProps<typeof badgeVariants> {}
 
-export function Badge({ className, variant, ...props }: BadgeProps) {
+function Badge({ className, variant, ...props }: BadgeProps) {
   return (
     <div className={cn(badgeVariants({ variant }), className)} {...props} />
-  );
+  )
 }
+
+export { Badge, badgeVariants }

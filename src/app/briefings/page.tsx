@@ -2,13 +2,22 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { timeAgo } from "@/lib/utils";
-import { FileText } from "lucide-react";
-import Link from "next/link";
+import { Button } from "@/components/ui/button";
+import { useRouter } from "next/navigation";
+import { ChevronRight, Loader2 } from "lucide-react";
 
-interface Briefing {
+type DailySummary = {
+  id: string;
+  summary_date: string;
+  total_emails: number;
+  summary_text: string;
+  key_events: Record<string, any>;
+  account: string;
+};
+
+type Briefing = {
   id: string;
   briefing_type: string;
   period_start: string;
@@ -16,105 +25,150 @@ interface Briefing {
   summary: string;
   html_content: string;
   created_at: string;
-  account_email: string;
-}
-
-const typeLabel: Record<string, string> = {
-  daily: "Diario",
-  weekly: "Semanal",
-  account: "Cuenta",
-  strategic: "Estrategico",
 };
 
 export default function BriefingsPage() {
-  const [briefings, setBriefings] = useState<Briefing[]>([]);
+  const router = useRouter();
+  const [summaries, setSummaries] = useState<DailySummary[]>([]);
+  const [briefings, setBriefings] = useState<Record<string, Briefing>>({});
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("all");
 
   useEffect(() => {
-    async function fetch() {
-      let query = supabase
+    fetchData();
+  }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+
+      // Fetch daily summaries
+      const { data: summariesData, error: summariesError } = await supabase
+        .from("daily_summaries")
+        .select("*")
+        .order("summary_date", { ascending: false });
+
+      if (summariesError) throw summariesError;
+      setSummaries(summariesData as DailySummary[]);
+
+      // Fetch briefings
+      const { data: briefingsData } = await supabase
         .from("briefings")
         .select("*")
         .order("created_at", { ascending: false })
-        .limit(50);
+        .limit(3);
 
-      if (filter !== "all") {
-        query = query.eq("briefing_type", filter);
+      if (briefingsData) {
+        const briefingsMap: Record<string, Briefing> = {};
+        briefingsData.forEach((b: Briefing) => {
+          briefingsMap[b.id] = b;
+        });
+        setBriefings(briefingsMap);
       }
-
-      const { data } = await query;
-      setBriefings(data || []);
+    } catch (err) {
+      console.error("Error fetching briefings data:", err);
+    } finally {
       setLoading(false);
     }
-    fetch();
-  }, [filter]);
+  };
+
+  const formatDate = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleDateString("es-MX", {
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+    });
+  };
+
+  const truncateText = (text: string, maxLength: number = 200) => {
+    if (text.length <= maxLength) return text;
+    return text.substring(0, maxLength) + "...";
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Briefings</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Resumenes de inteligencia generados automaticamente</p>
-        </div>
-        <div className="flex gap-1">
-          {["all", "daily", "weekly", "account", "strategic"].map((f) => (
-            <button
-              key={f}
-              onClick={() => { setFilter(f); setLoading(true); }}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === f
-                  ? "bg-[var(--primary)] text-white"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--accent)]"
-              }`}
-            >
-              {f === "all" ? "Todos" : typeLabel[f] || f}
-            </button>
-          ))}
-        </div>
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-gray-900">Briefings</h1>
+        <p className="mt-1 text-sm text-gray-600">
+          Resúmenes diarios y reportes de inteligencia comercial
+        </p>
       </div>
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-pulse text-[var(--muted-foreground)]">Cargando briefings...</div>
-        </div>
-      ) : briefings.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <FileText className="mb-3 h-10 w-10 text-[var(--muted-foreground)] opacity-50" />
-            <p className="text-sm text-[var(--muted-foreground)]">No hay briefings disponibles.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="grid gap-4">
-          {briefings.map((briefing) => (
-            <Link key={briefing.id} href={`/briefings/${briefing.id}`}>
-              <Card className="transition-colors hover:border-[var(--primary)]/50 cursor-pointer">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="info">{typeLabel[briefing.briefing_type] || briefing.briefing_type}</Badge>
-                    {briefing.account_email && (
-                      <span className="text-xs text-[var(--muted-foreground)]">{briefing.account_email}</span>
+      {/* Briefings List */}
+      <div className="space-y-4">
+        {loading ? (
+          <div className="space-y-3">
+            {[...Array(3)].map((_, i) => (
+              <Card key={i} className="h-24 bg-gray-100 animate-pulse" />
+            ))}
+          </div>
+        ) : summaries.length === 0 ? (
+          <Card>
+            <CardContent className="py-8 text-center text-gray-500">
+              No hay briefings disponibles
+            </CardContent>
+          </Card>
+        ) : (
+          summaries.map((summary) => {
+            const hasBriefing = Object.keys(briefings).length > 0;
+            const relatedBriefing = hasBriefing ? Object.values(briefings)[0] : null;
+
+            return (
+              <Card key={summary.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="pt-6">
+                  <div className="space-y-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-2">
+                          <h3 className="font-semibold text-gray-900">
+                            {formatDate(summary.summary_date)}
+                          </h3>
+                          <Badge variant="secondary" className="text-xs">
+                            {summary.total_emails} emails
+                          </Badge>
+                        </div>
+                        <p className="text-sm text-gray-700 leading-relaxed">
+                          {truncateText(summary.summary_text)}
+                        </p>
+                      </div>
+                    </div>
+
+                    {summary.key_events && Object.keys(summary.key_events).length > 0 && (
+                      <div className="pt-2 border-t border-gray-200">
+                        <p className="text-xs text-gray-500 font-semibold mb-2">
+                          Eventos Clave
+                        </p>
+                        <div className="flex flex-wrap gap-1">
+                          {Object.entries(summary.key_events).map(([key, value], idx) => (
+                            <Badge key={idx} variant="outline" className="text-xs">
+                              {String(value)}
+                            </Badge>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {relatedBriefing && relatedBriefing.html_content && (
+                      <div className="pt-2 border-t border-gray-200">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => router.push(`/briefings/${relatedBriefing.id}`)}
+                          className="w-full"
+                        >
+                          Ver briefing completo
+                          <ChevronRight className="h-4 w-4 ml-2" />
+                        </Button>
+                      </div>
                     )}
                   </div>
-                  <span className="text-xs text-[var(--muted-foreground)]">{timeAgo(briefing.created_at)}</span>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm line-clamp-2">
-                    {briefing.summary || "Sin resumen disponible"}
-                  </p>
-                  {briefing.period_start && briefing.period_end && (
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                      Periodo: {new Date(briefing.period_start).toLocaleDateString("es-MX")} -{" "}
-                      {new Date(briefing.period_end).toLocaleDateString("es-MX")}
-                    </p>
-                  )}
                 </CardContent>
               </Card>
-            </Link>
-          ))}
-        </div>
-      )}
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }
