@@ -7,13 +7,32 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-[var(--primary)] text-white",
-        secondary: "bg-[var(--secondary)] text-[var(--secondary-foreground)]",
-        destructive: "bg-red-500/20 text-red-400 border border-red-500/30",
-        warning: "bg-amber-500/20 text-amber-400 border border-amber-500/30",
-        success: "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30",
-        info: "bg-blue-500/20 text-blue-400 border border-blue-500/30",
-        outline: "border border-[var(--border)] text-[var(--foreground)]",
+        default:
+          "bg-[var(--primary)] text-[var(--primary-foreground)]",
+        secondary:
+          "bg-[var(--secondary)] text-[var(--secondary-foreground)]",
+        destructive:
+          "bg-[var(--severity-critical-muted)] text-[var(--severity-critical)] border border-[color-mix(in_srgb,var(--severity-critical)_30%,transparent)]",
+        warning:
+          "bg-[var(--warning-muted)] text-[var(--warning)] border border-[color-mix(in_srgb,var(--warning)_30%,transparent)]",
+        success:
+          "bg-[var(--success-muted)] text-[var(--success)] border border-[color-mix(in_srgb,var(--success)_30%,transparent)]",
+        info:
+          "bg-[var(--info-muted)] text-[var(--info)] border border-[color-mix(in_srgb,var(--info)_30%,transparent)]",
+        outline:
+          "border border-[var(--border)] text-[var(--foreground)]",
+        // Severity-specific
+        critical:
+          "bg-[var(--severity-critical-muted)] text-[var(--severity-critical)] border border-[color-mix(in_srgb,var(--severity-critical)_30%,transparent)]",
+        high:
+          "bg-[var(--severity-high-muted)] text-[var(--severity-high)] border border-[color-mix(in_srgb,var(--severity-high)_30%,transparent)]",
+        medium:
+          "bg-[var(--severity-medium-muted)] text-[var(--severity-medium)] border border-[color-mix(in_srgb,var(--severity-medium)_30%,transparent)]",
+        low:
+          "bg-[var(--severity-low-muted)] text-[var(--severity-low)] border border-[color-mix(in_srgb,var(--severity-low)_30%,transparent)]",
+        // Quest rarity
+        epic:
+          "bg-[var(--quest-epic-muted)] text-[var(--quest-epic)] border border-[color-mix(in_srgb,var(--quest-epic)_30%,transparent)]",
       },
     },
     defaultVariants: { variant: "default" },

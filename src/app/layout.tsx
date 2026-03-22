@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { ThemeProvider } from "@/components/theme-provider";
 import { Sidebar } from "@/components/layout/sidebar";
 import "./globals.css";
 
@@ -13,12 +14,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es">
+    <html lang="es" suppressHydrationWarning>
       <body>
-        <Sidebar />
-        <main className="pl-64">
-          <div className="min-h-screen p-6">{children}</div>
-        </main>
+        <ThemeProvider>
+          <Sidebar />
+          <main className="pl-64">
+            <div className="min-h-screen p-6">{children}</div>
+          </main>
+        </ThemeProvider>
       </body>
     </html>
   );
