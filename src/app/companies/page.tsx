@@ -9,7 +9,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Search,
-  ChevronRight,
   Building2,
   TrendingUp,
   TrendingDown,
@@ -17,6 +16,8 @@ import {
   DollarSign,
   Users,
   AlertCircle,
+  MapPin,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -35,6 +36,19 @@ interface Company {
   total_pending: number;
   monthly_avg: number;
   trend_pct: number | null;
+  description: string | null;
+  business_type: string | null;
+  key_products: string[];
+  relationship_summary: string | null;
+  relationship_type: string | null;
+  country: string | null;
+  city: string | null;
+  website: string | null;
+  risk_signals: string[];
+  opportunity_signals: string[];
+  strategic_notes: string | null;
+  enriched_at: string | null;
+  enrichment_source: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -145,13 +159,41 @@ function CompanyRow({ company, index }: { company: Company; index: number }) {
                     )}
                   </div>
                 </div>
-                {company.industry && (
-                  <p className="text-xs text-[var(--muted-foreground)]">
-                    {company.industry}
+                {(company.industry || company.country || company.city) && (
+                  <p className="text-xs text-[var(--muted-foreground)] flex items-center gap-1">
+                    {company.industry && <span>{company.industry}</span>}
+                    {company.industry && (company.country || company.city) && <span>·</span>}
+                    {(company.country || company.city) && (
+                      <span className="flex items-center gap-0.5">
+                        <MapPin className="h-3 w-3" />
+                        {[company.city, company.country].filter(Boolean).join(", ")}
+                      </span>
+                    )}
                   </p>
+                )}
+                {company.relationship_type && (
+                  <Badge variant="outline" className="text-[10px] mt-1">{company.relationship_type}</Badge>
                 )}
               </div>
             </div>
+
+            {/* Risk & Opportunity Signals */}
+            {(company.risk_signals?.length > 0 || company.opportunity_signals?.length > 0) && (
+              <div className="flex flex-wrap gap-1 pt-2">
+                {company.risk_signals?.slice(0, 2).map((signal: string, idx: number) => (
+                  <Badge key={`risk-${idx}`} variant="critical" className="text-xs font-medium px-2 py-1">
+                    <AlertCircle className="w-3 h-3 mr-1 inline" />
+                    {signal}
+                  </Badge>
+                ))}
+                {company.opportunity_signals?.slice(0, 2).map((signal: string, idx: number) => (
+                  <Badge key={`opp-${idx}`} variant="success" className="text-xs font-medium px-2 py-1">
+                    <Zap className="w-3 h-3 mr-1 inline" />
+                    {signal}
+                  </Badge>
+                ))}
+              </div>
+            )}
 
             {/* Financial Summary Row */}
             <div className="grid grid-cols-3 gap-4 pt-3 border-t border-[var(--border)]">
@@ -246,10 +288,8 @@ export default function CompaniesPage() {
 
   const filtered = companies.filter((c) => {
     const matchesSearch =
-      !search ||
-      c.name?.toLowerCase().includes(search.toLowerCase()) ||
-      c.domain?.toLowerCase().includes(search.toLowerCase()) ||
-      c.industry?.toLowerCase().includes(search.toLowerCase());
+      !search || [c.name, c.domain, c.industry, c.description, c.business_type, c.country, c.city]
+        .some((field) => field?.toLowerCase().includes(search.toLowerCase()));
     const type = getTypeLabel(c);
     const matchesType = typeFilter === "all" || type === typeFilter;
     return matchesSearch && matchesType;

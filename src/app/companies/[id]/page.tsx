@@ -28,6 +28,11 @@ import {
   ChevronRight,
   ExternalLink,
   Zap,
+  MapPin,
+  BookOpen,
+  Package,
+  FileText,
+  Sparkles,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -46,6 +51,19 @@ interface Company {
   total_pending: number;
   monthly_avg: number;
   trend_pct: number | null;
+  description: string | null;
+  business_type: string | null;
+  key_products: string[];
+  relationship_summary: string | null;
+  relationship_type: string | null;
+  country: string | null;
+  city: string | null;
+  website: string | null;
+  risk_signals: string[];
+  opportunity_signals: string[];
+  strategic_notes: string | null;
+  enriched_at: string | null;
+  enrichment_source: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -261,7 +279,7 @@ export default function CompanyDetailPage() {
                   <h1 className="text-2xl font-bold text-[var(--foreground)] truncate">
                     {company.name}
                   </h1>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-[var(--muted-foreground)]">
+                  <div className="flex items-center gap-3 mt-1 text-sm text-[var(--muted-foreground)] flex-wrap">
                     {company.domain && (
                       <span className="flex items-center gap-1">
                         <Globe className="h-3.5 w-3.5" />
@@ -273,6 +291,15 @@ export default function CompanyDetailPage() {
                         <Factory className="h-3.5 w-3.5" />
                         {company.industry}
                       </span>
+                    )}
+                    {(company.country || company.city) && (
+                      <span className="flex items-center gap-1">
+                        <MapPin className="h-3.5 w-3.5" />
+                        {[company.city, company.country].filter(Boolean).join(", ")}
+                      </span>
+                    )}
+                    {company.business_type && (
+                      <Badge variant="outline" className="text-xs">{company.business_type}</Badge>
                     )}
                   </div>
                 </div>
@@ -312,6 +339,24 @@ export default function CompanyDetailPage() {
                   </div>
                 )}
               </div>
+
+              {/* Risk & Opportunity Signals */}
+              {(company.risk_signals?.length > 0 || company.opportunity_signals?.length > 0) && (
+                <div className="flex flex-wrap gap-1 mt-3">
+                  {company.risk_signals?.map((signal: string, idx: number) => (
+                    <Badge key={`risk-${idx}`} variant="critical" className="text-xs font-medium px-2 py-1">
+                      <AlertCircle className="w-3 h-3 mr-1 inline" />
+                      {signal}
+                    </Badge>
+                  ))}
+                  {company.opportunity_signals?.map((signal: string, idx: number) => (
+                    <Badge key={`opp-${idx}`} variant="success" className="text-xs font-medium px-2 py-1">
+                      <Zap className="w-3 h-3 mr-1 inline" />
+                      {signal}
+                    </Badge>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -405,6 +450,78 @@ export default function CompanyDetailPage() {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         {/* Left column */}
         <div className="lg:col-span-2 space-y-6">
+          {/* Company Profile (when enriched) */}
+          {(company.description || company.relationship_summary || company.strategic_notes) && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-[var(--accent-cyan)]" />
+                  <span className="uppercase tracking-wider">Perfil de Empresa</span>
+                  {company.enriched_at && (
+                    <span className="text-[10px] text-[var(--muted-foreground)] ml-auto font-normal normal-case tracking-normal">
+                      Enriquecido {timeAgo(company.enriched_at)}
+                      {company.enrichment_source && ` vía ${company.enrichment_source}`}
+                    </span>
+                  )}
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {company.description && (
+                  <p className="text-sm leading-relaxed text-[var(--foreground)]/90">
+                    {company.description}
+                  </p>
+                )}
+                {company.relationship_summary && (
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <Sparkles className="h-3 w-3 text-[var(--accent-cyan)]" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                        Resumen de Relación
+                      </span>
+                    </div>
+                    <p className="text-sm">{company.relationship_summary}</p>
+                  </div>
+                )}
+                {company.strategic_notes && (
+                  <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3">
+                    <div className="flex items-center gap-1.5 mb-1">
+                      <FileText className="h-3 w-3 text-[var(--warning)]" />
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                        Notas Estratégicas
+                      </span>
+                    </div>
+                    <p className="text-sm">{company.strategic_notes}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Key Products */}
+          {company.key_products?.length > 0 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2">
+                  <Package className="h-4 w-4 text-[var(--quest-epic)]" />
+                  <span className="uppercase tracking-wider">Productos Clave</span>
+                  <Badge variant="outline" className="ml-2 text-xs">{company.key_products.length}</Badge>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-1.5">
+                  {company.key_products.map((product: string, i: number) => (
+                    <span
+                      key={i}
+                      className="text-xs px-2.5 py-1 rounded-md bg-[var(--quest-epic-muted)] text-[var(--quest-epic)] border border-[color-mix(in_srgb,var(--quest-epic)_20%,transparent)]"
+                    >
+                      {product}
+                    </span>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Contacts */}
           <Card>
             <CardHeader className="pb-3">
@@ -492,6 +609,24 @@ export default function CompanyDetailPage() {
                   </span>
                   <span className="font-medium">{company.industry || "—"}</span>
                 </div>
+                {(company.country || company.city) && (
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
+                      <MapPin className="h-3.5 w-3.5" />
+                      Ubicación
+                    </span>
+                    <span className="font-medium">{[company.city, company.country].filter(Boolean).join(", ")}</span>
+                  </div>
+                )}
+                {company.website && (
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
+                      <Globe className="h-3.5 w-3.5" />
+                      Sitio Web
+                    </span>
+                    <span className="font-medium truncate ml-4">{company.website}</span>
+                  </div>
+                )}
                 <div className="flex items-center justify-between">
                   <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
                     <Clock className="h-3.5 w-3.5" />
@@ -510,7 +645,8 @@ export default function CompanyDetailPage() {
               <div className="flex gap-2 mt-4 pt-4 border-t border-[var(--border)]">
                 {company.is_customer && <Badge variant="success" className="text-xs">Cliente</Badge>}
                 {company.is_supplier && <Badge variant="info" className="text-xs">Proveedor</Badge>}
-                {!company.is_customer && !company.is_supplier && (
+                {company.relationship_type && <Badge variant="outline" className="text-xs">{company.relationship_type}</Badge>}
+                {!company.is_customer && !company.is_supplier && !company.relationship_type && (
                   <span className="text-xs text-[var(--muted-foreground)]">Sin clasificar</span>
                 )}
               </div>
