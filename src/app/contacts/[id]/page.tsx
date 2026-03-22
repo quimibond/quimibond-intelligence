@@ -6,7 +6,6 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
 import { ArrowLeft, Loader2 } from "lucide-react";
 
 type Contact = {
@@ -48,10 +47,10 @@ type Fact = {
   created_at: string;
 };
 
-const riskLevelColor: Record<string, string> = {
-  high: "destructive",
-  medium: "warning",
-  low: "secondary",
+const riskLevelVariant: Record<string, string> = {
+  high: "critical",
+  medium: "medium",
+  low: "low",
 };
 
 const riskLevelLabel: Record<string, string> = {
@@ -125,7 +124,7 @@ export default function ContactDetailPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
@@ -138,7 +137,7 @@ export default function ContactDetailPage() {
           Volver
         </Button>
         <Card>
-          <CardContent className="py-8 text-center text-gray-500">
+          <CardContent className="py-8 text-center text-muted-foreground">
             Contacto no encontrado
           </CardContent>
         </Card>
@@ -159,24 +158,24 @@ export default function ContactDetailPage() {
         <CardContent className="pt-6">
           <div className="flex items-start justify-between">
             <div>
-              <h1 className="text-3xl font-bold text-gray-900">{contact.name}</h1>
-              <p className="text-gray-600 mt-1">{contact.company}</p>
-              <p className="text-sm text-gray-500 mt-1">{contact.email}</p>
+              <h1 className="text-3xl font-bold text-foreground">{contact.name}</h1>
+              <p className="text-muted-foreground mt-1">{contact.company}</p>
+              <p className="text-sm text-muted-foreground mt-1">{contact.email}</p>
               {profile?.role && (
-                <p className="text-sm text-gray-600 mt-1">
+                <p className="text-sm text-muted-foreground mt-1">
                   <span className="font-semibold">Cargo:</span> {profile.role}
                 </p>
               )}
             </div>
             <div className="flex flex-col gap-2">
               <Badge
-                variant={riskLevelColor[contact.risk_level] as any}
+                variant={riskLevelVariant[contact.risk_level] as any}
               >
                 {riskLevelLabel[contact.risk_level]}
               </Badge>
               <div className="text-right">
-                <div className="text-xs text-gray-500 mb-1">Sentimiento</div>
-                <div className="text-sm font-semibold">
+                <div className="text-xs text-muted-foreground mb-1">Sentimiento</div>
+                <div className="text-sm font-semibold text-foreground">
                   {(contact.sentiment_score * 100).toFixed(0)}%
                 </div>
               </div>
@@ -194,44 +193,44 @@ export default function ContactDetailPage() {
           <CardContent className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">
+                <p className="text-xs text-muted-foreground font-semibold mb-1">
                   Poder de Decisión
                 </p>
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-foreground">
                   {decisionPowerLabel[profile.decision_power]}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">Departamento</p>
-                <p className="text-sm text-gray-900">{profile.department || "—"}</p>
+                <p className="text-xs text-muted-foreground font-semibold mb-1">Departamento</p>
+                <p className="text-sm text-foreground">{profile.department || "—"}</p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">
+                <p className="text-xs text-muted-foreground font-semibold mb-1">
                   Estilo de Comunicación
                 </p>
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-foreground">
                   {profile.communication_style || "—"}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">
+                <p className="text-xs text-muted-foreground font-semibold mb-1">
                   Estilo de Negociación
                 </p>
-                <p className="text-sm text-gray-900">
+                <p className="text-sm text-foreground">
                   {profile.negotiation_style || "—"}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">
+                <p className="text-xs text-muted-foreground font-semibold mb-1">
                   Patrón de Respuesta
                 </p>
-                <p className="text-sm text-gray-900">{profile.response_pattern || "—"}</p>
+                <p className="text-sm text-foreground">{profile.response_pattern || "—"}</p>
               </div>
             </div>
 
             {profile.key_interests && profile.key_interests.length > 0 && (
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-2">
+                <p className="text-xs text-muted-foreground font-semibold mb-2">
                   Intereses Clave
                 </p>
                 <div className="flex flex-wrap gap-2">
@@ -246,17 +245,17 @@ export default function ContactDetailPage() {
 
             {profile.personality_notes && (
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">Personalidad</p>
-                <p className="text-sm text-gray-900">{profile.personality_notes}</p>
+                <p className="text-xs text-muted-foreground font-semibold mb-1">Personalidad</p>
+                <p className="text-sm text-foreground">{profile.personality_notes}</p>
               </div>
             )}
 
             {profile.influence_on_deals && (
               <div>
-                <p className="text-xs text-gray-500 font-semibold mb-1">
+                <p className="text-xs text-muted-foreground font-semibold mb-1">
                   Influencia en Tratos
                 </p>
-                <p className="text-sm text-gray-900">{profile.influence_on_deals}</p>
+                <p className="text-sm text-foreground">{profile.influence_on_deals}</p>
               </div>
             )}
           </CardContent>
@@ -274,28 +273,28 @@ export default function ContactDetailPage() {
               {facts.map((fact) => (
                 <div
                   key={fact.id}
-                  className="p-3 bg-gray-50 rounded-lg border border-gray-200"
+                  className="p-3 bg-muted/50 rounded-lg border border-border"
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <Badge variant="outline" className="text-xs whitespace-nowrap">
                       {fact.fact_type}
                     </Badge>
                     <div className="text-right">
-                      <div className="text-xs text-gray-500 mb-1">Confianza</div>
+                      <div className="text-xs text-muted-foreground mb-1">Confianza</div>
                       <div className="flex items-center gap-1">
-                        <div className="w-16 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="w-16 h-2 bg-muted rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-green-500"
+                            className="h-full bg-success"
                             style={{ width: `${fact.confidence * 100}%` }}
                           />
                         </div>
-                        <span className="text-xs text-gray-600 w-8 text-right">
+                        <span className="text-xs text-muted-foreground w-8 text-right">
                           {(fact.confidence * 100).toFixed(0)}%
                         </span>
                       </div>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-900">{fact.fact_text}</p>
+                  <p className="text-sm text-foreground">{fact.fact_text}</p>
                 </div>
               ))}
             </div>
@@ -311,16 +310,16 @@ export default function ContactDetailPage() {
         <CardContent>
           <div className="grid grid-cols-3 gap-4">
             <div>
-              <p className="text-xs text-gray-500 font-semibold mb-1">Enviados</p>
-              <p className="text-2xl font-bold text-gray-900">{contact.total_sent}</p>
+              <p className="text-xs text-muted-foreground font-semibold mb-1">Enviados</p>
+              <p className="text-2xl font-bold text-foreground">{contact.total_sent}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 font-semibold mb-1">Recibidos</p>
-              <p className="text-2xl font-bold text-gray-900">{contact.total_received}</p>
+              <p className="text-xs text-muted-foreground font-semibold mb-1">Recibidos</p>
+              <p className="text-2xl font-bold text-foreground">{contact.total_received}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 font-semibold mb-1">Total</p>
-              <p className="text-2xl font-bold text-gray-900">
+              <p className="text-xs text-muted-foreground font-semibold mb-1">Total</p>
+              <p className="text-2xl font-bold text-foreground">
                 {contact.total_sent + contact.total_received}
               </p>
             </div>

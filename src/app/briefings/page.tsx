@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useRouter } from "next/navigation";
@@ -89,8 +89,8 @@ export default function BriefingsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Briefings</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-3xl font-bold text-foreground">Briefings</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Resúmenes diarios y reportes de inteligencia comercial
         </p>
       </div>
@@ -100,12 +100,12 @@ export default function BriefingsPage() {
         {loading ? (
           <div className="space-y-3">
             {[...Array(3)].map((_, i) => (
-              <Card key={i} className="h-24 bg-gray-100 animate-pulse" />
+              <Card key={i} className="h-24 bg-muted animate-pulse" />
             ))}
           </div>
         ) : summaries.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-gray-500">
+            <CardContent className="py-8 text-center text-muted-foreground">
               No hay briefings disponibles
             </CardContent>
           </Card>
@@ -121,22 +121,22 @@ export default function BriefingsPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
-                          <h3 className="font-semibold text-gray-900">
+                          <h3 className="font-semibold text-foreground">
                             {formatDate(summary.summary_date)}
                           </h3>
                           <Badge variant="secondary" className="text-xs">
                             {summary.total_emails} emails
                           </Badge>
                         </div>
-                        <p className="text-sm text-gray-700 leading-relaxed">
+                        <p className="text-sm text-foreground leading-relaxed">
                           {truncateText(summary.summary_text)}
                         </p>
                       </div>
                     </div>
 
                     {summary.key_events && Object.keys(summary.key_events).length > 0 && (
-                      <div className="pt-2 border-t border-gray-200">
-                        <p className="text-xs text-gray-500 font-semibold mb-2">
+                      <div className="pt-2 border-t border-border">
+                        <p className="text-xs text-muted-foreground font-semibold mb-2">
                           Eventos Clave
                         </p>
                         <div className="flex flex-wrap gap-1">
@@ -150,7 +150,7 @@ export default function BriefingsPage() {
                     )}
 
                     {relatedBriefing && relatedBriefing.html_content && (
-                      <div className="pt-2 border-t border-gray-200">
+                      <div className="pt-2 border-t border-border">
                         <Button
                           variant="outline"
                           size="sm"
