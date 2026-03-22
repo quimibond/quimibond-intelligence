@@ -2,17 +2,21 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
   Search,
   ChevronRight,
   Building2,
-  Activity,
   TrendingUp,
   TrendingDown,
   Minus,
+  DollarSign,
+  Users,
+  AlertCircle,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -40,6 +44,185 @@ function getTypeLabel(c: Company): string {
   if (c.is_customer) return "customer";
   if (c.is_supplier) return "supplier";
   return "other";
+}
+
+function getTrendIcon(trend: number | null) {
+  if (trend != null && trend > 0) return <TrendingUp className="w-4 h-4 text-[var(--success)]" />;
+  if (trend != null && trend < 0) return <TrendingDown className="w-4 h-4 text-[var(--severity-critical)]" />;
+  return <Minus className="w-4 h-4 text-[var(--muted-foreground)]" />;
+}
+
+function StatCard({
+  label,
+  value,
+  isLoading,
+  icon: Icon,
+  variant = "default",
+}: {
+  label: string;
+  value: string | number;
+  isLoading: boolean;
+  icon?: React.ComponentType<React.SVGProps<SVGSVGElement>>;
+  variant?: "default" | "critical" | "success" | "warning";
+}) {
+  const colorMap = {
+    default: "text-[var(--muted-foreground)]",
+    critical: "text-[var(--severity-critical)]",
+    success: "text-[var(--success)]",
+    warning: "text-[var(--warning)]",
+  };
+
+  return (
+    <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4">
+      <CardContent className="pt-6">
+        <div className="flex items-start justify-between">
+          <div className="space-y-2">
+            <p className="text-sm font-medium text-[var(--muted-foreground)]">
+              {label}
+            </p>
+            {isLoading ? (
+              <Skeleton className="h-8 w-20" />
+            ) : (
+              <p className={cn("text-3xl font-bold", variant !== "default" && colorMap[variant])}>
+                {value}
+              </p>
+            )}
+          </div>
+          {Icon && <Icon className={cn("h-8 w-8", colorMap[variant])} />}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CompanyRow({ company, index }: { company: Company; index: number }) {
+  const initials = company.name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2);
+
+  const trend = company.trend_pct;
+  const creditUtil = Number(company.credit_limit) > 0
+    ? Math.round((Number(company.total_pending) / Number(company.credit_limit)) * 100)
+    : null;
+
+  return (
+    <div
+      className="group game-card opacity-0 animate-in fade-in slide-in-from-bottom-4"
+      style={{ animationDelay: `${index * 30}ms`, animationFillMode: "forwards" }}
+    >
+      <Card className="hover:border-[var(--primary)] hover:shadow-md transition-all cursor-pointer">
+        <CardContent className="p-6">
+          <div className="space-y-4">
+            {/* Top Row: Avatar, Name, Badges */}
+            <div className="flex items-start gap-4">
+              <div className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 text-white font-bold text-sm bg-[var(--primary)]">
+                {initials}
+              </div>
+
+              <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between gap-2 mb-1">
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-sm font-semibold text-[var(--foreground)] truncate">
+                      {company.name}
+                    </h3>
+                    <p className="text-xs text-[var(--muted-foreground)] truncate">
+                      {company.domain || company.canonical_name}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {company.is_customer && (
+                      <Badge variant="success" className="shrink-0 text-xs font-medium">
+                        Cliente
+                      </Badge>
+                    )}
+                    {company.is_supplier && (
+                      <Badge variant="info" className="shrink-0 text-xs font-medium">
+                        Proveedor
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+                {company.industry && (
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    {company.industry}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Financial Summary Row */}
+            <div className="grid grid-cols-3 gap-4 pt-3 border-t border-[var(--border)]">
+              <div className="space-y-1">
+                <p className="text-xs text-[var(--muted-foreground)]">Valor de Vida</p>
+                <p className="text-sm font-bold tabular-nums text-[var(--foreground)]">
+                  {formatCurrency(Number(company.lifetime_value) || 0)}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-[var(--muted-foreground)]">Promedio Mensual</p>
+                <p className="text-sm font-bold tabular-nums text-[var(--foreground)]">
+                  {formatCurrency(Number(company.monthly_avg) || 0)}
+                </p>
+              </div>
+              <div className="space-y-1">
+                <p className="text-xs text-[var(--muted-foreground)]">Tendencia</p>
+                <div className="flex items-center gap-1.5">
+                  {getTrendIcon(trend)}
+                  {trend != null ? (
+                    <span className={cn(
+                      "text-sm font-bold tabular-nums",
+                      trend > 0 ? "text-[var(--success)]" : trend < 0 ? "text-[var(--severity-critical)]" : "text-[var(--muted-foreground)]",
+                    )}>
+                      {trend > 0 ? "+" : ""}{Number(trend).toFixed(0)}%
+                    </span>
+                  ) : (
+                    <span className="text-sm text-[var(--muted-foreground)]">—</span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Bottom Info Row */}
+            <div className="flex items-center justify-between text-xs text-[var(--muted-foreground)]">
+              <span>
+                Pendiente:{" "}
+                <span className={cn(
+                  "font-medium",
+                  creditUtil != null && creditUtil > 80 ? "text-[var(--severity-critical)]" : "text-[var(--foreground)]",
+                )}>
+                  {formatCurrency(Number(company.total_pending) || 0)}
+                </span>
+                {creditUtil != null && (
+                  <span className="ml-1">({creditUtil}% del límite)</span>
+                )}
+              </span>
+              {company.delivery_otd_rate != null && (
+                <span>
+                  OTD:{" "}
+                  <span className={cn(
+                    "font-medium",
+                    Number(company.delivery_otd_rate) >= 90 ? "text-[var(--success)]" :
+                    Number(company.delivery_otd_rate) >= 70 ? "text-[var(--warning)]" :
+                    "text-[var(--severity-critical)]",
+                  )}>
+                    {Number(company.delivery_otd_rate).toFixed(0)}%
+                  </span>
+                </span>
+              )}
+            </div>
+          </div>
+
+          <Link
+            href={`/companies/${company.id}`}
+            className="absolute inset-0 rounded-lg"
+          />
+        </CardContent>
+      </Card>
+    </div>
+  );
 }
 
 export default function CompaniesPage() {
@@ -74,132 +257,150 @@ export default function CompaniesPage() {
 
   const customers = companies.filter((c) => c.is_customer && !c.is_supplier).length;
   const suppliers = companies.filter((c) => c.is_supplier && !c.is_customer).length;
-  const both = companies.filter((c) => c.is_customer && c.is_supplier).length;
+  const bothCount = companies.filter((c) => c.is_customer && c.is_supplier).length;
 
-  const typeFilters = [
-    { key: "all", label: "Todos", count: companies.length },
-    { key: "customer", label: "Clientes", count: customers },
-    { key: "supplier", label: "Proveedores", count: suppliers },
-    { key: "both", label: "Ambos", count: both },
-  ];
+  const totalLifetimeValue = companies.reduce((sum, c) => sum + (Number(c.lifetime_value) || 0), 0);
+  const highCreditUtil = companies.filter((c) => {
+    if (Number(c.credit_limit) <= 0) return false;
+    return (Number(c.total_pending) / Number(c.credit_limit)) * 100 > 80;
+  }).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="flex items-center gap-3">
-            <Building2 className="h-6 w-6 text-[var(--accent-cyan)]" />
-            <h1 className="text-2xl font-black tracking-tight">Directorio de Empresas</h1>
-          </div>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            {companies.length} empresas en el sistema
-          </p>
+    <div className="max-w-7xl mx-auto space-y-8">
+      {/* Header */}
+      <div className="space-y-2 opacity-0 animate-in fade-in slide-in-from-bottom-4">
+        <div className="flex items-center gap-3">
+          <Building2 className="w-8 h-8 text-[var(--primary)]" />
+          <h1 className="text-3xl font-bold text-[var(--foreground)]">
+            Directorio de Empresas
+          </h1>
         </div>
+        <p className="text-[var(--muted-foreground)]">
+          Cartera de clientes y proveedores — visión financiera y operativa
+        </p>
       </div>
 
-      {/* Search + Filters */}
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
-          <input
-            type="text"
-            placeholder="Buscar por nombre, dominio o industria..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2.5 pl-10 pr-4 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-          />
-        </div>
-        <div className="flex items-center gap-1">
-          {typeFilters.map((f) => (
-            <button
-              key={f.key}
-              onClick={() => setTypeFilter(f.key)}
-              className={cn(
-                "px-3 py-2 rounded-lg text-xs font-medium transition-colors",
-                typeFilter === f.key
-                  ? "bg-[var(--secondary)] text-[var(--foreground)] border border-[var(--border)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--accent)]",
-              )}
-            >
-              {f.label}
-              <span className="ml-1 tabular-nums">{f.count}</span>
-            </button>
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <StatCard
+          label="Total de Empresas"
+          value={companies.length}
+          isLoading={loading}
+          icon={Building2}
+        />
+        <StatCard
+          label="Valor de Vida Total"
+          value={formatCurrency(totalLifetimeValue)}
+          isLoading={loading}
+          icon={DollarSign}
+          variant="success"
+        />
+        <StatCard
+          label="Clientes Activos"
+          value={customers + bothCount}
+          isLoading={loading}
+          icon={Users}
+        />
+        <StatCard
+          label="Crédito Crítico (>80%)"
+          value={highCreditUtil}
+          isLoading={loading}
+          icon={AlertCircle}
+          variant={highCreditUtil > 0 ? "critical" : "success"}
+        />
+      </div>
+
+      {/* Filter Bar */}
+      <Card className="opacity-0 animate-in fade-in slide-in-from-bottom-4">
+        <CardContent className="pt-6">
+          <div className="space-y-4">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--muted-foreground)]" />
+              <Input
+                placeholder="Buscar por nombre, dominio o industria..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-10 bg-[var(--background)] border-[var(--border)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)]"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="text-xs font-medium text-[var(--muted-foreground)] mb-2 block">
+                  Tipo de Empresa
+                </label>
+                <select
+                  value={typeFilter}
+                  onChange={(e) => setTypeFilter(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-md text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                >
+                  <option value="all">Todas ({companies.length})</option>
+                  <option value="customer">Clientes ({customers})</option>
+                  <option value="supplier">Proveedores ({suppliers})</option>
+                  <option value="both">Ambos ({bothCount})</option>
+                </select>
+              </div>
+
+              <div className="flex items-end md:col-span-2">
+                <p className="text-sm text-[var(--muted-foreground)]">
+                  Mostrando{" "}
+                  <span className="font-bold text-[var(--foreground)]">
+                    {filtered.length}
+                  </span>{" "}
+                  de{" "}
+                  <span className="font-bold text-[var(--foreground)]">
+                    {companies.length}
+                  </span>{" "}
+                  empresas
+                </p>
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Companies List */}
+      {loading ? (
+        <div className="space-y-4">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Card key={i}>
+              <CardContent className="p-6">
+                <div className="space-y-4">
+                  <div className="flex items-start gap-4">
+                    <Skeleton className="w-10 h-10 rounded-full" />
+                    <div className="flex-1 space-y-3">
+                      <Skeleton className="h-5 w-3/4" />
+                      <Skeleton className="h-3 w-full" />
+                      <div className="grid grid-cols-3 gap-4 pt-3">
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                        <Skeleton className="h-8 w-full" />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
-      </div>
-
-      {loading ? (
-        <div className="flex items-center justify-center py-12">
-          <Activity className="h-6 w-6 text-[var(--primary)] animate-pulse" />
+      ) : filtered.length > 0 ? (
+        <div className="space-y-4">
+          {filtered.map((company, index) => (
+            <CompanyRow key={company.id} company={company} index={index} />
+          ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Building2 className="h-10 w-10 mb-3 text-[var(--muted-foreground)] opacity-30" />
-            <p className="text-sm text-[var(--muted-foreground)]">
-              {search ? "No se encontraron empresas." : "No hay empresas aun."}
+          <CardContent className="py-12 text-center">
+            <Building2 className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4 opacity-50" />
+            <p className="text-[var(--muted-foreground)] font-medium">
+              {search ? "No se encontraron empresas" : "No hay empresas registradas"}
+            </p>
+            <p className="text-xs text-[var(--muted-foreground)] mt-2">
+              Intenta con diferentes criterios de búsqueda o filtros
             </p>
           </CardContent>
         </Card>
-      ) : (
-        <div className="space-y-2">
-          {filtered.map((company) => {
-            const trend = company.trend_pct;
-            const TrendIcon = trend != null && trend > 0 ? TrendingUp : trend != null && trend < 0 ? TrendingDown : Minus;
-            const trendColor = trend != null && trend > 0 ? "var(--success)" : trend != null && trend < 0 ? "var(--destructive)" : "var(--muted-foreground)";
-
-            return (
-              <Link key={company.id} href={`/companies/${company.id}`}>
-                <Card className="cursor-pointer transition-all hover:border-[var(--primary)]">
-                  <CardContent className="flex items-center gap-4 p-4">
-                    {/* Avatar */}
-                    <div className="w-10 h-10 rounded-lg flex items-center justify-center text-sm font-bold shrink-0 bg-[color-mix(in_srgb,var(--accent-cyan)_15%,transparent)] text-[var(--accent-cyan)]">
-                      {company.name.charAt(0).toUpperCase()}
-                    </div>
-
-                    {/* Info */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold truncate">{company.name}</span>
-                        {company.industry && (
-                          <Badge variant="outline" className="text-[10px] px-1.5 py-0 hidden sm:inline-flex">
-                            {company.industry}
-                          </Badge>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-3 text-xs text-[var(--muted-foreground)] mt-0.5">
-                        {company.domain && <span className="truncate">{company.domain}</span>}
-                        <div className="hidden md:flex items-center gap-1.5">
-                          {company.is_customer && <Badge variant="success" className="text-[10px] px-1.5 py-0">Cliente</Badge>}
-                          {company.is_supplier && <Badge variant="info" className="text-[10px] px-1.5 py-0">Proveedor</Badge>}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Lifetime Value */}
-                    <div className="hidden sm:flex items-center gap-2 shrink-0">
-                      <span className="text-sm font-bold tabular-nums text-[var(--foreground)]">
-                        {formatCurrency(Number(company.lifetime_value) || 0)}
-                      </span>
-                    </div>
-
-                    {/* Trend */}
-                    {trend != null && (
-                      <div className="hidden md:flex items-center gap-1 shrink-0" style={{ color: trendColor }}>
-                        <TrendIcon className="h-3.5 w-3.5" />
-                        <span className="text-xs font-semibold tabular-nums">
-                          {trend > 0 ? "+" : ""}{Number(trend).toFixed(0)}%
-                        </span>
-                      </div>
-                    )}
-
-                    <ChevronRight className="h-4 w-4 text-[var(--muted-foreground)] shrink-0" />
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </div>
       )}
     </div>
   );
