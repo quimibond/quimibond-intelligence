@@ -1,433 +1,509 @@
-'use client';
+"use client";
 
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { supabase } from '@/lib/supabase';
-import { Card, CardHeader, CardTitle, CardContent } from '@/components/ui/card';
-import { Badge } from '@/components/ui/badge';
-import { Skeleton } from '@/components/ui/skeleton';
-import { cn, timeAgo } from '@/lib/utils';
+import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
+import { cn, timeAgo } from "@/lib/utils";
+import { XPBar } from "@/components/gamified/xp-bar";
+import { PowerStat } from "@/components/gamified/power-stat";
+import { HealthBar } from "@/components/gamified/health-bar";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import {
-  Mail,
-  AlertCircle,
+  AlertTriangle,
   CheckSquare,
-  TrendingUp,
-  Clock,
   Users,
+  Shield,
+  Clock,
+  Target,
+  FileText,
   Activity,
-} from 'lucide-react';
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Flame,
+  Crosshair,
+} from "lucide-react";
 
-interface KPIData {
-  totalEmails: number;
-  activeAlerts: number;
-  pendingActions: number;
-  riskContacts: number;
-  threadsNeedingResponse: number;
+/* ------------------------------------------------------------------ */
+/*  Types matching the get_director_dashboard RPC response             */
+/* ------------------------------------------------------------------ */
+
+interface KPI {
+  critical_alerts: number;
+  overdue_actions: number;
+  at_risk_contacts: number;
+  pending_actions: number;
+  resolved_alerts: number;
+  completed_actions: number;
+  total_emails: number;
 }
 
-interface Alert {
-  id: string;
-  alert_type: string;
-  severity: 'critical' | 'high' | 'medium' | 'low';
-  title: string;
-  contact_name: string;
-  created_at: string;
-  business_impact: string;
-}
-
-interface ActionItem {
+interface OverdueAction {
   id: string;
   description: string;
-  priority: string;
-  state: string;
-  assignee_name: string;
-  due_date: string;
-  contact_name: string;
+  assignee_name: string | null;
+  assignee_email: string | null;
+  days_overdue: number;
+  contact_name: string | null;
+  reason: string | null;
 }
 
-interface ActivitySummary {
-  summary_text: string;
-  total_emails: number;
-  emails_sent: number;
-  emails_received: number;
-  avg_response_hours: number;
+interface CriticalAlert {
+  id: string;
+  title: string;
+  severity: string;
+  contact_name: string | null;
+  business_impact: string | null;
+  suggested_action: string | null;
+  created_at: string;
 }
+
+interface AccountabilityRow {
+  assignee_name: string | null;
+  assignee_email: string | null;
+  pending: number;
+  overdue: number;
+  completed: number;
+}
+
+interface ContactAtRisk {
+  id: string;
+  name: string;
+  company: string | null;
+  risk_level: string;
+  sentiment_score: number;
+  relationship_score: number;
+  open_alerts: number;
+  pending_actions: number;
+}
+
+interface LatestBriefing {
+  id: string;
+  briefing_type: string;
+  html_content: string | null;
+  created_at: string;
+}
+
+interface DirectorDashboard {
+  kpi: KPI;
+  overdue_actions: OverdueAction[];
+  critical_alerts: CriticalAlert[];
+  accountability: AccountabilityRow[];
+  contacts_at_risk: ContactAtRisk[];
+  latest_briefing: LatestBriefing | null;
+  pending_actions: number;
+}
+
+/* ------------------------------------------------------------------ */
+/*  Helpers                                                            */
+/* ------------------------------------------------------------------ */
+
+function calculateLevel(xp: number): { level: number; currentXP: number; maxXP: number } {
+  let level = 1;
+  let remaining = xp;
+  let threshold = 100;
+
+  while (remaining >= threshold) {
+    remaining -= threshold;
+    level++;
+    threshold = Math.floor(threshold * 1.5);
+  }
+
+  return { level, currentXP: remaining, maxXP: threshold };
+}
+
+/* ------------------------------------------------------------------ */
+/*  Component                                                          */
+/* ------------------------------------------------------------------ */
 
 export default function DashboardPage() {
-  const [kpis, setKpis] = useState<KPIData | null>(null);
-  const [recentAlerts, setRecentAlerts] = useState<Alert[]>([]);
-  const [urgentActions, setUrgentActions] = useState<ActionItem[]>([]);
-  const [activity, setActivity] = useState<ActivitySummary | null>(null);
+  const [data, setData] = useState<DirectorDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [briefingOpen, setBriefingOpen] = useState(false);
 
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
+    async function fetchData() {
+      const { data: rpcData, error } = await supabase.rpc("get_director_dashboard");
 
-        // Fetch KPIs
-        const [emailsRes, alertsRes, actionsRes, contactsRes, threadsRes] =
-          await Promise.all([
-            supabase.from('emails').select('id', { count: 'exact', head: true }),
-            supabase.from('alerts').select('id', { count: 'exact', head: true }).eq('state', 'new'),
-            supabase.from('action_items').select('id', { count: 'exact', head: true }).eq('state', 'pending'),
-            supabase.from('contacts').select('id', { count: 'exact', head: true }).eq('risk_level', 'high'),
-            supabase.from('email_threads').select('id', { count: 'exact', head: true }).eq('status', 'needs_response'),
-          ]);
-
-        setKpis({
-          totalEmails: emailsRes.count || 0,
-          activeAlerts: alertsRes.count || 0,
-          pendingActions: actionsRes.count || 0,
-          riskContacts: contactsRes.count || 0,
-          threadsNeedingResponse: threadsRes.count || 0,
-        });
-
-        // Fetch recent alerts
-        const { data: alertsData } = await supabase
-          .from('alerts')
-          .select(
-            'id, alert_type, severity, title, contact_name, created_at, business_impact'
-          )
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        setRecentAlerts(alertsData || []);
-
-        // Fetch urgent actions
-        const { data: actionsData } = await supabase
-          .from('action_items')
-          .select(
-            'id, description, priority, state, assignee_name, due_date, contact_name'
-          )
-          .eq('state', 'pending')
-          .order('priority', { ascending: true })
-          .order('due_date', { ascending: true })
-          .limit(5);
-
-        setUrgentActions(actionsData || []);
-
-        // Fetch activity summary
-        const { data: summaryData } = await supabase
-          .from('daily_summaries')
-          .select('summary_text, total_emails')
-          .order('summary_date', { ascending: false })
-          .limit(1)
-          .single();
-
-        const { data: metricsData } = await supabase
-          .from('response_metrics')
-          .select('emails_received, emails_sent, avg_response_hours')
-          .order('metric_date', { ascending: false })
-          .limit(1)
-          .single();
-
-        setActivity({
-          summary_text: summaryData?.summary_text || '',
-          total_emails: summaryData?.total_emails || 0,
-          emails_sent: metricsData?.emails_sent || 0,
-          emails_received: metricsData?.emails_received || 0,
-          avg_response_hours: metricsData?.avg_response_hours || 0,
-        });
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-      } finally {
+      if (error) {
+        console.error("Error fetching director dashboard:", error);
         setLoading(false);
+        return;
       }
-    };
 
-    fetchDashboardData();
+      setData(rpcData as unknown as DirectorDashboard);
+      setLoading(false);
+    }
+    fetchData();
   }, []);
 
-  const getSeverityVariant = (
-    severity: 'critical' | 'high' | 'medium' | 'low'
-  ) => {
-    return severity as 'critical' | 'high' | 'medium' | 'low';
-  };
-
-  const getPriorityBorder = (priority: string) => {
-    switch (priority?.toLowerCase()) {
-      case 'high':
-        return 'border-l-4 border-l-severity-critical';
-      case 'medium':
-        return 'border-l-4 border-l-severity-medium';
-      case 'low':
-        return 'border-l-4 border-l-severity-low';
-      default:
-        return 'border-l-4 border-l-muted-foreground';
-    }
-  };
-
-  const KPICard = ({
-    icon: Icon,
-    label,
-    value,
-    isLoading,
-  }: {
-    icon: React.ComponentType<any>;
-    label: string;
-    value: number;
-    isLoading: boolean;
-  }) => (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-start justify-between">
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-muted-foreground">{label}</p>
-            {isLoading ? (
-              <Skeleton className="h-8 w-16" />
-            ) : (
-              <p className="text-3xl font-bold text-foreground">{value}</p>
-            )}
-          </div>
-          <Icon className="h-8 w-8 text-muted-foreground" />
+  /* Loading state */
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center">
+          <Activity className="h-8 w-8 text-[var(--accent-cyan)] animate-pulse mx-auto mb-3" />
+          <div className="text-sm text-[var(--muted-foreground)]">Inicializando centro de comando...</div>
         </div>
-      </CardContent>
-    </Card>
-  );
+      </div>
+    );
+  }
+
+  if (!data) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="text-center text-[var(--muted-foreground)]">
+          <Shield className="h-8 w-8 mx-auto mb-3 opacity-40" />
+          <p className="text-sm">No se pudo cargar el dashboard. Intenta recargar la pagina.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const { kpi, overdue_actions, critical_alerts, accountability, contacts_at_risk, latest_briefing } = data;
+
+  /* XP calculation */
+  const totalXP = (kpi.resolved_alerts ?? 0) * 10 + (kpi.completed_actions ?? 0) * 5 + (kpi.total_emails ?? 0);
+  const levelInfo = calculateLevel(totalXP);
+
+  const hasAttentionItems = critical_alerts.length > 0 || overdue_actions.length > 0;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
-      {/* Header */}
-      <div className="space-y-2">
-        <h1 className="text-3xl font-bold text-foreground">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Inteligencia comercial en tiempo real
-        </p>
-      </div>
-
-      {/* KPI Row */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <KPICard
-          icon={Mail}
-          label="Total Correos"
-          value={kpis?.totalEmails || 0}
-          isLoading={loading}
-        />
-        <KPICard
-          icon={AlertCircle}
-          label="Alertas Activas"
-          value={kpis?.activeAlerts || 0}
-          isLoading={loading}
-        />
-        <KPICard
-          icon={CheckSquare}
-          label="Acciones Pendientes"
-          value={kpis?.pendingActions || 0}
-          isLoading={loading}
-        />
-        <KPICard
-          icon={Users}
-          label="Contactos en Riesgo"
-          value={kpis?.riskContacts || 0}
-          isLoading={loading}
-        />
-        <KPICard
-          icon={Clock}
-          label="Threads sin Respuesta"
-          value={kpis?.threadsNeedingResponse || 0}
-          isLoading={loading}
-        />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-8">
-          {/* Recent Alerts */}
-          <Card>
-            <CardHeader className="border-b border-border">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-semibold">
-                  Alertas Recientes
-                </CardTitle>
-                <Link
-                  href="/alerts"
-                  className="text-sm text-primary hover:text-primary/80 font-medium"
-                >
-                  Ver todas
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {loading ? (
-                <div className="space-y-4 pt-6">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-12 w-full" />
-                  ))}
-                </div>
-              ) : recentAlerts.length > 0 ? (
-                <div className="divide-y divide-border">
-                  {recentAlerts.map((alert) => (
-                    <Link
-                      key={alert.id}
-                      href={`/alerts?id=${alert.id}`}
-                      className="block py-4 hover:bg-muted/50 transition-colors px-0 first:pt-4 last:pb-0"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2 mb-1">
-                            <h3 className="text-sm font-semibold text-foreground truncate">
-                              {alert.title}
-                            </h3>
-                            <Badge
-                              variant={getSeverityVariant(alert.severity)}
-                              className="capitalize shrink-0"
-                            >
-                              {alert.severity}
-                            </Badge>
-                          </div>
-                          <p className="text-xs text-muted-foreground">
-                            {alert.contact_name} •{' '}
-                            {timeAgo(alert.created_at)}
-                          </p>
-                          {alert.business_impact && (
-                            <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
-                              {alert.business_impact}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-8 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Sin alertas activas
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Activity Summary */}
-          <Card>
-            <CardHeader className="border-b border-border">
-              <CardTitle className="text-lg font-semibold flex items-center gap-2">
-                <Activity className="h-5 w-5" />
-                Resumen de Actividad
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="pt-6">
-              {loading ? (
-                <div className="space-y-4">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-3/4" />
-                </div>
-              ) : activity ? (
-                <div className="space-y-6">
-                  {activity.summary_text && (
-                    <p className="text-sm text-foreground leading-relaxed">
-                      {activity.summary_text}
-                    </p>
-                  )}
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="bg-muted/50 rounded-lg p-4">
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Correos Recibidos
-                      </p>
-                      <p className="text-2xl font-bold text-foreground">
-                        {activity.emails_received}
-                      </p>
-                    </div>
-                    <div className="bg-muted/50 rounded-lg p-4">
-                      <p className="text-xs text-muted-foreground mb-1">
-                        Correos Enviados
-                      </p>
-                      <p className="text-2xl font-bold text-foreground">
-                        {activity.emails_sent}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="bg-primary/5 rounded-lg p-4 border border-primary/10">
-                    <p className="text-xs text-primary mb-1 font-medium">
-                      Tiempo promedio de respuesta
-                    </p>
-                    <p className="text-2xl font-bold text-foreground">
-                      {activity.avg_response_hours.toFixed(1)} horas
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="py-8 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Sin datos disponibles
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Sidebar */}
+    <div className="space-y-6">
+      {/* ── Header ── */}
+      <div className="flex items-center justify-between">
         <div>
-          {/* Urgent Actions */}
-          <Card>
-            <CardHeader className="border-b border-border">
-              <div className="flex items-center justify-between">
-                <CardTitle className="text-lg font-semibold">
-                  Acciones Urgentes
-                </CardTitle>
-                <Link
-                  href="/actions"
-                  className="text-sm text-primary hover:text-primary/80 font-medium"
-                >
-                  Ver todas
-                </Link>
-              </div>
-            </CardHeader>
-            <CardContent className="pt-0">
-              {loading ? (
-                <div className="space-y-3 pt-6">
-                  {[1, 2, 3].map((i) => (
-                    <Skeleton key={i} className="h-20 w-full" />
-                  ))}
-                </div>
-              ) : urgentActions.length > 0 ? (
-                <div className="space-y-3 pt-4">
-                  {urgentActions.map((action) => (
-                    <Link
-                      key={action.id}
-                      href={`/actions?id=${action.id}`}
-                      className={cn(
-                        'block p-3 rounded-lg transition-colors cursor-pointer hover:opacity-90 bg-muted/50',
-                        getPriorityBorder(action.priority)
-                      )}
-                    >
-                      <div className="space-y-1">
-                        <p className="text-sm font-medium text-foreground line-clamp-2">
-                          {action.description}
-                        </p>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <span>{action.contact_name}</span>
-                          {action.due_date && (
-                            <span>
-                              {new Date(action.due_date).toLocaleDateString(
-                                'es-MX'
-                              )}
-                            </span>
-                          )}
-                        </div>
-                        {action.assignee_name && (
-                          <p className="text-xs text-muted-foreground">
-                            Asignado a: {action.assignee_name}
-                          </p>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-6 text-center">
-                  <p className="text-sm text-muted-foreground">
-                    Sin acciones pendientes
-                  </p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
+          <div className="flex items-center gap-3">
+            <Crosshair className="h-6 w-6 neon-text-cyan" />
+            <h1 className="text-2xl font-black tracking-tight">Centro de Comando</h1>
+          </div>
+          <p className="text-sm text-[var(--muted-foreground)] mt-1">
+            Dashboard ejecutivo — Decisiones y seguimiento
+          </p>
+        </div>
+        <div className="hidden md:flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+          <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
+          SISTEMA ACTIVO
         </div>
       </div>
+
+      {/* ── XP Bar ── */}
+      <div className="game-card rounded-lg bg-[var(--card)] p-4">
+        <XPBar
+          level={levelInfo.level}
+          currentXP={levelInfo.currentXP}
+          maxXP={levelInfo.maxXP}
+          label={`Nivel de Inteligencia — ${totalXP.toLocaleString()} XP total`}
+        />
+      </div>
+
+      {/* ── 4 KPI Cards ── */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <PowerStat
+          label="Alertas Criticas"
+          value={kpi.critical_alerts}
+          icon={AlertTriangle}
+          color="red"
+          subtitle="requieren decision"
+          delay={1}
+        />
+        <PowerStat
+          label="Acciones Vencidas"
+          value={kpi.overdue_actions}
+          icon={Clock}
+          color="amber"
+          subtitle="sin completar"
+          delay={2}
+        />
+        <PowerStat
+          label="Contactos en Riesgo"
+          value={kpi.at_risk_contacts}
+          icon={Flame}
+          color="red"
+          subtitle="relacion deteriorada"
+          delay={3}
+        />
+        <PowerStat
+          label="Acciones Pendientes"
+          value={kpi.pending_actions}
+          icon={Target}
+          color="purple"
+          subtitle={`${kpi.completed_actions} completadas`}
+          delay={4}
+        />
+      </div>
+
+      {/* ── Requiere tu Atencion ── */}
+      {hasAttentionItems && (
+        <Card className="border-l-4 border-l-[var(--destructive)]">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-4 w-4 text-[var(--destructive)]" />
+              <span className="uppercase tracking-wider">Requiere tu Atencion</span>
+              <Badge variant="destructive" className="ml-auto text-[10px]">
+                {critical_alerts.length + overdue_actions.length} asuntos
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* Critical / High Alerts */}
+            {critical_alerts.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Alertas Criticas
+                </div>
+                {critical_alerts.map((alert) => (
+                  <div
+                    key={alert.id}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3 space-y-1"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <Badge
+                          variant={alert.severity === "critical" ? "critical" : "high"}
+                          className="text-[10px] shrink-0"
+                        >
+                          {alert.severity}
+                        </Badge>
+                        <span className="text-sm font-medium">{alert.title}</span>
+                      </div>
+                      <span className="text-[10px] text-[var(--muted-foreground)] shrink-0">
+                        {timeAgo(alert.created_at)}
+                      </span>
+                    </div>
+                    {alert.contact_name && (
+                      <div className="text-xs text-[var(--muted-foreground)]">
+                        <span className="font-medium text-[var(--foreground)]">Contacto:</span> {alert.contact_name}
+                      </div>
+                    )}
+                    {alert.business_impact && (
+                      <div className="text-xs text-[var(--muted-foreground)]">
+                        <span className="font-medium text-[var(--foreground)]">Impacto:</span> {alert.business_impact}
+                      </div>
+                    )}
+                    {alert.suggested_action && (
+                      <div className="text-xs text-[var(--accent-cyan)]">
+                        <span className="font-medium">Accion sugerida:</span> {alert.suggested_action}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Overdue Actions */}
+            {overdue_actions.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                  Acciones Vencidas
+                </div>
+                {overdue_actions.map((action) => (
+                  <div
+                    key={action.id}
+                    className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3 space-y-1"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span className="text-sm font-medium">{action.description}</span>
+                      <Badge variant="warning" className="text-[10px] shrink-0">
+                        {action.days_overdue}d vencida
+                      </Badge>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
+                      <span>
+                        <span className="font-medium text-[var(--foreground)]">Responsable:</span>{" "}
+                        {action.assignee_name || action.assignee_email || "Sin asignar"}
+                      </span>
+                      {action.contact_name && (
+                        <span>
+                          <span className="font-medium text-[var(--foreground)]">Contacto:</span> {action.contact_name}
+                        </span>
+                      )}
+                    </div>
+                    {action.reason && (
+                      <div className="text-xs text-[var(--muted-foreground)]">
+                        <span className="font-medium text-[var(--foreground)]">Motivo:</span> {action.reason}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Accountability del Equipo ── */}
+      {accountability.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="h-4 w-4 text-[var(--accent-cyan)]" />
+              <span className="uppercase tracking-wider">Accountability del Equipo</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--border)]">
+                    <th className="text-left py-2 pr-4 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                      Responsable
+                    </th>
+                    <th className="text-center py-2 px-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                      Pendientes
+                    </th>
+                    <th className="text-center py-2 px-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                      Vencidas
+                    </th>
+                    <th className="text-center py-2 pl-3 text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                      Completadas
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {accountability.map((row, idx) => {
+                    const displayName = row.assignee_name || row.assignee_email || "Sin asignar";
+                    return (
+                      <tr
+                        key={idx}
+                        className="border-b border-[var(--border)] last:border-b-0"
+                      >
+                        <td className="py-2.5 pr-4 font-medium">{displayName}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <Badge variant="outline" className="text-xs tabular-nums">
+                            {row.pending}
+                          </Badge>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          {row.overdue > 0 ? (
+                            <Badge variant="destructive" className="text-xs tabular-nums">
+                              {row.overdue}
+                            </Badge>
+                          ) : (
+                            <Badge variant="success" className="text-xs tabular-nums">
+                              0
+                            </Badge>
+                          )}
+                        </td>
+                        <td className="py-2.5 pl-3 text-center">
+                          <Badge variant="success" className="text-xs tabular-nums">
+                            {row.completed}
+                          </Badge>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Contactos en Riesgo ── */}
+      {contacts_at_risk.length > 0 && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2">
+              <Flame className="h-4 w-4 text-[var(--destructive)]" />
+              <span className="uppercase tracking-wider">Contactos en Riesgo</span>
+              <Link href="/contacts" className="ml-auto">
+                <Button variant="ghost" size="sm" className="text-xs gap-1">
+                  Ver todos <ExternalLink className="h-3 w-3" />
+                </Button>
+              </Link>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {contacts_at_risk.map((contact) => (
+              <div key={contact.id} className="flex items-center gap-3">
+                <div className="flex-1 min-w-0">
+                  <HealthBar
+                    id={contact.id}
+                    name={contact.name}
+                    company={contact.company || ""}
+                    riskLevel={contact.risk_level}
+                    sentimentScore={contact.sentiment_score ?? 0}
+                    relationshipScore={contact.relationship_score ?? 50}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  {contact.open_alerts > 0 && (
+                    <Badge variant="destructive" className="text-[10px]">
+                      {contact.open_alerts} alerta{contact.open_alerts > 1 ? "s" : ""}
+                    </Badge>
+                  )}
+                  {contact.pending_actions > 0 && (
+                    <Badge variant="warning" className="text-[10px]">
+                      {contact.pending_actions} accion{contact.pending_actions > 1 ? "es" : ""}
+                    </Badge>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* ── Latest Briefing (collapsible) ── */}
+      {latest_briefing && (
+        <Card>
+          <CardHeader
+            className="pb-3 cursor-pointer"
+            onClick={() => setBriefingOpen((prev) => !prev)}
+          >
+            <CardTitle className="flex items-center gap-2">
+              <FileText className="h-4 w-4 text-[var(--quest-epic)]" />
+              <span className="uppercase tracking-wider">Ultimo Briefing</span>
+              <Badge variant="info" className="text-[10px] ml-2">
+                {latest_briefing.briefing_type}
+              </Badge>
+              <span className="text-[10px] text-[var(--muted-foreground)] ml-1">
+                {timeAgo(latest_briefing.created_at)}
+              </span>
+              <span className="ml-auto">
+                {briefingOpen ? (
+                  <ChevronUp className="h-4 w-4 text-[var(--muted-foreground)]" />
+                ) : (
+                  <ChevronDown className="h-4 w-4 text-[var(--muted-foreground)]" />
+                )}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          {briefingOpen && (
+            <CardContent>
+              <div
+                className="prose prose-invert prose-sm max-h-80 overflow-y-auto text-xs leading-relaxed"
+                dangerouslySetInnerHTML={{ __html: latest_briefing.html_content?.slice(0, 2000) || "" }}
+              />
+              <div className="mt-3">
+                <Link href={`/briefings/${latest_briefing.id}`}>
+                  <Button variant="outline" size="sm" className="text-xs gap-1">
+                    <FileText className="h-3 w-3" /> Leer reporte completo
+                  </Button>
+                </Link>
+              </div>
+            </CardContent>
+          )}
+        </Card>
+      )}
+
+      {/* ── Empty state when nothing needs attention ── */}
+      {!hasAttentionItems && contacts_at_risk.length === 0 && (
+        <Card>
+          <CardContent className="py-8">
+            <div className="text-center">
+              <CheckSquare className="h-10 w-10 mx-auto mb-3 text-[var(--success)] opacity-60" />
+              <p className="text-sm font-medium">Todo bajo control</p>
+              <p className="text-xs text-[var(--muted-foreground)] mt-1">
+                No hay alertas criticas, acciones vencidas ni contactos en riesgo.
+              </p>
+            </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

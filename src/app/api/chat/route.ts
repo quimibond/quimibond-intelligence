@@ -1,264 +1,329 @@
-import { supabase } from "@/lib/supabase";
 import { NextRequest, NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
 
-interface ChatRequest {
-  question: string;
-  history?: Array<{ role: string; content: string }>;
+function getSupabase() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) throw new Error("Supabase env vars not configured");
+  return createClient(url, key);
 }
 
-interface ChatResponse {
-  answer: string;
-}
+async function getRelevantContext(question: string): Promise<string> {
+  const supabase = getSupabase();
+  const parts: string[] = [];
+  const q = question.toLowerCase();
 
-export async function POST(request: NextRequest): Promise<NextResponse> {
-  try {
-    const body: ChatRequest = await request.json();
-    const { question, history = [] } = body;
+  // Determine what context is most relevant based on the question
+  const wantsAlerts = /alert|alerta|riesgo|problema|issue|peligro|amenaza|critico/i.test(q);
+  const wantsActions = /accion|action|pendiente|tarea|mision|hacer|completar|vence/i.test(q);
+  const wantsBriefings = /briefing|reporte|resumen|summary|diario|semanal/i.test(q);
+  const wantsContacts = /contacto|cliente|persona|quien|empresa|company|perfil|relacion/i.test(q);
+  const wantsFacts = /hecho|fact|dato|informacion|sab(e|emos)|conoce/i.test(q);
+  const wantsEmails = /email|correo|mensaje|comunic|escrib/i.test(q);
+  const wantsAll = !wantsAlerts && !wantsActions && !wantsBriefings && !wantsContacts && !wantsFacts && !wantsEmails;
 
-    // Validate input
-    if (!question || question.trim() === "") {
-      return NextResponse.json(
-        { error: "No question provided" },
-        { status: 400 }
-      );
-    }
+  // Extract potential contact name from question
+  const contactNameMatch = q.match(/(?:sobre|de|con|para|acerca de|respecto a)\s+([a-záéíóúñ\s]+?)(?:\s*\?|$|\s+(?:y|que|como|cuando|donde))/i);
+  const contactName = contactNameMatch?.[1]?.trim();
 
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "API key not configured" },
-        { status: 500 }
-      );
-    }
+  // Build context in parallel based on relevance
+  const queries: Promise<void>[] = [];
 
-    // Determine context fetch strategy based on question keywords
-    const questionLower = question.toLowerCase();
-    const contextParts: string[] = [];
-
-    // Extract base stats
-    try {
-      const [alertsCount, actionsCount, atRiskCount] = await Promise.all([
-        supabase
-          .from("alerts")
-          .select("id", { count: "exact", head: true }),
-        supabase
-          .from("action_items")
-          .select("id", { count: "exact", head: true })
-          .eq("status", "pending"),
-        supabase
-          .from("contacts")
-          .select("id", { count: "exact", head: true })
-          .eq("risk_level", "high"),
+  // Always include high-level stats
+  queries.push(
+    (async () => {
+      const [emailCount, alertCount, actionCount, contactCount] = await Promise.all([
+        supabase.from("emails").select("id", { count: "exact", head: true }),
+        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
+        supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
+        supabase.from("contacts").select("id", { count: "exact", head: true }).eq("risk_level", "high"),
       ]);
+      parts.push(
+        `## Estado actual del sistema\n- Emails procesados: ${emailCount.count}\n- Alertas abiertas: ${alertCount.count}\n- Acciones pendientes: ${actionCount.count}\n- Contactos en alto riesgo: ${contactCount.count}`,
+      );
+    })(),
+  );
 
-      contextParts.push(`## Estadísticas Base`);
-      contextParts.push(`- Total de alertas: ${alertsCount.count || 0}`);
-      contextParts.push(`- Acciones pendientes: ${actionsCount.count || 0}`);
-      contextParts.push(`- Contactos de alto riesgo: ${atRiskCount.count || 0}`);
-      contextParts.push("");
-    } catch (err) {
-      console.error("Error fetching base stats:", err);
-    }
-
-    // Fetch context based on keywords
-    if (
-      questionLower.includes("alerta") ||
-      questionLower.includes("riesgo") ||
-      questionLower.includes("alert")
-    ) {
-      try {
-        const { data: alerts } = await supabase
+  // Alerts
+  if (wantsAlerts || wantsAll) {
+    queries.push(
+      (async () => {
+        const { data } = await supabase
           .from("alerts")
-          .select("id, title, description, alert_type, severity, status, created_at")
+          .select("title, description, severity, contact_name, created_at, state, alert_type")
           .order("created_at", { ascending: false })
-          .limit(10);
-
-        if (alerts && alerts.length > 0) {
-          contextParts.push(`## Alertas Recientes`);
-          alerts.forEach((alert: any) => {
-            contextParts.push(
-              `- [${alert.severity.toUpperCase()}] ${alert.title}: ${alert.description}`
-            );
-          });
-          contextParts.push("");
+          .limit(wantsAlerts ? 20 : 10);
+        if (data?.length) {
+          parts.push(
+            "## Alertas recientes\n" +
+            data.map((a) => `- [${a.severity}/${a.state}] ${a.title} — ${a.contact_name || "N/A"} (${a.alert_type}) — ${a.description || ""}`).join("\n"),
+          );
         }
-      } catch (err) {
-        console.error("Error fetching alerts:", err);
-      }
-    }
+      })(),
+    );
+  }
 
-    if (
-      questionLower.includes("accion") ||
-      questionLower.includes("pendiente") ||
-      questionLower.includes("tarea") ||
-      questionLower.includes("action")
-    ) {
-      try {
-        const { data: actions } = await supabase
+  // Actions
+  if (wantsActions || wantsAll) {
+    queries.push(
+      (async () => {
+        const { data } = await supabase
           .from("action_items")
-          .select(
-            "id, title, description, action_type, priority, status, assigned_to, due_date"
-          )
-          .eq("status", "pending")
+          .select("description, contact_name, priority, due_date, state, assignee_email, action_type")
           .order("due_date", { ascending: true })
-          .limit(10);
-
-        if (actions && actions.length > 0) {
-          contextParts.push(`## Acciones Pendientes`);
-          actions.forEach((action: any) => {
-            contextParts.push(
-              `- [${action.priority.toUpperCase()}] ${action.title} (Vencimiento: ${action.due_date || "Sin fecha"})`
-            );
-          });
-          contextParts.push("");
+          .limit(wantsActions ? 20 : 10);
+        if (data?.length) {
+          const now = new Date();
+          parts.push(
+            "## Acciones/Misiones\n" +
+            data.map((a) => {
+              const overdue = a.due_date && a.state === "pending" && new Date(a.due_date) < now;
+              return `- [${a.priority}/${a.state}${overdue ? "/VENCIDA" : ""}] ${a.description} — ${a.contact_name || "N/A"} — vence: ${a.due_date || "sin fecha"} — asignado: ${a.assignee_email || "sin asignar"}`;
+            }).join("\n"),
+          );
         }
-      } catch (err) {
-        console.error("Error fetching actions:", err);
-      }
-    }
+      })(),
+    );
+  }
 
-    if (
-      questionLower.includes("briefing") ||
-      questionLower.includes("reporte") ||
-      questionLower.includes("resumen") ||
-      questionLower.includes("summary")
-    ) {
-      try {
-        const { data: summaries } = await supabase
+  // Briefings
+  if (wantsBriefings || wantsAll) {
+    queries.push(
+      (async () => {
+        const { data } = await supabase
+          .from("briefings")
+          .select("briefing_type, summary, created_at, period_start, period_end")
+          .order("created_at", { ascending: false })
+          .limit(wantsBriefings ? 5 : 3);
+        if (data?.length) {
+          parts.push(
+            "## Briefings/Reportes recientes\n" +
+            data.map((b) => `- [${b.briefing_type}] (${b.period_start} a ${b.period_end})\n  ${b.summary?.slice(0, 400) || "sin resumen"}`).join("\n"),
+          );
+        }
+      })(),
+    );
+  }
+
+  // Contacts - enhanced with profiles and patterns
+  if (wantsContacts || wantsAll) {
+    queries.push(
+      (async () => {
+        let query = supabase
+          .from("contacts")
+          .select("name, email, company, risk_level, sentiment_score, relationship_score, total_sent, total_received, last_activity, contact_type");
+
+        if (contactName) {
+          query = query.ilike("name", `%${contactName}%`);
+        } else {
+          query = query.order("risk_level", { ascending: false });
+        }
+
+        const { data } = await query.limit(wantsContacts ? 15 : 10);
+        if (data?.length) {
+          parts.push(
+            "## Contactos\n" +
+            data.map((c) => {
+              const health = Math.round(((( c.sentiment_score ?? 0) + 1) / 2) * 50 + ((c.relationship_score ?? 50) / 100) * 50);
+              return `- ${c.name} (${c.company || c.email}) — riesgo: ${c.risk_level} — salud: ${health}% — sentimiento: ${c.sentiment_score?.toFixed(2) ?? "N/A"} — emails: ${(c.total_sent || 0) + (c.total_received || 0)} — tipo: ${c.contact_type || "N/A"} — ultima actividad: ${c.last_activity || "N/A"}`;
+            }).join("\n"),
+          );
+        }
+
+        // If looking for specific contact, also get their profile
+        if (contactName && data?.length) {
+          const contactId = data[0] && "id" in data[0] ? (data[0] as Record<string, unknown>).id : null;
+          if (contactId) {
+            const [profileRes, factsRes, patternsRes] = await Promise.all([
+              supabase.from("person_profiles").select("*").eq("email", data[0].email).order("updated_at", { ascending: false }).limit(1).maybeSingle(),
+              supabase.from("facts").select("fact_text, confidence, fact_type, entities!inner(name)").order("created_at", { ascending: false }).limit(10),
+              Promise.resolve({ data: [] as Array<{ pattern_type: string; description: string; frequency: string; confidence: number }> }),
+            ]);
+
+            if (profileRes.data) {
+              const p = profileRes.data;
+              parts.push(
+                `## Perfil de ${data[0].name}\n- Rol: ${p.role || "N/A"}\n- Departamento: ${p.department || "N/A"}\n- Poder de decision: ${p.decision_power || "N/A"}\n- Estilo de comunicacion: ${p.communication_style || "N/A"}\n- Rasgos: ${p.personality_traits?.join(", ") || "N/A"}\n- Intereses: ${p.interests?.join(", ") || "N/A"}\n- Factores de decision: ${p.decision_factors?.join(", ") || "N/A"}\n- Resumen: ${p.summary || "N/A"}`,
+              );
+            }
+
+            if (factsRes.data?.length) {
+              parts.push(
+                `## Hechos sobre ${data[0].name}\n` +
+                factsRes.data.map((f) => `- [${f.fact_type}] ${f.fact_text} (confianza: ${Math.round(f.confidence * 100)}%)`).join("\n"),
+              );
+            }
+
+            if (patternsRes.data?.length) {
+              parts.push(
+                `## Patrones de comunicacion de ${data[0].name}\n` +
+                patternsRes.data.map((p) => `- [${p.pattern_type}] ${p.description} (frecuencia: ${p.frequency || "N/A"}, confianza: ${Math.round(p.confidence * 100)}%)`).join("\n"),
+              );
+            }
+          }
+        }
+      })(),
+    );
+  }
+
+  // Facts
+  if (wantsFacts || wantsAll) {
+    queries.push(
+      (async () => {
+        const { data } = await supabase
+          .from("facts")
+          .select("fact_text, confidence, source_type, fact_type, created_at")
+          .gte("confidence", 0.6)
+          .order("created_at", { ascending: false })
+          .limit(wantsFacts ? 25 : 15);
+        if (data?.length) {
+          parts.push(
+            "## Hechos extraidos (alta confianza)\n" +
+            data.map((f) => `- [${f.fact_type}] ${f.fact_text} (confianza: ${Math.round(f.confidence * 100)}%, fuente: ${f.source_type})`).join("\n"),
+          );
+        }
+      })(),
+    );
+  }
+
+  // Entities
+  queries.push(
+    (async () => {
+      const { data } = await supabase
+        .from("entities")
+        .select("name, entity_type, canonical_name")
+        .order("last_seen", { ascending: false })
+        .limit(20);
+      if (data?.length) {
+        parts.push(
+          "## Entidades conocidas\n" +
+          data.map((e) => `- [${e.entity_type}] ${e.canonical_name || e.name}`).join("\n"),
+        );
+      }
+    })(),
+  );
+
+  // Recent emails if specifically asked
+  if (wantsEmails) {
+    queries.push(
+      (async () => {
+        let query = supabase
+          .from("emails")
+          .select("sender, recipient, subject, snippet, email_date, sender_type");
+
+        if (contactName) {
+          query = query.or(`sender.ilike.%${contactName}%,recipient.ilike.%${contactName}%`);
+        }
+
+        const { data } = await query.order("email_date", { ascending: false }).limit(15);
+        if (data?.length) {
+          parts.push(
+            "## Emails recientes\n" +
+            data.map((e) => `- [${e.sender_type}] De: ${e.sender} → ${e.recipient} — "${e.subject}" — ${e.snippet?.slice(0, 150)} — ${e.email_date}`).join("\n"),
+          );
+        }
+      })(),
+    );
+  }
+
+  // Daily summaries if asking about recent activity
+  if (/hoy|ayer|reciente|ultimo|semana|dia/i.test(q)) {
+    queries.push(
+      (async () => {
+        const { data } = await supabase
           .from("daily_summaries")
-          .select("id, summary_date, total_emails, summary_text")
+          .select("summary_date, email_count, summary, key_events")
           .order("summary_date", { ascending: false })
           .limit(3);
-
-        if (summaries && summaries.length > 0) {
-          contextParts.push(`## Briefings Recientes`);
-          summaries.forEach((summary: any) => {
-            contextParts.push(`- ${summary.summary_date}: ${summary.summary_text}`);
-          });
-          contextParts.push("");
+        if (data?.length) {
+          parts.push(
+            "## Resumenes diarios recientes\n" +
+            data.map((d) => `- ${d.summary_date} (${d.email_count} emails): ${d.summary || "N/A"}\n  Eventos clave: ${JSON.stringify(d.key_events) || "N/A"}`).join("\n"),
+          );
         }
-      } catch (err) {
-        console.error("Error fetching briefings:", err);
-      }
+      })(),
+    );
+  }
+
+  await Promise.all(queries);
+
+  return parts.join("\n\n");
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const { question, history } = await req.json();
+
+    if (!question) {
+      return NextResponse.json({ error: "Pregunta requerida" }, { status: 400 });
     }
 
-    if (
-      questionLower.includes("contacto") ||
-      questionLower.includes("cliente") ||
-      questionLower.includes("persona") ||
-      questionLower.includes("contact")
-    ) {
-      try {
-        const { data: contacts } = await supabase
-          .from("contacts")
-          .select(
-            "id, name, email, company, risk_level, sentiment_score, relationship_score"
-          )
-          .order("relationship_score", { ascending: false })
-          .limit(10);
-
-        if (contacts && contacts.length > 0) {
-          contextParts.push(`## Contactos Principales`);
-          contacts.forEach((contact: any) => {
-            contextParts.push(
-              `- ${contact.name} (${contact.company}) - Riesgo: ${contact.risk_level}, Sentimiento: ${(contact.sentiment_score * 100).toFixed(0)}%`
-            );
-          });
-          contextParts.push("");
-        }
-      } catch (err) {
-        console.error("Error fetching contacts:", err);
-      }
+    const anthropicKey = process.env.ANTHROPIC_API_KEY;
+    if (!anthropicKey) {
+      return NextResponse.json({ error: "ANTHROPIC_API_KEY no configurada" }, { status: 500 });
     }
 
-    if (
-      questionLower.includes("email") ||
-      questionLower.includes("correo") ||
-      questionLower.includes("mail")
-    ) {
-      try {
-        const { data: emails } = await supabase
-          .from("emails")
-          .select(
-            "id, subject, from_email, to_email, sent_at, sentiment_score, intent"
-          )
-          .order("sent_at", { ascending: false })
-          .limit(15);
+    const context = await getRelevantContext(question);
 
-        if (emails && emails.length > 0) {
-          contextParts.push(`## Emails Recientes`);
-          emails.forEach((email: any) => {
-            contextParts.push(
-              `- De: ${email.from_email} - Asunto: ${email.subject}`
-            );
-          });
-          contextParts.push("");
-        }
-      } catch (err) {
-        console.error("Error fetching emails:", err);
-      }
-    }
-
-    const contextString = contextParts.join("\n");
-
-    // Build system prompt
-    const systemPrompt = `Eres el CEREBRO DE INTELIGENCIA COMERCIAL de Quimibond, empresa textil mexicana. Analizas datos de emails, alertas, acciones y contactos para dar insights accionables.
-
-Responde en español (México). Sé directo, conciso y orientado a datos.
-
-Clasifica urgencia: CRITICO / ALTO / MEDIO / BAJO
-
-Sugiere acciones concretas con responsable específico cuando sea posible.
-
-Mantén un tono profesional y ejecutivo. Los datos que ves son reales y deben tratarse con seriedad.`;
-
-    // Build messages for Claude
-    const messages: Array<{ role: string; content: string }> = [
-      ...history,
-      {
-        role: "user",
-        content: `CONTEXTO ACTUAL:\n\n${contextString}\n\nPREGUNTA:\n${question}`,
-      },
+    const messages = [
+      ...(history || []).map((m: { role: string; content: string }) => ({
+        role: m.role,
+        content: m.content,
+      })),
+      { role: "user", content: question },
     ];
 
-    // Call Claude API
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
-        "x-api-key": apiKey,
+        "Content-Type": "application/json",
+        "x-api-key": anthropicKey,
         "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-6-20250514",
+        model: "claude-sonnet-4-6",
         max_tokens: 4096,
-        system: systemPrompt,
-        messages: messages.map((msg) => ({
-          role: msg.role as "user" | "assistant",
-          content: msg.content,
-        })),
+        system: `Eres el CEREBRO DE INTELIGENCIA COMERCIAL de Quimibond, empresa textil mexicana.
+
+## Tu rol
+Eres un analista de inteligencia de negocios de elite. Tu trabajo es:
+1. Analizar datos de clientes, emails, alertas y acciones para dar insights accionables
+2. Identificar patrones, riesgos y oportunidades que humanos podrian perder
+3. Recomendar acciones concretas con prioridad y urgencia
+4. Hablar como un estratega — directo, conciso, con datos que respalden cada afirmacion
+
+## Formato de respuesta
+- Usa markdown para estructurar tus respuestas
+- Incluye metricas y datos especificos cuando estes disponibles
+- Clasifica la urgencia: CRITICO / ALTO / MEDIO / BAJO
+- Sugiere acciones concretas con responsable sugerido
+- Si detectas un patron preocupante, hazlo notar explicitamente
+- Si no tienes suficientes datos, di exactamente que falta
+
+## Terminologia del sistema
+- "Salud del contacto" = combinacion de sentimiento + relacion (0-100%)
+- "Mision" = accion pendiente por ejecutar
+- "Amenaza" = alerta activa sin resolver
+- Riesgo: alto (peligro real), medio (monitorear), bajo (estable)
+
+## Contexto actual del sistema:
+${context}`,
+        messages,
       }),
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      console.error("Claude API error:", error);
-      return NextResponse.json(
-        { error: "Failed to get response from Claude" },
-        { status: 502 }
-      );
+      const err = await response.text();
+      console.error("Claude API error:", err);
+      return NextResponse.json({ error: "Error al consultar Claude" }, { status: 502 });
     }
 
-    const result = await response.json();
-    const answer =
-      result.content[0].type === "text" ? result.content[0].text : "";
+    const data = await response.json();
+    const answer = data.content?.[0]?.text || "No pude generar una respuesta.";
 
-    return NextResponse.json({ answer } as ChatResponse);
-  } catch (err) {
-    console.error("Chat API error:", err);
-    return NextResponse.json(
-      { error: "Internal server error" },
-      { status: 500 }
-    );
+    return NextResponse.json({ answer });
+  } catch (error) {
+    console.error("Chat API error:", error);
+    return NextResponse.json({ error: "Error interno del servidor" }, { status: 500 });
   }
 }

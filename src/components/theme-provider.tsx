@@ -1,86 +1,44 @@
-'use client'
+"use client";
 
-import * as React from 'react'
+import { createContext, useContext, useEffect, useState } from "react";
 
-type Theme = 'light' | 'dark'
+type Theme = "dark" | "light";
 
-interface ThemeContextType {
-  theme: Theme
-  setTheme: (theme: Theme) => void
-  toggleTheme: () => void
+interface ThemeContextValue {
+  theme: Theme;
+  toggleTheme: () => void;
 }
 
-const ThemeContext = React.createContext<ThemeContextType | undefined>(
-  undefined
-)
+const ThemeContext = createContext<ThemeContextValue>({
+  theme: "dark",
+  toggleTheme: () => {},
+});
 
 export function useTheme() {
-  const context = React.useContext(ThemeContext)
-  if (!context) {
-    throw new Error('useTheme must be used within a ThemeProvider')
-  }
-  return context
+  return useContext(ThemeContext);
 }
 
-interface ThemeProviderProps {
-  children: React.ReactNode
-  defaultTheme?: Theme
-}
+export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  const [theme, setTheme] = useState<Theme>("dark");
 
-export function ThemeProvider({
-  children,
-  defaultTheme = 'light',
-}: ThemeProviderProps) {
-  const [theme, setThemeState] = React.useState<Theme>(defaultTheme)
-  const [mounted, setMounted] = React.useState(false)
-
-  React.useEffect(() => {
-    setMounted(true)
-
-    // Read from cookie on mount
-    const cookieTheme = document.cookie
-      .split('; ')
-      .find((row) => row.startsWith('theme='))
-      ?.split('=')[1] as Theme | undefined
-
-    if (cookieTheme) {
-      setThemeState(cookieTheme)
-      applyTheme(cookieTheme)
-    } else {
-      // Check system preference
-      const prefersDark = window.matchMedia(
-        '(prefers-color-scheme: dark)'
-      ).matches
-      const initialTheme: Theme = prefersDark ? 'dark' : 'light'
-      setThemeState(initialTheme)
-      applyTheme(initialTheme)
+  useEffect(() => {
+    const stored = localStorage.getItem("qb-theme") as Theme | null;
+    if (stored === "light" || stored === "dark") {
+      setTheme(stored);
+      document.documentElement.setAttribute("data-theme", stored);
     }
-  }, [])
+  }, []);
 
-  const applyTheme = (newTheme: Theme) => {
-    const html = document.documentElement
-    if (newTheme === 'dark') {
-      html.classList.add('dark')
-    } else {
-      html.classList.remove('dark')
-    }
-  }
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme)
-    applyTheme(newTheme)
-
-    // Store in cookie
-    document.cookie = `theme=${newTheme}; path=/; max-age=31536000`
-  }
-
-  const toggleTheme = () => {
-    setTheme(theme === 'light' ? 'dark' : 'light')
+  function toggleTheme() {
+    const next = theme === "dark" ? "light" : "dark";
+    setTheme(next);
+    localStorage.setItem("qb-theme", next);
+    document.documentElement.setAttribute("data-theme", next);
   }
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, toggleTheme }}>
+    <ThemeContext.Provider value={{ theme, toggleTheme }}>
       {children}
     </ThemeContext.Provider>
-  )
+  );
 }

@@ -1,108 +1,401 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
-  --color-severity-critical: var(--severity-critical);
-  --color-severity-high: var(--severity-high);
-  --color-severity-medium: var(--severity-medium);
-  --color-severity-low: var(--severity-low);
-  --color-success: var(--success);
-  --color-warning: var(--warning);
-  --radius-sm: calc(var(--radius) - 4px);
-  --radius-md: calc(var(--radius) - 2px);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) + 4px);
-}
-
 :root {
-  --background: #ffffff;
-  --foreground: #0a0a0a;
-  --card: #ffffff;
-  --card-foreground: #0a0a0a;
-  --popover: #ffffff;
-  --popover-foreground: #0a0a0a;
-  --primary: #0f172a;
-  --primary-foreground: #f8fafc;
-  --secondary: #f1f5f9;
-  --secondary-foreground: #0f172a;
-  --muted: #f1f5f9;
-  --muted-foreground: #64748b;
-  --accent: #f1f5f9;
-  --accent-foreground: #0f172a;
-  --destructive: #ef4444;
-  --destructive-foreground: #f8fafc;
-  --border: #e2e8f0;
-  --input: #e2e8f0;
-  --ring: #0f172a;
-  --radius: 0.5rem;
-
-  --severity-critical: #dc2626;
-  --severity-high: #ea580c;
-  --severity-medium: #ca8a04;
-  --severity-low: #16a34a;
-  --success: #16a34a;
-  --warning: #ca8a04;
-}
-
-.dark {
+  /* ── Core theme (shadcn standard) ─────────────────────────────── */
   --background: #09090b;
   --foreground: #fafafa;
-  --card: #09090b;
+  --card: #18181b;
   --card-foreground: #fafafa;
-  --popover: #09090b;
+  --popover: #18181b;
   --popover-foreground: #fafafa;
-  --primary: #f8fafc;
-  --primary-foreground: #0f172a;
-  --secondary: #1e293b;
-  --secondary-foreground: #f8fafc;
-  --muted: #1e293b;
-  --muted-foreground: #94a3b8;
-  --accent: #1e293b;
-  --accent-foreground: #f8fafc;
+  --primary: #3b82f6;
+  --primary-foreground: #fafafa;
+  --secondary: #27272a;
+  --secondary-foreground: #fafafa;
+  --muted: #27272a;
+  --muted-foreground: #a1a1aa;
+  --accent: #27272a;
+  --accent-foreground: #fafafa;
   --destructive: #ef4444;
-  --destructive-foreground: #f8fafc;
-  --border: #1e293b;
-  --input: #1e293b;
-  --ring: #cbd5e1;
+  --destructive-foreground: #fafafa;
+  --border: #27272a;
+  --input: #27272a;
+  --ring: #3b82f6;
+  --radius: 0.5rem;
 
-  --severity-critical: #f87171;
-  --severity-high: #fb923c;
-  --severity-medium: #facc15;
-  --severity-low: #4ade80;
-  --success: #4ade80;
-  --warning: #facc15;
+  /* ── Semantic: Severity levels ─────────────────────────────────── */
+  --severity-critical: #ef4444;
+  --severity-critical-foreground: #fecaca;
+  --severity-critical-muted: rgba(239, 68, 68, 0.15);
+  --severity-high: #f59e0b;
+  --severity-high-foreground: #fde68a;
+  --severity-high-muted: rgba(245, 158, 11, 0.15);
+  --severity-medium: #22d3ee;
+  --severity-medium-foreground: #a5f3fc;
+  --severity-medium-muted: rgba(34, 211, 238, 0.15);
+  --severity-low: #6b7280;
+  --severity-low-foreground: #d1d5db;
+  --severity-low-muted: rgba(107, 114, 128, 0.15);
+
+  /* ── Semantic: Status / Feedback ───────────────────────────────── */
+  --success: #10b981;
+  --success-foreground: #a7f3d0;
+  --success-muted: rgba(16, 185, 129, 0.15);
+  --warning: #f59e0b;
+  --warning-foreground: #fde68a;
+  --warning-muted: rgba(245, 158, 11, 0.15);
+  --info: #3b82f6;
+  --info-foreground: #bfdbfe;
+  --info-muted: rgba(59, 130, 246, 0.15);
+
+  /* ── Semantic: Risk levels ─────────────────────────────────────── */
+  --risk-high: var(--severity-critical);
+  --risk-high-muted: var(--severity-critical-muted);
+  --risk-medium: var(--severity-high);
+  --risk-medium-muted: var(--severity-high-muted);
+  --risk-low: var(--success);
+  --risk-low-muted: var(--success-muted);
+
+  /* ── Gamification ──────────────────────────────────────────────── */
+  --xp-bar: #22d3ee;
+  --xp-glow: #818cf8;
+  --health-high: var(--success);
+  --health-mid: var(--warning);
+  --health-low: var(--destructive);
+  --quest-epic: #a855f7;
+  --quest-epic-muted: rgba(168, 85, 247, 0.15);
+  --quest-rare: var(--primary);
+  --quest-rare-muted: rgba(59, 130, 246, 0.15);
+  --quest-common: #6b7280;
+  --quest-common-muted: rgba(107, 114, 128, 0.15);
+  --achievement-gold: #fbbf24;
+  --achievement-silver: #94a3b8;
+  --achievement-bronze: #d97706;
+
+  /* ── Role colors ───────────────────────────────────────────────── */
+  --role-decisor: var(--warning);
+  --role-influencer: var(--xp-bar);
+  --role-contact: var(--muted-foreground);
+
+  /* ── Accent palette (for entity types, categories) ─────────────── */
+  --accent-cyan: #22d3ee;
+  --accent-purple: #a855f7;
+  --accent-pink: #ec4899;
+  --accent-teal: #14b8a6;
+  --accent-indigo: #6366f1;
+  --accent-blue: #3b82f6;
 }
 
-* {
-  border-color: var(--border);
+/* ── Light theme ─────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #2563eb;
+
+  --severity-critical: #dc2626;
+  --severity-critical-foreground: #991b1b;
+  --severity-critical-muted: rgba(220, 38, 38, 0.1);
+  --severity-high: #d97706;
+  --severity-high-foreground: #92400e;
+  --severity-high-muted: rgba(217, 119, 6, 0.1);
+  --severity-medium: #0891b2;
+  --severity-medium-foreground: #155e75;
+  --severity-medium-muted: rgba(8, 145, 178, 0.1);
+  --severity-low: #6b7280;
+  --severity-low-foreground: #374151;
+  --severity-low-muted: rgba(107, 114, 128, 0.1);
+
+  --success: #059669;
+  --success-foreground: #064e3b;
+  --success-muted: rgba(5, 150, 105, 0.1);
+  --warning: #d97706;
+  --warning-foreground: #92400e;
+  --warning-muted: rgba(217, 119, 6, 0.1);
+  --info: #2563eb;
+  --info-foreground: #1e40af;
+  --info-muted: rgba(37, 99, 235, 0.1);
+
+  --risk-high: var(--severity-critical);
+  --risk-high-muted: var(--severity-critical-muted);
+  --risk-medium: var(--severity-high);
+  --risk-medium-muted: var(--severity-high-muted);
+  --risk-low: var(--success);
+  --risk-low-muted: var(--success-muted);
+
+  --xp-bar: #0891b2;
+  --xp-glow: #6366f1;
+  --health-high: var(--success);
+  --health-mid: var(--warning);
+  --health-low: var(--destructive);
+  --quest-epic: #7c3aed;
+  --quest-epic-muted: rgba(124, 58, 237, 0.1);
+  --quest-rare: var(--primary);
+  --quest-rare-muted: rgba(37, 99, 235, 0.1);
+  --quest-common: #6b7280;
+  --quest-common-muted: rgba(107, 114, 128, 0.1);
+  --achievement-gold: #ca8a04;
+  --achievement-silver: #64748b;
+  --achievement-bronze: #b45309;
+
+  --role-decisor: var(--warning);
+  --role-influencer: var(--xp-bar);
+  --role-contact: var(--muted-foreground);
+
+  --accent-cyan: #0891b2;
+  --accent-purple: #7c3aed;
+  --accent-pink: #db2777;
+  --accent-teal: #0d9488;
+  --accent-indigo: #4f46e5;
+  --accent-blue: #2563eb;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-sans), system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
-@utility text-balance {
-  text-wrap: balance;
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--background); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+/* === ANIMATIONS === */
+
+@keyframes xp-fill {
+  from { width: 0%; }
 }
+
+@keyframes glow-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes scan-line {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@keyframes float-up {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+@keyframes radar-sweep {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes badge-unlock {
+  0% { transform: scale(0.5); opacity: 0; }
+  50% { transform: scale(1.2); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.8; }
+  100% { transform: scale(1.8); opacity: 0; }
+}
+
+@keyframes border-glow {
+  0%, 100% { border-color: color-mix(in srgb, var(--primary) 30%, transparent); }
+  50% { border-color: color-mix(in srgb, var(--primary) 70%, transparent); }
+}
+
+@keyframes count-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* === CARD EFFECTS === */
+
+.game-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  transition: border-color 0.3s, box-shadow 0.3s;
+}
+
+.game-card:hover {
+  border-color: color-mix(in srgb, var(--primary) 40%, transparent);
+  box-shadow: 0 0 20px color-mix(in srgb, var(--primary) 10%, transparent);
+}
+
+.game-card::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--primary), transparent);
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.game-card:hover::after {
+  opacity: 0.6;
+}
+
+/* === XP / HEALTH BARS === */
+
+.xp-bar-track {
+  height: 8px;
+  background: var(--secondary);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+}
+
+.xp-bar-fill {
+  height: 100%;
+  border-radius: var(--radius);
+  background: linear-gradient(90deg, var(--xp-bar), var(--xp-glow));
+  animation: xp-fill 1.2s ease-out forwards;
+  position: relative;
+}
+
+.xp-bar-fill::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease-in-out infinite;
+}
+
+.health-bar-track {
+  height: 6px;
+  background: var(--secondary);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.health-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.8s ease-out;
+}
+
+.health-bar-fill[data-level="high"] { background: var(--health-high); }
+.health-bar-fill[data-level="mid"]  { background: var(--health-mid); }
+.health-bar-fill[data-level="low"]  { background: var(--health-low); }
+
+/* === SEVERITY INDICATORS === */
+
+.severity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.severity-dot[data-severity="critical"] {
+  background: var(--severity-critical);
+  box-shadow: 0 0 8px var(--severity-critical);
+}
+
+.severity-dot[data-severity="high"] {
+  background: var(--severity-high);
+  box-shadow: 0 0 8px var(--severity-high);
+}
+
+.severity-dot[data-severity="medium"] {
+  background: var(--severity-medium);
+  box-shadow: 0 0 6px var(--severity-medium);
+}
+
+.severity-dot[data-severity="low"] {
+  background: var(--severity-low);
+  box-shadow: 0 0 6px var(--severity-low);
+}
+
+/* === MISSION RARITY === */
+
+.mission-epic    { border-left: 3px solid var(--quest-epic); }
+.mission-rare    { border-left: 3px solid var(--quest-rare); }
+.mission-common  { border-left: 3px solid var(--quest-common); }
+
+/* === FLOATING ANIMATIONS === */
+
+.float-in { animation: float-up 0.4s ease-out forwards; }
+.float-in-delay-1 { animation-delay: 0.05s; opacity: 0; }
+.float-in-delay-2 { animation-delay: 0.1s; opacity: 0; }
+.float-in-delay-3 { animation-delay: 0.15s; opacity: 0; }
+.float-in-delay-4 { animation-delay: 0.2s; opacity: 0; }
+
+.stat-value { animation: count-up 0.6s ease-out forwards; }
+.achievement { animation: badge-unlock 0.5s ease-out forwards; }
+
+/* === RADAR === */
+
+.radar-container {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 0%, var(--secondary) 100%);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.radar-sweep {
+  position: absolute;
+  inset: 0;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    color-mix(in srgb, var(--accent-cyan) 15%, transparent) 30deg,
+    transparent 60deg
+  );
+  animation: radar-sweep 4s linear infinite;
+}
+
+.radar-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 1px solid color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+
+.radar-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+}
+
+/* === TEXT EFFECTS === */
+
+.level-badge {
+  background: linear-gradient(135deg, var(--xp-bar), var(--quest-epic));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.neon-text-cyan   { color: var(--accent-cyan);   text-shadow: 0 0 10px color-mix(in srgb, var(--accent-cyan) 50%, transparent); }
+.neon-text-green  { color: var(--success);        text-shadow: 0 0 10px color-mix(in srgb, var(--success) 50%, transparent); }
+.neon-text-red    { color: var(--destructive);    text-shadow: 0 0 10px color-mix(in srgb, var(--destructive) 50%, transparent); }
+.neon-text-amber  { color: var(--warning);        text-shadow: 0 0 10px color-mix(in srgb, var(--warning) 50%, transparent); }
+.neon-text-purple { color: var(--quest-epic);     text-shadow: 0 0 10px color-mix(in srgb, var(--quest-epic) 50%, transparent); }

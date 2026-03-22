@@ -1,17 +1,13 @@
 {
-  "name": "qi-new",
+  "name": "quimibond-intelligence",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "dependencies": {
     "@supabase/supabase-js": "^2.99.3",
     "class-variance-authority": "^0.7.1",
