@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn, formatCurrency } from "@/lib/utils";
 import {
@@ -369,16 +370,15 @@ export default function CompaniesPage() {
                 <label className="text-xs font-medium text-[var(--muted-foreground)] mb-2 block">
                   Tipo de Empresa
                 </label>
-                <select
+                <Select
                   value={typeFilter}
                   onChange={(e) => setTypeFilter(e.target.value)}
-                  className="w-full px-3 py-2 text-sm bg-[var(--background)] border border-[var(--border)] rounded-md text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
                 >
                   <option value="all">Todas ({companies.length})</option>
                   <option value="customer">Clientes ({customers})</option>
                   <option value="supplier">Proveedores ({suppliers})</option>
                   <option value="both">Ambos ({bothCount})</option>
-                </select>
+                </Select>
               </div>
 
               <div className="flex items-end md:col-span-2">
