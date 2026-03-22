@@ -15,7 +15,10 @@ export function XPBar({ level, currentXP, maxXP, label, className }: XPBarProps)
 
   return (
     <div className={cn("flex items-center gap-4", className)}>
-      <div className="flex items-center justify-center w-12 h-12 rounded-lg bg-[var(--secondary)] border border-cyan-500/30">
+      <div
+        className="flex items-center justify-center w-12 h-12 rounded-lg bg-[var(--secondary)]"
+        style={{ borderWidth: "1px", borderColor: "color-mix(in srgb, var(--accent-cyan) 30%, transparent)" }}
+      >
         <span className="text-lg font-black level-badge">{level}</span>
       </div>
       <div className="flex-1 min-w-0">

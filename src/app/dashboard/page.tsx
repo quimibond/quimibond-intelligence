@@ -193,7 +193,7 @@ export default function DashboardPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Activity className="h-8 w-8 text-cyan-400 animate-pulse mx-auto mb-3" />
+          <Activity className="h-8 w-8 text-[var(--accent-cyan)] animate-pulse mx-auto mb-3" />
           <div className="text-sm text-[var(--muted-foreground)]">Inicializando centro de comando...</div>
         </div>
       </div>
@@ -315,7 +315,7 @@ export default function DashboardPage() {
           </p>
         </div>
         <div className="hidden md:flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-          <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
           SISTEMA ACTIVO
         </div>
       </div>
@@ -334,12 +334,12 @@ export default function DashboardPage() {
       {urgencyItems.length > 0 && (
         <div className="game-card rounded-lg bg-[var(--card)] p-4 border-l-3 border-l-red-500/50">
           <div className="flex items-center gap-2 mb-4">
-            <TrendingDown className="h-4 w-4 text-red-400" />
+            <TrendingDown className="h-4 w-4 text-[var(--destructive)]" />
             <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
               Requiere tu Atencion
             </span>
-            <span className="flex items-center gap-1 text-[10px] font-bold text-red-400 ml-auto">
-              <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+            <span className="flex items-center gap-1 text-[10px] font-bold text-[var(--destructive)] ml-auto">
+              <span className="w-1.5 h-1.5 rounded-full bg-[var(--destructive)] animate-pulse" />
               {urgencyItems.length} asuntos
             </span>
           </div>
@@ -391,7 +391,7 @@ export default function DashboardPage() {
             {/* Radar */}
             <div className="game-card rounded-lg bg-[var(--card)] p-4">
               <div className="flex items-center gap-2 mb-4">
-                <Crosshair className="h-4 w-4 text-cyan-400" />
+                <Crosshair className="h-4 w-4 text-[var(--accent-cyan)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Radar de Amenazas
                 </span>
@@ -402,16 +402,16 @@ export default function DashboardPage() {
               <RadarWidget dots={radarDots} />
               <div className="flex items-center justify-center gap-4 mt-3 text-[10px] text-[var(--muted-foreground)]">
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-red-400" /> Critica
+                  <span className="severity-dot" data-severity="critical" /> Critica
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-amber-400" /> Alta
+                  <span className="severity-dot" data-severity="high" /> Alta
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-cyan-400" /> Media
+                  <span className="severity-dot" data-severity="medium" /> Media
                 </span>
                 <span className="flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" /> Baja
+                  <span className="severity-dot" data-severity="low" /> Baja
                 </span>
               </div>
             </div>
@@ -420,7 +420,7 @@ export default function DashboardPage() {
             <div className="game-card rounded-lg bg-[var(--card)] p-4">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
-                  <Scroll className="h-4 w-4 text-purple-400" />
+                  <Scroll className="h-4 w-4 text-[var(--quest-epic)]" />
                   <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                     Ultimo Reporte
                   </span>
@@ -458,13 +458,13 @@ export default function DashboardPage() {
           <div className="game-card rounded-lg bg-[var(--card)] p-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-400" />
+                <AlertTriangle className="h-4 w-4 text-[var(--warning)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Feed de Alertas
                 </span>
                 {stats.openAlerts > 0 && (
-                  <span className="flex items-center gap-1 text-[10px] font-bold text-red-400">
-                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                  <span className="flex items-center gap-1 text-[10px] font-bold text-[var(--destructive)]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--destructive)] animate-pulse" />
                     {stats.openAlerts} nuevas
                   </span>
                 )}
@@ -502,7 +502,7 @@ export default function DashboardPage() {
           <div className="game-card rounded-lg bg-[var(--card)] p-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-purple-400" />
+                <Target className="h-4 w-4 text-[var(--quest-epic)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Tablero de Misiones
                 </span>
@@ -536,7 +536,7 @@ export default function DashboardPage() {
           <div className="game-card rounded-lg bg-[var(--card)] p-4">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Star className="h-4 w-4 text-emerald-400" />
+                <Star className="h-4 w-4 text-[var(--success)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Salud de Contactos
                 </span>
@@ -572,7 +572,7 @@ export default function DashboardPage() {
       {/* Achievements */}
       <div className="game-card rounded-lg bg-[var(--card)] p-4">
         <div className="flex items-center gap-2 mb-4">
-          <Trophy className="h-4 w-4 text-amber-400" />
+          <Trophy className="h-4 w-4 text-[var(--achievement-gold)]" />
           <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
             Logros
           </span>

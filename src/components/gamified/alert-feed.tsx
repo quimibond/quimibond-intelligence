@@ -13,26 +13,31 @@ interface AlertFeedItemProps {
   isRead: boolean;
 }
 
-const severityConfig: Record<string, { variant: "destructive" | "warning" | "info"; pulseClass: string }> = {
-  critical: { variant: "destructive", pulseClass: "alert-pulse-critical" },
-  high: { variant: "destructive", pulseClass: "alert-pulse-high" },
-  medium: { variant: "warning", pulseClass: "alert-pulse-medium" },
-  low: { variant: "info", pulseClass: "alert-pulse-low" },
+const severityToBadge: Record<string, "critical" | "high" | "medium" | "low"> = {
+  critical: "critical",
+  high: "high",
+  medium: "medium",
+  low: "low",
+};
+
+const severityToPulse: Record<string, string> = {
+  critical: "alert-pulse-critical",
+  high: "alert-pulse-high",
+  medium: "alert-pulse-medium",
+  low: "alert-pulse-low",
 };
 
 export function AlertFeedItem({ title, severity, contactName, createdAt, isRead }: AlertFeedItemProps) {
-  const config = severityConfig[severity] || severityConfig.low;
-
   return (
     <div className={cn(
       "alert-pulse pl-5 py-2 rounded-md transition-colors",
-      config.pulseClass,
-      !isRead && "bg-[var(--secondary)]/50",
+      severityToPulse[severity] || "",
+      !isRead && "bg-[var(--secondary)]",
     )}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5">
-            <Badge variant={config.variant} className="text-[10px] px-1.5 py-0">
+            <Badge variant={severityToBadge[severity] || "low"} className="text-[10px] px-1.5 py-0">
               {severity.toUpperCase()}
             </Badge>
             <span className="text-[10px] text-[var(--muted-foreground)]">{contactName}</span>

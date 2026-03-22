@@ -96,34 +96,34 @@ interface CommunicationPattern {
   confidence: number;
 }
 
-function getStatColor(value: number, inverse = false): string {
-  const v = inverse ? -value : value;
-  if (v >= 0.5) return "text-emerald-400";
-  if (v >= 0) return "text-cyan-400";
-  if (v >= -0.3) return "text-amber-400";
-  return "text-red-400";
+/** Returns a CSS variable name for stat value coloring */
+function getStatCssVar(value: number): string {
+  if (value >= 0.5) return "--success";
+  if (value >= 0) return "--accent-cyan";
+  if (value >= -0.3) return "--warning";
+  return "--destructive";
 }
 
-function getStatBarColor(value: number): string {
-  if (value >= 70) return "bg-emerald-400";
-  if (value >= 40) return "bg-cyan-400";
-  if (value >= 20) return "bg-amber-400";
-  return "bg-red-400";
+/** Returns health level for bar data-level attribute */
+function getHealthLevel(value: number): "high" | "mid" | "low" {
+  if (value >= 70) return "high";
+  if (value >= 40) return "mid";
+  return "low";
 }
 
 function getRiskConfig(risk: string) {
   switch (risk) {
-    case "high": return { color: "text-red-400", bg: "bg-red-500/15", border: "border-red-500/30", label: "ALTO RIESGO", icon: "neon-text-red" };
-    case "medium": return { color: "text-amber-400", bg: "bg-amber-500/15", border: "border-amber-500/30", label: "RIESGO MEDIO", icon: "neon-text-amber" };
-    default: return { color: "text-emerald-400", bg: "bg-emerald-500/15", border: "border-emerald-500/30", label: "BAJO RIESGO", icon: "neon-text-green" };
+    case "high": return { cssVar: "--risk-high", label: "ALTO RIESGO", neon: "neon-text-red" };
+    case "medium": return { cssVar: "--risk-medium", label: "RIESGO MEDIO", neon: "neon-text-amber" };
+    default: return { cssVar: "--risk-low", label: "BAJO RIESGO", neon: "neon-text-green" };
   }
 }
 
 function getDecisionPowerConfig(power: string) {
   switch (power?.toLowerCase()) {
-    case "high": case "alto": return { label: "Decisor", color: "text-amber-400", icon: Crown };
-    case "medium": case "medio": return { label: "Influenciador", color: "text-cyan-400", icon: Zap };
-    default: return { label: "Contacto", color: "text-gray-400", icon: MessageCircle };
+    case "high": case "alto": return { label: "Decisor", cssVar: "--role-decisor", icon: Crown };
+    case "medium": case "medio": return { label: "Influenciador", cssVar: "--role-influencer", icon: Zap };
+    default: return { label: "Contacto", cssVar: "--role-contact", icon: MessageCircle };
   }
 }
 
@@ -163,7 +163,7 @@ export default function ContactDetailPage() {
     return (
       <div className="flex items-center justify-center min-h-[60vh]">
         <div className="text-center">
-          <Activity className="h-8 w-8 text-cyan-400 animate-pulse mx-auto mb-3" />
+          <Activity className="h-8 w-8 text-[var(--accent-cyan)] animate-pulse mx-auto mb-3" />
           <div className="text-sm text-[var(--muted-foreground)]">Cargando perfil de agente...</div>
         </div>
       </div>
@@ -213,14 +213,23 @@ export default function ContactDetailPage() {
         </Link>
       </div>
 
-      <div className={cn("game-card rounded-lg p-6", riskConfig.bg, riskConfig.border)}>
+      <div
+        className="game-card rounded-lg p-6"
+        style={{
+          backgroundColor: `color-mix(in srgb, var(${riskConfig.cssVar}) 15%, transparent)`,
+          borderColor: `color-mix(in srgb, var(${riskConfig.cssVar}) 30%, transparent)`,
+        }}
+      >
         <div className="flex items-start gap-5">
           {/* Avatar */}
-          <div className={cn(
-            "w-20 h-20 rounded-xl flex items-center justify-center text-2xl font-black shrink-0 border-2",
-            riskConfig.bg, riskConfig.border,
-          )}>
-            <span className={riskConfig.color}>
+          <div
+            className="w-20 h-20 rounded-xl flex items-center justify-center text-2xl font-black shrink-0 border-2"
+            style={{
+              backgroundColor: `color-mix(in srgb, var(${riskConfig.cssVar}) 15%, transparent)`,
+              borderColor: `color-mix(in srgb, var(${riskConfig.cssVar}) 30%, transparent)`,
+            }}
+          >
+            <span style={{ color: `var(${riskConfig.cssVar})` }}>
               {(contact.name || contact.email).charAt(0).toUpperCase()}
             </span>
           </div>
@@ -229,7 +238,7 @@ export default function ContactDetailPage() {
             <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-2xl font-black tracking-tight">{contact.name || contact.email}</h1>
               {decisionConfig && (
-                <div className={cn("flex items-center gap-1 text-xs font-bold", decisionConfig.color)}>
+                <div className="flex items-center gap-1 text-xs font-bold" style={{ color: `var(${decisionConfig.cssVar})` }}>
                   <DecisionIcon className="h-3.5 w-3.5" />
                   {decisionConfig.label}
                 </div>
@@ -246,8 +255,8 @@ export default function ContactDetailPage() {
               </Badge>
               {contact.contact_type && <Badge variant="outline">{contact.contact_type}</Badge>}
               {openAlerts > 0 && (
-                <span className="flex items-center gap-1 text-xs text-red-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                <span className="flex items-center gap-1 text-xs text-[var(--destructive)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--destructive)] animate-pulse" />
                   {openAlerts} alertas activas
                 </span>
               )}
@@ -264,7 +273,7 @@ export default function ContactDetailPage() {
                 </span>
               </div>
               <div className="health-bar-track" style={{ height: "10px" }}>
-                <div className={cn("health-bar-fill", getStatBarColor(healthClamped))} style={{ width: `${healthClamped}%` }} />
+                <div className="health-bar-fill" data-level={getHealthLevel(healthClamped)} style={{ width: `${healthClamped}%` }} />
               </div>
             </div>
           </div>
@@ -276,19 +285,19 @@ export default function ContactDetailPage() {
         {stats.map((stat, i) => (
           <div key={stat.label} className={cn("game-card rounded-lg p-4 bg-[var(--card)] float-in", `float-in-delay-${i + 1}`)}>
             <div className="flex items-center gap-2 mb-3">
-              <stat.icon className="h-4 w-4 text-cyan-400" />
+              <stat.icon className="h-4 w-4 text-[var(--accent-cyan)]" />
               <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                 {stat.label}
               </span>
             </div>
             <div className="mb-2">
-              <span className={cn("text-2xl font-black tabular-nums", getStatColor(stat.value / 100 - 0.5))}>
+              <span className="text-2xl font-black tabular-nums" style={{ color: `var(${getStatCssVar(stat.value / 100 - 0.5)})` }}>
                 {stat.value}
               </span>
               <span className="text-xs text-[var(--muted-foreground)] ml-1">/ 100</span>
             </div>
             <div className="health-bar-track">
-              <div className={cn("health-bar-fill", getStatBarColor(stat.value))} style={{ width: `${stat.value}%` }} />
+              <div className="health-bar-fill" data-level={getHealthLevel(stat.value)} style={{ width: `${stat.value}%` }} />
             </div>
             <div className="text-[10px] text-[var(--muted-foreground)] mt-1">{stat.raw}</div>
           </div>
@@ -302,7 +311,7 @@ export default function ContactDetailPage() {
           {profile && (
             <div className="game-card rounded-lg bg-[var(--card)] p-5">
               <div className="flex items-center gap-2 mb-4">
-                <Brain className="h-4 w-4 text-purple-400" />
+                <Brain className="h-4 w-4 text-[var(--quest-epic)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Perfil de Personalidad
                 </span>
@@ -316,7 +325,7 @@ export default function ContactDetailPage() {
                 {profile.communication_style && (
                   <div className="rounded-lg bg-[var(--secondary)]/50 p-3">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <MessageCircle className="h-3 w-3 text-cyan-400" />
+                      <MessageCircle className="h-3 w-3 text-[var(--accent-cyan)]" />
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Comunicacion</span>
                     </div>
                     <p className="text-sm font-medium">{profile.communication_style}</p>
@@ -325,7 +334,7 @@ export default function ContactDetailPage() {
                 {profile.decision_power && (
                   <div className="rounded-lg bg-[var(--secondary)]/50 p-3">
                     <div className="flex items-center gap-1.5 mb-1">
-                      <Crown className="h-3 w-3 text-amber-400" />
+                      <Crown className="h-3 w-3 text-[var(--warning)]" />
                       <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Poder de Decision</span>
                     </div>
                     <p className="text-sm font-medium">{profile.decision_power}</p>
@@ -336,12 +345,12 @@ export default function ContactDetailPage() {
               {profile.personality_traits?.length > 0 && (
                 <div className="mb-3">
                   <div className="flex items-center gap-1.5 mb-2">
-                    <Sparkles className="h-3 w-3 text-purple-400" />
+                    <Sparkles className="h-3 w-3 text-[var(--quest-epic)]" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Rasgos</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {profile.personality_traits.map((t, i) => (
-                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-purple-500/15 text-purple-300 border border-purple-500/20">
+                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-[var(--quest-epic-muted)] text-[var(--quest-epic)] border border-[color-mix(in_srgb,var(--quest-epic)_20%,transparent)]">
                         {t}
                       </span>
                     ))}
@@ -352,12 +361,12 @@ export default function ContactDetailPage() {
               {profile.decision_factors?.length > 0 && (
                 <div className="mb-3">
                   <div className="flex items-center gap-1.5 mb-2">
-                    <Target className="h-3 w-3 text-amber-400" />
+                    <Target className="h-3 w-3 text-[var(--warning)]" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Factores de Decision</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {profile.decision_factors.map((f, i) => (
-                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-amber-500/15 text-amber-300 border border-amber-500/20">
+                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-[var(--warning-muted)] text-[var(--warning)] border border-[color-mix(in_srgb,var(--warning)_20%,transparent)]">
                         {f}
                       </span>
                     ))}
@@ -368,12 +377,12 @@ export default function ContactDetailPage() {
               {profile.interests?.length > 0 && (
                 <div>
                   <div className="flex items-center gap-1.5 mb-2">
-                    <Heart className="h-3 w-3 text-pink-400" />
+                    <Heart className="h-3 w-3 text-[var(--accent-pink)]" />
                     <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">Intereses</span>
                   </div>
                   <div className="flex flex-wrap gap-1.5">
                     {profile.interests.map((interest, i) => (
-                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-pink-500/15 text-pink-300 border border-pink-500/20">
+                      <span key={i} className="text-xs px-2 py-1 rounded-md bg-[color-mix(in_srgb,var(--accent-pink)_15%,transparent)] text-[var(--accent-pink)] border border-[color-mix(in_srgb,var(--accent-pink)_20%,transparent)]">
                         {interest}
                       </span>
                     ))}
@@ -387,7 +396,7 @@ export default function ContactDetailPage() {
           {facts.length > 0 && (
             <div className="game-card rounded-lg bg-[var(--card)] p-5">
               <div className="flex items-center gap-2 mb-4">
-                <BookOpen className="h-4 w-4 text-cyan-400" />
+                <BookOpen className="h-4 w-4 text-[var(--accent-cyan)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Inteligencia Recopilada
                 </span>
@@ -398,8 +407,8 @@ export default function ContactDetailPage() {
                   <div key={fact.id} className="flex items-start gap-3 rounded-md bg-[var(--secondary)]/30 p-3">
                     <div className={cn(
                       "mt-0.5 w-2 h-2 rounded-full shrink-0",
-                      fact.confidence >= 0.8 ? "bg-emerald-400" :
-                      fact.confidence >= 0.5 ? "bg-cyan-400" : "bg-amber-400",
+                      fact.confidence >= 0.8 ? "bg-[var(--success)]" :
+                      fact.confidence >= 0.5 ? "bg-[var(--accent-cyan)]" : "bg-[var(--warning)]",
                     )} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm">{fact.fact_text}</p>
@@ -421,7 +430,7 @@ export default function ContactDetailPage() {
           {patterns.length > 0 && (
             <div className="game-card rounded-lg bg-[var(--card)] p-5">
               <div className="flex items-center gap-2 mb-4">
-                <Activity className="h-4 w-4 text-teal-400" />
+                <Activity className="h-4 w-4 text-[var(--accent-teal)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Patrones de Comunicacion
                 </span>
@@ -451,7 +460,7 @@ export default function ContactDetailPage() {
           {/* Contact Card */}
           <div className="game-card rounded-lg bg-[var(--card)] p-5">
             <div className="flex items-center gap-2 mb-4">
-              <Mail className="h-4 w-4 text-blue-400" />
+              <Mail className="h-4 w-4 text-[var(--info)]" />
               <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                 Datos de Contacto
               </span>
@@ -493,14 +502,14 @@ export default function ContactDetailPage() {
           <div className="game-card rounded-lg bg-[var(--card)] p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-amber-400" />
+                <AlertTriangle className="h-4 w-4 text-[var(--warning)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Alertas
                 </span>
               </div>
               {openAlerts > 0 && (
-                <span className="flex items-center gap-1 text-[10px] font-bold text-red-400">
-                  <span className="w-1.5 h-1.5 rounded-full bg-red-400 animate-pulse" />
+                <span className="flex items-center gap-1 text-[10px] font-bold text-[var(--destructive)]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[var(--destructive)] animate-pulse" />
                   {openAlerts} activas
                 </span>
               )}
@@ -511,8 +520,8 @@ export default function ContactDetailPage() {
                   <div key={a.id} className={cn(
                     "alert-pulse pl-4 py-2 rounded-md",
                     a.state === "new" ? (
-                      a.severity === "critical" ? "alert-pulse-critical bg-red-500/5" :
-                      a.severity === "high" ? "alert-pulse-high bg-amber-500/5" :
+                      a.severity === "critical" ? "alert-pulse-critical bg-[color-mix(in_srgb,var(--destructive)_5%,transparent)]" :
+                      a.severity === "high" ? "alert-pulse-high bg-[color-mix(in_srgb,var(--warning)_5%,transparent)]" :
                       "alert-pulse-medium"
                     ) : "",
                   )}>
@@ -544,13 +553,13 @@ export default function ContactDetailPage() {
           <div className="game-card rounded-lg bg-[var(--card)] p-5">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-purple-400" />
+                <Target className="h-4 w-4 text-[var(--quest-epic)]" />
                 <span className="text-xs font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
                   Misiones
                 </span>
               </div>
               {pendingActions > 0 && (
-                <span className="text-[10px] font-bold text-purple-400">{pendingActions} pendientes</span>
+                <span className="text-[10px] font-bold text-[var(--quest-epic)]">{pendingActions} pendientes</span>
               )}
             </div>
             {actions.length > 0 ? (
@@ -560,8 +569,8 @@ export default function ContactDetailPage() {
                   return (
                     <div key={a.id} className={cn(
                       "rounded-md p-2.5 border",
-                      a.state === "completed" ? "border-emerald-500/20 bg-emerald-500/5" :
-                      isOverdue ? "border-red-500/20 bg-red-500/5" :
+                      a.state === "completed" ? "border-[color-mix(in_srgb,var(--success)_20%,transparent)] bg-[color-mix(in_srgb,var(--success)_5%,transparent)]" :
+                      isOverdue ? "border-[color-mix(in_srgb,var(--destructive)_20%,transparent)] bg-[color-mix(in_srgb,var(--destructive)_5%,transparent)]" :
                       a.priority === "high" ? "mission-epic border-[var(--border)]" :
                       a.priority === "medium" ? "mission-rare border-[var(--border)]" :
                       "mission-common border-[var(--border)]",
@@ -573,11 +582,11 @@ export default function ContactDetailPage() {
                         >
                           {a.state === "completed" ? "COMPLETADA" : a.priority?.toUpperCase()}
                         </Badge>
-                        {isOverdue && <span className="text-[10px] font-bold text-red-400">VENCIDA</span>}
+                        {isOverdue && <span className="text-[10px] font-bold text-[var(--destructive)]">VENCIDA</span>}
                       </div>
                       <p className="text-sm truncate">{a.description}</p>
                       {a.due_date && (
-                        <span className={cn("text-[10px]", isOverdue ? "text-red-400" : "text-[var(--muted-foreground)]")}>
+                        <span className={cn("text-[10px]", isOverdue ? "text-[var(--destructive)]" : "text-[var(--muted-foreground)]")}>
                           <Clock className="h-2.5 w-2.5 inline mr-0.5" />
                           {new Date(a.due_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
                         </span>

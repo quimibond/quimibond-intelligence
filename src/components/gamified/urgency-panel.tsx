@@ -7,18 +7,18 @@ interface UrgencyItem {
   type: "alert" | "action" | "contact";
   title: string;
   reason: string;
-  urgency: number; // 0-100
+  urgency: number;
 }
 
 interface UrgencyPanelProps {
   items: UrgencyItem[];
 }
 
-function getUrgencyColor(urgency: number) {
-  if (urgency >= 80) return { text: "text-red-400", bar: "bg-red-400", bg: "bg-red-500/10" };
-  if (urgency >= 60) return { text: "text-amber-400", bar: "bg-amber-400", bg: "bg-amber-500/10" };
-  if (urgency >= 40) return { text: "text-cyan-400", bar: "bg-cyan-400", bg: "bg-cyan-500/10" };
-  return { text: "text-gray-400", bar: "bg-gray-400", bg: "" };
+function getUrgencyCssVar(urgency: number): string {
+  if (urgency >= 80) return "--severity-critical";
+  if (urgency >= 60) return "--severity-high";
+  if (urgency >= 40) return "--severity-medium";
+  return "--severity-low";
 }
 
 function getUrgencyLabel(urgency: number) {
@@ -40,19 +40,29 @@ export function UrgencyPanel({ items }: UrgencyPanelProps) {
   return (
     <div className="space-y-2">
       {sorted.map((item, i) => {
-        const colors = getUrgencyColor(item.urgency);
+        const cssVar = getUrgencyCssVar(item.urgency);
         const Icon = typeIcons[item.type];
         return (
-          <div key={i} className={cn("rounded-md p-3 border border-[var(--border)]", colors.bg)}>
+          <div
+            key={i}
+            className="rounded-md p-3 border border-[var(--border)]"
+            style={{ backgroundColor: `color-mix(in srgb, var(${cssVar}) 10%, transparent)` }}
+          >
             <div className="flex items-center gap-2 mb-1.5">
-              <Icon className={cn("h-3.5 w-3.5 shrink-0", colors.text)} />
-              <span className={cn("text-[10px] font-bold uppercase tracking-wider", colors.text)}>
+              <Icon className="h-3.5 w-3.5 shrink-0" style={{ color: `var(${cssVar})` }} />
+              <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: `var(${cssVar})` }}>
                 {getUrgencyLabel(item.urgency)}
               </span>
               <div className="flex-1 h-1 rounded-full bg-[var(--secondary)]">
-                <div className={cn("h-full rounded-full transition-all", colors.bar)} style={{ width: `${item.urgency}%` }} />
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: `${item.urgency}%`,
+                    backgroundColor: `var(${cssVar})`,
+                  }}
+                />
               </div>
-              <span className={cn("text-[10px] font-bold tabular-nums", colors.text)}>{item.urgency}</span>
+              <span className="text-[10px] font-bold tabular-nums" style={{ color: `var(${cssVar})` }}>{item.urgency}</span>
             </div>
             <p className="text-sm font-medium truncate">{item.title}</p>
             <p className="text-[10px] text-[var(--muted-foreground)] mt-0.5">{item.reason}</p>

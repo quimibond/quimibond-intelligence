@@ -3,8 +3,8 @@
 import { cn } from "@/lib/utils";
 
 interface RadarDot {
-  x: number; // 0-100
-  y: number; // 0-100
+  x: number;
+  y: number;
   severity: "critical" | "high" | "medium" | "low";
   label: string;
 }
@@ -14,17 +14,16 @@ interface RadarWidgetProps {
   className?: string;
 }
 
-const dotColors = {
-  critical: "bg-red-400 shadow-[0_0_8px_rgba(239,68,68,0.6)]",
-  high: "bg-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.6)]",
-  medium: "bg-cyan-400 shadow-[0_0_6px_rgba(34,211,238,0.4)]",
-  low: "bg-emerald-400 shadow-[0_0_6px_rgba(16,185,129,0.4)]",
+const dotCssVars: Record<string, string> = {
+  critical: "--severity-critical",
+  high: "--severity-high",
+  medium: "--severity-medium",
+  low: "--severity-low",
 };
 
 export function RadarWidget({ dots, className }: RadarWidgetProps) {
   return (
     <div className={cn("radar-container", className)}>
-      {/* Concentric rings */}
       {[25, 50, 75].map((size) => (
         <div
           key={size}
@@ -38,25 +37,36 @@ export function RadarWidget({ dots, className }: RadarWidgetProps) {
         />
       ))}
 
-      {/* Cross lines */}
-      <div className="absolute top-0 bottom-0 left-1/2 w-px bg-white/5" />
-      <div className="absolute left-0 right-0 top-1/2 h-px bg-white/5" />
+      <div className="absolute top-0 bottom-0 left-1/2 w-px" style={{ backgroundColor: "color-mix(in srgb, var(--foreground) 5%, transparent)" }} />
+      <div className="absolute left-0 right-0 top-1/2 h-px" style={{ backgroundColor: "color-mix(in srgb, var(--foreground) 5%, transparent)" }} />
 
-      {/* Sweep */}
       <div className="radar-sweep" />
 
-      {/* Dots */}
-      {dots.map((dot, i) => (
-        <div
-          key={i}
-          className={cn("radar-dot", dotColors[dot.severity])}
-          style={{ top: `${dot.y}%`, left: `${dot.x}%` }}
-          title={dot.label}
-        />
-      ))}
+      {dots.map((dot, i) => {
+        const cssVar = dotCssVars[dot.severity] || dotCssVars.low;
+        return (
+          <div
+            key={i}
+            className="radar-dot"
+            style={{
+              top: `${dot.y}%`,
+              left: `${dot.x}%`,
+              backgroundColor: `var(${cssVar})`,
+              boxShadow: `0 0 8px color-mix(in srgb, var(${cssVar}) 60%, transparent)`,
+            }}
+            title={dot.label}
+          />
+        );
+      })}
 
-      {/* Center point */}
-      <div className="absolute top-1/2 left-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-cyan-400/50 border border-cyan-400" />
+      <div
+        className="absolute top-1/2 left-1/2 w-3 h-3 -translate-x-1/2 -translate-y-1/2 rounded-full"
+        style={{
+          backgroundColor: "color-mix(in srgb, var(--accent-cyan) 50%, transparent)",
+          borderWidth: "1px",
+          borderColor: "var(--accent-cyan)",
+        }}
+      />
     </div>
   );
 }

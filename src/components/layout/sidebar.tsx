@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   Crosshair,
   Mail,
@@ -122,12 +123,15 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-[var(--border)] p-4">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-            Sistema Operativo v5.0
-          </p>
+      <div className="border-t border-[var(--border)] p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-[var(--success)] animate-pulse" />
+            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+              v5.0
+            </p>
+          </div>
+          <ThemeToggle />
         </div>
       </div>
     </aside>

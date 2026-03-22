@@ -12,9 +12,9 @@ interface MissionCardProps {
 }
 
 const priorityConfig = {
-  high: { class: "mission-epic", label: "EPICA", color: "text-purple-400", dotColor: "bg-purple-400" },
-  medium: { class: "mission-rare", label: "RARA", color: "text-blue-400", dotColor: "bg-blue-400" },
-  low: { class: "mission-common", label: "COMUN", color: "text-gray-400", dotColor: "bg-gray-400" },
+  high:   { class: "mission-epic",   label: "EPICA",  cssVar: "--quest-epic" },
+  medium: { class: "mission-rare",   label: "RARA",   cssVar: "--quest-rare" },
+  low:    { class: "mission-common", label: "COMUN",  cssVar: "--quest-common" },
 };
 
 export function MissionCard({ title, contact, priority, dueDate, type }: MissionCardProps) {
@@ -29,8 +29,8 @@ export function MissionCard({ title, contact, priority, dueDate, type }: Mission
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1">
-            <CircleDot className={cn("h-3 w-3 shrink-0", config.color)} />
-            <span className={cn("text-[10px] font-bold uppercase tracking-widest", config.color)}>
+            <CircleDot className="h-3 w-3 shrink-0" style={{ color: `var(${config.cssVar})` }} />
+            <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: `var(${config.cssVar})` }}>
               {config.label}
             </span>
             <span className="text-[10px] text-[var(--muted-foreground)] bg-[var(--secondary)] px-1.5 py-0.5 rounded">
@@ -45,7 +45,7 @@ export function MissionCard({ title, contact, priority, dueDate, type }: Mission
             {dueDate && (
               <span className={cn(
                 "text-xs flex items-center gap-1",
-                isOverdue ? "text-red-400" : "text-[var(--muted-foreground)]",
+                isOverdue ? "text-[var(--destructive)]" : "text-[var(--muted-foreground)]",
               )}>
                 <Clock className="h-3 w-3" />
                 {new Date(dueDate).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}

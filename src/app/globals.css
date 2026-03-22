@@ -86,6 +86,85 @@
   --accent-blue: #3b82f6;
 }
 
+/* ── Light theme ─────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --background: #fafafa;
+  --foreground: #09090b;
+  --card: #ffffff;
+  --card-foreground: #09090b;
+  --popover: #ffffff;
+  --popover-foreground: #09090b;
+  --primary: #2563eb;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --muted: #f4f4f5;
+  --muted-foreground: #71717a;
+  --accent: #f4f4f5;
+  --accent-foreground: #18181b;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e4e4e7;
+  --input: #e4e4e7;
+  --ring: #2563eb;
+
+  --severity-critical: #dc2626;
+  --severity-critical-foreground: #991b1b;
+  --severity-critical-muted: rgba(220, 38, 38, 0.1);
+  --severity-high: #d97706;
+  --severity-high-foreground: #92400e;
+  --severity-high-muted: rgba(217, 119, 6, 0.1);
+  --severity-medium: #0891b2;
+  --severity-medium-foreground: #155e75;
+  --severity-medium-muted: rgba(8, 145, 178, 0.1);
+  --severity-low: #6b7280;
+  --severity-low-foreground: #374151;
+  --severity-low-muted: rgba(107, 114, 128, 0.1);
+
+  --success: #059669;
+  --success-foreground: #064e3b;
+  --success-muted: rgba(5, 150, 105, 0.1);
+  --warning: #d97706;
+  --warning-foreground: #92400e;
+  --warning-muted: rgba(217, 119, 6, 0.1);
+  --info: #2563eb;
+  --info-foreground: #1e40af;
+  --info-muted: rgba(37, 99, 235, 0.1);
+
+  --risk-high: var(--severity-critical);
+  --risk-high-muted: var(--severity-critical-muted);
+  --risk-medium: var(--severity-high);
+  --risk-medium-muted: var(--severity-high-muted);
+  --risk-low: var(--success);
+  --risk-low-muted: var(--success-muted);
+
+  --xp-bar: #0891b2;
+  --xp-glow: #6366f1;
+  --health-high: var(--success);
+  --health-mid: var(--warning);
+  --health-low: var(--destructive);
+  --quest-epic: #7c3aed;
+  --quest-epic-muted: rgba(124, 58, 237, 0.1);
+  --quest-rare: var(--primary);
+  --quest-rare-muted: rgba(37, 99, 235, 0.1);
+  --quest-common: #6b7280;
+  --quest-common-muted: rgba(107, 114, 128, 0.1);
+  --achievement-gold: #ca8a04;
+  --achievement-silver: #64748b;
+  --achievement-bronze: #b45309;
+
+  --role-decisor: var(--warning);
+  --role-influencer: var(--xp-bar);
+  --role-contact: var(--muted-foreground);
+
+  --accent-cyan: #0891b2;
+  --accent-purple: #7c3aed;
+  --accent-pink: #db2777;
+  --accent-teal: #0d9488;
+  --accent-indigo: #4f46e5;
+  --accent-blue: #2563eb;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
