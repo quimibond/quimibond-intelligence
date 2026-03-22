@@ -21,6 +21,7 @@ import {
   User,
   Mail,
   Clock,
+  X,
 } from "lucide-react";
 
 interface Alert {
@@ -40,6 +41,8 @@ interface Alert {
   related_email_id: string | null;
   business_impact: string | null;
   suggested_action: string | null;
+  user_feedback?: string | null;
+  feedback_comment?: string | null;
 }
 
 const typeLabel: Record<string, string> = {
@@ -64,12 +67,17 @@ const severityToBadge: Record<string, "critical" | "high" | "medium" | "low"> = 
   low: "low",
 };
 
+type FeedbackType = "helpful" | "partially_helpful" | "not_helpful";
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
   const [stateFilter, setStateFilter] = useState<string>("new");
   const [counts, setCounts] = useState({ new: 0, acknowledged: 0, resolved: 0, all: 0 });
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [resolvingAlertId, setResolvingAlertId] = useState<string | null>(null);
+  const [selectedFeedback, setSelectedFeedback] = useState<FeedbackType | null>(null);
+  const [feedbackComment, setFeedbackComment] = useState<string>("");
 
   function toggleExpand(id: string) {
     setExpandedIds((prev) => {
@@ -127,14 +135,50 @@ export default function AlertsPage() {
     setCounts((c) => ({ ...c, new: Math.max(0, c.new - 1), acknowledged: c.acknowledged + 1 }));
   }
 
-  async function resolve(id: string) {
+  function startResolving(id: string) {
+    setResolvingAlertId(id);
+    setSelectedFeedback(null);
+    setFeedbackComment("");
+  }
+
+  function cancelResolving() {
+    setResolvingAlertId(null);
+    setSelectedFeedback(null);
+    setFeedbackComment("");
+  }
+
+  async function confirmResolve() {
+    if (!resolvingAlertId || !selectedFeedback) return;
+
     const now = new Date().toISOString();
-    await supabase.from("alerts").update({ state: "resolved", resolved_at: now }).eq("id", id);
+    const updateData: Record<string, any> = {
+      state: "resolved",
+      resolved_at: now,
+      user_feedback: selectedFeedback,
+    };
+
+    if (feedbackComment.trim()) {
+      updateData.feedback_comment = feedbackComment;
+    }
+
+    await supabase.from("alerts").update(updateData).eq("id", resolvingAlertId);
+
     setAlerts((prev) =>
-      prev.map((a) => (a.id === id ? { ...a, state: "resolved", resolved_at: now } : a))
+      prev.map((a) =>
+        a.id === resolvingAlertId
+          ? {
+              ...a,
+              state: "resolved",
+              resolved_at: now,
+              user_feedback: selectedFeedback,
+              feedback_comment: feedbackComment.trim() || null,
+            }
+          : a
+      )
     );
+
     setCounts((c) => {
-      const wasNew = alerts.find((a) => a.id === id)?.state === "new";
+      const wasNew = alerts.find((a) => a.id === resolvingAlertId)?.state === "new";
       return {
         ...c,
         new: wasNew ? Math.max(0, c.new - 1) : c.new,
@@ -142,6 +186,8 @@ export default function AlertsPage() {
         resolved: c.resolved + 1,
       };
     });
+
+    cancelResolving();
   }
 
   const severityCounts = {
@@ -405,30 +451,100 @@ export default function AlertsPage() {
                     </div>
 
                     {/* Action buttons */}
-                    <div className="flex shrink-0 gap-1">
-                      {alert.state === "new" && (
+                    {resolvingAlertId === alert.id ? (
+                      <div className="flex shrink-0 flex-col gap-3 min-w-64 animate-in fade-in duration-200">
+                        {/* Feedback options */}
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => setSelectedFeedback("helpful")}
+                            className={cn(
+                              "px-2.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150",
+                              selectedFeedback === "helpful"
+                                ? "bg-[var(--success)] text-white shadow-md"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            )}
+                          >
+                            Útil
+                          </button>
+                          <button
+                            onClick={() => setSelectedFeedback("partially_helpful")}
+                            className={cn(
+                              "px-2.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150",
+                              selectedFeedback === "partially_helpful"
+                                ? "bg-[var(--warning)] text-white shadow-md"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            )}
+                          >
+                            Parcialmente
+                          </button>
+                          <button
+                            onClick={() => setSelectedFeedback("not_helpful")}
+                            className={cn(
+                              "px-2.5 py-1.5 rounded-full text-xs font-medium transition-all duration-150",
+                              selectedFeedback === "not_helpful"
+                                ? "bg-[var(--destructive)] text-white shadow-md"
+                                : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                            )}
+                          >
+                            No ayudó
+                          </button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={cancelResolving}
+                            title="Cancelar"
+                            className="h-7 w-7 ml-auto hover:text-[var(--destructive)]"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+
+                        {/* Comment input */}
+                        <input
+                          type="text"
+                          placeholder="Comentario opcional..."
+                          value={feedbackComment}
+                          onChange={(e) => setFeedbackComment(e.target.value)}
+                          className="text-xs px-2 py-1.5 rounded border border-[var(--border)] bg-white placeholder-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+                        />
+
+                        {/* Confirm button */}
                         <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => markRead(alert.id)}
-                          title="Marcar como vista"
-                          className="h-8 w-8"
+                          size="sm"
+                          onClick={confirmResolve}
+                          disabled={!selectedFeedback}
+                          className="w-full text-xs"
+                          variant={selectedFeedback ? "default" : "outline"}
                         >
-                          <Eye className="h-3.5 w-3.5" />
+                          Confirmar
                         </Button>
-                      )}
-                      {alert.state !== "resolved" && (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          onClick={() => resolve(alert.id)}
-                          title="Resolver"
-                          className="h-8 w-8 hover:text-[var(--success)]"
-                        >
-                          <Check className="h-3.5 w-3.5" />
-                        </Button>
-                      )}
-                    </div>
+                      </div>
+                    ) : (
+                      <div className="flex shrink-0 gap-1">
+                        {alert.state === "new" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => markRead(alert.id)}
+                            title="Marcar como vista"
+                            className="h-8 w-8"
+                          >
+                            <Eye className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {alert.state !== "resolved" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => startResolving(alert.id)}
+                            title="Resolver"
+                            className="h-8 w-8 hover:text-[var(--success)]"
+                          >
+                            <Check className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </CardContent>
               </Card>
