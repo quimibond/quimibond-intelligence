@@ -2,10 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 import {
   Bot,
@@ -162,173 +161,170 @@ export default function ChatPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto">
-        <div className="space-y-6">
-          {/* Header */}
-          <div className="space-y-2">
-            <h1 className="text-3xl font-bold text-gray-900">Chat Inteligente</h1>
-            <p className="text-gray-600">
-              Haz preguntas sobre alertas, contactos, acciones y briefings
-            </p>
-          </div>
+    <div className="max-w-4xl mx-auto">
+      <div className="space-y-6">
+        {/* Header */}
+        <div className="space-y-2">
+          <h1 className="text-3xl font-bold text-foreground">Chat Inteligente</h1>
+          <p className="text-muted-foreground">
+            Haz preguntas sobre alertas, contactos, acciones y briefings
+          </p>
+        </div>
 
-          {/* Chat Container */}
-          <Card className="border border-gray-200 bg-white shadow-sm flex flex-col h-[calc(100vh-320px)] min-h-[500px]">
-            {/* Messages Area */}
-            <CardContent className="flex-1 overflow-y-auto p-6 space-y-4">
-              {messages.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center space-y-4">
-                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center">
-                    <Bot className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div className="text-center space-y-2">
-                    <h2 className="text-lg font-semibold text-gray-900">
-                      Bienvenido al Chat
-                    </h2>
-                    <p className="text-sm text-gray-600">
-                      Haz una pregunta para comenzar
-                    </p>
-                  </div>
-
-                  {/* Suggested Questions */}
-                  <div className="grid grid-cols-1 gap-3 w-full max-w-sm mt-6">
-                    {SUGGESTED_QUESTIONS.map((question, idx) => (
-                      <button
-                        key={idx}
-                        onClick={() => handleSendMessage(question)}
-                        className="text-left px-4 py-3 rounded-lg bg-gray-50 hover:bg-gray-100 border border-gray-200 text-sm text-gray-700 transition-colors"
-                      >
-                        {question}
-                      </button>
-                    ))}
-                  </div>
+        {/* Chat Container */}
+        <Card className="shadow-sm flex flex-col h-[calc(100vh-320px)] min-h-[500px]">
+          {/* Messages Area */}
+          <CardContent className="flex-1 overflow-y-auto p-6 space-y-4">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center space-y-4">
+                <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                  <Bot className="h-6 w-6 text-primary" />
                 </div>
-              ) : (
-                <>
-                  {messages.map((message) => (
-                    <div
-                      key={message.id}
-                      className={cn(
-                        'flex gap-3 animate-fade-in',
-                        message.role === 'user' ? 'justify-end' : 'justify-start'
-                      )}
+                <div className="text-center space-y-2">
+                  <h2 className="text-lg font-semibold text-foreground">
+                    Bienvenido al Chat
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    Haz una pregunta para comenzar
+                  </p>
+                </div>
+
+                {/* Suggested Questions */}
+                <div className="grid grid-cols-1 gap-3 w-full max-w-sm mt-6">
+                  {SUGGESTED_QUESTIONS.map((question, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleSendMessage(question)}
+                      className="text-left px-4 py-3 rounded-lg bg-muted/50 hover:bg-muted border border-border text-sm text-foreground transition-colors"
                     >
-                      {message.role === 'assistant' && (
-                        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
-                          <Bot className="h-5 w-5 text-blue-600" />
-                        </div>
-                      )}
-
-                      <div
-                        className={cn(
-                          'max-w-md rounded-lg p-4',
-                          message.role === 'user'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 text-gray-900'
-                        )}
-                      >
-                        <p className="text-sm leading-relaxed">{message.content}</p>
-                      </div>
-
-                      {message.role === 'user' && (
-                        <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center flex-shrink-0 mt-1">
-                          <User className="h-5 w-5 text-white" />
-                        </div>
-                      )}
-                    </div>
+                      {question}
+                    </button>
                   ))}
-
-                  {/* Feedback Buttons */}
-                  {messages.length > 0 &&
-                    messages[messages.length - 1]?.role === 'assistant' && (
-                      <div className="flex gap-2 justify-start pl-11 py-2">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleFeedback('thumbs_up')}
-                          className={cn(
-                            'h-8 w-8 p-0',
-                            feedback?.rating === 'thumbs_up'
-                              ? 'bg-green-100 text-green-700'
-                              : 'text-gray-400 hover:text-gray-600'
-                          )}
-                          title="Útil"
-                        >
-                          <ThumbsUp className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleFeedback('thumbs_down')}
-                          className={cn(
-                            'h-8 w-8 p-0',
-                            feedback?.rating === 'thumbs_down'
-                              ? 'bg-red-100 text-red-700'
-                              : 'text-gray-400 hover:text-gray-600'
-                          )}
-                          title="No es útil"
-                        >
-                          <ThumbsDown className="h-4 w-4" />
-                        </Button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {messages.map((message) => (
+                  <div
+                    key={message.id}
+                    className={cn(
+                      'flex gap-3',
+                      message.role === 'user' ? 'justify-end' : 'justify-start'
+                    )}
+                  >
+                    {message.role === 'assistant' && (
+                      <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1">
+                        <Bot className="h-5 w-5 text-primary" />
                       </div>
                     )}
 
-                  {loading && (
-                    <div className="flex gap-3 justify-start">
-                      <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-                        <Bot className="h-5 w-5 text-blue-600" />
+                    <div
+                      className={cn(
+                        'max-w-md rounded-lg p-4',
+                        message.role === 'user'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'bg-muted text-foreground'
+                      )}
+                    >
+                      <p className="text-sm leading-relaxed">{message.content}</p>
+                    </div>
+
+                    {message.role === 'user' && (
+                      <div className="w-8 h-8 rounded-full bg-muted-foreground flex items-center justify-center flex-shrink-0 mt-1">
+                        <User className="h-5 w-5 text-background" />
                       </div>
-                      <div className="bg-gray-100 rounded-lg p-4 flex gap-1">
-                        <div className="w-2 h-2 rounded-full bg-gray-400 animate-bounce" />
-                        <div
-                          className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
-                          style={{ animationDelay: '0.1s' }}
-                        />
-                        <div
-                          className="w-2 h-2 rounded-full bg-gray-400 animate-bounce"
-                          style={{ animationDelay: '0.2s' }}
-                        />
-                      </div>
+                    )}
+                  </div>
+                ))}
+
+                {/* Feedback Buttons */}
+                {messages.length > 0 &&
+                  messages[messages.length - 1]?.role === 'assistant' && (
+                    <div className="flex gap-2 justify-start pl-11 py-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleFeedback('thumbs_up')}
+                        className={cn(
+                          'h-8 w-8 p-0',
+                          feedback?.rating === 'thumbs_up'
+                            ? 'bg-success/10 text-success'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                        title="Útil"
+                      >
+                        <ThumbsUp className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleFeedback('thumbs_down')}
+                        className={cn(
+                          'h-8 w-8 p-0',
+                          feedback?.rating === 'thumbs_down'
+                            ? 'bg-destructive/10 text-destructive'
+                            : 'text-muted-foreground hover:text-foreground'
+                        )}
+                        title="No es útil"
+                      >
+                        <ThumbsDown className="h-4 w-4" />
+                      </Button>
                     </div>
                   )}
 
-                  <div ref={messagesEndRef} />
-                </>
-              )}
-            </CardContent>
+                {loading && (
+                  <div className="flex gap-3 justify-start">
+                    <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center flex-shrink-0">
+                      <Bot className="h-5 w-5 text-primary" />
+                    </div>
+                    <div className="bg-muted rounded-lg p-4 flex gap-1">
+                      <div className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce" />
+                      <div
+                        className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce"
+                        style={{ animationDelay: '0.1s' }}
+                      />
+                      <div
+                        className="w-2 h-2 rounded-full bg-muted-foreground animate-bounce"
+                        style={{ animationDelay: '0.2s' }}
+                      />
+                    </div>
+                  </div>
+                )}
 
-            {/* Input Area */}
-            <div className="border-t border-gray-200 bg-white p-4 rounded-b-lg">
-              <div className="flex gap-3">
-                <Input
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !e.shiftKey) {
-                      e.preventDefault();
-                      handleSendMessage();
-                    }
-                  }}
-                  placeholder="Escribe tu pregunta..."
-                  disabled={loading}
-                  className="flex-1 bg-white border-gray-200"
-                />
-                <Button
-                  onClick={() => handleSendMessage()}
-                  disabled={!inputValue.trim() || loading}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4"
-                >
-                  {loading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
-                </Button>
-              </div>
+                <div ref={messagesEndRef} />
+              </>
+            )}
+          </CardContent>
+
+          {/* Input Area */}
+          <div className="border-t border-border bg-card p-4 rounded-b-lg">
+            <div className="flex gap-3">
+              <Input
+                value={inputValue}
+                onChange={(e) => setInputValue(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSendMessage();
+                  }
+                }}
+                placeholder="Escribe tu pregunta..."
+                disabled={loading}
+                className="flex-1"
+              />
+              <Button
+                onClick={() => handleSendMessage()}
+                disabled={!inputValue.trim() || loading}
+              >
+                {loading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Send className="h-4 w-4" />
+                )}
+              </Button>
             </div>
-          </Card>
-        </div>
+          </div>
+        </Card>
       </div>
     </div>
   );

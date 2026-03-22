@@ -2,13 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn, timeAgo } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { ChevronRight, Search, AlertTriangle } from "lucide-react";
+import { ChevronRight, Search } from "lucide-react";
 
 type Contact = {
   id: string;
@@ -31,10 +31,10 @@ const contactTypeLabels: Record<string, string> = {
   supplier: "Proveedor",
 };
 
-const riskLevelColor: Record<string, string> = {
-  high: "destructive",
-  medium: "warning",
-  low: "secondary",
+const riskLevelVariant: Record<string, string> = {
+  high: "critical",
+  medium: "medium",
+  low: "low",
 };
 
 const riskLevelLabel: Record<string, string> = {
@@ -101,8 +101,8 @@ export default function ContactsPage() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold text-gray-900">Contactos</h1>
-        <p className="mt-1 text-sm text-gray-600">
+        <h1 className="text-3xl font-bold text-foreground">Contactos</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
           Total: <span className="font-semibold">{contacts.length}</span> contactos
         </p>
       </div>
@@ -113,7 +113,7 @@ export default function ContactsPage() {
           <div className="space-y-4">
             {/* Search Bar */}
             <div className="relative">
-              <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nombre, email, empresa..."
                 value={searchQuery}
@@ -146,12 +146,12 @@ export default function ContactsPage() {
         {loading ? (
           <div className="space-y-2">
             {[...Array(5)].map((_, i) => (
-              <Card key={i} className="h-20 bg-gray-100 animate-pulse" />
+              <Card key={i} className="h-20 bg-muted animate-pulse" />
             ))}
           </div>
         ) : filteredContacts.length === 0 ? (
           <Card>
-            <CardContent className="py-8 text-center text-gray-500">
+            <CardContent className="py-8 text-center text-muted-foreground">
               No se encontraron contactos
             </CardContent>
           </Card>
@@ -166,30 +166,30 @@ export default function ContactsPage() {
                 <div className="flex items-center justify-between gap-4">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-2">
-                      <h3 className="font-semibold text-gray-900 truncate">
+                      <h3 className="font-semibold text-foreground truncate">
                         {contact.name}
                       </h3>
                       <Badge variant="outline" className="text-xs whitespace-nowrap">
                         {contactTypeLabels[contact.contact_type]}
                       </Badge>
                       <Badge
-                        variant={riskLevelColor[contact.risk_level] as any}
+                        variant={riskLevelVariant[contact.risk_level] as any}
                         className="text-xs whitespace-nowrap"
                       >
                         {riskLevelLabel[contact.risk_level]}
                       </Badge>
                     </div>
-                    <p className="text-sm text-gray-600 truncate">{contact.company}</p>
-                    <p className="text-xs text-gray-500 truncate">{contact.email}</p>
+                    <p className="text-sm text-muted-foreground truncate">{contact.company}</p>
+                    <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
                   </div>
 
                   <div className="flex flex-col items-end gap-2 whitespace-nowrap">
                     <div className="text-right">
-                      <div className="text-xs text-gray-500">Sentimiento</div>
+                      <div className="text-xs text-muted-foreground">Sentimiento</div>
                       <div className="flex items-center gap-1 mt-1">
-                        <div className="w-12 h-2 bg-gray-200 rounded-full overflow-hidden">
+                        <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
                           <div
-                            className="h-full bg-blue-500"
+                            className="h-full bg-primary"
                             style={{
                               width: `${Math.max(0, Math.min(100, (contact.sentiment_score + 1) * 50))}%`,
                             }}
@@ -197,12 +197,12 @@ export default function ContactsPage() {
                         </div>
                       </div>
                     </div>
-                    <div className="text-xs text-gray-500">
+                    <div className="text-xs text-muted-foreground">
                       Último: {timeAgo(contact.last_interaction)}
                     </div>
                   </div>
 
-                  <ChevronRight className="h-5 w-5 text-gray-400 flex-shrink-0" />
+                  <ChevronRight className="h-5 w-5 text-muted-foreground flex-shrink-0" />
                 </div>
               </CardContent>
             </Card>

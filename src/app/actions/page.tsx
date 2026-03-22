@@ -18,8 +18,6 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
-  ToggleLeft,
-  ToggleRight,
 } from 'lucide-react';
 
 interface ActionItem {
@@ -51,13 +49,6 @@ const ACTION_TYPE_ICONS: Record<string, React.ComponentType<any>> = {
   follow_up: MessageSquare,
   investigate: Search,
   escalate: AlertTriangle,
-};
-
-const PRIORITY_COLORS = {
-  critical: 'bg-red-100 text-red-800 border-red-300',
-  high: 'bg-orange-100 text-orange-800 border-orange-300',
-  medium: 'bg-yellow-100 text-yellow-800 border-yellow-300',
-  low: 'bg-blue-100 text-blue-800 border-blue-300',
 };
 
 const PRIORITY_LABELS = {
@@ -168,7 +159,7 @@ export default function ActionsPage() {
   const getDueDateInfo = (
     dueDate: string | null
   ): { label: string; color: string } => {
-    if (!dueDate) return { label: 'Sin fecha', color: 'text-gray-400' };
+    if (!dueDate) return { label: 'Sin fecha', color: 'text-muted-foreground' };
 
     const now = new Date();
     const due = new Date(dueDate);
@@ -181,24 +172,24 @@ export default function ActionsPage() {
       const absDays = Math.abs(diffDays);
       return {
         label: absDays === 1 ? 'Vencida ayer' : `Vencida hace ${absDays} días`,
-        color: 'text-red-600 font-semibold',
+        color: 'text-destructive font-semibold',
       };
     }
     if (diffDays === 0) {
-      return { label: 'Vence hoy', color: 'text-yellow-600 font-semibold' };
+      return { label: 'Vence hoy', color: 'text-warning font-semibold' };
     }
     if (diffDays === 1) {
-      return { label: 'Vence mañana', color: 'text-yellow-600' };
+      return { label: 'Vence mañana', color: 'text-warning' };
     }
     if (diffDays <= 7) {
       return {
         label: `Vence en ${diffDays} días`,
-        color: 'text-yellow-600',
+        color: 'text-warning',
       };
     }
     return {
       label: `Vence en ${diffDays} días`,
-      color: 'text-green-600',
+      color: 'text-success',
     };
   };
 
@@ -295,7 +286,7 @@ export default function ActionsPage() {
     return (
       <Card
         className={cn(
-          'border border-gray-200 transition-all',
+          'transition-all',
           isCompleted || isCancelled ? 'opacity-50' : ''
         )}
       >
@@ -304,27 +295,25 @@ export default function ActionsPage() {
             {/* Header Row */}
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-start gap-3 flex-1 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0 mt-1">
-                  <ActionIcon className="h-4 w-4 text-blue-600" />
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center flex-shrink-0 mt-1">
+                  <ActionIcon className="h-4 w-4 text-primary" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <Badge
-                      className={cn(
-                        'capitalize shrink-0',
-                        PRIORITY_COLORS[action.priority]
-                      )}
+                      variant={action.priority as 'critical' | 'high' | 'medium' | 'low'}
+                      className="capitalize shrink-0"
                     >
                       {PRIORITY_LABELS[action.priority]}
                     </Badge>
                     {isCompleted && (
-                      <div className="flex items-center gap-1 text-xs text-green-600">
+                      <div className="flex items-center gap-1 text-xs text-success">
                         <CheckCircle2 className="h-3 w-3" />
                         <span>Completada</span>
                       </div>
                     )}
                     {isCancelled && (
-                      <div className="flex items-center gap-1 text-xs text-gray-500">
+                      <div className="flex items-center gap-1 text-xs text-muted-foreground">
                         <XCircle className="h-3 w-3" />
                         <span>Cancelada</span>
                       </div>
@@ -332,8 +321,8 @@ export default function ActionsPage() {
                   </div>
                   <p
                     className={cn(
-                      'text-sm font-medium text-gray-900 mt-1',
-                      isCompleted || isCancelled ? 'line-through text-gray-500' : ''
+                      'text-sm font-medium text-foreground mt-1',
+                      isCompleted || isCancelled ? 'line-through text-muted-foreground' : ''
                     )}
                   >
                     {action.description}
@@ -344,23 +333,23 @@ export default function ActionsPage() {
 
             {/* Due Date */}
             <div className="flex items-center gap-2 text-xs">
-              <Clock className="h-3 w-3 text-gray-400" />
+              <Clock className="h-3 w-3 text-muted-foreground" />
               <span className={dateColor}>{dateLabel}</span>
             </div>
 
             {/* Contact & Assignee */}
-            <div className="text-xs text-gray-600 space-y-1">
+            <div className="text-xs text-muted-foreground space-y-1">
               {action.contact_name && (
                 <div>
                   <span className="font-medium">Contacto:</span>{' '}
                   <Link
                     href={`/contacts`}
-                    className="text-blue-600 hover:underline"
+                    className="text-primary hover:underline"
                   >
                     {action.contact_name}
                   </Link>
                   {action.contact_company && (
-                    <span className="text-gray-500"> • {action.contact_company}</span>
+                    <span className="text-muted-foreground"> • {action.contact_company}</span>
                   )}
                 </div>
               )}
@@ -374,11 +363,11 @@ export default function ActionsPage() {
 
             {/* Action Buttons - Only for pending */}
             {action.state === 'pending' && (
-              <div className="flex gap-2 pt-2 border-t border-gray-200">
+              <div className="flex gap-2 pt-2 border-t border-border">
                 <Button
                   size="sm"
                   onClick={() => handleCompleteAction(action.id)}
-                  className="flex-1 bg-green-600 hover:bg-green-700 text-white text-xs"
+                  className="flex-1 bg-success hover:bg-success/90 text-white text-xs"
                 >
                   <CheckCircle2 className="h-3 w-3 mr-1" />
                   Completar
@@ -401,109 +390,107 @@ export default function ActionsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 p-8">
-      <div className="max-w-4xl mx-auto space-y-6">
-        {/* Header */}
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-bold text-gray-900">
-              Acciones{' '}
-              {filterState === 'pending' && pendingCount > 0 && (
-                <span className="text-sm font-normal text-gray-600">
-                  ({pendingCount})
-                </span>
+    <div className="max-w-4xl mx-auto space-y-6">
+      {/* Header */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-3xl font-bold text-foreground">
+            Acciones{' '}
+            {filterState === 'pending' && pendingCount > 0 && (
+              <span className="text-sm font-normal text-muted-foreground">
+                ({pendingCount})
+              </span>
+            )}
+          </h1>
+          <div className="flex items-center gap-2 bg-card rounded-lg border border-border p-1">
+            <button
+              onClick={() => setGroupBy('date')}
+              className={cn(
+                'px-3 py-1 text-sm font-medium rounded transition-colors',
+                groupBy === 'date'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
               )}
-            </h1>
-            <div className="flex items-center gap-2 bg-white rounded-lg border border-gray-200 p-1">
-              <button
-                onClick={() => setGroupBy('date')}
-                className={cn(
-                  'px-3 py-1 text-sm font-medium rounded transition-colors',
-                  groupBy === 'date'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-600 hover:text-gray-900'
-                )}
-                title="Agrupar por fecha"
-              >
-                <Clock className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setGroupBy('assignee')}
-                className={cn(
-                  'px-3 py-1 text-sm font-medium rounded transition-colors',
-                  groupBy === 'assignee'
-                    ? 'bg-blue-100 text-blue-700'
-                    : 'text-gray-600 hover:text-gray-900'
-                )}
-                title="Agrupar por responsable"
-              >
-                <Users className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Filter Tabs */}
-          <div className="flex gap-2 border-b border-gray-200">
-            {filterTabs.map((tab) => (
-              <button
-                key={tab.value}
-                onClick={() => setFilterState(tab.value)}
-                className={cn(
-                  'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
-                  filterState === tab.value
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-600 hover:text-gray-900'
-                )}
-              >
-                {tab.label}
-                {tab.count > 0 && <span className="ml-2">({tab.count})</span>}
-              </button>
-            ))}
+              title="Agrupar por fecha"
+            >
+              <Clock className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setGroupBy('assignee')}
+              className={cn(
+                'px-3 py-1 text-sm font-medium rounded transition-colors',
+                groupBy === 'assignee'
+                  ? 'bg-primary/10 text-primary'
+                  : 'text-muted-foreground hover:text-foreground'
+              )}
+              title="Agrupar por responsable"
+            >
+              <Users className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        {/* Content */}
-        {loading ? (
-          <div className="space-y-3">
-            {[1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-32 w-full" />
-            ))}
-          </div>
-        ) : actions.length === 0 ? (
-          <Card className="border border-gray-200 bg-white">
-            <CardContent className="py-12 text-center">
-              <CheckCircle2 className="h-12 w-12 text-gray-300 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-1">
-                {filterState === 'pending'
-                  ? 'Sin acciones pendientes'
-                  : 'Sin acciones en esta categoría'}
-              </h3>
-              <p className="text-sm text-gray-500">
-                {filterState === 'pending'
-                  ? '¡Excelente trabajo! No hay acciones pendientes.'
-                  : 'No hay acciones que mostrar.'}
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-6">
-            {Object.entries(groupedActions).map(([groupName, groupActions]) =>
-              groupActions.length > 0 ? (
-                <div key={groupName} className="space-y-3">
-                  <h2 className="text-sm font-semibold text-gray-700 uppercase tracking-wide">
-                    {groupName}
-                  </h2>
-                  <div className="grid gap-3">
-                    {groupActions.map((action) => (
-                      <ActionCard key={action.id} action={action} />
-                    ))}
-                  </div>
-                </div>
-              ) : null
-            )}
-          </div>
-        )}
+        {/* Filter Tabs */}
+        <div className="flex gap-2 border-b border-border">
+          {filterTabs.map((tab) => (
+            <button
+              key={tab.value}
+              onClick={() => setFilterState(tab.value)}
+              className={cn(
+                'px-4 py-2 text-sm font-medium border-b-2 transition-colors',
+                filterState === tab.value
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground'
+              )}
+            >
+              {tab.label}
+              {tab.count > 0 && <span className="ml-2">({tab.count})</span>}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {/* Content */}
+      {loading ? (
+        <div className="space-y-3">
+          {[1, 2, 3].map((i) => (
+            <Skeleton key={i} className="h-32 w-full" />
+          ))}
+        </div>
+      ) : actions.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <CheckCircle2 className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
+            <h3 className="text-lg font-semibold text-foreground mb-1">
+              {filterState === 'pending'
+                ? 'Sin acciones pendientes'
+                : 'Sin acciones en esta categoría'}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {filterState === 'pending'
+                ? '¡Excelente trabajo! No hay acciones pendientes.'
+                : 'No hay acciones que mostrar.'}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="space-y-6">
+          {Object.entries(groupedActions).map(([groupName, groupActions]) =>
+            groupActions.length > 0 ? (
+              <div key={groupName} className="space-y-3">
+                <h2 className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  {groupName}
+                </h2>
+                <div className="grid gap-3">
+                  {groupActions.map((action) => (
+                    <ActionCard key={action.id} action={action} />
+                  ))}
+                </div>
+              </div>
+            ) : null
+          )}
+        </div>
+      )}
     </div>
   );
 }

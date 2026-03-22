@@ -251,12 +251,12 @@ function AlertCard({
 
   const borderColor =
     alert.severity === 'critical'
-      ? 'border-l-red-600'
+      ? 'border-l-severity-critical'
       : alert.severity === 'high'
-        ? 'border-l-orange-600'
+        ? 'border-l-severity-high'
         : alert.severity === 'medium'
-          ? 'border-l-yellow-600'
-          : 'border-l-blue-600'
+          ? 'border-l-severity-medium'
+          : 'border-l-severity-low'
 
   return (
     <Card className={cn('border-l-4', borderColor)}>
@@ -277,7 +277,7 @@ function AlertCard({
             <p className="text-sm text-foreground leading-relaxed">{alert.description}</p>
 
             {alert.business_impact && (
-              <div className="p-3 bg-muted/40 rounded border border-muted text-sm">
+              <div className="p-3 bg-muted/40 rounded border border-border text-sm">
                 <p className="font-medium text-xs text-muted-foreground mb-1">Impacto comercial</p>
                 <p className="text-foreground">{alert.business_impact}</p>
               </div>
@@ -439,7 +439,7 @@ export default function AlertsPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold">Alertas</h1>
+          <h1 className="text-3xl font-bold text-foreground">Alertas</h1>
           {unreadCount > 0 && (
             <p className="text-sm text-muted-foreground mt-1">
               {unreadCount} {unreadCount === 1 ? 'alerta sin leer' : 'alertas sin leer'}
@@ -453,7 +453,7 @@ export default function AlertsPage() {
           <TabsTrigger value="new" className="relative">
             Nuevas
             {counts.new > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 bg-red-600 text-white text-xs rounded-full">
+              <span className="ml-1.5 px-2 py-0.5 bg-severity-critical text-white text-xs rounded-full">
                 {counts.new}
               </span>
             )}
@@ -461,7 +461,7 @@ export default function AlertsPage() {
           <TabsTrigger value="acknowledged">
             En Revisión
             {counts.acknowledged > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 bg-yellow-600 text-white text-xs rounded-full">
+              <span className="ml-1.5 px-2 py-0.5 bg-severity-medium text-white text-xs rounded-full">
                 {counts.acknowledged}
               </span>
             )}
@@ -469,7 +469,7 @@ export default function AlertsPage() {
           <TabsTrigger value="resolved">
             Resueltas
             {counts.resolved > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 bg-green-600 text-white text-xs rounded-full">
+              <span className="ml-1.5 px-2 py-0.5 bg-severity-low text-white text-xs rounded-full">
                 {counts.resolved}
               </span>
             )}
@@ -477,7 +477,7 @@ export default function AlertsPage() {
           <TabsTrigger value="all">
             Todas
             {counts.all > 0 && (
-              <span className="ml-1.5 px-2 py-0.5 bg-slate-600 text-white text-xs rounded-full">
+              <span className="ml-1.5 px-2 py-0.5 bg-muted-foreground text-white text-xs rounded-full">
                 {counts.all}
               </span>
             )}

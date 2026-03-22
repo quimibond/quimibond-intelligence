@@ -19,7 +19,11 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider defaultTheme="light">
           <Sidebar />
-          <main className="pl-[260px]">{children}</main>
+          <main className="pl-[260px] min-h-screen bg-background">
+            <div className="p-8">
+              {children}
+            </div>
+          </main>
         </ThemeProvider>
       </body>
     </html>
