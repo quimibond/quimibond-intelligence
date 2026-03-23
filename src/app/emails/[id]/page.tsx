@@ -1,194 +1,157 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { ArrowLeft, Mail, Paperclip } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { formatDateTime } from "@/lib/utils";
+import type { Email } from "@/lib/types";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { timeAgo } from "@/lib/utils";
-import { ArrowLeft, Mail } from "lucide-react";
-import Link from "next/link";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 
-interface Email {
-  id: number;
-  account: string;
-  sender: string;
-  recipient: string;
-  subject: string;
-  body: string;
-  snippet: string;
-  email_date: string;
-  gmail_message_id: string;
-  gmail_thread_id: string;
-  sender_type: string;
-  has_attachments: boolean;
-}
+const senderTypeBadgeVariant: Record<string, "info" | "warning" | "secondary"> = {
+  inbound: "info",
+  outbound: "warning",
+};
 
-interface ThreadEmail {
-  id: number;
-  sender: string;
-  recipient: string;
-  subject: string;
-  snippet: string;
-  email_date: string;
-  sender_type: string;
+const senderTypeLabel: Record<string, string> = {
+  inbound: "Recibido",
+  outbound: "Enviado",
+};
+
+function looksLikeHtml(text: string): boolean {
+  return /<\/?[a-z][\s\S]*>/i.test(text);
 }
 
 export default function EmailDetailPage() {
-  const params = useParams();
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const emailId = params.id;
+
   const [email, setEmail] = useState<Email | null>(null);
-  const [threadEmails, setThreadEmails] = useState<ThreadEmail[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchData() {
-      const { data: emailData } = await supabase
+    async function fetchEmail() {
+      const { data } = await supabase
         .from("emails")
-        .select("id, account, sender, recipient, subject, body, snippet, email_date, gmail_message_id, gmail_thread_id, sender_type, has_attachments")
-        .eq("id", params.id)
+        .select("*")
+        .eq("id", emailId)
         .single();
-
-      if (!emailData) {
-        setLoading(false);
-        return;
-      }
-
-      setEmail(emailData);
-
-      if (emailData.gmail_thread_id) {
-        const { data: threadData } = await supabase
-          .from("emails")
-          .select("id, sender, recipient, subject, snippet, email_date, sender_type")
-          .eq("gmail_thread_id", emailData.gmail_thread_id)
-          .neq("id", emailData.id)
-          .order("email_date", { ascending: true });
-
-        if (threadData) setThreadEmails(threadData);
-      }
-
+      setEmail((data as Email | null) ?? null);
       setLoading(false);
     }
-    fetchData();
-  }, [params.id]);
+    fetchEmail();
+  }, [emailId]);
 
   if (loading) {
     return (
-      <div className="flex justify-center py-12">
-        <div className="animate-pulse text-[var(--muted-foreground)]">Cargando email...</div>
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-10 w-96" />
+        <Skeleton className="h-5 w-72" />
+        <Skeleton className="h-64 w-full" />
       </div>
     );
   }
 
   if (!email) {
     return (
-      <div className="text-center py-12">
-        <p className="text-[var(--muted-foreground)]">Email no encontrado.</p>
-        <Link href="/emails">
-          <Button variant="ghost" className="mt-4">Volver a emails</Button>
-        </Link>
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/emails")}
+          className="mb-4"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Emails
+        </Button>
+        <EmptyState
+          icon={Mail}
+          title="Email no encontrado"
+          description="El correo solicitado no existe o fue eliminado."
+        />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link href="/emails">
-          <Button variant="ghost" size="icon">
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-        </Link>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl font-bold truncate">{email.subject || "(Sin asunto)"}</h1>
-          <div className="flex items-center gap-2 mt-1">
-            <Badge variant={email.sender_type === "internal" ? "info" : "success"}>
-              {email.sender_type === "internal" ? "Interno" : "Externo"}
-            </Badge>
-            <span className="text-sm text-[var(--muted-foreground)]">
-              {email.email_date ? timeAgo(email.email_date) : ""}
-            </span>
-            {email.has_attachments && (
-              <span className="text-sm text-[var(--muted-foreground)]">📎 Con adjuntos</span>
-            )}
-          </div>
-        </div>
-      </div>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => router.push("/emails")}
+      >
+        <ArrowLeft className="mr-1 h-4 w-4" />
+        Emails
+      </Button>
 
-      {/* Meta */}
-      <Card>
-        <CardContent className="p-4 space-y-1 text-sm">
-          <div className="flex gap-2">
-            <span className="text-[var(--muted-foreground)] w-16">De:</span>
-            <span>{email.sender}</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="text-[var(--muted-foreground)] w-16">Para:</span>
-            <span>{email.recipient || "—"}</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="text-[var(--muted-foreground)] w-16">Cuenta:</span>
-            <span>{email.account || "—"}</span>
-          </div>
-          <div className="flex gap-2">
-            <span className="text-[var(--muted-foreground)] w-16">Fecha:</span>
-            <span>
-              {email.email_date
-                ? new Date(email.email_date).toLocaleDateString("es-MX", {
-                    weekday: "long",
-                    year: "numeric",
-                    month: "long",
-                    day: "numeric",
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })
-                : "—"}
-            </span>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Body */}
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Mail className="h-4 w-4" /> Contenido
+          <CardTitle className="text-xl leading-tight">
+            {email.subject ?? "Sin asunto"}
           </CardTitle>
+
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground pt-1">
+            <span>
+              <span className="font-medium text-foreground">De:</span>{" "}
+              {email.sender ?? "—"}
+            </span>
+            <span>
+              <span className="font-medium text-foreground">Para:</span>{" "}
+              {email.recipient ?? "—"}
+            </span>
+            <span>{formatDateTime(email.email_date)}</span>
+            {email.sender_type && (
+              <Badge
+                variant={
+                  senderTypeBadgeVariant[email.sender_type] ?? "secondary"
+                }
+              >
+                {senderTypeLabel[email.sender_type] ?? email.sender_type}
+              </Badge>
+            )}
+            {email.has_attachments && (
+              <span className="flex items-center gap-1">
+                <Paperclip className="h-3.5 w-3.5" />
+                Adjuntos
+              </span>
+            )}
+          </div>
+
+          {email.snippet && (
+            <p className="text-sm text-muted-foreground italic pt-2">
+              {email.snippet}
+            </p>
+          )}
         </CardHeader>
-        <CardContent>
-          <pre className="whitespace-pre-wrap text-sm leading-relaxed">{email.body || "Sin contenido."}</pre>
+
+        <Separator />
+
+        <CardContent className="pt-6">
+          {email.body ? (
+            looksLikeHtml(email.body) ? (
+              <div
+                className="prose prose-sm dark:prose-invert max-w-none"
+                dangerouslySetInnerHTML={{ __html: email.body }}
+              />
+            ) : (
+              <div className="whitespace-pre-wrap text-sm leading-relaxed">
+                {email.body}
+              </div>
+            )
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Sin contenido disponible.
+            </p>
+          )}
         </CardContent>
       </Card>
-
-      {/* Thread context */}
-      {threadEmails.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Otros mensajes del hilo ({threadEmails.length})</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-3">
-              {threadEmails.map((te) => (
-                <Link key={te.id} href={`/emails/${te.id}`}>
-                  <div className="rounded border border-[var(--border)] p-3 hover:bg-[var(--accent)]/50 transition-colors cursor-pointer">
-                    <div className="flex items-center gap-2 mb-1">
-                      <Badge variant={te.sender_type === "internal" ? "info" : "success"} className="text-[10px]">
-                        {te.sender_type === "internal" ? "Interno" : "Externo"}
-                      </Badge>
-                      <span className="text-xs text-[var(--muted-foreground)]">{te.sender}</span>
-                      <span className="text-xs text-[var(--muted-foreground)]">
-                        {te.email_date ? timeAgo(te.email_date) : ""}
-                      </span>
-                    </div>
-                    <p className="text-sm truncate">{te.snippet}</p>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

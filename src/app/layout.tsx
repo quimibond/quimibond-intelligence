@@ -1,11 +1,10 @@
 import type { Metadata } from "next";
-import { ThemeProvider } from "@/components/theme-provider";
-import { Sidebar } from "@/components/layout/sidebar";
+import { AppSidebar } from "@/components/layout/app-sidebar";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Quimibond Intelligence",
-  description: "Business intelligence brain for Quimibond",
+  description: "Plataforma de inteligencia comercial",
 };
 
 export default function RootLayout({
@@ -15,13 +14,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body>
-        <ThemeProvider>
-          <Sidebar />
-          <main className="pl-64">
-            <div className="min-h-screen p-6">{children}</div>
-          </main>
-        </ThemeProvider>
+      <body className="dark">
+        <AppSidebar />
+        <main className="pl-64">
+          <div className="min-h-screen p-6">{children}</div>
+        </main>
       </body>
     </html>
   );

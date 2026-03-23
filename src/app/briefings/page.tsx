@@ -1,115 +1,103 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { timeAgo } from "@/lib/utils";
-import { FileText } from "lucide-react";
 import Link from "next/link";
-
-interface Briefing {
-  id: string;
-  briefing_type: string;
-  period_start: string;
-  period_end: string;
-  summary: string;
-  html_content: string;
-  created_at: string;
-  account_email: string;
-}
-
-const typeLabel: Record<string, string> = {
-  daily: "Diario",
-  weekly: "Semanal",
-  account: "Cuenta",
-  strategic: "Estrategico",
-};
+import { BookOpen, Calendar, Cpu } from "lucide-react";
+import { supabase } from "@/lib/supabase";
+import { formatDate, timeAgo, truncate } from "@/lib/utils";
+import type { Briefing } from "@/lib/types";
+import { PageHeader } from "@/components/shared/page-header";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Badge } from "@/components/ui/badge";
+import {
+  Card,
+  CardContent,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BriefingsPage() {
   const [briefings, setBriefings] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("all");
 
   useEffect(() => {
-    async function fetch() {
-      let query = supabase
+    async function fetchBriefings() {
+      const { data, error } = await supabase
         .from("briefings")
         .select("*")
         .order("created_at", { ascending: false })
         .limit(50);
 
-      if (filter !== "all") {
-        query = query.eq("briefing_type", filter);
+      if (!error && data) {
+        setBriefings(data as Briefing[]);
       }
-
-      const { data } = await query;
-      setBriefings(data || []);
       setLoading(false);
     }
-    fetch();
-  }, [filter]);
+    fetchBriefings();
+  }, []);
 
-  return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Briefings</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Resumenes de inteligencia generados automaticamente</p>
-        </div>
-        <div className="flex gap-1">
-          {["all", "daily", "weekly", "account", "strategic"].map((f) => (
-            <button
-              key={f}
-              onClick={() => { setFilter(f); setLoading(true); }}
-              className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                filter === f
-                  ? "bg-[var(--primary)] text-white"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--accent)]"
-              }`}
-            >
-              {f === "all" ? "Todos" : typeLabel[f] || f}
-            </button>
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <Skeleton className="h-10 w-48" />
+        <Skeleton className="h-5 w-80" />
+        <div className="grid gap-4 lg:grid-cols-2">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-48 w-full rounded-xl" />
           ))}
         </div>
       </div>
+    );
+  }
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-pulse text-[var(--muted-foreground)]">Cargando briefings...</div>
-        </div>
-      ) : briefings.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <FileText className="mb-3 h-10 w-10 text-[var(--muted-foreground)] opacity-50" />
-            <p className="text-sm text-[var(--muted-foreground)]">No hay briefings disponibles.</p>
-          </CardContent>
-        </Card>
+  return (
+    <div className="space-y-6">
+      <PageHeader
+        title="Briefings"
+        description="Reportes de inteligencia generados por IA"
+      />
+
+      {briefings.length === 0 ? (
+        <EmptyState
+          icon={BookOpen}
+          title="Sin briefings"
+          description="Aun no se han generado reportes de inteligencia."
+        />
       ) : (
-        <div className="grid gap-4">
+        <div className="grid gap-4 lg:grid-cols-2">
           {briefings.map((briefing) => (
             <Link key={briefing.id} href={`/briefings/${briefing.id}`}>
-              <Card className="transition-colors hover:border-[var(--primary)]/50 cursor-pointer">
-                <CardHeader className="flex flex-row items-center justify-between pb-2">
-                  <div className="flex items-center gap-3">
-                    <Badge variant="info">{typeLabel[briefing.briefing_type] || briefing.briefing_type}</Badge>
-                    {briefing.account_email && (
-                      <span className="text-xs text-[var(--muted-foreground)]">{briefing.account_email}</span>
-                    )}
+              <Card className="h-full transition-colors hover:border-primary/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <Badge variant="info">{briefing.briefing_type}</Badge>
+                    <span className="text-xs text-muted-foreground">
+                      {timeAgo(briefing.created_at)}
+                    </span>
                   </div>
-                  <span className="text-xs text-[var(--muted-foreground)]">{timeAgo(briefing.created_at)}</span>
                 </CardHeader>
-                <CardContent>
-                  <p className="text-sm line-clamp-2">
-                    {briefing.summary || "Sin resumen disponible"}
+                <CardContent className="space-y-3">
+                  <p className="text-sm leading-relaxed">
+                    {truncate(briefing.summary, 200)}
                   </p>
-                  {briefing.period_start && briefing.period_end && (
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                      Periodo: {new Date(briefing.period_start).toLocaleDateString("es-MX")} -{" "}
-                      {new Date(briefing.period_end).toLocaleDateString("es-MX")}
-                    </p>
+                  {(briefing.period_start || briefing.period_end) && (
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Calendar className="h-3.5 w-3.5" />
+                      {formatDate(briefing.period_start)} &mdash;{" "}
+                      {formatDate(briefing.period_end)}
+                    </div>
                   )}
                 </CardContent>
+                {briefing.model_used && (
+                  <CardFooter className="pt-0">
+                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Cpu className="h-3.5 w-3.5" />
+                      {briefing.model_used}
+                    </div>
+                  </CardFooter>
+                )}
               </Card>
             </Link>
           ))}

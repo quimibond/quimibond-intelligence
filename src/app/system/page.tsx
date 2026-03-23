@@ -1,170 +1,179 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  Mail,
+  Users,
+  Bell,
+  Brain,
+  RefreshCw,
+  Server,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { formatDateTime, timeAgo } from "@/lib/utils";
+import type { SyncState } from "@/lib/types";
+import { PageHeader } from "@/components/shared/page-header";
+import { StatCard } from "@/components/shared/stat-card";
 import { Badge } from "@/components/ui/badge";
-import { timeAgo } from "@/lib/utils";
-import { Activity, Database, RefreshCw } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-interface SyncState {
-  account: string;
-  last_history_id: string;
-  emails_synced: number;
-  updated_at: string;
-}
-
-interface TableCount {
-  name: string;
-  count: number;
-}
-
-const TABLE_NAMES = [
-  "emails", "threads", "contacts", "alerts", "action_items",
-  "briefings", "facts", "entities", "entity_relationships",
-  "topics", "person_profiles", "communication_patterns", "system_learning",
-];
-
-async function loadSystemData() {
-  const countPromises = TABLE_NAMES.map((name) =>
-    supabase.from(name).select("id", { count: "exact", head: true })
-  );
-  const [syncRes, ...countResults] = await Promise.all([
-    supabase.from("sync_state").select("*").order("account"),
-    ...countPromises,
-  ]);
-  return {
-    syncStates: (syncRes.data || []) as SyncState[],
-    counts: TABLE_NAMES.map((name, i) => ({
-      name,
-      count: countResults[i].count ?? 0,
-    })),
-  };
+interface SystemStats {
+  totalEmails: number;
+  totalContacts: number;
+  activeAlerts: number;
+  totalEntities: number;
 }
 
 export default function SystemPage() {
+  const [stats, setStats] = useState<SystemStats | null>(null);
   const [syncStates, setSyncStates] = useState<SyncState[]>([]);
-  const [counts, setCounts] = useState<TableCount[]>([]);
   const [loading, setLoading] = useState(true);
 
-  async function refresh() {
-    setLoading(true);
-    const data = await loadSystemData();
-    setSyncStates(data.syncStates);
-    setCounts(data.counts);
-    setLoading(false);
-  }
-
   useEffect(() => {
-    let cancelled = false;
-    loadSystemData().then((data) => {
-      if (!cancelled) {
-        setSyncStates(data.syncStates);
-        setCounts(data.counts);
-        setLoading(false);
-      }
-    });
-    return () => { cancelled = true; };
+    async function fetchData() {
+      const [emailsRes, contactsRes, alertsRes, entitiesRes, syncRes] =
+        await Promise.all([
+          supabase.from("emails").select("id", { count: "exact", head: true }),
+          supabase
+            .from("contacts")
+            .select("id", { count: "exact", head: true }),
+          supabase
+            .from("alerts")
+            .select("id", { count: "exact", head: true })
+            .eq("state", "new"),
+          supabase
+            .from("entities")
+            .select("id", { count: "exact", head: true }),
+          supabase
+            .from("sync_state")
+            .select("*")
+            .order("updated_at", { ascending: false }),
+        ]);
+
+      setStats({
+        totalEmails: emailsRes.count ?? 0,
+        totalContacts: contactsRes.count ?? 0,
+        activeAlerts: alertsRes.count ?? 0,
+        totalEntities: entitiesRes.count ?? 0,
+      });
+
+      setSyncStates((syncRes.data ?? []) as SyncState[]);
+      setLoading(false);
+    }
+    fetchData();
   }, []);
+
+  if (loading) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Sistema"
+          description="Estado del sistema y sincronizacion"
+        />
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-[120px] w-full" />
+          ))}
+        </div>
+        <Skeleton className="h-[200px] w-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Sistema</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">Estado de sincronizacion y estadisticas de la base de datos</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
-          <RefreshCw className={`mr-2 h-3 w-3 ${loading ? "animate-spin" : ""}`} />
-          Actualizar
-        </Button>
+      <PageHeader
+        title="Sistema"
+        description="Estado del sistema y sincronizacion"
+      />
+
+      {/* Stat cards */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Total emails"
+          value={stats?.totalEmails.toLocaleString() ?? "0"}
+          icon={Mail}
+          description="Emails sincronizados"
+        />
+        <StatCard
+          title="Total contactos"
+          value={stats?.totalContacts.toLocaleString() ?? "0"}
+          icon={Users}
+          description="Contactos identificados"
+        />
+        <StatCard
+          title="Alertas activas"
+          value={stats?.activeAlerts.toLocaleString() ?? "0"}
+          icon={Bell}
+          description="Estado: new"
+        />
+        <StatCard
+          title="Entidades"
+          value={stats?.totalEntities.toLocaleString() ?? "0"}
+          icon={Brain}
+          description="Knowledge graph"
+        />
       </div>
 
-      {/* Sync State */}
+      {/* Sync status */}
       <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Activity className="h-4 w-4" /> Sincronizacion
-          </CardTitle>
+        <CardHeader className="flex flex-row items-center gap-2 pb-4">
+          <RefreshCw className="h-5 w-5 text-muted-foreground" />
+          <CardTitle>Estado de sincronizacion</CardTitle>
         </CardHeader>
         <CardContent>
-          {loading ? (
-            <div className="animate-pulse text-sm text-[var(--muted-foreground)]">Cargando...</div>
-          ) : syncStates.length === 0 ? (
-            <p className="text-sm text-[var(--muted-foreground)]">No hay cuentas sincronizadas.</p>
+          {syncStates.length === 0 ? (
+            <div className="flex flex-col items-center py-8 text-center">
+              <Server className="h-8 w-8 text-muted-foreground mb-2" />
+              <p className="text-sm text-muted-foreground">
+                No hay cuentas sincronizadas.
+              </p>
+            </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--muted-foreground)]">
-                    <th className="pb-2 pr-4">Cuenta</th>
-                    <th className="pb-2 pr-4">Emails sincronizados</th>
-                    <th className="pb-2 pr-4">Last History ID</th>
-                    <th className="pb-2">Ultima actualizacion</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {syncStates.map((ss) => (
-                    <tr key={ss.account} className="border-b border-[var(--border)]/50">
-                      <td className="py-2 pr-4 font-medium">{ss.account}</td>
-                      <td className="py-2 pr-4">
-                        <Badge variant="info">{ss.emails_synced.toLocaleString()}</Badge>
-                      </td>
-                      <td className="py-2 pr-4 text-[var(--muted-foreground)] font-mono text-xs">
-                        {ss.last_history_id || "—"}
-                      </td>
-                      <td className="py-2 text-[var(--muted-foreground)]">
-                        {ss.updated_at ? timeAgo(ss.updated_at) : "—"}
-                      </td>
-                    </tr>
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cuenta</TableHead>
+                    <TableHead>Emails sincronizados</TableHead>
+                    <TableHead>History ID</TableHead>
+                    <TableHead>Ultima actualizacion</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {syncStates.map((sync) => (
+                    <TableRow key={sync.id}>
+                      <TableCell className="font-medium">
+                        {sync.account}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant="secondary">
+                          {sync.emails_synced.toLocaleString()}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="font-mono text-xs text-muted-foreground">
+                        {sync.last_history_id ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        <span title={formatDateTime(sync.updated_at)}>
+                          {timeAgo(sync.updated_at)}
+                        </span>
+                      </TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           )}
-        </CardContent>
-      </Card>
-
-      {/* DB Stats */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Database className="h-4 w-4" /> Base de datos
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {loading ? (
-            <div className="animate-pulse text-sm text-[var(--muted-foreground)]">Cargando...</div>
-          ) : (
-            <div className="grid grid-cols-3 gap-4 sm:grid-cols-5 lg:grid-cols-7">
-              {counts.map((t) => (
-                <div key={t.name} className="text-center">
-                  <p className="text-lg font-bold">{t.count.toLocaleString()}</p>
-                  <p className="text-xs text-[var(--muted-foreground)]">{t.name}</p>
-                </div>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Config */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Configuracion</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <dl className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
-            <div>
-              <dt className="text-[var(--muted-foreground)]">Supabase URL</dt>
-              <dd className="truncate">{process.env.NEXT_PUBLIC_SUPABASE_URL || "No configurado"}</dd>
-            </div>
-            <div>
-              <dt className="text-[var(--muted-foreground)]">Supabase Key</dt>
-              <dd>{process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? "Configurado" : "No configurado"}</dd>
-            </div>
-          </dl>
         </CardContent>
       </Card>
     </div>

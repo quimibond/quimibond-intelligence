@@ -1,238 +1,470 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import {
+  Brain,
+  Link2,
+  Lightbulb,
+  Tag,
+  Search,
+  Network,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
+import { timeAgo, formatDate, truncate } from "@/lib/utils";
+import type { Entity, EntityRelationship, Fact, Topic } from "@/lib/types";
+import { PageHeader } from "@/components/shared/page-header";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
-import { Search, Network, BookOpen, Link2, Users } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Progress } from "@/components/ui/progress";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-interface Entity {
-  id: string;
-  entity_type: string;
-  name: string;
-  canonical_name: string;
-  email: string;
-  attributes: Record<string, unknown>;
-  last_seen: string;
+// ── Entity type badge color mapping ──
+
+const entityTypeBadgeVariant: Record<
+  string,
+  "default" | "secondary" | "info" | "success" | "warning" | "outline"
+> = {
+  persona: "info",
+  empresa: "success",
+  producto: "warning",
+  lugar: "secondary",
+};
+
+function entityBadgeVariant(type: string) {
+  return entityTypeBadgeVariant[type] ?? "outline";
 }
 
-interface Fact {
-  id: string;
-  fact_text: string;
-  fact_type: string;
-  confidence: number;
-  source_type: string;
-  email_id: number;
-  created_at: string;
-}
+// ── Relationships with resolved entity names ──
 
-interface Relationship {
-  id: string;
-  relationship_type: string;
-  confidence: number;
-  entity_a: { name: string; entity_type: string } | null;
-  entity_b: { name: string; entity_type: string } | null;
+interface RelationshipRow extends EntityRelationship {
+  entity_a_name: string;
+  entity_b_name: string;
 }
-
-type Tab = "entities" | "facts" | "relationships";
 
 export default function KnowledgePage() {
+  // Entities
   const [entities, setEntities] = useState<Entity[]>([]);
-  const [facts, setFacts] = useState<Fact[]>([]);
-  const [relationships, setRelationships] = useState<Relationship[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState("");
-  const [tab, setTab] = useState<Tab>("entities");
+  const [entitiesLoading, setEntitiesLoading] = useState(true);
+  const [entityTypes, setEntityTypes] = useState<string[]>([]);
+  const [typeFilter, setTypeFilter] = useState("all");
+  const [entitySearch, setEntitySearch] = useState("");
 
+  // Relationships
+  const [relationships, setRelationships] = useState<RelationshipRow[]>([]);
+  const [relLoading, setRelLoading] = useState(true);
+
+  // Facts
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [factsLoading, setFactsLoading] = useState(true);
+
+  // Topics
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [topicsLoading, setTopicsLoading] = useState(true);
+
+  // ── Fetch entities ──
   useEffect(() => {
-    async function fetchData() {
-      const [entitiesRes, factsRes, relsRes] = await Promise.all([
-        supabase
-          .from("entities")
-          .select("*")
-          .order("last_seen", { ascending: false })
-          .limit(200),
-        supabase
-          .from("facts")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(100),
-        supabase
-          .from("entity_relationships")
-          .select("id, relationship_type, confidence, entity_a:entity_a_id(name, entity_type), entity_b:entity_b_id(name, entity_type)")
-          .order("created_at", { ascending: false })
-          .limit(100),
-      ]);
-      setEntities(entitiesRes.data || []);
-      setFacts(factsRes.data || []);
-      setRelationships((relsRes.data as unknown as Relationship[]) || []);
-      setLoading(false);
+    async function fetchEntities() {
+      const { data } = await supabase
+        .from("entities")
+        .select("*")
+        .order("last_seen", { ascending: false })
+        .limit(200);
+      const rows = (data ?? []) as Entity[];
+      setEntities(rows);
+
+      // Extract distinct entity types
+      const types = Array.from(new Set(rows.map((e) => e.entity_type))).sort();
+      setEntityTypes(types);
+      setEntitiesLoading(false);
     }
-    fetchData();
+    fetchEntities();
   }, []);
 
-  const filteredEntities = search
-    ? entities.filter(
-        (e) =>
-          e.name?.toLowerCase().includes(search.toLowerCase()) ||
-          e.canonical_name?.toLowerCase().includes(search.toLowerCase()) ||
-          e.entity_type?.toLowerCase().includes(search.toLowerCase())
-      )
-    : entities;
+  // ── Fetch relationships + resolve entity names ──
+  useEffect(() => {
+    async function fetchRelationships() {
+      const { data: rels } = await supabase
+        .from("entity_relationships")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
 
-  const filteredFacts = search
-    ? facts.filter((f) => f.fact_text?.toLowerCase().includes(search.toLowerCase()))
-    : facts;
+      if (!rels || rels.length === 0) {
+        setRelationships([]);
+        setRelLoading(false);
+        return;
+      }
 
-  const filteredRels = search
-    ? relationships.filter(
-        (r) =>
-          r.relationship_type?.toLowerCase().includes(search.toLowerCase()) ||
-          r.entity_a?.name?.toLowerCase().includes(search.toLowerCase()) ||
-          r.entity_b?.name?.toLowerCase().includes(search.toLowerCase())
-      )
-    : relationships;
+      // Collect unique entity ids
+      const ids = new Set<string>();
+      for (const r of rels as EntityRelationship[]) {
+        ids.add(r.entity_a_id);
+        ids.add(r.entity_b_id);
+      }
 
-  const tabs: { key: Tab; label: string; icon: typeof Network; count: number }[] = [
-    { key: "entities", label: "Entidades", icon: Users, count: entities.length },
-    { key: "facts", label: "Hechos", icon: BookOpen, count: facts.length },
-    { key: "relationships", label: "Relaciones", icon: Link2, count: relationships.length },
-  ];
+      const { data: entityData } = await supabase
+        .from("entities")
+        .select("id, name")
+        .in("id", Array.from(ids));
+
+      const nameMap = new Map<string, string>();
+      for (const e of entityData ?? []) {
+        nameMap.set(e.id, e.name);
+      }
+
+      const resolved: RelationshipRow[] = (rels as EntityRelationship[]).map(
+        (r) => ({
+          ...r,
+          entity_a_name: nameMap.get(r.entity_a_id) ?? r.entity_a_id,
+          entity_b_name: nameMap.get(r.entity_b_id) ?? r.entity_b_id,
+        })
+      );
+
+      setRelationships(resolved);
+      setRelLoading(false);
+    }
+    fetchRelationships();
+  }, []);
+
+  // ── Fetch facts ──
+  useEffect(() => {
+    async function fetchFacts() {
+      const { data } = await supabase
+        .from("facts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      setFacts((data ?? []) as Fact[]);
+      setFactsLoading(false);
+    }
+    fetchFacts();
+  }, []);
+
+  // ── Fetch topics ──
+  useEffect(() => {
+    async function fetchTopics() {
+      const { data } = await supabase
+        .from("topics")
+        .select("*")
+        .order("name", { ascending: true });
+      setTopics((data ?? []) as Topic[]);
+      setTopicsLoading(false);
+    }
+    fetchTopics();
+  }, []);
+
+  // ── Filtered entities ──
+  const filteredEntities = useMemo(() => {
+    const q = entitySearch.toLowerCase();
+    return entities.filter((e) => {
+      if (typeFilter !== "all" && e.entity_type !== typeFilter) return false;
+      if (!q) return true;
+      return (
+        e.name.toLowerCase().includes(q) ||
+        e.canonical_name?.toLowerCase().includes(q) ||
+        e.email?.toLowerCase().includes(q)
+      );
+    });
+  }, [entities, typeFilter, entitySearch]);
+
+  // ── Helpers ──
+  function attributeSummary(attrs: Record<string, unknown>): string {
+    const keys = Object.keys(attrs);
+    if (keys.length === 0) return "—";
+    if (keys.length <= 3) return keys.join(", ");
+    return `${keys.slice(0, 3).join(", ")} (+${keys.length - 3})`;
+  }
+
+  function factTypeBadgeVariant(
+    type: string | null
+  ): "default" | "secondary" | "info" | "success" | "warning" | "outline" {
+    if (!type) return "outline";
+    const map: Record<string, "info" | "success" | "warning" | "secondary"> = {
+      preference: "info",
+      relationship: "success",
+      event: "warning",
+      observation: "secondary",
+    };
+    return map[type] ?? "outline";
+  }
+
+  // ── Loading skeleton ──
+  function TableSkeleton({ rows = 8 }: { rows?: number }) {
+    return (
+      <div className="space-y-3">
+        {Array.from({ length: rows }).map((_, i) => (
+          <Skeleton key={i} className="h-12 w-full" />
+        ))}
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Knowledge Graph</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Entidades, hechos y relaciones extraidos del analisis de comunicaciones
-        </p>
-      </div>
+    <div>
+      <PageHeader
+        title="Knowledge Graph"
+        description="Entidades, relaciones y hechos extraidos"
+      />
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="relative flex-1 max-w-md">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[var(--muted-foreground)]" />
-          <input
-            type="text"
-            placeholder="Buscar..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border border-[var(--border)] bg-[var(--card)] py-2.5 pl-10 pr-4 text-sm text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
-          />
-        </div>
+      <Tabs defaultValue="entities">
+        <TabsList>
+          <TabsTrigger value="entities">Entidades</TabsTrigger>
+          <TabsTrigger value="relationships">Relaciones</TabsTrigger>
+          <TabsTrigger value="facts">Hechos</TabsTrigger>
+          <TabsTrigger value="topics">Temas</TabsTrigger>
+        </TabsList>
 
-        <div className="flex gap-1">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setTab(t.key)}
-              className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-                tab === t.key
-                  ? "bg-[var(--primary)] text-white"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--accent)]"
-              }`}
+        {/* ── Tab: Entidades ── */}
+        <TabsContent value="entities">
+          <div className="flex items-center gap-3 py-4">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                placeholder="Buscar por nombre o email..."
+                className="pl-9"
+                value={entitySearch}
+                onChange={(e) => setEntitySearch(e.target.value)}
+              />
+            </div>
+            <Select
+              value={typeFilter}
+              onChange={(e) => setTypeFilter(e.target.value)}
+              className="w-40"
             >
-              <t.icon className="h-3 w-3" /> {t.label} ({t.count})
-            </button>
-          ))}
-        </div>
-      </div>
+              <option value="all">Todas</option>
+              {entityTypes.map((t) => (
+                <option key={t} value={t}>
+                  {t.charAt(0).toUpperCase() + t.slice(1)}
+                </option>
+              ))}
+            </Select>
+          </div>
 
-      {loading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-pulse text-[var(--muted-foreground)]">Cargando conocimiento...</div>
-        </div>
-      ) : tab === "entities" ? (
-        filteredEntities.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Network className="mb-3 h-10 w-10 text-[var(--muted-foreground)] opacity-50" />
-              <p className="text-sm text-[var(--muted-foreground)]">No se encontraron entidades.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filteredEntities.map((entity) => (
-              <Card key={entity.id}>
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between mb-1">
-                    <p className="text-sm font-medium">{entity.name}</p>
-                    <Badge variant="outline" className="text-[10px]">{entity.entity_type}</Badge>
-                  </div>
-                  {entity.canonical_name && entity.canonical_name !== entity.name && (
-                    <p className="text-xs text-[var(--muted-foreground)]">{entity.canonical_name}</p>
-                  )}
-                  {entity.email && (
-                    <p className="text-xs text-[var(--muted-foreground)]">{entity.email}</p>
-                  )}
-                  {entity.last_seen && (
-                    <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-                      Visto: {new Date(entity.last_seen).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                    </p>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+          {entitiesLoading ? (
+            <TableSkeleton />
+          ) : filteredEntities.length === 0 ? (
+            <EmptyState
+              icon={Brain}
+              title="Sin entidades"
+              description="No se encontraron entidades con los filtros actuales."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Ultima vez</TableHead>
+                    <TableHead>Atributos</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredEntities.map((entity) => (
+                    <TableRow key={entity.id}>
+                      <TableCell className="font-medium">
+                        {entity.name}
+                        {entity.canonical_name &&
+                          entity.canonical_name !== entity.name && (
+                            <p className="text-xs text-muted-foreground">
+                              {entity.canonical_name}
+                            </p>
+                          )}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={entityBadgeVariant(entity.entity_type)}>
+                          {entity.entity_type}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {entity.email ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {timeAgo(entity.last_seen)}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-xs">
+                        {attributeSummary(entity.attributes)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Tab: Relaciones ── */}
+        <TabsContent value="relationships">
+          <div className="pt-4">
+            {relLoading ? (
+              <TableSkeleton />
+            ) : relationships.length === 0 ? (
+              <EmptyState
+                icon={Link2}
+                title="Sin relaciones"
+                description="No se han encontrado relaciones entre entidades."
+              />
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Entidad A</TableHead>
+                      <TableHead>Tipo relacion</TableHead>
+                      <TableHead>Entidad B</TableHead>
+                      <TableHead className="w-40">Confianza</TableHead>
+                      <TableHead>Fecha</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {relationships.map((rel) => (
+                      <TableRow key={rel.id}>
+                        <TableCell className="font-medium">
+                          {rel.entity_a_name}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary">
+                            {rel.relationship_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {rel.entity_b_name}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={rel.confidence * 100}
+                              className="h-2 flex-1"
+                            />
+                            <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
+                              {(rel.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDate(rel.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
-        )
-      ) : tab === "facts" ? (
-        filteredFacts.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <BookOpen className="mb-3 h-10 w-10 text-[var(--muted-foreground)] opacity-50" />
-              <p className="text-sm text-[var(--muted-foreground)]">No se encontraron hechos.</p>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {filteredFacts.map((fact) => (
-              <Card key={fact.id}>
-                <CardContent className="flex items-start gap-4 p-4">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm">{fact.fact_text}</p>
-                    <div className="mt-1.5 flex flex-wrap items-center gap-2">
-                      {fact.fact_type && <Badge variant="outline">{fact.fact_type}</Badge>}
-                      <span className="text-xs text-[var(--muted-foreground)]">
-                        Confianza: {(fact.confidence * 100).toFixed(0)}%
-                      </span>
-                      <Badge variant="secondary" className="text-[10px]">{fact.source_type}</Badge>
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+        </TabsContent>
+
+        {/* ── Tab: Hechos ── */}
+        <TabsContent value="facts">
+          <div className="pt-4">
+            {factsLoading ? (
+              <TableSkeleton />
+            ) : facts.length === 0 ? (
+              <EmptyState
+                icon={Lightbulb}
+                title="Sin hechos"
+                description="No se han extraido hechos del sistema."
+              />
+            ) : (
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="min-w-[300px]">Hecho</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Fuente</TableHead>
+                      <TableHead className="w-32">Confianza</TableHead>
+                      <TableHead>Fecha</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {facts.map((fact) => (
+                      <TableRow key={fact.id}>
+                        <TableCell>
+                          {truncate(fact.fact_text, 120)}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={factTypeBadgeVariant(fact.fact_type)}>
+                            {fact.fact_type ?? "—"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {fact.source_type}
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={fact.confidence * 100}
+                              className="h-2 flex-1"
+                            />
+                            <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
+                              {(fact.confidence * 100).toFixed(0)}%
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {formatDate(fact.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
           </div>
-        )
-      ) : filteredRels.length === 0 ? (
-        <Card>
-          <CardContent className="flex flex-col items-center justify-center py-12">
-            <Link2 className="mb-3 h-10 w-10 text-[var(--muted-foreground)] opacity-50" />
-            <p className="text-sm text-[var(--muted-foreground)]">No se encontraron relaciones.</p>
-          </CardContent>
-        </Card>
-      ) : (
-        <div className="space-y-2">
-          {filteredRels.map((rel) => (
-            <Card key={rel.id}>
-              <CardContent className="flex items-center gap-3 p-4 text-sm">
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="info">{rel.entity_a?.entity_type}</Badge>
-                  <span className="font-medium">{rel.entity_a?.name}</span>
-                </div>
-                <span className="text-[var(--muted-foreground)]">→</span>
-                <Badge variant="outline">{rel.relationship_type}</Badge>
-                <span className="text-[var(--muted-foreground)]">→</span>
-                <div className="flex items-center gap-1.5">
-                  <Badge variant="info">{rel.entity_b?.entity_type}</Badge>
-                  <span className="font-medium">{rel.entity_b?.name}</span>
-                </div>
-                <span className="ml-auto text-xs text-[var(--muted-foreground)]">
-                  {(rel.confidence * 100).toFixed(0)}%
-                </span>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      )}
+        </TabsContent>
+
+        {/* ── Tab: Temas ── */}
+        <TabsContent value="topics">
+          <div className="pt-4">
+            {topicsLoading ? (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {Array.from({ length: 12 }).map((_, i) => (
+                  <Skeleton key={i} className="h-20 w-full rounded-lg" />
+                ))}
+              </div>
+            ) : topics.length === 0 ? (
+              <EmptyState
+                icon={Tag}
+                title="Sin temas"
+                description="No se han identificado temas aun."
+              />
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {topics.map((topic) => (
+                  <Card key={topic.id} className="hover:bg-muted/50 transition-colors">
+                    <CardContent className="flex flex-col items-start gap-1 p-4">
+                      <span className="font-medium text-sm">{topic.name}</span>
+                      {topic.category && (
+                        <Badge variant="secondary" className="text-xs">
+                          {topic.category}
+                        </Badge>
+                      )}
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

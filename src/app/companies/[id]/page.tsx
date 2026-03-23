@@ -1,777 +1,693 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { cn, formatCurrency, timeAgo } from "@/lib/utils";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import {
   ArrowLeft,
+  Bell,
+  Brain,
   Building2,
-  Globe,
-  Factory,
+  CheckSquare,
   Clock,
-  DollarSign,
-  BarChart3,
-  Shield,
-  Truck,
+  Link2,
   Users,
-  AlertTriangle,
-  AlertCircle,
-  Target,
-  TrendingUp,
-  TrendingDown,
-  Minus,
-  ChevronRight,
-  ExternalLink,
-  Zap,
-  MapPin,
-  BookOpen,
-  Package,
-  FileText,
-  Sparkles,
 } from "lucide-react";
-import Link from "next/link";
+import { supabase } from "@/lib/supabase";
+import {
+  cn,
+  formatDate,
+  scoreToPercent,
+  timeAgo,
+} from "@/lib/utils";
+import type {
+  Entity,
+  EntityRelationship,
+  Contact,
+  PersonProfile,
+  Fact,
+  Alert,
+  ActionItem,
+} from "@/lib/types";
+import { PageHeader } from "@/components/shared/page-header";
+import { RiskBadge } from "@/components/shared/risk-badge";
+import { SeverityBadge } from "@/components/shared/severity-badge";
+import { StateBadge } from "@/components/shared/state-badge";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
-interface Company {
-  id: number;
-  name: string;
-  canonical_name: string;
-  domain: string | null;
-  is_customer: boolean;
-  is_supplier: boolean;
-  industry: string | null;
-  lifetime_value: number;
-  total_credit_notes: number;
-  delivery_otd_rate: number | null;
-  credit_limit: number;
-  total_pending: number;
-  monthly_avg: number;
-  trend_pct: number | null;
-  description: string | null;
-  business_type: string | null;
-  key_products: string[];
-  relationship_summary: string | null;
-  relationship_type: string | null;
-  country: string | null;
-  city: string | null;
-  website: string | null;
-  risk_signals: string[];
-  opportunity_signals: string[];
-  strategic_notes: string | null;
-  enriched_at: string | null;
-  enrichment_source: string | null;
-  created_at: string;
-  updated_at: string;
+// ── Helpers ──
+
+function sentimentColor(score: number | null): string {
+  if (score == null) return "text-muted-foreground";
+  if (score >= 0.6) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 0.3) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
 }
 
-interface Contact {
-  id: string;
-  name: string;
-  email: string;
-  risk_level: string;
-  sentiment_score: number;
-  relationship_score: number;
-  last_activity: string;
-  contact_type: string;
-}
-
-interface Alert {
-  id: string;
-  title: string;
-  severity: string;
-  state: string;
-  contact_name: string;
-  created_at: string;
-}
-
-interface ActionItem {
-  id: string;
-  description: string;
-  priority: string;
-  state: string;
-  contact_name: string;
-  due_date: string;
-}
-
-function getOtdLevel(rate: number | null): "high" | "mid" | "low" {
-  if (rate == null) return "mid";
-  if (rate >= 90) return "high";
-  if (rate >= 70) return "mid";
-  return "low";
-}
-
-function getHealthLevel(score: number): "high" | "mid" | "low" {
-  if (score >= 70) return "high";
-  if (score >= 40) return "mid";
-  return "low";
-}
-
-function HealthBar({ score, className = "" }: { score: number; className?: string }) {
-  const level = getHealthLevel(score);
-  return (
-    <div className={cn("health-bar-track h-2 bg-muted rounded-full overflow-hidden", className)}>
-      <div
-        className="health-bar-fill h-full transition-all duration-300"
-        data-level={level}
-        style={{ width: `${score}%`, backgroundColor: `var(--health-${level})` }}
-      />
-    </div>
-  );
-}
-
-function ScoreBadge({ score, label }: { score: number; label: string }) {
-  const variant = score >= 70 ? "success" : score >= 40 ? "warning" : "critical";
-  return (
-    <Badge variant={variant} className="font-bold text-sm">
-      {label}
-    </Badge>
-  );
-}
-
-const riskToBadge: Record<string, "critical" | "high" | "medium" | "low" | "success"> = {
-  high: "critical",
-  medium: "medium",
+const priorityVariant: Record<string, "success" | "warning" | "critical" | "secondary"> = {
   low: "success",
+  medium: "warning",
+  high: "critical",
 };
 
+const priorityLabel: Record<string, string> = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+};
+
+// ── Relationship with resolved entity info ──
+
+interface ResolvedRelationship extends EntityRelationship {
+  related_entity: Entity | null;
+}
+
+// ── Component ──
+
 export default function CompanyDetailPage() {
-  const params = useParams();
-  const [company, setCompany] = useState<Company | null>(null);
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const entityId = params.id;
+
+  const [loading, setLoading] = useState(true);
+  const [entity, setEntity] = useState<Entity | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
+  const [profiles, setProfiles] = useState<Map<string, PersonProfile>>(new Map());
+  const [facts, setFacts] = useState<Fact[]>([]);
+  const [relationships, setRelationships] = useState<ResolvedRelationship[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
-  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchAll() {
-      const companyRes = await supabase
-        .from("companies")
+      // 1. Fetch company entity
+      const { data: entityData } = await supabase
+        .from("entities")
         .select("*")
-        .eq("id", params.id)
+        .eq("id", entityId)
         .single();
-      if (!companyRes.data) {
+
+      if (!entityData) {
         setLoading(false);
         return;
       }
-      setCompany(companyRes.data);
 
-      const contactsRes = await supabase
-        .from("contacts")
-        .select("*")
-        .eq("company_id", params.id)
-        .order("last_activity", { ascending: false })
-        .limit(20);
-      const companyContacts = contactsRes.data || [];
-      setContacts(companyContacts);
+      const company = entityData as Entity;
+      setEntity(company);
 
-      if (companyContacts.length > 0) {
-        const contactNames = companyContacts.map((c) => c.name).filter(Boolean);
-        if (contactNames.length > 0) {
-          const [alertsRes, actionsRes] = await Promise.all([
-            supabase
-              .from("alerts")
-              .select("*")
-              .in("contact_name", contactNames)
-              .eq("state", "new")
-              .order("created_at", { ascending: false })
-              .limit(10),
-            supabase
-              .from("action_items")
-              .select("*")
-              .in("contact_name", contactNames)
-              .eq("state", "pending")
-              .order("created_at", { ascending: false })
-              .limit(10),
-          ]);
-          setAlerts(alertsRes.data || []);
-          setActions(actionsRes.data || []);
+      // 2. Parallel fetches
+      const companyName = company.name;
+
+      const [
+        contactsRes,
+        relRes,
+        actionsRes,
+      ] = await Promise.all([
+        // Contacts at this company
+        supabase
+          .from("contacts")
+          .select("*")
+          .ilike("company", companyName)
+          .order("name"),
+        // Entity relationships
+        supabase
+          .from("entity_relationships")
+          .select("*")
+          .or(`entity_a_id.eq.${entityId},entity_b_id.eq.${entityId}`)
+          .order("confidence", { ascending: false }),
+        // Action items for this company
+        supabase
+          .from("action_items")
+          .select("*")
+          .ilike("contact_company", companyName)
+          .order("created_at", { ascending: false }),
+      ]);
+
+      const contactsList = (contactsRes.data as Contact[] | null) ?? [];
+      setContacts(contactsList);
+      setActions((actionsRes.data as ActionItem[] | null) ?? []);
+
+      // 3. Fetch person profiles for contacts
+      const contactIds = contactsList.map((c) => c.id);
+      if (contactIds.length > 0) {
+        const { data: profileData } = await supabase
+          .from("person_profiles")
+          .select("*")
+          .in("contact_id", contactIds);
+
+        const profileMap = new Map<string, PersonProfile>();
+        if (profileData) {
+          for (const p of profileData as PersonProfile[]) {
+            if (p.contact_id) profileMap.set(p.contact_id, p);
+          }
         }
+        setProfiles(profileMap);
+      }
+
+      // 4. Fetch facts for contacts of this company + entity mentions
+      const factsSet = new Map<string, Fact>();
+
+      if (contactIds.length > 0) {
+        const { data: contactFacts } = await supabase
+          .from("facts")
+          .select("*")
+          .in("contact_id", contactIds)
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        if (contactFacts) {
+          for (const f of contactFacts as Fact[]) {
+            factsSet.set(f.id, f);
+          }
+        }
+      }
+
+      // Facts via entity_mentions
+      const { data: mentions } = await supabase
+        .from("entity_mentions")
+        .select("email_id")
+        .eq("entity_id", entityId);
+
+      if (mentions && mentions.length > 0) {
+        const emailIds = [...new Set(mentions.map((m: { email_id: number }) => m.email_id))];
+        if (emailIds.length > 0) {
+          const { data: mentionFacts } = await supabase
+            .from("facts")
+            .select("*")
+            .in("email_id", emailIds)
+            .order("created_at", { ascending: false })
+            .limit(50);
+
+          if (mentionFacts) {
+            for (const f of mentionFacts as Fact[]) {
+              factsSet.set(f.id, f);
+            }
+          }
+        }
+      }
+
+      const allFacts = Array.from(factsSet.values()).sort(
+        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      );
+      setFacts(allFacts);
+
+      // 5. Resolve relationships - fetch related entities
+      const rawRels = (relRes.data as EntityRelationship[] | null) ?? [];
+      if (rawRels.length > 0) {
+        const relatedIds = rawRels.map((r) =>
+          r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id
+        );
+        const uniqueIds = [...new Set(relatedIds)];
+
+        const { data: relatedEntities } = await supabase
+          .from("entities")
+          .select("*")
+          .in("id", uniqueIds);
+
+        const entityMap = new Map<string, Entity>();
+        if (relatedEntities) {
+          for (const e of relatedEntities as Entity[]) {
+            entityMap.set(e.id, e);
+          }
+        }
+
+        const resolved: ResolvedRelationship[] = rawRels.map((r) => {
+          const relatedId = r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id;
+          return {
+            ...r,
+            related_entity: entityMap.get(relatedId) ?? null,
+          };
+        });
+        setRelationships(resolved);
+      }
+
+      // 6. Fetch alerts for contacts at this company
+      const contactNames = contactsList
+        .map((c) => c.name)
+        .filter((n): n is string => n != null);
+
+      if (contactNames.length > 0) {
+        const orFilter = contactNames
+          .map((name) => `contact_name.ilike.%${name}%`)
+          .join(",");
+        const { data: alertData } = await supabase
+          .from("alerts")
+          .select("*")
+          .or(orFilter)
+          .order("created_at", { ascending: false });
+
+        setAlerts((alertData as Alert[] | null) ?? []);
       }
 
       setLoading(false);
     }
     fetchAll();
-  }, [params.id]);
+  }, [entityId]);
+
+  // ── Loading state ──
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto space-y-8">
-        <Skeleton className="h-8 w-48" />
-        <Card>
-          <CardContent className="p-6">
-            <div className="flex items-start gap-5">
-              <Skeleton className="w-16 h-16 rounded-full" />
-              <div className="flex-1 space-y-3">
-                <Skeleton className="h-8 w-1/2" />
-                <Skeleton className="h-4 w-1/3" />
-                <div className="flex gap-2">
-                  <Skeleton className="h-6 w-16" />
-                  <Skeleton className="h-6 w-20" />
-                </div>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-          {[1, 2, 3, 4, 5].map((i) => (
-            <Card key={i}>
-              <CardContent className="pt-6">
-                <Skeleton className="h-4 w-20 mb-2" />
-                <Skeleton className="h-8 w-24" />
-              </CardContent>
-            </Card>
+      <div className="space-y-6">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-10 w-72" />
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20" />
           ))}
         </div>
+        <Skeleton className="h-10 w-96" />
+        <Skeleton className="h-64" />
       </div>
     );
   }
 
-  if (!company) {
+  // ── Not found ──
+
+  if (!entity) {
     return (
-      <div className="max-w-7xl mx-auto text-center py-12">
-        <Building2 className="w-12 h-12 text-[var(--muted-foreground)] mx-auto mb-4 opacity-50" />
-        <p className="text-[var(--muted-foreground)] font-medium">Empresa no encontrada.</p>
-        <Link href="/companies">
-          <Button variant="ghost" className="mt-4">Volver a empresas</Button>
-        </Link>
+      <div>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => router.push("/companies")}
+          className="mb-4"
+        >
+          <ArrowLeft className="mr-1 h-4 w-4" />
+          Empresas
+        </Button>
+        <EmptyState
+          icon={Building2}
+          title="Empresa no encontrada"
+          description="La empresa solicitada no existe o fue eliminada."
+        />
       </div>
     );
   }
 
-  const trend = company.trend_pct;
-  const TrendIcon = trend != null && trend > 0 ? TrendingUp : trend != null && trend < 0 ? TrendingDown : Minus;
-  const trendVariant = trend != null && trend > 0 ? "success" : trend != null && trend < 0 ? "critical" : "warning";
+  // ── Derived data ──
 
-  const creditUtil = Number(company.credit_limit) > 0
-    ? Math.round((Number(company.total_pending) / Number(company.credit_limit)) * 100)
-    : 0;
-  const creditLevel = creditUtil <= 50 ? "high" : creditUtil <= 80 ? "mid" : "low";
-
-  const otdRate = company.delivery_otd_rate != null ? Number(company.delivery_otd_rate) : null;
+  const attributes = entity.attributes ?? {};
+  const industry = attributes.industry as string | undefined;
+  const activeAlerts = alerts.filter((a) => a.state !== "resolved").length;
 
   return (
-    <div className="max-w-7xl mx-auto space-y-8">
-      {/* Back button */}
-      <div className="opacity-0 animate-in fade-in slide-in-from-bottom-4">
-        <Link href="/companies">
-          <Button variant="ghost" size="sm" className="text-xs gap-1">
-            <ArrowLeft className="h-4 w-4" />
-            Empresas
-          </Button>
-        </Link>
-      </div>
+    <div className="space-y-6">
+      {/* Back */}
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => router.push("/companies")}
+      >
+        <ArrowLeft className="mr-1 h-4 w-4" />
+        Empresas
+      </Button>
 
-      {/* Header Card */}
-      <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4">
-        <CardContent className="p-6">
-          <div className="flex items-start gap-5">
-            <div className="w-16 h-16 rounded-full flex items-center justify-center text-xl font-black shrink-0 text-white bg-[var(--primary)]">
-              {company.name.charAt(0).toUpperCase()}
-            </div>
+      {/* Header */}
+      <PageHeader title={entity.name}>
+        {industry && <Badge variant="secondary">{industry}</Badge>}
+      </PageHeader>
 
-            <div className="flex-1 min-w-0">
-              <div className="flex items-start justify-between gap-4">
-                <div className="min-w-0">
-                  <h1 className="text-2xl font-bold text-[var(--foreground)] truncate">
-                    {company.name}
-                  </h1>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-[var(--muted-foreground)] flex-wrap">
-                    {company.domain && (
-                      <span className="flex items-center gap-1">
-                        <Globe className="h-3.5 w-3.5" />
-                        {company.domain}
-                      </span>
-                    )}
-                    {company.industry && (
-                      <span className="flex items-center gap-1">
-                        <Factory className="h-3.5 w-3.5" />
-                        {company.industry}
-                      </span>
-                    )}
-                    {(company.country || company.city) && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5" />
-                        {[company.city, company.country].filter(Boolean).join(", ")}
-                      </span>
-                    )}
-                    {company.business_type && (
-                      <Badge variant="outline" className="text-xs">{company.business_type}</Badge>
-                    )}
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {company.is_customer && <Badge variant="success" className="text-xs font-medium">Cliente</Badge>}
-                  {company.is_supplier && <Badge variant="info" className="text-xs font-medium">Proveedor</Badge>}
-                </div>
-              </div>
-
-              {/* Trend + Key Metric */}
-              <div className="flex items-center gap-4 mt-4 pt-4 border-t border-[var(--border)]">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-[var(--muted-foreground)]">Valor de Vida</span>
-                  <span className="text-lg font-bold tabular-nums text-[var(--success)]">
-                    {formatCurrency(Number(company.lifetime_value) || 0)}
-                  </span>
-                </div>
-                {trend != null && (
-                  <div className="flex items-center gap-1.5">
-                    <TrendIcon className={cn(
-                      "h-4 w-4",
-                      trend > 0 ? "text-[var(--success)]" :
-                      trend < 0 ? "text-[var(--severity-critical)]" :
-                      "text-[var(--muted-foreground)]",
-                    )} />
-                    <Badge variant={trendVariant} className="font-bold">
-                      {trend > 0 ? "+" : ""}{Number(trend).toFixed(0)}%
-                    </Badge>
-                  </div>
-                )}
-                {alerts.length > 0 && (
-                  <div className="flex items-center gap-1 ml-auto">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--severity-critical)] animate-pulse" />
-                    <span className="text-xs font-bold text-[var(--severity-critical)]">
-                      {alerts.length} alertas activas
-                    </span>
-                  </div>
-                )}
-              </div>
-
-              {/* Risk & Opportunity Signals */}
-              {(company.risk_signals?.length > 0 || company.opportunity_signals?.length > 0) && (
-                <div className="flex flex-wrap gap-1 mt-3">
-                  {company.risk_signals?.map((signal: string, idx: number) => (
-                    <Badge key={`risk-${idx}`} variant="critical" className="text-xs font-medium px-2 py-1">
-                      <AlertCircle className="w-3 h-3 mr-1 inline" />
-                      {signal}
-                    </Badge>
-                  ))}
-                  {company.opportunity_signals?.map((signal: string, idx: number) => (
-                    <Badge key={`opp-${idx}`} variant="success" className="text-xs font-medium px-2 py-1">
-                      <Zap className="w-3 h-3 mr-1 inline" />
-                      {signal}
-                    </Badge>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: "50ms", animationFillMode: "forwards" }}>
-          <CardContent className="pt-6">
-            <div className="flex items-start justify-between">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Promedio Mensual</p>
-                <p className="text-2xl font-bold tabular-nums">{formatCurrency(Number(company.monthly_avg) || 0)}</p>
-              </div>
-              <BarChart3 className="h-6 w-6 text-[var(--muted-foreground)]" />
-            </div>
+      {/* Key info bar */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Industria</p>
+            <p className="mt-1 text-sm font-medium">
+              {industry ?? "No especificada"}
+            </p>
           </CardContent>
         </Card>
-
-        <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: "100ms", animationFillMode: "forwards" }}>
-          <CardContent className="pt-6">
-            <div className="space-y-2">
-              <div className="flex items-start justify-between">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Pendiente</p>
-                <Clock className="h-6 w-6 text-[var(--muted-foreground)]" />
-              </div>
-              <p className={cn(
-                "text-2xl font-bold tabular-nums",
-                creditUtil > 80 && "text-[var(--severity-critical)]",
-              )}>
-                {formatCurrency(Number(company.total_pending) || 0)}
-              </p>
-              {Number(company.credit_limit) > 0 && (
-                <div className="space-y-1">
-                  <HealthBar score={Math.min(100, creditUtil)} className="h-1.5" />
-                  <p className="text-xs text-[var(--muted-foreground)]">{creditUtil}% del límite</p>
-                </div>
-              )}
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Users className="h-3.5 w-3.5" />
+              Contactos
             </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">
+              {contacts.length}
+            </p>
           </CardContent>
         </Card>
-
-        <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: "150ms", animationFillMode: "forwards" }}>
-          <CardContent className="pt-6">
-            <div className="flex items-start justify-between">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Límite de Crédito</p>
-                <p className="text-2xl font-bold tabular-nums">{formatCurrency(Number(company.credit_limit) || 0)}</p>
-              </div>
-              <Shield className="h-6 w-6 text-[var(--muted-foreground)]" />
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Clock className="h-3.5 w-3.5" />
+              Ultima actividad
             </div>
+            <p className="mt-1 text-sm font-medium">
+              {timeAgo(entity.last_seen)}
+            </p>
           </CardContent>
         </Card>
-
-        <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: "200ms", animationFillMode: "forwards" }}>
-          <CardContent className="pt-6">
-            <div className="flex items-start justify-between">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Notas de Crédito</p>
-                <p className="text-2xl font-bold tabular-nums">{formatCurrency(Number(company.total_credit_notes) || 0)}</p>
-              </div>
-              <DollarSign className="h-6 w-6 text-[var(--muted-foreground)]" />
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Bell className="h-3.5 w-3.5" />
+              Alertas activas
             </div>
-          </CardContent>
-        </Card>
-
-        <Card className="game-card opacity-0 animate-in fade-in slide-in-from-bottom-4" style={{ animationDelay: "250ms", animationFillMode: "forwards" }}>
-          <CardContent className="pt-6">
-            <div className="space-y-2">
-              <div className="flex items-start justify-between">
-                <p className="text-sm font-medium text-[var(--muted-foreground)]">Entrega OTD</p>
-                <Truck className="h-6 w-6 text-[var(--muted-foreground)]" />
-              </div>
-              <p className={cn(
-                "text-2xl font-bold tabular-nums",
-                otdRate != null && otdRate >= 90 ? "text-[var(--success)]" :
-                otdRate != null && otdRate >= 70 ? "text-[var(--warning)]" :
-                otdRate != null ? "text-[var(--severity-critical)]" : "",
-              )}>
-                {otdRate != null ? `${otdRate.toFixed(0)}%` : "—"}
-              </p>
-              {otdRate != null && (
-                <HealthBar score={otdRate} className="h-1.5" />
-              )}
-            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">
+              {activeAlerts}
+            </p>
           </CardContent>
         </Card>
       </div>
 
-      {/* Two-column layout */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-        {/* Left column */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Company Profile (when enriched) */}
-          {(company.description || company.relationship_summary || company.strategic_notes) && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <BookOpen className="h-4 w-4 text-[var(--accent-cyan)]" />
-                  <span className="uppercase tracking-wider">Perfil de Empresa</span>
-                  {company.enriched_at && (
-                    <span className="text-[10px] text-[var(--muted-foreground)] ml-auto font-normal normal-case tracking-normal">
-                      Enriquecido {timeAgo(company.enriched_at)}
-                      {company.enrichment_source && ` vía ${company.enrichment_source}`}
-                    </span>
-                  )}
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {company.description && (
-                  <p className="text-sm leading-relaxed text-[var(--foreground)]/90">
-                    {company.description}
-                  </p>
-                )}
-                {company.relationship_summary && (
-                  <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <Sparkles className="h-3 w-3 text-[var(--accent-cyan)]" />
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                        Resumen de Relación
-                      </span>
-                    </div>
-                    <p className="text-sm">{company.relationship_summary}</p>
-                  </div>
-                )}
-                {company.strategic_notes && (
-                  <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <FileText className="h-3 w-3 text-[var(--warning)]" />
-                      <span className="text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                        Notas Estratégicas
-                      </span>
-                    </div>
-                    <p className="text-sm">{company.strategic_notes}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
+      {/* Tabs */}
+      <Tabs defaultValue="resumen">
+        <TabsList>
+          <TabsTrigger value="resumen">Resumen</TabsTrigger>
+          <TabsTrigger value="contactos">
+            Contactos ({contacts.length})
+          </TabsTrigger>
+          <TabsTrigger value="inteligencia">
+            Inteligencia ({facts.length})
+          </TabsTrigger>
+          <TabsTrigger value="alertas">
+            Alertas ({alerts.length})
+          </TabsTrigger>
+          <TabsTrigger value="acciones">
+            Acciones ({actions.length})
+          </TabsTrigger>
+        </TabsList>
 
-          {/* Key Products */}
-          {company.key_products?.length > 0 && (
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="flex items-center gap-2">
-                  <Package className="h-4 w-4 text-[var(--quest-epic)]" />
-                  <span className="uppercase tracking-wider">Productos Clave</span>
-                  <Badge variant="outline" className="ml-2 text-xs">{company.key_products.length}</Badge>
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="flex flex-wrap gap-1.5">
-                  {company.key_products.map((product: string, i: number) => (
-                    <span
-                      key={i}
-                      className="text-xs px-2.5 py-1 rounded-md bg-[var(--quest-epic-muted)] text-[var(--quest-epic)] border border-[color-mix(in_srgb,var(--quest-epic)_20%,transparent)]"
-                    >
-                      {product}
-                    </span>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Contacts */}
+        {/* ── Resumen ── */}
+        <TabsContent value="resumen" className="space-y-6">
+          {/* Attributes */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-[var(--success)]" />
-                <span className="uppercase tracking-wider">Contactos</span>
-                <Badge variant="outline" className="ml-2 text-xs">{contacts.length}</Badge>
-                <Link href="/contacts" className="ml-auto">
-                  <Button variant="ghost" size="sm" className="text-xs gap-1">
-                    Ver todos <ExternalLink className="h-3 w-3" />
-                  </Button>
-                </Link>
-              </CardTitle>
+            <CardHeader>
+              <CardTitle>Atributos</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {contacts.length > 0 ? (
-                contacts.map((contact, index) => {
-                  const riskVar = contact.risk_level === "high" ? "var(--severity-critical)"
-                    : contact.risk_level === "medium" ? "var(--warning)" : "var(--success)";
-                  const avatarBg = contact.risk_level === "high" ? "bg-[var(--severity-critical)]"
-                    : contact.risk_level === "medium" ? "bg-[var(--warning)]" : "bg-[var(--success)]";
-
-                  const health = Math.max(0, Math.min(100, Math.round(
-                    (((contact.sentiment_score ?? 0) + 1) / 2) * 50 +
-                    ((contact.relationship_score ?? 50) / 100) * 50
-                  )));
-
-                  return (
-                    <Link key={contact.id} href={`/contacts/${contact.id}`}>
-                      <div className="flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3 hover:border-[var(--primary)] transition-all cursor-pointer">
-                        <div className={cn(
-                          "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 text-white",
-                          avatarBg,
-                        )}>
-                          {(contact.name || contact.email).charAt(0).toUpperCase()}
-                        </div>
-                        <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold truncate">{contact.name || contact.email}</h4>
-                          <p className="text-xs text-[var(--muted-foreground)] truncate">{contact.email}</p>
-                        </div>
-                        <div className="hidden sm:block w-24">
-                          <HealthBar score={health} className="h-1" />
-                        </div>
-                        <Badge variant={riskToBadge[contact.risk_level] || "success"} className="text-[10px] shrink-0">
-                          {contact.risk_level || "low"}
-                        </Badge>
-                        <ChevronRight className="h-4 w-4 text-[var(--muted-foreground)] shrink-0" />
-                      </div>
-                    </Link>
-                  );
-                })
+            <CardContent>
+              {Object.keys(attributes).length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Sin atributos registrados.
+                </p>
               ) : (
-                <div className="text-center py-8">
-                  <Users className="w-10 h-10 text-[var(--muted-foreground)] mx-auto mb-3 opacity-40" />
-                  <p className="text-sm text-[var(--muted-foreground)]">Sin contactos registrados</p>
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {Object.entries(attributes).map(([key, value]) => (
+                    <div key={key}>
+                      <p className="text-xs text-muted-foreground capitalize">
+                        {key.replace(/_/g, " ")}
+                      </p>
+                      <p className="text-sm font-medium">
+                        {typeof value === "string"
+                          ? value
+                          : JSON.stringify(value)}
+                      </p>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
           </Card>
-        </div>
 
-        {/* Right column */}
-        <div className="space-y-6">
-          {/* Company Info */}
+          {/* Relationships */}
           <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Building2 className="h-4 w-4 text-[var(--primary)]" />
-                <span className="uppercase tracking-wider">Datos de Empresa</span>
-              </CardTitle>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <Link2 className="h-4 w-4 text-muted-foreground" />
+                <CardTitle>Relaciones</CardTitle>
+              </div>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
-                    <Globe className="h-3.5 w-3.5" />
-                    Dominio
-                  </span>
-                  <span className="font-medium truncate ml-4">{company.domain || "—"}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
-                    <Factory className="h-3.5 w-3.5" />
-                    Industria
-                  </span>
-                  <span className="font-medium">{company.industry || "—"}</span>
-                </div>
-                {(company.country || company.city) && (
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
-                      <MapPin className="h-3.5 w-3.5" />
-                      Ubicación
-                    </span>
-                    <span className="font-medium">{[company.city, company.country].filter(Boolean).join(", ")}</span>
-                  </div>
-                )}
-                {company.website && (
-                  <div className="flex items-center justify-between">
-                    <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
-                      <Globe className="h-3.5 w-3.5" />
-                      Sitio Web
-                    </span>
-                    <span className="font-medium truncate ml-4">{company.website}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
-                    <Clock className="h-3.5 w-3.5" />
-                    Registrada
-                  </span>
-                  <span className="font-medium">{company.created_at ? timeAgo(company.created_at) : "—"}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="flex items-center gap-2 text-[var(--muted-foreground)]">
-                    <Users className="h-3.5 w-3.5" />
-                    Contactos
-                  </span>
-                  <span className="font-medium">{contacts.length}</span>
-                </div>
-              </div>
-              <div className="flex gap-2 mt-4 pt-4 border-t border-[var(--border)]">
-                {company.is_customer && <Badge variant="success" className="text-xs">Cliente</Badge>}
-                {company.is_supplier && <Badge variant="info" className="text-xs">Proveedor</Badge>}
-                {company.relationship_type && <Badge variant="outline" className="text-xs">{company.relationship_type}</Badge>}
-                {!company.is_customer && !company.is_supplier && !company.relationship_type && (
-                  <span className="text-xs text-[var(--muted-foreground)]">Sin clasificar</span>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Alerts */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-[var(--warning)]" />
-                <span className="uppercase tracking-wider">Alertas</span>
-                {alerts.length > 0 && (
-                  <span className="flex items-center gap-1 ml-auto text-[10px] font-bold text-[var(--severity-critical)]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[var(--severity-critical)] animate-pulse" />
-                    {alerts.length} activas
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {alerts.length > 0 ? (
-                <div className="space-y-2">
-                  {alerts.map((a) => (
+              {relationships.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Sin relaciones registradas.
+                </p>
+              ) : (
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {relationships.map((rel) => (
                     <div
-                      key={a.id}
-                      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)] p-3 space-y-1"
+                      key={rel.id}
+                      className="flex items-center justify-between rounded-lg border p-3"
                     >
-                      <div className="flex items-start justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={a.severity === "critical" || a.severity === "high" ? "critical" : "warning"}
-                            className="text-[10px] shrink-0"
-                          >
-                            {a.severity}
-                          </Badge>
-                          <span className="text-sm font-medium truncate">{a.title}</span>
-                        </div>
-                        <span className="text-[10px] text-[var(--muted-foreground)] shrink-0">
-                          {timeAgo(a.created_at)}
-                        </span>
-                      </div>
-                      {a.contact_name && (
-                        <p className="text-xs text-[var(--muted-foreground)]">
-                          <span className="font-medium text-[var(--foreground)]">Contacto:</span> {a.contact_name}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {rel.related_entity?.name ?? "Entidad desconocida"}
                         </p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Shield className="w-8 h-8 text-[var(--muted-foreground)] mx-auto mb-2 opacity-40" />
-                  <p className="text-sm text-[var(--muted-foreground)]">Sin alertas activas</p>
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Missions */}
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2">
-                <Target className="h-4 w-4 text-[var(--quest-epic)]" />
-                <span className="uppercase tracking-wider">Misiones</span>
-                {actions.length > 0 && (
-                  <span className="text-[10px] font-bold text-[var(--quest-epic)] ml-auto">
-                    {actions.length} pendientes
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {actions.length > 0 ? (
-                <div className="space-y-2">
-                  {actions.map((a) => {
-                    const isOverdue = a.due_date && new Date(a.due_date) < new Date();
-                    return (
-                      <div
-                        key={a.id}
-                        className={cn(
-                          "rounded-lg border p-3 space-y-1",
-                          isOverdue
-                            ? "border-[color-mix(in_srgb,var(--severity-critical)_30%,var(--border))] bg-[color-mix(in_srgb,var(--severity-critical)_5%,transparent)]"
-                            : "border-[var(--border)] bg-[var(--secondary)]",
-                        )}
-                      >
-                        <div className="flex items-center gap-2">
-                          <Badge
-                            variant={a.priority === "high" ? "critical" : a.priority === "medium" ? "warning" : "info"}
-                            className="text-[10px] shrink-0"
-                          >
-                            {a.priority?.toUpperCase()}
+                        <div className="mt-1 flex items-center gap-2">
+                          <Badge variant="outline">
+                            {rel.relationship_type}
                           </Badge>
-                          {isOverdue && (
-                            <Badge variant="critical" className="text-[10px]">
-                              <AlertCircle className="w-3 h-3 mr-0.5 inline" />
-                              VENCIDA
+                          {rel.related_entity?.entity_type && (
+                            <Badge variant="secondary">
+                              {rel.related_entity.entity_type}
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm truncate">{a.description}</p>
-                        <div className="flex items-center justify-between text-xs text-[var(--muted-foreground)]">
-                          {a.contact_name && <span>{a.contact_name}</span>}
-                          {a.due_date && (
-                            <span className={cn(isOverdue && "text-[var(--severity-critical)]")}>
-                              <Clock className="h-2.5 w-2.5 inline mr-0.5" />
-                              {new Date(a.due_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
-                            </span>
-                          )}
-                        </div>
                       </div>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <Target className="w-8 h-8 text-[var(--muted-foreground)] mx-auto mb-2 opacity-40" />
-                  <p className="text-sm text-[var(--muted-foreground)]">Sin misiones pendientes</p>
+                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                        {(rel.confidence * 100).toFixed(0)}%
+                      </span>
+                    </div>
+                  ))}
                 </div>
               )}
             </CardContent>
           </Card>
-        </div>
-      </div>
+        </TabsContent>
+
+        {/* ── Contactos ── */}
+        <TabsContent value="contactos">
+          {contacts.length === 0 ? (
+            <EmptyState
+              icon={Users}
+              title="Sin contactos"
+              description="No se encontraron contactos asociados a esta empresa."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Nombre</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Rol</TableHead>
+                    <TableHead>Riesgo</TableHead>
+                    <TableHead className="text-right">Sentimiento</TableHead>
+                    <TableHead className="w-[140px]">Relacion</TableHead>
+                    <TableHead>Ultima interaccion</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {contacts.map((contact) => {
+                    const profile = profiles.get(contact.id);
+                    const role = profile?.role ?? contact.contact_type;
+
+                    return (
+                      <TableRow key={contact.id}>
+                        <TableCell>
+                          <Link
+                            href={`/contacts/${contact.id}`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {contact.name ?? "Sin nombre"}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {contact.email ?? "---"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {role ?? "---"}
+                        </TableCell>
+                        <TableCell>
+                          <RiskBadge level={contact.risk_level} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={cn(
+                              "text-sm font-medium tabular-nums",
+                              sentimentColor(contact.sentiment_score)
+                            )}
+                          >
+                            {contact.sentiment_score != null
+                              ? contact.sentiment_score.toFixed(2)
+                              : "---"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={scoreToPercent(contact.relationship_score)}
+                              className="h-2 flex-1"
+                            />
+                            <span className="w-8 text-right text-xs text-muted-foreground tabular-nums">
+                              {contact.relationship_score != null
+                                ? Math.round(scoreToPercent(contact.relationship_score))
+                                : 0}
+                            </span>
+                          </div>
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
+                          {timeAgo(contact.last_interaction)}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Inteligencia ── */}
+        <TabsContent value="inteligencia">
+          {facts.length === 0 ? (
+            <EmptyState
+              icon={Brain}
+              title="Sin inteligencia"
+              description="No se han extraido hechos relacionados con esta empresa."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead>Hecho</TableHead>
+                    <TableHead className="text-right">Confianza</TableHead>
+                    <TableHead>Fecha</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {facts.map((fact) => (
+                    <TableRow key={fact.id}>
+                      <TableCell>
+                        {fact.fact_type && (
+                          <Badge variant="outline">{fact.fact_type}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {fact.fact_text}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {(fact.confidence * 100).toFixed(0)}%
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(fact.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Alertas ── */}
+        <TabsContent value="alertas">
+          {alerts.length === 0 ? (
+            <EmptyState
+              icon={Bell}
+              title="Sin alertas"
+              description="No hay alertas asociadas a esta empresa."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Severidad</TableHead>
+                    <TableHead>Titulo</TableHead>
+                    <TableHead>Contacto</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Fecha</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {alerts.map((alert) => (
+                    <TableRow key={alert.id}>
+                      <TableCell>
+                        <SeverityBadge severity={alert.severity} />
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        {alert.title}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {alert.contact_name ?? "---"}
+                      </TableCell>
+                      <TableCell>
+                        <StateBadge state={alert.state} />
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(alert.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Acciones ── */}
+        <TabsContent value="acciones">
+          {actions.length === 0 ? (
+            <EmptyState
+              icon={CheckSquare}
+              title="Sin acciones"
+              description="No hay acciones pendientes para esta empresa."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Descripcion</TableHead>
+                    <TableHead>Prioridad</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Asignado a</TableHead>
+                    <TableHead>Fecha limite</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {actions.map((action) => (
+                    <TableRow key={action.id}>
+                      <TableCell className="max-w-xs text-sm">
+                        {action.description}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={
+                            priorityVariant[action.priority] ?? "secondary"
+                          }
+                        >
+                          {priorityLabel[action.priority] ?? action.priority}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <StateBadge state={action.state} />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {action.assignee_email ?? "Sin asignar"}
+                      </TableCell>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDate(action.due_date)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
