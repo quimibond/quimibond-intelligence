@@ -35,6 +35,7 @@ import { StateBadge } from "@/components/shared/state-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { HealthRadar } from "@/components/shared/health-radar";
 import { HealthTrendChart } from "@/components/shared/health-trend-chart";
+import { ProfileCard } from "@/components/shared/profile-card";
 import { TrendBadge } from "@/components/shared/trend-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -238,9 +239,6 @@ export default function ContactDetailPage() {
   }
 
   const totalEmails = (contact.total_sent ?? 0) + (contact.total_received ?? 0);
-  const keyInterests: string[] = Array.isArray(contact.key_interests)
-    ? (contact.key_interests as string[])
-    : [];
 
   return (
     <div className="space-y-6">
@@ -349,81 +347,19 @@ export default function ContactDetailPage() {
         </TabsList>
 
         {/* ── Perfil (from contact record, NOT person_profiles) ── */}
-        <TabsContent value="perfil">
+        <TabsContent value="perfil" className="space-y-6">
+          <ProfileCard contact={contact} />
+
+          {/* Additional info not covered by ProfileCard */}
           <Card>
-            <CardContent className="space-y-5 pt-6">
-              {/* Grid of profile fields */}
+            <CardContent className="space-y-4 pt-6">
               <div className="grid gap-4 sm:grid-cols-3">
-                {contact.role && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Rol</p>
-                    <p className="text-sm font-medium">{contact.role}</p>
-                  </div>
-                )}
                 {contact.department && (
                   <div>
                     <p className="text-xs text-muted-foreground">
                       Departamento
                     </p>
                     <p className="text-sm font-medium">{contact.department}</p>
-                  </div>
-                )}
-                {contact.decision_power && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Poder de decision
-                    </p>
-                    <p className="text-sm font-medium">
-                      {contact.decision_power}
-                    </p>
-                  </div>
-                )}
-                {contact.communication_style && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Estilo de comunicacion
-                    </p>
-                    <p className="text-sm font-medium">
-                      {contact.communication_style}
-                    </p>
-                  </div>
-                )}
-                {contact.language_preference && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">Idioma</p>
-                    <p className="text-sm font-medium">
-                      {contact.language_preference}
-                    </p>
-                  </div>
-                )}
-                {contact.negotiation_style && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Estilo de negociacion
-                    </p>
-                    <p className="text-sm font-medium">
-                      {contact.negotiation_style}
-                    </p>
-                  </div>
-                )}
-                {contact.response_pattern && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Patron de respuesta
-                    </p>
-                    <p className="text-sm font-medium">
-                      {contact.response_pattern}
-                    </p>
-                  </div>
-                )}
-                {contact.influence_on_deals && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Influencia en tratos
-                    </p>
-                    <p className="text-sm font-medium">
-                      {contact.influence_on_deals}
-                    </p>
                   </div>
                 )}
                 {contact.avg_response_time_hours != null && (
@@ -447,34 +383,6 @@ export default function ContactDetailPage() {
                   </div>
                 )}
               </div>
-
-              {/* Personality notes (text block) */}
-              {contact.personality_notes && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-1">
-                    Notas de personalidad
-                  </p>
-                  <p className="text-sm leading-relaxed">
-                    {contact.personality_notes}
-                  </p>
-                </div>
-              )}
-
-              {/* Key interests as badges */}
-              {keyInterests.length > 0 && (
-                <div>
-                  <p className="text-xs text-muted-foreground mb-2">
-                    Intereses clave
-                  </p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {keyInterests.map((interest) => (
-                      <Badge key={interest} variant="outline">
-                        {interest}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
 
               {/* Flags */}
               <div className="flex flex-wrap gap-2">

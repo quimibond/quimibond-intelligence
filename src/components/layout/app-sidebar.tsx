@@ -18,6 +18,9 @@ import {
   Settings,
   MessagesSquare,
   Search,
+  Activity,
+  Swords,
+  BarChart3,
 } from "lucide-react";
 
 const navItems = [
@@ -29,6 +32,9 @@ const navItems = [
   { href: "/alerts", label: "Alertas", icon: Bell },
   { href: "/actions", label: "Acciones", icon: CheckSquare },
   { href: "/briefings", label: "Briefings", icon: FileText },
+  { href: "/timeline", label: "Timeline", icon: Activity },
+  { href: "/competitors", label: "Competidores", icon: Swords },
+  { href: "/analytics", label: "Analitica", icon: BarChart3 },
   { href: "/knowledge", label: "Knowledge", icon: Network },
   { href: "/chat", label: "Chat", icon: MessageSquare },
 ];

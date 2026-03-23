@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Eye, ShieldAlert } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Eye, ShieldAlert, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { timeAgo } from "@/lib/utils";
 import type { Alert } from "@/lib/types";
@@ -28,6 +28,7 @@ export default function AlertsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     async function fetchAlerts() {
@@ -59,6 +60,43 @@ export default function AlertsPage() {
     const resolvedCount = alerts.filter((a) => a.state === "resolved").length;
     return { newCount, acknowledgedCount, resolvedCount };
   }, [alerts]);
+
+  const toggleSelect = useCallback((id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSelectedIds((prev) =>
+      prev.size === filtered.length
+        ? new Set()
+        : new Set(filtered.map((a) => a.id))
+    );
+  }, [filtered]);
+
+  async function bulkUpdateState(state: "acknowledged" | "resolved") {
+    const ids = [...selectedIds];
+    if (ids.length === 0) return;
+    const updates: Record<string, unknown> = { state };
+    if (state === "resolved") {
+      updates.resolved_at = new Date().toISOString();
+    }
+    const { error } = await supabase.from("alerts").update(updates).in("id", ids);
+    if (!error) {
+      setAlerts((prev) =>
+        prev.map((a) =>
+          selectedIds.has(a.id)
+            ? { ...a, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) }
+            : a
+        )
+      );
+      setSelectedIds(new Set());
+    }
+  }
 
   async function updateState(id: number, state: "acknowledged" | "resolved") {
     const updates: Record<string, unknown> = { state };
@@ -153,6 +191,14 @@ export default function AlertsPage() {
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-[40px]">
+                <input
+                  type="checkbox"
+                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                  onChange={toggleSelectAll}
+                  className="h-4 w-4 rounded border-gray-300"
+                />
+              </TableHead>
               <TableHead className="w-[100px]">Severidad</TableHead>
               <TableHead>Titulo</TableHead>
               <TableHead>Contacto</TableHead>
@@ -171,6 +217,14 @@ export default function AlertsPage() {
                     setExpandedId(expandedId === alert.id ? null : alert.id)
                   }
                 >
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.has(alert.id)}
+                      onChange={() => toggleSelect(alert.id)}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                  </TableCell>
                   <TableCell>
                     <SeverityBadge severity={alert.severity} />
                   </TableCell>
@@ -197,7 +251,7 @@ export default function AlertsPage() {
                 </TableRow>
                 {expandedId === alert.id && (
                   <TableRow key={`${alert.id}-detail`}>
-                    <TableCell colSpan={6}>
+                    <TableCell colSpan={7}>
                       <div className="space-y-3 rounded-lg bg-muted/50 p-4">
                         {alert.description && (
                           <div>
@@ -245,6 +299,27 @@ export default function AlertsPage() {
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {/* Floating bulk action bar */}
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-background px-5 py-3 shadow-lg">
+          <span className="text-sm font-medium">
+            {selectedIds.size} seleccionada{selectedIds.size !== 1 ? "s" : ""}
+          </span>
+          <Button size="sm" variant="outline" onClick={() => bulkUpdateState("acknowledged")}>
+            <Eye className="mr-1 h-3.5 w-3.5" />
+            Reconocer
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => bulkUpdateState("resolved")}>
+            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
+            Resolver
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
+            <X className="mr-1 h-3.5 w-3.5" />
+            Deseleccionar
+          </Button>
+        </div>
       )}
     </div>
   );
