@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
 interface EnrichCompanyRequest {
-  entity_id: string;
+  company_id: string;
 }
 
 interface ClaudeCompanyProfile {
@@ -10,6 +10,7 @@ interface ClaudeCompanyProfile {
   business_type: string;
   industry: string;
   relationship_type: string;
+  relationship_summary: string;
   key_products: string[];
   risk_signals: string[];
   opportunity_signals: string[];
@@ -21,159 +22,115 @@ export async function POST(request: NextRequest) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        {
-          error:
-            "Se requiere ANTHROPIC_API_KEY para el enriquecimiento de empresas. Configúrala en las variables de entorno.",
-        },
+        { error: "Se requiere ANTHROPIC_API_KEY. Configurala en Vercel → Settings → Environment Variables." },
         { status: 503 }
       );
     }
 
     const body: EnrichCompanyRequest = await request.json();
-    const { entity_id } = body;
+    const companyId = body.company_id;
 
-    if (!entity_id) {
-      return NextResponse.json(
-        { error: "El campo 'entity_id' es requerido." },
-        { status: 400 }
-      );
+    if (!companyId) {
+      return NextResponse.json({ error: "company_id es requerido." }, { status: 400 });
     }
 
     const supabase = getServiceClient();
 
-    // Fetch entity
-    const { data: entity, error: entityError } = await supabase
-      .from("entities")
+    // Fetch company from companies table
+    const { data: company, error: companyError } = await supabase
+      .from("companies")
       .select("*")
-      .eq("id", entity_id)
+      .eq("id", companyId)
       .single();
 
-    if (entityError || !entity) {
-      return NextResponse.json(
-        { error: "Entidad no encontrada." },
-        { status: 404 }
-      );
+    if (companyError || !company) {
+      return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
-    // Fetch contacts belonging to this company
+    // Fetch contacts via company_id FK
     const { data: contacts } = await supabase
       .from("contacts")
-      .select("id, name, email, contact_type, risk_level, sentiment_score")
-      .ilike("company", `%${entity.name}%`)
+      .select("id, name, email, contact_type, risk_level, sentiment_score, role, entity_id")
+      .eq("company_id", company.id)
       .limit(20);
 
-    // Fetch recent emails from those contacts
-    const contactEmails = (contacts ?? [])
-      .map((c) => c.email)
-      .filter(Boolean) as string[];
+    // Fetch recent emails via company_id FK
+    const { data: emails } = await supabase
+      .from("emails")
+      .select("subject, snippet, sender, recipient, email_date")
+      .eq("company_id", company.id)
+      .order("email_date", { ascending: false })
+      .limit(30);
 
-    let emails: Array<{
-      subject: string | null;
-      snippet: string | null;
-      sender: string | null;
-      recipient: string | null;
-      email_date: string | null;
-    }> = [];
-
-    if (contactEmails.length > 0) {
-      const orFilter = contactEmails
-        .map((e) => `sender.ilike.%${e}%,recipient.ilike.%${e}%`)
-        .join(",");
-      const { data: emailData } = await supabase
-        .from("emails")
-        .select("subject, snippet, sender, recipient, email_date")
-        .or(orFilter)
-        .order("email_date", { ascending: false })
-        .limit(30);
-      emails = emailData ?? [];
-    }
-
-    // Fetch facts related to entity
+    // Fetch facts via company_id FK
     const { data: facts } = await supabase
       .from("facts")
       .select("fact_text, fact_type, confidence")
-      .in(
-        "contact_id",
-        (contacts ?? []).map((c) => c.id)
-      )
+      .eq("company_id", company.id)
       .order("confidence", { ascending: false })
       .limit(30);
 
     // Build context
-    const contextParts: string[] = [
-      `Company: ${entity.name}`,
-      `Entity type: ${entity.entity_type}`,
-      `Canonical name: ${entity.canonical_name ?? entity.name}`,
-      `Existing attributes: ${JSON.stringify(entity.attributes ?? {})}`,
-      `Last seen: ${entity.last_seen ?? "Unknown"}`,
+    const parts: string[] = [
+      `Company: ${company.name}`,
+      `Industry: ${company.industry ?? "Unknown"}`,
+      `Is customer: ${company.is_customer}`,
+      `Is supplier: ${company.is_supplier}`,
+      `Lifetime value: ${company.lifetime_value ?? "Unknown"}`,
+      `Country: ${company.country ?? "Unknown"}`,
+      `City: ${company.city ?? "Unknown"}`,
     ];
 
+    if (company.odoo_context) {
+      parts.push(`Odoo context: ${JSON.stringify(company.odoo_context)}`);
+    }
+
     if (contacts && contacts.length > 0) {
-      contextParts.push(`\n--- Known Contacts (${contacts.length}) ---`);
+      parts.push(`\n--- Contacts (${contacts.length}) ---`);
       for (const c of contacts) {
-        contextParts.push(
-          `${c.name ?? "?"} <${c.email ?? "?"}> - Type: ${c.contact_type ?? "?"}, Risk: ${c.risk_level ?? "?"}, Sentiment: ${c.sentiment_score ?? "N/A"}`
-        );
+        parts.push(`${c.name ?? "?"} <${c.email ?? "?"}> - Role: ${c.role ?? "?"}, Risk: ${c.risk_level ?? "?"}, Sentiment: ${c.sentiment_score ?? "N/A"}`);
       }
     }
 
-    if (emails.length > 0) {
-      contextParts.push(`\n--- Recent Emails (${emails.length}) ---`);
-      for (const email of emails) {
-        contextParts.push(
-          `Date: ${email.email_date ?? "?"} | From: ${email.sender ?? "?"} | To: ${email.recipient ?? "?"}\nSubject: ${email.subject ?? "(no subject)"}\n${email.snippet ?? "(no snippet)"}\n`
-        );
+    if (emails && emails.length > 0) {
+      parts.push(`\n--- Recent Emails (${emails.length}) ---`);
+      for (const e of emails) {
+        parts.push(`${e.email_date ?? "?"} | ${e.sender ?? "?"} → ${e.recipient ?? "?"}\n  ${e.subject ?? "(no subject)"}\n  ${e.snippet ?? ""}`);
       }
     }
 
     if (facts && facts.length > 0) {
-      contextParts.push("\n--- Known Facts ---");
-      for (const fact of facts) {
-        contextParts.push(
-          `[${fact.fact_type ?? "general"}] ${fact.fact_text} (confidence: ${fact.confidence})`
-        );
+      parts.push("\n--- Known Facts ---");
+      for (const f of facts) {
+        parts.push(`[${f.fact_type ?? "general"}] ${f.fact_text} (confidence: ${f.confidence})`);
       }
     }
 
-    const contextString = contextParts.join("\n");
-
-    // Call Claude API
-    const claudeResponse = await fetch(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1024,
-          system:
-            "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed company profile. Respond ONLY with valid JSON, no markdown or extra text.",
-          messages: [
-            {
-              role: "user",
-              content: `Analyze the following company data and generate a company profile.\n\n${contextString}\n\nReturn a JSON object with these fields:\n- description (string): brief company description\n- business_type (string): e.g., "Proveedor", "Cliente", "Distribuidor"\n- industry (string): their industry\n- relationship_type (string): their relationship to Quimibond\n- key_products (string[]): products/services they deal with\n- risk_signals (string[]): any risk indicators observed\n- opportunity_signals (string[]): any opportunity indicators\n- strategic_notes (string): strategic observations and recommendations`,
-            },
-          ],
-        }),
-      }
-    );
+    // Call Claude
+    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 1024,
+        system: "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed company profile. Respond ONLY with valid JSON.",
+        messages: [{
+          role: "user",
+          content: `Analyze the following company data and generate a profile.\n\n${parts.join("\n")}\n\nReturn JSON with: description, business_type, industry, relationship_type, relationship_summary, key_products (array), risk_signals (array), opportunity_signals (array), strategic_notes`,
+        }],
+      }),
+    });
 
     if (!claudeResponse.ok) {
-      const errorBody = await claudeResponse.text();
-      console.error("Claude API error:", claudeResponse.status, errorBody);
-      return NextResponse.json(
-        { error: "Error al llamar a Claude API." },
-        { status: 502 }
-      );
+      return NextResponse.json({ error: "Error al llamar a Claude API." }, { status: 502 });
     }
 
     const claudeData = await claudeResponse.json();
-    const rawText =
-      claudeData.content?.[0]?.text ?? claudeData.content?.[0]?.value ?? "";
+    const rawText = claudeData.content?.[0]?.text ?? "";
 
     let profile: ClaudeCompanyProfile;
     try {
@@ -183,40 +140,36 @@ export async function POST(request: NextRequest) {
       if (jsonMatch) {
         profile = JSON.parse(jsonMatch[1].trim());
       } else {
-        console.error("Failed to parse Claude response:", rawText);
-        return NextResponse.json(
-          { error: "No se pudo interpretar la respuesta de Claude." },
-          { status: 502 }
-        );
+        return NextResponse.json({ error: "No se pudo interpretar la respuesta de Claude." }, { status: 502 });
       }
     }
 
-    // Update entity attributes with enrichment data
-    const enrichedAttributes = {
-      ...(entity.attributes ?? {}),
-      ...profile,
-      enriched_at: new Date().toISOString(),
-    };
-
+    // Update COMPANIES table (not entities)
     const { error: updateError } = await supabase
-      .from("entities")
-      .update({ attributes: enrichedAttributes })
-      .eq("id", entity_id);
+      .from("companies")
+      .update({
+        description: profile.description,
+        business_type: profile.business_type,
+        industry: profile.industry,
+        relationship_type: profile.relationship_type,
+        relationship_summary: profile.relationship_summary,
+        key_products: profile.key_products,
+        risk_signals: profile.risk_signals,
+        opportunity_signals: profile.opportunity_signals,
+        strategic_notes: profile.strategic_notes,
+        enriched_at: new Date().toISOString(),
+        enrichment_source: "claude",
+      })
+      .eq("id", companyId);
 
     if (updateError) {
       console.error("Supabase update error:", updateError);
-      return NextResponse.json(
-        { error: "Error al guardar el perfil de empresa." },
-        { status: 500 }
-      );
+      return NextResponse.json({ error: "Error al guardar el perfil." }, { status: 500 });
     }
 
     return NextResponse.json({ success: true, profile });
   } catch (err) {
     console.error("Enrich company error:", err);
-    return NextResponse.json(
-      { error: "Error interno al enriquecer empresa." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error interno." }, { status: 500 });
   }
 }

@@ -113,7 +113,7 @@ export default function KnowledgePage() {
       }
 
       // Collect unique entity ids
-      const ids = new Set<string>();
+      const ids = new Set<number>();
       for (const r of rels as EntityRelationship[]) {
         ids.add(r.entity_a_id);
         ids.add(r.entity_b_id);
@@ -124,16 +124,16 @@ export default function KnowledgePage() {
         .select("id, name")
         .in("id", Array.from(ids));
 
-      const nameMap = new Map<string, string>();
-      for (const e of entityData ?? []) {
+      const nameMap = new Map<number, string>();
+      for (const e of (entityData ?? []) as { id: number; name: string }[]) {
         nameMap.set(e.id, e.name);
       }
 
       const resolved: RelationshipRow[] = (rels as EntityRelationship[]).map(
         (r) => ({
           ...r,
-          entity_a_name: nameMap.get(r.entity_a_id) ?? r.entity_a_id,
-          entity_b_name: nameMap.get(r.entity_b_id) ?? r.entity_b_id,
+          entity_a_name: nameMap.get(r.entity_a_id) ?? String(r.entity_a_id),
+          entity_b_name: nameMap.get(r.entity_b_id) ?? String(r.entity_b_id),
         })
       );
 
@@ -163,7 +163,7 @@ export default function KnowledgePage() {
       const { data } = await supabase
         .from("topics")
         .select("*")
-        .order("name", { ascending: true });
+        .order("topic", { ascending: true });
       setTopics((data ?? []) as Topic[]);
       setTopicsLoading(false);
     }
@@ -330,7 +330,8 @@ export default function KnowledgePage() {
                       <TableHead>Entidad A</TableHead>
                       <TableHead>Tipo relacion</TableHead>
                       <TableHead>Entidad B</TableHead>
-                      <TableHead className="w-40">Confianza</TableHead>
+                      <TableHead className="w-40">Fuerza</TableHead>
+                      <TableHead>Interacciones</TableHead>
                       <TableHead>Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -351,13 +352,16 @@ export default function KnowledgePage() {
                         <TableCell>
                           <div className="flex items-center gap-2">
                             <Progress
-                              value={rel.confidence * 100}
+                              value={(rel.strength ?? 0) * 100}
                               className="h-2 flex-1"
                             />
                             <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
-                              {(rel.confidence * 100).toFixed(0)}%
+                              {((rel.strength ?? 0) * 100).toFixed(0)}%
                             </span>
                           </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-center">
+                          {rel.interaction_count ?? 0}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDate(rel.created_at)}
@@ -389,8 +393,9 @@ export default function KnowledgePage() {
                     <TableRow>
                       <TableHead className="min-w-[300px]">Hecho</TableHead>
                       <TableHead>Tipo</TableHead>
-                      <TableHead>Fuente</TableHead>
+                      <TableHead>Entity ID</TableHead>
                       <TableHead className="w-32">Confianza</TableHead>
+                      <TableHead>Verificado</TableHead>
                       <TableHead>Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -406,7 +411,7 @@ export default function KnowledgePage() {
                           </Badge>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {fact.source_type}
+                          {fact.entity_id ?? "—"}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
@@ -419,8 +424,13 @@ export default function KnowledgePage() {
                             </span>
                           </div>
                         </TableCell>
+                        <TableCell>
+                          <Badge variant={fact.verified ? "success" : "outline"}>
+                            {fact.verified ? "Si" : "No"}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-muted-foreground">
-                          {formatDate(fact.created_at)}
+                          {fact.fact_date ? formatDate(fact.fact_date) : "—"}
                         </TableCell>
                       </TableRow>
                     ))}
@@ -447,15 +457,37 @@ export default function KnowledgePage() {
                 description="No se han identificado temas aun."
               />
             ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-                {topics.map((topic) => (
-                  <Card key={topic.id} className="hover:bg-muted/50 transition-colors">
-                    <CardContent className="flex flex-col items-start gap-1 p-4">
-                      <span className="font-medium text-sm">{topic.name}</span>
-                      {topic.category && (
-                        <Badge variant="secondary" className="text-xs">
-                          {topic.category}
-                        </Badge>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {topics.map((t) => (
+                  <Card key={t.id} className="hover:bg-muted/50 transition-colors">
+                    <CardContent className="flex flex-col items-start gap-2 p-4">
+                      <span className="font-medium text-sm">{t.topic}</span>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {t.category && (
+                          <Badge variant="secondary" className="text-xs">
+                            {t.category}
+                          </Badge>
+                        )}
+                        {t.status && (
+                          <Badge variant="info" className="text-xs">
+                            {t.status}
+                          </Badge>
+                        )}
+                        {t.priority && (
+                          <Badge variant="warning" className="text-xs">
+                            {t.priority}
+                          </Badge>
+                        )}
+                      </div>
+                      {t.summary && (
+                        <p className="text-xs text-muted-foreground line-clamp-2">
+                          {t.summary}
+                        </p>
+                      )}
+                      {t.times_seen != null && (
+                        <span className="text-xs text-muted-foreground">
+                          Visto {t.times_seen} {t.times_seen === 1 ? "vez" : "veces"}
+                        </span>
                       )}
                     </CardContent>
                   </Card>

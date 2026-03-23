@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, BookOpen, Calendar, Cpu } from "lucide-react";
+import { ArrowLeft, BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, timeAgo } from "@/lib/utils";
-import type { Briefing } from "@/lib/types";
+import type { DailySummary } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,23 +19,23 @@ import { Separator } from "@/components/ui/separator";
 export default function BriefingDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [briefing, setBriefing] = useState<Briefing | null>(null);
+  const [summary, setSummary] = useState<DailySummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchBriefing() {
+    async function fetchSummary() {
       const { data, error } = await supabase
-        .from("briefings")
+        .from("daily_summaries")
         .select("*")
         .eq("id", params.id)
         .single();
 
       if (!error && data) {
-        setBriefing(data as Briefing);
+        setSummary(data as DailySummary);
       }
       setLoading(false);
     }
-    fetchBriefing();
+    fetchSummary();
   }, [params.id]);
 
   if (loading) {
@@ -47,7 +47,7 @@ export default function BriefingDetailPage() {
     );
   }
 
-  if (!briefing) {
+  if (!summary) {
     return (
       <div className="space-y-6">
         <Button variant="ghost" onClick={() => router.push("/briefings")}>
@@ -58,7 +58,7 @@ export default function BriefingDetailPage() {
           <BookOpen className="mb-4 h-8 w-8 text-muted-foreground" />
           <h3 className="text-lg font-semibold">Briefing no encontrado</h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            El briefing solicitado no existe o fue eliminado.
+            El resumen diario solicitado no existe o fue eliminado.
           </p>
         </div>
       </div>
@@ -75,41 +75,51 @@ export default function BriefingDetailPage() {
       <Card>
         <CardHeader className="space-y-4">
           <div className="flex flex-wrap items-center gap-3">
-            <Badge variant="info">{briefing.briefing_type}</Badge>
-            {(briefing.period_start || briefing.period_end) && (
-              <div className="flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Calendar className="h-4 w-4" />
-                {formatDate(briefing.period_start)} &mdash;{" "}
-                {formatDate(briefing.period_end)}
-              </div>
-            )}
+            <div className="flex items-center gap-1.5 text-sm">
+              <Calendar className="h-4 w-4 text-muted-foreground" />
+              {summary.summary_date
+                ? formatDate(summary.summary_date)
+                : "Sin fecha"}
+            </div>
+            <Badge variant="info">Resumen Diario</Badge>
           </div>
           <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
-            {briefing.model_used && (
-              <span className="flex items-center gap-1">
-                <Cpu className="h-3.5 w-3.5" />
-                {briefing.model_used}
-              </span>
+            <span className="flex items-center gap-1">
+              <Mail className="h-3.5 w-3.5" />
+              {summary.total_emails} emails procesados
+            </span>
+            {summary.accounts_read != null && (
+              <span>{summary.accounts_read} cuentas leidas</span>
             )}
-            <span>{timeAgo(briefing.created_at)}</span>
+            {summary.accounts_failed != null &&
+              summary.accounts_failed > 0 && (
+                <span className="flex items-center gap-1 text-amber-500">
+                  <AlertTriangle className="h-3.5 w-3.5" />
+                  {summary.accounts_failed} cuentas fallidas
+                </span>
+              )}
+            {summary.topics_identified != null && (
+              <span>{summary.topics_identified} temas identificados</span>
+            )}
+            <span>{timeAgo(summary.created_at)}</span>
           </div>
         </CardHeader>
 
         <Separator />
 
         <CardContent className="pt-6">
-          {briefing.html_content ? (
+          {summary.summary_html ? (
             <div
               className="prose prose-sm dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: briefing.html_content }}
+              dangerouslySetInnerHTML={{ __html: summary.summary_html }}
             />
-          ) : briefing.summary ? (
+          ) : summary.summary_text ? (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">
-              {briefing.summary}
+              {summary.summary_text}
             </p>
           ) : (
             <p className="text-sm text-muted-foreground">
-              Este briefing no tiene contenido.
+              Este resumen no tiene contenido.
             </p>
           )}
         </CardContent>

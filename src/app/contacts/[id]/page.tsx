@@ -9,7 +9,6 @@ import {
   CheckSquare,
   HeartPulse,
   Mail,
-  MessageSquare,
   User,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -24,12 +23,10 @@ import {
 } from "@/lib/utils";
 import type {
   Contact,
-  PersonProfile,
   Fact,
   Email,
   Alert,
   ActionItem,
-  CommunicationPattern,
 } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { RiskBadge } from "@/components/shared/risk-badge";
@@ -92,89 +89,107 @@ export default function ContactDetailPage() {
 
   const [loading, setLoading] = useState(true);
   const [contact, setContact] = useState<Contact | null>(null);
-  const [profile, setProfile] = useState<PersonProfile | null>(null);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [emails, setEmails] = useState<Email[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
-  const [patterns, setPatterns] = useState<CommunicationPattern[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [healthScores, setHealthScores] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchAll() {
-      const [
-        contactRes,
-        profileRes,
-        factsRes,
-        alertsRes,
-        actionsRes,
-        patternsRes,
-      ] = await Promise.all([
-        supabase.from("contacts").select("*").eq("id", contactId).single(),
-        supabase
-          .from("person_profiles")
-          .select("*")
-          .eq("contact_id", contactId)
-          .limit(1),
-        supabase
-          .from("facts")
-          .select("*")
-          .eq("contact_id", contactId)
-          .order("created_at", { ascending: false }),
+      // First fetch contact to get entity_id
+      const contactRes = await supabase
+        .from("contacts")
+        .select("*")
+        .eq("id", contactId)
+        .single();
+
+      const c = contactRes.data as Contact | null;
+      setContact(c);
+
+      if (!c) {
+        setLoading(false);
+        return;
+      }
+
+      // Now fetch related data in parallel
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const promises: PromiseLike<any>[] = [];
+
+      // Facts: use entity_id (NOT contact_id)
+      if (c.entity_id) {
+        promises.push(
+          supabase
+            .from("facts")
+            .select("*")
+            .eq("entity_id", c.entity_id)
+            .order("created_at", { ascending: false })
+            .then(({ data }) => {
+              setFacts((data as Fact[] | null) ?? []);
+            })
+        );
+      }
+
+      // Alerts by contact_id
+      promises.push(
         supabase
           .from("alerts")
           .select("*")
           .eq("contact_id", contactId)
-          .order("created_at", { ascending: false }),
+          .order("created_at", { ascending: false })
+          .then(({ data }) => {
+            setAlerts((data as Alert[] | null) ?? []);
+          })
+      );
+
+      // Actions by contact_id
+      promises.push(
         supabase
           .from("action_items")
           .select("*")
           .eq("contact_id", contactId)
-          .order("created_at", { ascending: false }),
-        supabase
-          .from("communication_patterns")
-          .select("*")
-          .eq("contact_id", contactId)
-          .order("created_at", { ascending: false }),
-      ]);
-
-      const c = contactRes.data as Contact | null;
-      setContact(c);
-      setProfile(
-        ((profileRes.data as PersonProfile[] | null) ?? [])[0] ?? null
+          .order("created_at", { ascending: false })
+          .then(({ data }) => {
+            setActions((data as ActionItem[] | null) ?? []);
+          })
       );
-      setFacts((factsRes.data as Fact[] | null) ?? []);
-      setAlerts((alertsRes.data as Alert[] | null) ?? []);
-      setActions((actionsRes.data as ActionItem[] | null) ?? []);
-      setPatterns((patternsRes.data as CommunicationPattern[] | null) ?? []);
 
-      // Fetch health scores (table may not exist yet)
-      try {
-        const { data: healthData } = await supabase
-          .from("customer_health_scores")
-          .select("*")
-          .eq("contact_id", contactId)
-          .order("score_date", { ascending: false })
-          .limit(30);
-        setHealthScores(healthData ?? []);
-      } catch {
-        // Table may not exist — ignore
-        setHealthScores([]);
-      }
+      // Health scores: use overall_score (NOT total_score)
+      promises.push(
+        Promise.resolve(
+          supabase
+            .from("customer_health_scores")
+            .select("*")
+            .eq("contact_id", contactId)
+            .order("score_date", { ascending: false })
+            .limit(30)
+        ).then(({ data }) => {
+          setHealthScores(data ?? []);
+        }).catch(() => {
+          setHealthScores([]);
+        })
+      );
 
-      // Emails need ilike on sender/recipient
-      if (c?.email) {
+      // Emails: prefer contact_id if available, else ILIKE on sender/recipient
+      if (c.email) {
         const emailPattern = `%${c.email}%`;
-        const { data: emailData } = await supabase
-          .from("emails")
-          .select("*")
-          .or(`sender.ilike.${emailPattern},recipient.ilike.${emailPattern}`)
-          .order("email_date", { ascending: false })
-          .limit(20);
-        setEmails((emailData as Email[] | null) ?? []);
+        promises.push(
+          supabase
+            .from("emails")
+            .select("*")
+            .or(
+              `contact_id.eq.${contactId},sender.ilike.${emailPattern},recipient.ilike.${emailPattern}`
+            )
+            .order("email_date", { ascending: false })
+            .limit(20)
+            .then(({ data }) => {
+              setEmails((data as Email[] | null) ?? []);
+            })
+        );
       }
 
+      await Promise.all(promises);
       setLoading(false);
     }
     fetchAll();
@@ -222,7 +237,10 @@ export default function ContactDetailPage() {
     );
   }
 
-  const role = profile?.role ?? contact.contact_type;
+  const totalEmails = (contact.total_sent ?? 0) + (contact.total_received ?? 0);
+  const keyInterests: string[] = Array.isArray(contact.key_interests)
+    ? (contact.key_interests as string[])
+    : [];
 
   return (
     <div className="space-y-6">
@@ -255,10 +273,10 @@ export default function ContactDetailPage() {
                 <span>{contact.company}</span>
               </>
             )}
-            {role && (
+            {contact.role && (
               <>
                 <span>·</span>
-                <span>{role}</span>
+                <span>{contact.role}</span>
               </>
             )}
           </div>
@@ -310,7 +328,10 @@ export default function ContactDetailPage() {
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Total emails</p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
-              {contact.total_emails}
+              {totalEmails}
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {contact.total_sent ?? 0} env / {contact.total_received ?? 0} rec
             </p>
           </CardContent>
         </Card>
@@ -321,110 +342,161 @@ export default function ContactDetailPage() {
         <TabsList>
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="salud">Salud</TabsTrigger>
-          <TabsTrigger value="comunicacion">Comunicacion</TabsTrigger>
+          <TabsTrigger value="emails">Emails</TabsTrigger>
           <TabsTrigger value="inteligencia">Inteligencia</TabsTrigger>
           <TabsTrigger value="alertas">Alertas</TabsTrigger>
           <TabsTrigger value="acciones">Acciones</TabsTrigger>
         </TabsList>
 
-        {/* ── Perfil ── */}
+        {/* ── Perfil (from contact record, NOT person_profiles) ── */}
         <TabsContent value="perfil">
-          {profile ? (
-            <Card>
-              <CardContent className="space-y-5 pt-6">
-                {profile.summary && (
+          <Card>
+            <CardContent className="space-y-5 pt-6">
+              {/* Grid of profile fields */}
+              <div className="grid gap-4 sm:grid-cols-3">
+                {contact.role && (
                   <div>
-                    <p className="text-sm font-medium text-muted-foreground mb-1">
-                      Resumen
-                    </p>
-                    <p className="text-sm leading-relaxed">{profile.summary}</p>
+                    <p className="text-xs text-muted-foreground">Rol</p>
+                    <p className="text-sm font-medium">{contact.role}</p>
                   </div>
                 )}
+                {contact.department && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Departamento
+                    </p>
+                    <p className="text-sm font-medium">{contact.department}</p>
+                  </div>
+                )}
+                {contact.decision_power && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Poder de decision
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.decision_power}
+                    </p>
+                  </div>
+                )}
+                {contact.communication_style && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Estilo de comunicacion
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.communication_style}
+                    </p>
+                  </div>
+                )}
+                {contact.language_preference && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Idioma</p>
+                    <p className="text-sm font-medium">
+                      {contact.language_preference}
+                    </p>
+                  </div>
+                )}
+                {contact.negotiation_style && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Estilo de negociacion
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.negotiation_style}
+                    </p>
+                  </div>
+                )}
+                {contact.response_pattern && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Patron de respuesta
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.response_pattern}
+                    </p>
+                  </div>
+                )}
+                {contact.influence_on_deals && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Influencia en tratos
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.influence_on_deals}
+                    </p>
+                  </div>
+                )}
+                {contact.avg_response_time_hours != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Tiempo respuesta promedio
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.avg_response_time_hours.toFixed(1)}h
+                    </p>
+                  </div>
+                )}
+                {contact.last_activity && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Ultima actividad
+                    </p>
+                    <p className="text-sm font-medium">
+                      {timeAgo(contact.last_activity)}
+                    </p>
+                  </div>
+                )}
+                {contact.days_since_last_contact != null && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">
+                      Dias sin contacto
+                    </p>
+                    <p className="text-sm font-medium">
+                      {contact.days_since_last_contact}
+                    </p>
+                  </div>
+                )}
+              </div>
 
-                <div className="grid gap-4 sm:grid-cols-3">
-                  {profile.department && (
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        Departamento
-                      </p>
-                      <p className="text-sm font-medium">{profile.department}</p>
-                    </div>
-                  )}
-                  {profile.decision_power && (
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        Poder de decision
-                      </p>
-                      <p className="text-sm font-medium">
-                        {profile.decision_power}
-                      </p>
-                    </div>
-                  )}
-                  {profile.communication_style && (
-                    <div>
-                      <p className="text-xs text-muted-foreground">
-                        Estilo de comunicacion
-                      </p>
-                      <p className="text-sm font-medium">
-                        {profile.communication_style}
-                      </p>
-                    </div>
-                  )}
+              {/* Personality notes (text block) */}
+              {contact.personality_notes && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-1">
+                    Notas de personalidad
+                  </p>
+                  <p className="text-sm leading-relaxed">
+                    {contact.personality_notes}
+                  </p>
                 </div>
+              )}
 
-                {profile.personality_traits.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Rasgos de personalidad
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {profile.personality_traits.map((t) => (
-                        <Badge key={t} variant="secondary">
-                          {t}
-                        </Badge>
-                      ))}
-                    </div>
+              {/* Key interests as badges */}
+              {keyInterests.length > 0 && (
+                <div>
+                  <p className="text-xs text-muted-foreground mb-2">
+                    Intereses clave
+                  </p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {keyInterests.map((interest) => (
+                      <Badge key={interest} variant="outline">
+                        {interest}
+                      </Badge>
+                    ))}
                   </div>
-                )}
+                </div>
+              )}
 
-                {profile.interests.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Intereses
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {profile.interests.map((i) => (
-                        <Badge key={i} variant="outline">
-                          {i}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
+              {/* Flags */}
+              <div className="flex flex-wrap gap-2">
+                {contact.is_customer && (
+                  <Badge variant="success">Cliente</Badge>
                 )}
-
-                {profile.decision_factors.length > 0 && (
-                  <div>
-                    <p className="text-xs text-muted-foreground mb-2">
-                      Factores de decision
-                    </p>
-                    <div className="flex flex-wrap gap-1.5">
-                      {profile.decision_factors.map((f) => (
-                        <Badge key={f} variant="info">
-                          {f}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
+                {contact.is_supplier && (
+                  <Badge variant="info">Proveedor</Badge>
                 )}
-              </CardContent>
-            </Card>
-          ) : (
-            <EmptyState
-              icon={User}
-              title="Sin perfil"
-              description="Aun no se ha generado un perfil para este contacto."
-            />
-          )}
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* ── Salud ── */}
@@ -436,7 +508,7 @@ export default function ContactDetailPage() {
                 .reverse()
                 .map((s: Record<string, unknown>) => ({
                   date: s.score_date as string,
-                  total: s.total_score as number,
+                  overall_score: s.overall_score as number,
                   communication: s.communication_score as number | undefined,
                   financial: s.financial_score as number | undefined,
                   sentiment: s.sentiment_score as number | undefined,
@@ -455,7 +527,7 @@ export default function ContactDetailPage() {
                   {/* Score + Trend */}
                   <div className="flex items-center gap-4">
                     <div className="text-5xl font-bold tabular-nums">
-                      {Math.round(latest.total_score ?? 0)}
+                      {Math.round(latest.overall_score ?? 0)}
                     </div>
                     <div className="space-y-1">
                       <p className="text-sm text-muted-foreground">
@@ -545,8 +617,8 @@ export default function ContactDetailPage() {
           )}
         </TabsContent>
 
-        {/* ── Comunicacion ── */}
-        <TabsContent value="comunicacion" className="space-y-6">
+        {/* ── Emails ── */}
+        <TabsContent value="emails" className="space-y-6">
           {emails.length > 0 ? (
             <div className="rounded-md border">
               <Table>
@@ -594,38 +666,6 @@ export default function ContactDetailPage() {
               title="Sin emails"
               description="No se encontraron correos asociados a este contacto."
             />
-          )}
-
-          {patterns.length > 0 && (
-            <div>
-              <h3 className="mb-3 text-sm font-semibold">
-                Patrones de comunicacion
-              </h3>
-              <div className="space-y-3">
-                {patterns.map((p) => (
-                  <Card key={p.id}>
-                    <CardContent className="flex items-start justify-between gap-4 pt-4">
-                      <div className="min-w-0 flex-1">
-                        {p.pattern_type && (
-                          <Badge variant="outline" className="mb-1">
-                            {p.pattern_type}
-                          </Badge>
-                        )}
-                        <p className="text-sm">{p.description ?? "—"}</p>
-                        {p.frequency && (
-                          <p className="mt-1 text-xs text-muted-foreground">
-                            Frecuencia: {p.frequency}
-                          </p>
-                        )}
-                      </div>
-                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {(p.confidence * 100).toFixed(0)}% confianza
-                      </span>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </div>
           )}
         </TabsContent>
 

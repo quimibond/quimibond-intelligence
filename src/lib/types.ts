@@ -1,27 +1,90 @@
-// ── Database types matching Supabase schema ──
+// ── Database types matching REAL Supabase schema (March 2026) ──
+// All IDs are bigint in Postgres but come as number via Supabase JS client
 
 export interface Contact {
-  id: string;
+  id: number;
   email: string | null;
   name: string | null;
   company: string | null;
   contact_type: string | null;
-  risk_level: "low" | "medium" | "high";
-  sentiment_score: number | null;
+  department: string | null;
+  total_sent: number;
+  total_received: number;
+  avg_response_time_hours: number | null;
+  last_activity: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
+  risk_level: string | null;
   relationship_score: number | null;
-  last_interaction: string | null;
-  total_emails: number;
-  tags: string[];
-  phone: string | null;
-  city: string | null;
+  sentiment_score: number | null;
+  tags: unknown;
+  // Profile data (written by backend directly to contacts)
+  role: string | null;
+  decision_power: string | null;
+  communication_style: string | null;
+  language_preference: string | null;
+  key_interests: unknown;
+  personality_notes: string | null;
+  negotiation_style: string | null;
+  response_pattern: string | null;
+  influence_on_deals: string | null;
+  interaction_count: number | null;
+  // Health & business
+  current_health_score: number | null;
+  health_trend: string | null;
+  lifetime_value: number | null;
+  open_alerts_count: number | null;
+  pending_actions_count: number | null;
+  last_email_date: string | null;
+  days_since_last_contact: number | null;
+  // Odoo refs
+  odoo_partner_id: number | null;
+  is_customer: boolean | null;
+  is_supplier: boolean | null;
+  company_id: number | null;
+  entity_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Company {
+  id: number;
+  name: string;
+  canonical_name: string | null;
+  domain: string | null;
+  odoo_partner_id: number | null;
+  entity_id: number | null;
+  is_customer: boolean;
+  is_supplier: boolean;
+  industry: string | null;
+  lifetime_value: number | null;
+  total_credit_notes: number | null;
+  delivery_otd_rate: number | null;
+  credit_limit: number | null;
+  total_pending: number | null;
+  monthly_avg: number | null;
+  trend_pct: number | null;
+  odoo_context: Record<string, unknown> | null;
+  description: string | null;
+  business_type: string | null;
+  key_products: unknown;
+  relationship_summary: string | null;
+  relationship_type: string | null;
   country: string | null;
+  city: string | null;
+  website: string | null;
+  risk_signals: unknown;
+  opportunity_signals: unknown;
+  strategic_notes: string | null;
+  enriched_at: string | null;
+  enrichment_source: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface PersonProfile {
-  id: string;
-  contact_id: string | null;
+  id: number;
+  contact_id: number | null;
   canonical_key: string | null;
   name: string | null;
   email: string | null;
@@ -39,17 +102,27 @@ export interface PersonProfile {
 }
 
 export interface Thread {
-  id: string;
+  id: number;
   gmail_thread_id: string | null;
   subject: string | null;
+  subject_normalized: string | null;
+  started_by: string | null;
+  started_by_type: string | null;
+  started_at: string | null;
+  last_activity: string | null;
   status: string | null;
   message_count: number;
   participant_emails: string[];
-  hours_without_response: number | null;
+  has_internal_reply: boolean;
+  has_external_reply: boolean;
   last_sender: string | null;
   last_sender_type: string | null;
+  hours_without_response: number | null;
   account: string | null;
+  response_times: unknown;
+  company_id: number | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Email {
@@ -63,126 +136,156 @@ export interface Email {
   email_date: string | null;
   gmail_message_id: string | null;
   gmail_thread_id: string | null;
+  is_reply: boolean;
   sender_type: string | null;
   has_attachments: boolean;
+  importance: string | null;
   kg_processed: boolean;
+  contact_id: number | null;
+  company_id: number | null;
   created_at: string;
 }
 
 export interface Alert {
-  id: string;
+  id: number;
   alert_type: string;
-  severity: "low" | "medium" | "high" | "critical";
+  severity: string;
   title: string;
   description: string | null;
   contact_name: string | null;
-  contact_id: string | null;
+  contact_id: number | null;
+  company_id: number | null;
   account: string | null;
-  state: "new" | "acknowledged" | "resolved";
+  related_thread_id: string | null;
+  state: string;
   is_read: boolean;
+  is_resolved: boolean;
   business_impact: string | null;
   suggested_action: string | null;
-  user_feedback?: string | null;
-  feedback_note?: string | null;
+  user_feedback: string | null;
+  feedback_note: string | null;
+  odoo_id: number | null;
   created_at: string;
+  updated_at: string;
   resolved_at: string | null;
 }
 
 export interface ActionItem {
-  id: string;
+  id: number;
   action_type: string;
   description: string;
   contact_name: string | null;
-  contact_id: string | null;
-  priority: "low" | "medium" | "high";
+  contact_id: number | null;
+  company_id: number | null;
+  priority: string;
   due_date: string | null;
-  state: "pending" | "completed" | "dismissed";
+  state: string;
   status: string | null;
+  assignee_name: string | null;
   assignee_email: string | null;
-  reason: string | null;
   contact_company: string | null;
   source_thread_id: string | null;
   completed_date: string | null;
-  user_feedback?: string | null;
-  feedback_note?: string | null;
+  completed_at: string | null;
+  odoo_id: number | null;
+  user_feedback: string | null;
+  feedback_note: string | null;
   created_at: string;
+  updated_at: string;
 }
 
-export interface Briefing {
-  id: string;
-  briefing_type: string;
-  period_start: string | null;
-  period_end: string | null;
-  summary: string | null;
-  html_content: string | null;
-  account_email: string | null;
-  model_used: string | null;
+export interface DailySummary {
+  id: number;
+  summary_date: string | null;
+  summary_html: string | null;
+  summary_text: string | null;
+  total_emails: number;
+  accounts_read: number | null;
+  accounts_failed: number | null;
+  topics_identified: number | null;
+  key_events: unknown;
+  account: string | null;
   created_at: string;
 }
 
 export interface Entity {
-  id: string;
+  id: number;
   entity_type: string;
   name: string;
   canonical_name: string | null;
   email: string | null;
   attributes: Record<string, unknown>;
+  first_seen: string | null;
   last_seen: string | null;
+  mention_count: number | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface EntityRelationship {
-  id: string;
-  entity_a_id: string;
-  entity_b_id: string;
+  id: number;
+  entity_a_id: number;
+  entity_b_id: number;
   relationship_type: string;
-  confidence: number;
+  strength: number | null;
+  context: string | null;
+  interaction_count: number | null;
   created_at: string;
 }
 
 export interface Fact {
-  id: string;
-  contact_id: string | null;
-  email_id: number | null;
-  fact_text: string;
+  id: number;
+  entity_id: number | null;
   fact_type: string | null;
-  source_type: string;
+  fact_text: string;
+  verified: boolean;
   confidence: number;
+  fact_date: string | null;
+  is_future: boolean;
+  expired: boolean;
+  source_email_id: number | null;
+  source_account: string | null;
+  source_type: string | null;
+  company_id: number | null;
   created_at: string;
 }
 
 export interface Topic {
-  id: string;
-  name: string;
+  id: number;
+  topic: string;
   category: string | null;
+  status: string | null;
+  priority: string | null;
+  summary: string | null;
+  related_accounts: string[] | null;
+  times_seen: number | null;
   created_at: string;
 }
 
 export interface SyncState {
-  id: string;
   account: string;
   last_history_id: string | null;
+  last_sync_at: string | null;
   emails_synced: number;
   updated_at: string;
 }
 
-export interface CommunicationPattern {
-  id: string;
-  contact_id: string | null;
-  pattern_type: string | null;
-  description: string | null;
-  frequency: string | null;
-  confidence: number;
-  created_at: string;
-}
-
-export interface DailySummary {
-  id: string;
-  account: string | null;
-  summary_date: string | null;
-  email_count: number;
-  summary: string | null;
-  key_events: unknown[];
+export interface CustomerHealthScore {
+  id: number;
+  contact_id: number | null;
+  contact_email: string | null;
+  score_date: string;
+  overall_score: number | null;
+  previous_score: number | null;
+  trend: string | null;
+  communication_score: number | null;
+  financial_score: number | null;
+  sentiment_score: number | null;
+  responsiveness_score: number | null;
+  engagement_score: number | null;
+  risk_signals: unknown;
+  opportunity_signals: unknown;
+  company_id: number | null;
   created_at: string;
 }
 
@@ -201,7 +304,7 @@ export interface DashboardKPI {
 }
 
 export interface DashboardOverdueAction {
-  id: string;
+  id: number;
   description: string;
   contact_name: string | null;
   contact_company: string | null;
@@ -209,13 +312,12 @@ export interface DashboardOverdueAction {
   assignee_name: string | null;
   due_date: string;
   priority: string;
-  reason: string | null;
   action_type: string;
   days_overdue: number;
 }
 
 export interface DashboardCriticalAlert {
-  id: string;
+  id: number;
   title: string;
   severity: string;
   contact_name: string | null;
@@ -226,16 +328,8 @@ export interface DashboardCriticalAlert {
   alert_type: string;
 }
 
-export interface DashboardAccountability {
-  name: string;
-  email: string | null;
-  pending: number;
-  overdue: number;
-  completed: number;
-}
-
 export interface DashboardContactAtRisk {
-  id: string;
+  id: number;
   name: string;
   company: string | null;
   risk_level: string;
@@ -249,28 +343,8 @@ export interface DirectorDashboard {
   kpi: DashboardKPI;
   overdue_actions: DashboardOverdueAction[];
   critical_alerts: DashboardCriticalAlert[];
-  accountability: DashboardAccountability[];
+  accountability: { name: string; email: string | null; pending: number; overdue: number; completed: number }[];
   contacts_at_risk: DashboardContactAtRisk[];
-  latest_briefing: Briefing | null;
+  latest_briefing: DailySummary | null;
   pending_actions: DashboardOverdueAction[];
-}
-
-// ── Company (aggregated from entities + contacts) ──
-
-export interface CompanyInfo {
-  id: string;
-  name: string;
-  canonical_name: string | null;
-  attributes: Record<string, unknown>;
-  last_seen: string | null;
-  contact_count: number;
-  contacts: Contact[];
-  facts: Fact[];
-  relationships: Array<{
-    type: string;
-    confidence: number;
-    entity: Entity;
-  }>;
-  open_alerts: number;
-  pending_actions: number;
 }

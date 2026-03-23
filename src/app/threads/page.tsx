@@ -90,9 +90,9 @@ export default function ThreadsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const [threadEmails, setThreadEmails] = useState<Record<string, Email[]>>({});
-  const [loadingEmails, setLoadingEmails] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const [threadEmails, setThreadEmails] = useState<Record<number, Email[]>>({});
+  const [loadingEmails, setLoadingEmails] = useState<number | null>(null);
 
   // Fetch threads
   useEffect(() => {

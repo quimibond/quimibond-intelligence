@@ -56,7 +56,7 @@ export default function SystemPage() {
           supabase
             .from("sync_state")
             .select("*")
-            .order("updated_at", { ascending: false }),
+            .order("last_sync_at", { ascending: false }),
         ]);
 
       setStats({
@@ -151,7 +151,7 @@ export default function SystemPage() {
                 </TableHeader>
                 <TableBody>
                   {syncStates.map((sync) => (
-                    <TableRow key={sync.id}>
+                    <TableRow key={sync.account}>
                       <TableCell className="font-medium">
                         {sync.account}
                       </TableCell>
@@ -164,8 +164,8 @@ export default function SystemPage() {
                         {sync.last_history_id ?? "—"}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
-                        <span title={formatDateTime(sync.updated_at)}>
-                          {timeAgo(sync.updated_at)}
+                        <span title={formatDateTime(sync.last_sync_at ?? sync.updated_at)}>
+                          {timeAgo(sync.last_sync_at ?? sync.updated_at)}
                         </span>
                       </TableCell>
                     </TableRow>

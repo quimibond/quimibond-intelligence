@@ -16,7 +16,7 @@ import { TrendingUp } from "lucide-react";
 interface HealthTrendChartProps {
   data: Array<{
     date: string;
-    total: number;
+    overall_score: number;
     communication?: number;
     financial?: number;
     sentiment?: number;
@@ -91,7 +91,7 @@ export function HealthTrendChart({ data, className }: HealthTrendChartProps) {
           />
           <Area
             type="monotone"
-            dataKey="total"
+            dataKey="overall_score"
             name="Score total"
             stroke="hsl(217, 91%, 60%)"
             fill="url(#healthGradient)"

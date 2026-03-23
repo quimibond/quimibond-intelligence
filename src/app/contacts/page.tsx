@@ -110,11 +110,12 @@ export default function ContactsPage() {
                 <TableHead className="w-10" />
                 <TableHead>Nombre</TableHead>
                 <TableHead>Empresa</TableHead>
+                <TableHead>Rol</TableHead>
                 <TableHead>Tipo</TableHead>
                 <TableHead>Riesgo</TableHead>
                 <TableHead className="text-right">Sentimiento</TableHead>
                 <TableHead className="text-right">Emails</TableHead>
-                <TableHead>Ultima interaccion</TableHead>
+                <TableHead>Ultima actividad</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -146,6 +147,9 @@ export default function ContactsPage() {
                     {contact.company ?? "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
+                    {contact.role ?? "—"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
                     {contact.contact_type ?? "—"}
                   </TableCell>
                   <TableCell>
@@ -164,10 +168,10 @@ export default function ContactsPage() {
                     </span>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
-                    {contact.total_emails}
+                    {(contact.total_sent ?? 0) + (contact.total_received ?? 0)}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {timeAgo(contact.last_interaction)}
+                    {timeAgo(contact.last_activity)}
                   </TableCell>
                 </TableRow>
               ))}

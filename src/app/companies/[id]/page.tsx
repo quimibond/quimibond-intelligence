@@ -9,30 +9,28 @@ import {
   Brain,
   Building2,
   CheckSquare,
-  Clock,
   DollarSign,
-  Link2,
+  Heart,
+  MapPin,
   Sparkles,
+  TrendingUp,
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import {
-  cn,
-  formatDate,
-  scoreToPercent,
-  timeAgo,
-} from "@/lib/utils";
+import { cn, formatDate, scoreToPercent, timeAgo } from "@/lib/utils";
 import type {
-  Entity,
-  EntityRelationship,
+  Company,
   Contact,
-  PersonProfile,
   Fact,
+  EntityRelationship,
+  Entity,
   Alert,
   ActionItem,
+  CustomerHealthScore,
 } from "@/lib/types";
 import { EnrichButton } from "@/components/shared/enrich-button";
 import { HealthRadar } from "@/components/shared/health-radar";
+import { HealthTrendChart } from "@/components/shared/health-trend-chart";
 import { PageHeader } from "@/components/shared/page-header";
 import { RevenueChart } from "@/components/shared/revenue-chart";
 import { RiskBadge } from "@/components/shared/risk-badge";
@@ -41,9 +39,13 @@ import { StateBadge } from "@/components/shared/state-badge";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -57,6 +59,17 @@ import {
 
 // ── Helpers ──
 
+function formatCurrency(value: number | null): string {
+  if (value == null) return "—";
+  return (
+    "$" +
+    value.toLocaleString("es-MX", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })
+  );
+}
+
 function sentimentColor(score: number | null): string {
   if (score == null) return "text-muted-foreground";
   if (score >= 0.6) return "text-emerald-600 dark:text-emerald-400";
@@ -64,7 +77,10 @@ function sentimentColor(score: number | null): string {
   return "text-red-600 dark:text-red-400";
 }
 
-const priorityVariant: Record<string, "success" | "warning" | "critical" | "secondary"> = {
+const priorityVariant: Record<
+  string,
+  "success" | "warning" | "critical" | "secondary"
+> = {
   low: "success",
   medium: "warning",
   high: "critical",
@@ -76,10 +92,24 @@ const priorityLabel: Record<string, string> = {
   high: "Alta",
 };
 
-// ── Relationship with resolved entity info ──
+// ── Resolved relationship with entity name ──
 
 interface ResolvedRelationship extends EntityRelationship {
   related_entity: Entity | null;
+}
+
+// ── Revenue row from revenue_metrics table ──
+
+interface RevenueRow {
+  id: number;
+  company_id: number;
+  total_invoiced: number | null;
+  total_collected: number | null;
+  pending_amount: number | null;
+  overdue_amount: number | null;
+  num_orders: number | null;
+  period_start: string;
+  period_type: string | null;
 }
 
 // ── Component ──
@@ -87,259 +117,181 @@ interface ResolvedRelationship extends EntityRelationship {
 export default function CompanyDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const entityId = params.id;
+  const companyId = params.id;
 
   const [loading, setLoading] = useState(true);
-  const [entity, setEntity] = useState<Entity | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
   const [contacts, setContacts] = useState<Contact[]>([]);
-  const [profiles, setProfiles] = useState<Map<string, PersonProfile>>(new Map());
   const [facts, setFacts] = useState<Fact[]>([]);
-  const [relationships, setRelationships] = useState<ResolvedRelationship[]>([]);
+  const [relationships, setRelationships] = useState<ResolvedRelationship[]>(
+    []
+  );
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
-  const [revenueData, setRevenueData] = useState<
-    Array<{ period: string; invoiced: number; paid: number; overdue: number }>
-  >([]);
-  const [healthScores, setHealthScores] = useState<{
-    communication: number;
-    financial: number;
-    sentiment: number;
-    responsiveness: number;
-    engagement: number;
-  } | null>(null);
+  const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
+  const [healthScores, setHealthScores] = useState<CustomerHealthScore[]>([]);
 
   useEffect(() => {
     async function fetchAll() {
-      // 1. Fetch company entity
-      const { data: entityData } = await supabase
-        .from("entities")
+      // 1. Fetch company
+      const { data: companyData } = await supabase
+        .from("companies")
         .select("*")
-        .eq("id", entityId)
+        .eq("id", companyId)
         .single();
 
-      if (!entityData) {
+      if (!companyData) {
         setLoading(false);
         return;
       }
 
-      const company = entityData as Entity;
-      setEntity(company);
+      const comp = companyData as Company;
+      setCompany(comp);
 
       // 2. Parallel fetches
-      const companyName = company.name;
-
       const [
         contactsRes,
-        relRes,
+        factsRes,
+        alertsRes,
         actionsRes,
+        revenueRes,
+        healthRes,
       ] = await Promise.all([
-        // Contacts at this company
         supabase
           .from("contacts")
           .select("*")
-          .ilike("company", companyName)
+          .eq("company_id", comp.id)
           .order("name"),
-        // Entity relationships
         supabase
-          .from("entity_relationships")
+          .from("facts")
           .select("*")
-          .or(`entity_a_id.eq.${entityId},entity_b_id.eq.${entityId}`)
-          .order("confidence", { ascending: false }),
-        // Action items for this company
+          .eq("company_id", comp.id)
+          .order("created_at", { ascending: false })
+          .limit(100),
+        supabase
+          .from("alerts")
+          .select("*")
+          .eq("company_id", comp.id)
+          .order("created_at", { ascending: false }),
         supabase
           .from("action_items")
           .select("*")
-          .ilike("contact_company", companyName)
+          .eq("company_id", comp.id)
           .order("created_at", { ascending: false }),
+        supabase
+          .from("revenue_metrics")
+          .select("*")
+          .eq("company_id", comp.id)
+          .order("period_start", { ascending: false })
+          .limit(12),
+        supabase
+          .from("customer_health_scores")
+          .select("*")
+          .eq("company_id", comp.id)
+          .order("score_date", { ascending: false })
+          .limit(30),
       ]);
 
-      const contactsList = (contactsRes.data as Contact[] | null) ?? [];
-      setContacts(contactsList);
+      setContacts((contactsRes.data as Contact[] | null) ?? []);
+      setFacts((factsRes.data as Fact[] | null) ?? []);
+      setAlerts((alertsRes.data as Alert[] | null) ?? []);
       setActions((actionsRes.data as ActionItem[] | null) ?? []);
-
-      // 3. Fetch person profiles for contacts
-      const contactIds = contactsList.map((c) => c.id);
-      if (contactIds.length > 0) {
-        const { data: profileData } = await supabase
-          .from("person_profiles")
-          .select("*")
-          .in("contact_id", contactIds);
-
-        const profileMap = new Map<string, PersonProfile>();
-        if (profileData) {
-          for (const p of profileData as PersonProfile[]) {
-            if (p.contact_id) profileMap.set(p.contact_id, p);
-          }
-        }
-        setProfiles(profileMap);
-      }
-
-      // 4. Fetch facts for contacts of this company + entity mentions
-      const factsSet = new Map<string, Fact>();
-
-      if (contactIds.length > 0) {
-        const { data: contactFacts } = await supabase
-          .from("facts")
-          .select("*")
-          .in("contact_id", contactIds)
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        if (contactFacts) {
-          for (const f of contactFacts as Fact[]) {
-            factsSet.set(f.id, f);
-          }
-        }
-      }
-
-      // Facts via entity_mentions
-      const { data: mentions } = await supabase
-        .from("entity_mentions")
-        .select("email_id")
-        .eq("entity_id", entityId);
-
-      if (mentions && mentions.length > 0) {
-        const emailIds = [...new Set(mentions.map((m: { email_id: number }) => m.email_id))];
-        if (emailIds.length > 0) {
-          const { data: mentionFacts } = await supabase
-            .from("facts")
-            .select("*")
-            .in("email_id", emailIds)
-            .order("created_at", { ascending: false })
-            .limit(50);
-
-          if (mentionFacts) {
-            for (const f of mentionFacts as Fact[]) {
-              factsSet.set(f.id, f);
-            }
-          }
-        }
-      }
-
-      const allFacts = Array.from(factsSet.values()).sort(
-        (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      setRevenueRows((revenueRes.data as RevenueRow[] | null) ?? []);
+      setHealthScores(
+        (healthRes.data as CustomerHealthScore[] | null) ?? []
       );
-      setFacts(allFacts);
 
-      // 5. Resolve relationships - fetch related entities
-      const rawRels = (relRes.data as EntityRelationship[] | null) ?? [];
-      if (rawRels.length > 0) {
-        const relatedIds = rawRels.map((r) =>
-          r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id
-        );
-        const uniqueIds = [...new Set(relatedIds)];
-
-        const { data: relatedEntities } = await supabase
-          .from("entities")
+      // 3. Fetch relationships via entity_id
+      if (comp.entity_id) {
+        const entityId = comp.entity_id;
+        const { data: relData } = await supabase
+          .from("entity_relationships")
           .select("*")
-          .in("id", uniqueIds);
+          .or(`entity_a_id.eq.${entityId},entity_b_id.eq.${entityId}`)
+          .order("strength", { ascending: false });
 
-        const entityMap = new Map<string, Entity>();
-        if (relatedEntities) {
-          for (const e of relatedEntities as Entity[]) {
-            entityMap.set(e.id, e);
-          }
-        }
+        const rawRels = (relData as EntityRelationship[] | null) ?? [];
 
-        const resolved: ResolvedRelationship[] = rawRels.map((r) => {
-          const relatedId = r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id;
-          return {
-            ...r,
-            related_entity: entityMap.get(relatedId) ?? null,
-          };
-        });
-        setRelationships(resolved);
-      }
+        if (rawRels.length > 0) {
+          const relatedIds = rawRels.map((r) =>
+            r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id
+          );
+          const uniqueIds = [...new Set(relatedIds)];
 
-      // 6. Fetch alerts for contacts at this company
-      const contactNames = contactsList
-        .map((c) => c.name)
-        .filter((n): n is string => n != null);
-
-      if (contactNames.length > 0) {
-        const orFilter = contactNames
-          .map((name) => `contact_name.ilike.%${name}%`)
-          .join(",");
-        const { data: alertData } = await supabase
-          .from("alerts")
-          .select("*")
-          .or(orFilter)
-          .order("created_at", { ascending: false });
-
-        setAlerts((alertData as Alert[] | null) ?? []);
-      }
-
-      // 7. Fetch revenue data (gracefully handle missing table/rpc)
-      try {
-        const { data: rpcData, error: rpcError } = await supabase.rpc(
-          "get_company_revenue",
-          { p_company_name: companyName, p_months: 12 },
-        );
-        if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
-          setRevenueData(rpcData);
-        } else {
-          // Fallback: direct query
-          const { data: metricsData } = await supabase
-            .from("revenue_metrics")
+          const { data: relatedEntities } = await supabase
+            .from("entities")
             .select("*")
-            .order("period_start", { ascending: true });
+            .in("id", uniqueIds);
 
-          if (metricsData && metricsData.length > 0) {
-            const filtered = metricsData.filter(
-              (r: Record<string, unknown>) =>
-                typeof r.company_name === "string" &&
-                r.company_name.toLowerCase() === companyName.toLowerCase(),
-            );
-            if (filtered.length > 0) {
-              setRevenueData(
-                filtered.map((r: Record<string, unknown>) => ({
-                  period: String(r.period_start ?? r.period ?? ""),
-                  invoiced: Number(r.invoiced ?? 0),
-                  paid: Number(r.paid ?? 0),
-                  overdue: Number(r.overdue ?? 0),
-                })),
-              );
+          const entityMap = new Map<number, Entity>();
+          if (relatedEntities) {
+            for (const e of relatedEntities as Entity[]) {
+              entityMap.set(e.id, e);
             }
           }
-        }
-      } catch {
-        // Table or RPC may not exist — ignore
-      }
 
-      // 8. Fetch health scores for contacts at this company
-      if (contactIds.length > 0) {
-        try {
-          const { data: healthData } = await supabase
-            .from("customer_health_scores")
-            .select("communication_score, financial_score, sentiment_score, responsiveness_score, engagement_score")
-            .in("contact_id", contactIds);
-
-          if (healthData && healthData.length > 0) {
-            const avg = (field: string) => {
-              const vals = healthData
-                .map((h: Record<string, unknown>) => Number(h[field]))
-                .filter((v: number) => !isNaN(v) && v > 0);
-              return vals.length > 0
-                ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length
-                : 0;
+          const resolved: ResolvedRelationship[] = rawRels.map((r) => {
+            const relatedId =
+              r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id;
+            return {
+              ...r,
+              related_entity: entityMap.get(relatedId) ?? null,
             };
-            setHealthScores({
-              communication: avg("communication_score"),
-              financial: avg("financial_score"),
-              sentiment: avg("sentiment_score"),
-              responsiveness: avg("responsiveness_score"),
-              engagement: avg("engagement_score"),
-            });
-          }
-        } catch {
-          // Table may not exist — ignore
+          });
+          setRelationships(resolved);
         }
       }
 
       setLoading(false);
     }
     fetchAll();
-  }, [entityId]);
+  }, [companyId]);
+
+  // ── Derived data ──
+
+  const latestHealth =
+    healthScores.length > 0 ? healthScores[0] : null;
+
+  const revenueChartData = [...revenueRows]
+    .sort(
+      (a, b) =>
+        new Date(a.period_start).getTime() -
+        new Date(b.period_start).getTime()
+    )
+    .map((r) => ({
+      period: r.period_start,
+      invoiced: Number(r.total_invoiced ?? 0),
+      paid: Number(r.total_collected ?? 0),
+      overdue: Number(r.overdue_amount ?? 0),
+    }));
+
+  const totalInvoiced = revenueRows.reduce(
+    (s, r) => s + Number(r.total_invoiced ?? 0),
+    0
+  );
+  const totalCollected = revenueRows.reduce(
+    (s, r) => s + Number(r.total_collected ?? 0),
+    0
+  );
+  const totalOverdue = revenueRows.reduce(
+    (s, r) => s + Number(r.overdue_amount ?? 0),
+    0
+  );
+
+  const healthTrendData = [...healthScores]
+    .sort(
+      (a, b) =>
+        new Date(a.score_date).getTime() - new Date(b.score_date).getTime()
+    )
+    .map((h) => ({
+      date: h.score_date,
+      overall_score: Number(h.overall_score ?? 0),
+      communication: Number(h.communication_score ?? 0),
+      financial: Number(h.financial_score ?? 0),
+      sentiment: Number(h.sentiment_score ?? 0),
+      responsiveness: Number(h.responsiveness_score ?? 0),
+      engagement: Number(h.engagement_score ?? 0),
+    }));
 
   // ── Loading state ──
 
@@ -348,12 +300,12 @@ export default function CompanyDetailPage() {
       <div className="space-y-6">
         <Skeleton className="h-8 w-32" />
         <Skeleton className="h-10 w-72" />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+          {Array.from({ length: 6 }).map((_, i) => (
             <Skeleton key={i} className="h-20" />
           ))}
         </div>
-        <Skeleton className="h-10 w-96" />
+        <Skeleton className="h-10 w-full max-w-2xl" />
         <Skeleton className="h-64" />
       </div>
     );
@@ -361,7 +313,7 @@ export default function CompanyDetailPage() {
 
   // ── Not found ──
 
-  if (!entity) {
+  if (!company) {
     return (
       <div>
         <Button
@@ -382,11 +334,14 @@ export default function CompanyDetailPage() {
     );
   }
 
-  // ── Derived data ──
+  // ── Render ──
 
-  const attributes = (entity.attributes ?? {}) as Record<string, string | string[] | number | boolean | null>;
-  const industry = attributes.industry as string | undefined;
-  const activeAlerts = alerts.filter((a) => a.state !== "resolved").length;
+  const riskSignals = Array.isArray(company.risk_signals)
+    ? (company.risk_signals as string[])
+    : [];
+  const opportunitySignals = Array.isArray(company.opportunity_signals)
+    ? (company.opportunity_signals as string[])
+    : [];
 
   return (
     <div className="space-y-6">
@@ -401,22 +356,72 @@ export default function CompanyDetailPage() {
       </Button>
 
       {/* Header */}
-      <PageHeader title={entity.name}>
-        {industry && <Badge variant="secondary">{industry}</Badge>}
-        <EnrichButton
-          type="company"
-          id={entity.id}
-          name={entity.name}
-        />
+      <PageHeader title={company.name}>
+        <div className="flex flex-wrap items-center gap-2">
+          {company.is_customer && <Badge variant="success">Cliente</Badge>}
+          {company.is_supplier && <Badge variant="info">Proveedor</Badge>}
+          {company.industry && (
+            <Badge variant="secondary">{company.industry}</Badge>
+          )}
+          {company.enriched_at && (
+            <span
+              className="flex items-center gap-1 text-xs text-muted-foreground"
+              title={`Enriquecido ${timeAgo(company.enriched_at)}`}
+            >
+              <Sparkles className="h-3 w-3 text-amber-500" />
+              {timeAgo(company.enriched_at)}
+            </span>
+          )}
+          <EnrichButton
+            type="company"
+            id={String(company.id)}
+            name={company.name}
+          />
+        </div>
       </PageHeader>
 
-      {/* Key info bar */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+      {/* Key info cards */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Industria</p>
             <p className="mt-1 text-sm font-medium">
-              {industry ?? "No especificada"}
+              {company.industry ?? "No especificada"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Lifetime Value</p>
+            <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+              {formatCurrency(company.lifetime_value)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Promedio Mensual</p>
+            <p className="mt-1 text-lg font-bold tabular-nums">
+              {formatCurrency(company.monthly_avg)}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <p className="text-xs text-muted-foreground">Tendencia</p>
+            <p
+              className={cn(
+                "mt-1 text-lg font-bold tabular-nums",
+                company.trend_pct != null && company.trend_pct > 0
+                  ? "text-emerald-600 dark:text-emerald-400"
+                  : company.trend_pct != null && company.trend_pct < 0
+                    ? "text-red-600 dark:text-red-400"
+                    : "text-muted-foreground"
+              )}
+            >
+              {company.trend_pct != null
+                ? `${company.trend_pct > 0 ? "+" : ""}${company.trend_pct.toFixed(1)}%`
+                : "—"}
             </p>
           </CardContent>
         </Card>
@@ -433,23 +438,16 @@ export default function CompanyDetailPage() {
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Clock className="h-3.5 w-3.5" />
-              Ultima actividad
-            </div>
+            <p className="text-xs text-muted-foreground">Ubicacion</p>
             <p className="mt-1 text-sm font-medium">
-              {timeAgo(entity.last_seen)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Bell className="h-3.5 w-3.5" />
-              Alertas activas
-            </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums">
-              {activeAlerts}
+              {company.city || company.country ? (
+                <span className="flex items-center gap-1">
+                  <MapPin className="h-3.5 w-3.5 shrink-0" />
+                  {[company.city, company.country].filter(Boolean).join(", ")}
+                </span>
+              ) : (
+                "—"
+              )}
             </p>
           </CardContent>
         </Card>
@@ -457,7 +455,7 @@ export default function CompanyDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="resumen">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="resumen">Resumen</TabsTrigger>
           <TabsTrigger value="contactos">
             Contactos ({contacts.length})
@@ -465,61 +463,127 @@ export default function CompanyDetailPage() {
           <TabsTrigger value="inteligencia">
             Inteligencia ({facts.length})
           </TabsTrigger>
+          <TabsTrigger value="finanzas">
+            <DollarSign className="mr-1 h-3.5 w-3.5" />
+            Finanzas
+          </TabsTrigger>
           <TabsTrigger value="alertas">
             Alertas ({alerts.length})
           </TabsTrigger>
           <TabsTrigger value="acciones">
             Acciones ({actions.length})
           </TabsTrigger>
-          <TabsTrigger value="finanzas">
-            <DollarSign className="mr-1 h-3.5 w-3.5" />
-            Finanzas
+          <TabsTrigger value="salud">
+            <Heart className="mr-1 h-3.5 w-3.5" />
+            Salud
           </TabsTrigger>
         </TabsList>
 
         {/* ── Resumen ── */}
         <TabsContent value="resumen" className="space-y-6">
-          {/* Attributes */}
+          {/* Description & business type */}
           <Card>
             <CardHeader>
-              <CardTitle>Atributos</CardTitle>
+              <CardTitle>Informacion General</CardTitle>
             </CardHeader>
-            <CardContent>
-              {Object.keys(attributes).length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Sin atributos registrados.
-                </p>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {Object.entries(attributes).map(([key, val]) => (
-                    <div key={key}>
-                      <p className="text-xs text-muted-foreground capitalize">
-                        {key.replace(/_/g, " ")}
-                      </p>
-                      <p className="text-sm font-medium">
-                        {String(typeof val === "string" ? val : JSON.stringify(val))}
-                      </p>
-                    </div>
-                  ))}
+            <CardContent className="space-y-4">
+              {company.description && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Descripcion
+                  </p>
+                  <p className="mt-1 text-sm">{company.description}</p>
                 </div>
               )}
+              {company.business_type && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Tipo de negocio
+                  </p>
+                  <p className="mt-1 text-sm">{company.business_type}</p>
+                </div>
+              )}
+              {company.relationship_summary && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Resumen de relacion
+                  </p>
+                  <p className="mt-1 text-sm">
+                    {company.relationship_summary}
+                  </p>
+                </div>
+              )}
+              {company.relationship_type && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Tipo de relacion
+                  </p>
+                  <Badge variant="outline">{company.relationship_type}</Badge>
+                </div>
+              )}
+              {company.strategic_notes && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">
+                    Notas estrategicas
+                  </p>
+                  <p className="mt-1 text-sm">{company.strategic_notes}</p>
+                </div>
+              )}
+              {!company.description &&
+                !company.business_type &&
+                !company.relationship_summary &&
+                !company.strategic_notes && (
+                  <p className="text-sm text-muted-foreground">
+                    Sin informacion general disponible. Usa el boton Enriquecer
+                    para obtener datos.
+                  </p>
+                )}
             </CardContent>
           </Card>
 
+          {/* Risk signals */}
+          {riskSignals.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-red-600 dark:text-red-400">
+                  Senales de Riesgo
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
+                  {riskSignals.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Opportunity signals */}
+          {opportunitySignals.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-emerald-600 dark:text-emerald-400">
+                  Senales de Oportunidad
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ul className="list-inside list-disc space-y-1 text-sm text-emerald-600 dark:text-emerald-400">
+                  {opportunitySignals.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ul>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Relationships */}
-          <Card>
-            <CardHeader>
-              <div className="flex items-center gap-2">
-                <Link2 className="h-4 w-4 text-muted-foreground" />
+          {relationships.length > 0 && (
+            <Card>
+              <CardHeader>
                 <CardTitle>Relaciones</CardTitle>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {relationships.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  Sin relaciones registradas.
-                </p>
-              ) : (
+              </CardHeader>
+              <CardContent>
                 <div className="grid gap-3 sm:grid-cols-2">
                   {relationships.map((rel) => (
                     <div
@@ -541,98 +605,14 @@ export default function CompanyDetailPage() {
                           )}
                         </div>
                       </div>
-                      <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
-                        {(rel.confidence * 100).toFixed(0)}%
-                      </span>
+                      {rel.strength != null && (
+                        <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
+                          {(rel.strength * 100).toFixed(0)}%
+                        </span>
+                      )}
                     </div>
                   ))}
                 </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Enrichment data */}
-          {(attributes.description ||
-            attributes.business_type ||
-            attributes.risk_signals ||
-            attributes.opportunity_signals ||
-            attributes.strategic_notes) && (
-            <Card>
-              <CardHeader>
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-4 w-4 text-muted-foreground" />
-                  <CardTitle>Datos Enriquecidos</CardTitle>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-4">
-                {attributes.description && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">Descripcion</p>
-                    <p className="mt-1 text-sm">{String(attributes.description)}</p>
-                  </div>
-                )}
-                {attributes.business_type && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">Tipo de negocio</p>
-                    <p className="mt-1 text-sm">{String(attributes.business_type)}</p>
-                  </div>
-                )}
-                {attributes.risk_signals && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">Senales de riesgo</p>
-                    {Array.isArray(attributes.risk_signals) ? (
-                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-sm text-red-600 dark:text-red-400">
-                        {(attributes.risk_signals as string[]).map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">
-                        {String(attributes.risk_signals)}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {attributes.opportunity_signals && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">Senales de oportunidad</p>
-                    {Array.isArray(attributes.opportunity_signals) ? (
-                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-sm text-emerald-600 dark:text-emerald-400">
-                        {(attributes.opportunity_signals as string[]).map((s, i) => (
-                          <li key={i}>{s}</li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-400">
-                        {String(attributes.opportunity_signals)}
-                      </p>
-                    )}
-                  </div>
-                )}
-                {attributes.strategic_notes && (
-                  <div>
-                    <p className="text-xs font-medium text-muted-foreground">Notas estrategicas</p>
-                    <p className="mt-1 text-sm">{String(attributes.strategic_notes)}</p>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          )}
-
-          {/* Health Radar */}
-          {healthScores && (
-            <Card>
-              <CardHeader>
-                <CardTitle>Salud de la Relacion</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <HealthRadar
-                  communication={healthScores.communication}
-                  financial={healthScores.financial}
-                  sentiment={healthScores.sentiment}
-                  responsiveness={healthScores.responsiveness}
-                  engagement={healthScores.engagement}
-                />
               </CardContent>
             </Card>
           )}
@@ -657,64 +637,59 @@ export default function CompanyDetailPage() {
                     <TableHead>Riesgo</TableHead>
                     <TableHead className="text-right">Sentimiento</TableHead>
                     <TableHead className="w-[140px]">Relacion</TableHead>
-                    <TableHead>Ultima interaccion</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {contacts.map((contact) => {
-                    const profile = profiles.get(contact.id);
-                    const role = profile?.role ?? contact.contact_type;
-
-                    return (
-                      <TableRow key={contact.id}>
-                        <TableCell>
-                          <Link
-                            href={`/contacts/${contact.id}`}
-                            className="font-medium text-primary hover:underline"
-                          >
-                            {contact.name ?? "Sin nombre"}
-                          </Link>
-                        </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
-                          {contact.email ?? "---"}
-                        </TableCell>
-                        <TableCell className="text-sm">
-                          {role ?? "---"}
-                        </TableCell>
-                        <TableCell>
-                          <RiskBadge level={contact.risk_level} />
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <span
-                            className={cn(
-                              "text-sm font-medium tabular-nums",
-                              sentimentColor(contact.sentiment_score)
+                  {contacts.map((contact) => (
+                    <TableRow key={contact.id}>
+                      <TableCell>
+                        <Link
+                          href={`/contacts/${contact.id}`}
+                          className="font-medium text-primary hover:underline"
+                        >
+                          {contact.name ?? "Sin nombre"}
+                        </Link>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {contact.email ?? "---"}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {contact.role ?? contact.contact_type ?? "---"}
+                      </TableCell>
+                      <TableCell>
+                        <RiskBadge level={contact.risk_level} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <span
+                          className={cn(
+                            "text-sm font-medium tabular-nums",
+                            sentimentColor(contact.sentiment_score)
+                          )}
+                        >
+                          {contact.sentiment_score != null
+                            ? contact.sentiment_score.toFixed(2)
+                            : "---"}
+                        </span>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <Progress
+                            value={scoreToPercent(
+                              contact.relationship_score
                             )}
-                          >
-                            {contact.sentiment_score != null
-                              ? contact.sentiment_score.toFixed(2)
-                              : "---"}
+                            className="h-2 flex-1"
+                          />
+                          <span className="w-8 text-right text-xs text-muted-foreground tabular-nums">
+                            {contact.relationship_score != null
+                              ? Math.round(
+                                  scoreToPercent(contact.relationship_score)
+                                )
+                              : 0}
                           </span>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Progress
-                              value={scoreToPercent(contact.relationship_score)}
-                              className="h-2 flex-1"
-                            />
-                            <span className="w-8 text-right text-xs text-muted-foreground tabular-nums">
-                              {contact.relationship_score != null
-                                ? Math.round(scoreToPercent(contact.relationship_score))
-                                : 0}
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="whitespace-nowrap text-sm text-muted-foreground">
-                          {timeAgo(contact.last_interaction)}
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>
@@ -762,6 +737,63 @@ export default function CompanyDetailPage() {
                 </TableBody>
               </Table>
             </div>
+          )}
+        </TabsContent>
+
+        {/* ── Finanzas ── */}
+        <TabsContent value="finanzas" className="space-y-6">
+          {revenueRows.length === 0 ? (
+            <EmptyState
+              icon={DollarSign}
+              title="Sin datos financieros"
+              description="No hay datos de revenue disponibles para esta empresa."
+            />
+          ) : (
+            <>
+              {/* Summary stats */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Total Facturado
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                      {formatCurrency(totalInvoiced)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Total Cobrado
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(totalCollected)}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Total Vencido
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">
+                      {formatCurrency(totalOverdue)}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Revenue Mensual</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RevenueChart data={revenueChartData} />
+                </CardContent>
+              </Card>
+            </>
           )}
         </TabsContent>
 
@@ -863,75 +895,99 @@ export default function CompanyDetailPage() {
           )}
         </TabsContent>
 
-        {/* ── Finanzas ── */}
-        <TabsContent value="finanzas" className="space-y-6">
-          {revenueData.length === 0 ? (
+        {/* ── Salud ── */}
+        <TabsContent value="salud" className="space-y-6">
+          {!latestHealth ? (
             <EmptyState
-              icon={DollarSign}
-              title="Sin datos financieros"
-              description="No hay datos de revenue disponibles para esta empresa."
+              icon={Heart}
+              title="Sin datos de salud"
+              description="No hay scores de salud disponibles para esta empresa."
             />
           ) : (
             <>
-              {/* Summary stats */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              {/* Latest health overview */}
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
                 <Card>
                   <CardContent className="pt-4">
                     <p className="text-xs text-muted-foreground">
-                      Total Facturado
+                      Comunicacion
                     </p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
-                      $
-                      {revenueData
-                        .reduce((sum, r) => sum + r.invoiced, 0)
-                        .toLocaleString("es-MX", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                    <p className="mt-1 text-2xl font-bold tabular-nums">
+                      {latestHealth.communication_score?.toFixed(0) ?? "—"}
                     </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">Total Pagado</p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                      $
-                      {revenueData
-                        .reduce((sum, r) => sum + r.paid, 0)
-                        .toLocaleString("es-MX", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                    <p className="text-xs text-muted-foreground">Financiero</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums">
+                      {latestHealth.financial_score?.toFixed(0) ?? "—"}
                     </p>
                   </CardContent>
                 </Card>
                 <Card>
                   <CardContent className="pt-4">
                     <p className="text-xs text-muted-foreground">
-                      Total Vencido
+                      Sentimiento
                     </p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">
-                      $
-                      {revenueData
-                        .reduce((sum, r) => sum + r.overdue, 0)
-                        .toLocaleString("es-MX", {
-                          minimumFractionDigits: 0,
-                          maximumFractionDigits: 0,
-                        })}
+                    <p className="mt-1 text-2xl font-bold tabular-nums">
+                      {latestHealth.sentiment_score?.toFixed(0) ?? "—"}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Responsividad
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums">
+                      {latestHealth.responsiveness_score?.toFixed(0) ?? "—"}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Engagement
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums">
+                      {latestHealth.engagement_score?.toFixed(0) ?? "—"}
                     </p>
                   </CardContent>
                 </Card>
               </div>
 
-              {/* Chart */}
+              {/* Radar */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Revenue Mensual</CardTitle>
+                  <CardTitle>Radar de Salud</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <RevenueChart data={revenueData} />
+                  <HealthRadar
+                    communication={Number(
+                      latestHealth.communication_score ?? 0
+                    )}
+                    financial={Number(latestHealth.financial_score ?? 0)}
+                    sentiment={Number(latestHealth.sentiment_score ?? 0)}
+                    responsiveness={Number(
+                      latestHealth.responsiveness_score ?? 0
+                    )}
+                    engagement={Number(latestHealth.engagement_score ?? 0)}
+                  />
                 </CardContent>
               </Card>
+
+              {/* Health trend */}
+              {healthTrendData.length > 1 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Tendencia de Salud</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <HealthTrendChart data={healthTrendData} />
+                  </CardContent>
+                </Card>
+              )}
             </>
           )}
         </TabsContent>

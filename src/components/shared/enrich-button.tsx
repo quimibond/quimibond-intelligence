@@ -26,7 +26,7 @@ export function EnrichButton({ type, id, name, onComplete }: EnrichButtonProps) 
       const endpoint =
         type === "contact" ? "/api/enrich/contact" : "/api/enrich/company";
       const payload =
-        type === "contact" ? { contact_id: id } : { entity_id: id };
+        type === "contact" ? { contact_id: id } : { company_id: id };
 
       const res = await fetch(endpoint, {
         method: "POST",

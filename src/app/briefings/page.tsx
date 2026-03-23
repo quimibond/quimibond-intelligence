@@ -2,10 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { BookOpen, Calendar, Cpu } from "lucide-react";
+import { BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, timeAgo, truncate } from "@/lib/utils";
-import type { Briefing } from "@/lib/types";
+import type { DailySummary } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -19,23 +19,23 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BriefingsPage() {
-  const [briefings, setBriefings] = useState<Briefing[]>([]);
+  const [summaries, setSummaries] = useState<DailySummary[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    async function fetchBriefings() {
+    async function fetchSummaries() {
       const { data, error } = await supabase
-        .from("briefings")
+        .from("daily_summaries")
         .select("*")
-        .order("created_at", { ascending: false })
+        .order("summary_date", { ascending: false })
         .limit(50);
 
       if (!error && data) {
-        setBriefings(data as Briefing[]);
+        setSummaries(data as DailySummary[]);
       }
       setLoading(false);
     }
-    fetchBriefings();
+    fetchSummaries();
   }, []);
 
   if (loading) {
@@ -56,48 +56,67 @@ export default function BriefingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Briefings"
-        description="Reportes de inteligencia generados por IA"
+        description="Resumenes diarios de inteligencia generados por IA"
       />
 
-      {briefings.length === 0 ? (
+      {summaries.length === 0 ? (
         <EmptyState
           icon={BookOpen}
           title="Sin briefings"
-          description="Aun no se han generado reportes de inteligencia."
+          description="Aun no se han generado resumenes diarios."
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {briefings.map((briefing) => (
-            <Link key={briefing.id} href={`/briefings/${briefing.id}`}>
+          {summaries.map((summary) => (
+            <Link key={summary.id} href={`/briefings/${summary.id}`}>
               <Card className="h-full transition-colors hover:border-primary/30">
                 <CardHeader className="pb-3">
                   <div className="flex items-start justify-between gap-2">
-                    <Badge variant="info">{briefing.briefing_type}</Badge>
+                    <div className="flex items-center gap-2">
+                      <Calendar className="h-4 w-4 text-muted-foreground" />
+                      <CardTitle className="text-base">
+                        {summary.summary_date
+                          ? formatDate(summary.summary_date)
+                          : "Sin fecha"}
+                      </CardTitle>
+                    </div>
                     <span className="text-xs text-muted-foreground">
-                      {timeAgo(briefing.created_at)}
+                      {timeAgo(summary.created_at)}
                     </span>
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <p className="text-sm leading-relaxed">
-                    {truncate(briefing.summary, 200)}
-                  </p>
-                  {(briefing.period_start || briefing.period_end) && (
-                    <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Calendar className="h-3.5 w-3.5" />
-                      {formatDate(briefing.period_start)} &mdash;{" "}
-                      {formatDate(briefing.period_end)}
-                    </div>
+                  {summary.summary_text && (
+                    <p className="text-sm leading-relaxed text-muted-foreground">
+                      {truncate(summary.summary_text, 200)}
+                    </p>
                   )}
-                </CardContent>
-                {briefing.model_used && (
-                  <CardFooter className="pt-0">
+                  <div className="flex flex-wrap items-center gap-3">
                     <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Cpu className="h-3.5 w-3.5" />
-                      {briefing.model_used}
+                      <Mail className="h-3.5 w-3.5" />
+                      {summary.total_emails} emails
                     </div>
-                  </CardFooter>
-                )}
+                    {summary.topics_identified != null && (
+                      <Badge variant="secondary" className="text-xs">
+                        {summary.topics_identified} temas
+                      </Badge>
+                    )}
+                  </div>
+                </CardContent>
+                <CardFooter className="pt-0">
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {summary.accounts_read != null && (
+                      <span>{summary.accounts_read} cuentas leidas</span>
+                    )}
+                    {summary.accounts_failed != null &&
+                      summary.accounts_failed > 0 && (
+                        <span className="flex items-center gap-1 text-amber-500">
+                          <AlertTriangle className="h-3 w-3" />
+                          {summary.accounts_failed} fallidas
+                        </span>
+                      )}
+                  </div>
+                </CardFooter>
               </Card>
             </Link>
           ))}

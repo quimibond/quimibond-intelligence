@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 
 interface RiskBadgeProps {
-  level: "low" | "medium" | "high" | string;
+  level: string | null | undefined;
 }
 
 const riskVariantMap: Record<string, "success" | "warning" | "critical" | "secondary"> = {
@@ -17,8 +17,9 @@ const riskLabelMap: Record<string, string> = {
 };
 
 export function RiskBadge({ level }: RiskBadgeProps) {
-  const variant = riskVariantMap[level] ?? "secondary";
-  const label = riskLabelMap[level] ?? level;
+  const key = level ?? "low";
+  const variant = riskVariantMap[key] ?? "secondary";
+  const label = riskLabelMap[key] ?? key;
 
   return <Badge variant={variant}>{label}</Badge>;
 }

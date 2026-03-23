@@ -14,7 +14,7 @@ import {
 
 interface FeedbackButtonsProps {
   table: "alerts" | "action_items";
-  id: string;
+  id: string | number;
   currentFeedback?: string | null;
   onFeedbackSaved?: () => void;
 }

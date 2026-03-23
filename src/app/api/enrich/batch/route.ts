@@ -100,12 +100,11 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      // Find companies without enrichment
+      // Find companies without enrichment (from companies table)
       const { data: companies } = await supabase
-        .from("entities")
+        .from("companies")
         .select("id, name")
-        .eq("entity_type", "company")
-        .is("attributes->enriched_at", null)
+        .is("enriched_at", null)
         .limit(limit);
 
       // Enrich each company
@@ -115,7 +114,7 @@ export async function POST(request: NextRequest) {
           const res = await fetch(`${origin}/api/enrich/company`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ entity_id: company.id }),
+            body: JSON.stringify({ company_id: company.id }),
           });
 
           if (res.ok) {

@@ -3,65 +3,49 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/utils";
-import type { Entity } from "@/lib/types";
+import { timeAgo } from "@/lib/utils";
+import type { Company } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Building2, Search, Users, ArrowRight } from "lucide-react";
+import {
+  Building2,
+  Search,
+  ArrowRight,
+  MapPin,
+  Sparkles,
+} from "lucide-react";
 
-interface CompanyWithCount extends Entity {
-  contact_count: number;
+function formatCurrency(value: number | null): string {
+  if (value == null) return "—";
+  return "$" + value.toLocaleString("es-MX", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  });
 }
 
 export default function CompaniesPage() {
-  const [companies, setCompanies] = useState<CompanyWithCount[]>([]);
+  const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function load() {
-      // Fetch company entities
-      const { data: entities, error } = await supabase
-        .from("entities")
+      const { data, error } = await supabase
+        .from("companies")
         .select("*")
-        .eq("entity_type", "company")
         .order("name");
 
-      if (error || !entities) {
+      if (error || !data) {
         setLoading(false);
         return;
       }
 
-      // Fetch contact counts grouped by company
-      const { data: contacts } = await supabase
-        .from("contacts")
-        .select("company");
-
-      const countMap = new Map<string, number>();
-      if (contacts) {
-        for (const c of contacts) {
-          if (c.company) {
-            const key = c.company.toLowerCase();
-            countMap.set(key, (countMap.get(key) ?? 0) + 1);
-          }
-        }
-      }
-
-      const companiesWithCounts: CompanyWithCount[] = (entities as Entity[]).map(
-        (entity) => ({
-          ...entity,
-          contact_count:
-            countMap.get(entity.name.toLowerCase()) ??
-            countMap.get((entity.canonical_name ?? "").toLowerCase()) ??
-            0,
-        })
-      );
-
-      setCompanies(companiesWithCounts);
+      setCompanies(data as Company[]);
       setLoading(false);
     }
     load();
@@ -76,7 +60,9 @@ export default function CompaniesPage() {
       <PageHeader
         title="Empresas"
         description="Directorio de empresas e inteligencia comercial"
-      />
+      >
+        <BatchEnrichButton type="companies" />
+      </PageHeader>
 
       {/* Search */}
       <div className="relative max-w-sm">
@@ -93,7 +79,7 @@ export default function CompaniesPage() {
       {loading && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-[160px] w-full" />
+            <Skeleton key={i} className="h-[180px] w-full" />
           ))}
         </div>
       )}
@@ -114,46 +100,65 @@ export default function CompaniesPage() {
       {/* Grid */}
       {!loading && filtered.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((company) => {
-            const industry = company.attributes?.industry as string | undefined;
-
-            return (
-              <Link key={company.id} href={`/companies/${company.id}`}>
-                <Card className="transition-colors hover:border-primary/30 hover:shadow-md cursor-pointer h-full">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <Building2 className="h-5 w-5 text-primary" />
-                        </div>
-                        <CardTitle className="text-base leading-tight">
-                          {company.name}
-                        </CardTitle>
+          {filtered.map((company) => (
+            <Link key={company.id} href={`/companies/${company.id}`}>
+              <Card className="transition-colors hover:border-primary/30 hover:shadow-md cursor-pointer h-full">
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                        <Building2 className="h-5 w-5 text-primary" />
                       </div>
-                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      <CardTitle className="text-base leading-tight">
+                        {company.name}
+                      </CardTitle>
                     </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {industry && (
-                      <Badge variant="secondary">{industry}</Badge>
+                    <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Badges row */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {company.industry && (
+                      <Badge variant="secondary">{company.industry}</Badge>
                     )}
-                    <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    {company.is_customer && (
+                      <Badge variant="success">Cliente</Badge>
+                    )}
+                    {company.is_supplier && (
+                      <Badge variant="info">Proveedor</Badge>
+                    )}
+                  </div>
+
+                  {/* Lifetime value */}
+                  {company.lifetime_value != null && company.lifetime_value > 0 && (
+                    <p className="text-sm font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      {formatCurrency(company.lifetime_value)}
+                    </p>
+                  )}
+
+                  {/* Footer info */}
+                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+                    {(company.country || company.city) && (
                       <div className="flex items-center gap-1.5">
-                        <Users className="h-3.5 w-3.5" />
+                        <MapPin className="h-3.5 w-3.5" />
                         <span>
-                          {company.contact_count}{" "}
-                          {company.contact_count === 1
-                            ? "contacto"
-                            : "contactos"}
+                          {[company.city, company.country]
+                            .filter(Boolean)
+                            .join(", ")}
                         </span>
                       </div>
-                      <span>{formatDate(company.last_seen)}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
+                    )}
+                    {company.enriched_at && (
+                      <div className="flex items-center gap-1" title={`Enriquecido ${timeAgo(company.enriched_at)}`}>
+                        <Sparkles className="h-3 w-3 text-amber-500" />
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
         </div>
       )}
     </div>

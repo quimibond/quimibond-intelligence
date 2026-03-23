@@ -26,7 +26,7 @@ import {
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<number | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("all");
 
@@ -61,7 +61,7 @@ export default function AlertsPage() {
     return { newCount, acknowledgedCount, resolvedCount };
   }, [alerts]);
 
-  async function updateState(id: string, state: "acknowledged" | "resolved") {
+  async function updateState(id: number, state: "acknowledged" | "resolved") {
     const updates: Record<string, unknown> = { state };
     if (state === "resolved") {
       updates.resolved_at = new Date().toISOString();

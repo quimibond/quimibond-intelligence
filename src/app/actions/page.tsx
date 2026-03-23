@@ -83,7 +83,7 @@ export default function ActionsPage() {
     return { pending, overdue, completed };
   }, [actions]);
 
-  async function markCompleted(id: string) {
+  async function markCompleted(id: number) {
     const { error } = await supabase
       .from("action_items")
       .update({ state: "completed", completed_date: new Date().toISOString() })
@@ -99,7 +99,7 @@ export default function ActionsPage() {
     }
   }
 
-  async function dismiss(id: string) {
+  async function dismiss(id: number) {
     const { error } = await supabase
       .from("action_items")
       .update({ state: "dismissed" })
