@@ -8,12 +8,16 @@ export function ThemeToggle() {
   const [isDark, setIsDark] = useState(true);
 
   useEffect(() => {
-    setIsDark(document.documentElement.classList.contains("dark"));
+    const stored = localStorage.getItem("qb-theme");
+    const dark = stored ? stored === "dark" : true;
+    setIsDark(dark);
+    document.documentElement.classList.toggle("dark", dark);
   }, []);
 
   const toggle = useCallback(() => {
     const next = !isDark;
     setIsDark(next);
+    localStorage.setItem("qb-theme", next ? "dark" : "light");
     document.documentElement.classList.toggle("dark", next);
   }, [isDark]);
 

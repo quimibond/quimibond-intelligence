@@ -15,7 +15,15 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <body className="dark">
+      <head>
+        {/* Prevent flash: apply theme before paint */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var t=localStorage.getItem("qb-theme");document.documentElement.classList.toggle("dark",t?t==="dark":true)}catch(e){document.documentElement.classList.add("dark")}})()`,
+          }}
+        />
+      </head>
+      <body>
         <AppSidebar />
         <main className="pl-64">
           <div className="min-h-screen p-6">{children}</div>
