@@ -10,7 +10,9 @@ import {
   Building2,
   CheckSquare,
   Clock,
+  DollarSign,
   Link2,
+  Sparkles,
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -29,7 +31,10 @@ import type {
   Alert,
   ActionItem,
 } from "@/lib/types";
+import { EnrichButton } from "@/components/shared/enrich-button";
+import { HealthRadar } from "@/components/shared/health-radar";
 import { PageHeader } from "@/components/shared/page-header";
+import { RevenueChart } from "@/components/shared/revenue-chart";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
@@ -92,6 +97,16 @@ export default function CompanyDetailPage() {
   const [relationships, setRelationships] = useState<ResolvedRelationship[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [revenueData, setRevenueData] = useState<
+    Array<{ period: string; invoiced: number; paid: number; overdue: number }>
+  >([]);
+  const [healthScores, setHealthScores] = useState<{
+    communication: number;
+    financial: number;
+    sentiment: number;
+    responsiveness: number;
+    engagement: number;
+  } | null>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -254,6 +269,73 @@ export default function CompanyDetailPage() {
         setAlerts((alertData as Alert[] | null) ?? []);
       }
 
+      // 7. Fetch revenue data (gracefully handle missing table/rpc)
+      try {
+        const { data: rpcData, error: rpcError } = await supabase.rpc(
+          "get_company_revenue",
+          { p_company_name: companyName, p_months: 12 },
+        );
+        if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+          setRevenueData(rpcData);
+        } else {
+          // Fallback: direct query
+          const { data: metricsData } = await supabase
+            .from("revenue_metrics")
+            .select("*")
+            .order("period_start", { ascending: true });
+
+          if (metricsData && metricsData.length > 0) {
+            const filtered = metricsData.filter(
+              (r: Record<string, unknown>) =>
+                typeof r.company_name === "string" &&
+                r.company_name.toLowerCase() === companyName.toLowerCase(),
+            );
+            if (filtered.length > 0) {
+              setRevenueData(
+                filtered.map((r: Record<string, unknown>) => ({
+                  period: String(r.period_start ?? r.period ?? ""),
+                  invoiced: Number(r.invoiced ?? 0),
+                  paid: Number(r.paid ?? 0),
+                  overdue: Number(r.overdue ?? 0),
+                })),
+              );
+            }
+          }
+        }
+      } catch {
+        // Table or RPC may not exist — ignore
+      }
+
+      // 8. Fetch health scores for contacts at this company
+      if (contactIds.length > 0) {
+        try {
+          const { data: healthData } = await supabase
+            .from("customer_health_scores")
+            .select("communication_score, financial_score, sentiment_score, responsiveness_score, engagement_score")
+            .in("contact_id", contactIds);
+
+          if (healthData && healthData.length > 0) {
+            const avg = (field: string) => {
+              const vals = healthData
+                .map((h: Record<string, unknown>) => Number(h[field]))
+                .filter((v: number) => !isNaN(v) && v > 0);
+              return vals.length > 0
+                ? vals.reduce((a: number, b: number) => a + b, 0) / vals.length
+                : 0;
+            };
+            setHealthScores({
+              communication: avg("communication_score"),
+              financial: avg("financial_score"),
+              sentiment: avg("sentiment_score"),
+              responsiveness: avg("responsiveness_score"),
+              engagement: avg("engagement_score"),
+            });
+          }
+        } catch {
+          // Table may not exist — ignore
+        }
+      }
+
       setLoading(false);
     }
     fetchAll();
@@ -302,7 +384,7 @@ export default function CompanyDetailPage() {
 
   // ── Derived data ──
 
-  const attributes = entity.attributes ?? {};
+  const attributes = (entity.attributes ?? {}) as Record<string, string | string[] | number | boolean | null>;
   const industry = attributes.industry as string | undefined;
   const activeAlerts = alerts.filter((a) => a.state !== "resolved").length;
 
@@ -321,6 +403,11 @@ export default function CompanyDetailPage() {
       {/* Header */}
       <PageHeader title={entity.name}>
         {industry && <Badge variant="secondary">{industry}</Badge>}
+        <EnrichButton
+          type="company"
+          id={entity.id}
+          name={entity.name}
+        />
       </PageHeader>
 
       {/* Key info bar */}
@@ -384,6 +471,10 @@ export default function CompanyDetailPage() {
           <TabsTrigger value="acciones">
             Acciones ({actions.length})
           </TabsTrigger>
+          <TabsTrigger value="finanzas">
+            <DollarSign className="mr-1 h-3.5 w-3.5" />
+            Finanzas
+          </TabsTrigger>
         </TabsList>
 
         {/* ── Resumen ── */}
@@ -400,15 +491,13 @@ export default function CompanyDetailPage() {
                 </p>
               ) : (
                 <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {Object.entries(attributes).map(([key, value]) => (
+                  {Object.entries(attributes).map(([key, val]) => (
                     <div key={key}>
                       <p className="text-xs text-muted-foreground capitalize">
                         {key.replace(/_/g, " ")}
                       </p>
                       <p className="text-sm font-medium">
-                        {typeof value === "string"
-                          ? value
-                          : JSON.stringify(value)}
+                        {String(typeof val === "string" ? val : JSON.stringify(val))}
                       </p>
                     </div>
                   ))}
@@ -461,6 +550,92 @@ export default function CompanyDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Enrichment data */}
+          {(attributes.description ||
+            attributes.business_type ||
+            attributes.risk_signals ||
+            attributes.opportunity_signals ||
+            attributes.strategic_notes) && (
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-muted-foreground" />
+                  <CardTitle>Datos Enriquecidos</CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {attributes.description && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Descripcion</p>
+                    <p className="mt-1 text-sm">{String(attributes.description)}</p>
+                  </div>
+                )}
+                {attributes.business_type && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Tipo de negocio</p>
+                    <p className="mt-1 text-sm">{String(attributes.business_type)}</p>
+                  </div>
+                )}
+                {attributes.risk_signals && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Senales de riesgo</p>
+                    {Array.isArray(attributes.risk_signals) ? (
+                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-sm text-red-600 dark:text-red-400">
+                        {(attributes.risk_signals as string[]).map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-sm text-red-600 dark:text-red-400">
+                        {String(attributes.risk_signals)}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {attributes.opportunity_signals && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Senales de oportunidad</p>
+                    {Array.isArray(attributes.opportunity_signals) ? (
+                      <ul className="mt-1 list-inside list-disc space-y-0.5 text-sm text-emerald-600 dark:text-emerald-400">
+                        {(attributes.opportunity_signals as string[]).map((s, i) => (
+                          <li key={i}>{s}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="mt-1 text-sm text-emerald-600 dark:text-emerald-400">
+                        {String(attributes.opportunity_signals)}
+                      </p>
+                    )}
+                  </div>
+                )}
+                {attributes.strategic_notes && (
+                  <div>
+                    <p className="text-xs font-medium text-muted-foreground">Notas estrategicas</p>
+                    <p className="mt-1 text-sm">{String(attributes.strategic_notes)}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Health Radar */}
+          {healthScores && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Salud de la Relacion</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <HealthRadar
+                  communication={healthScores.communication}
+                  financial={healthScores.financial}
+                  sentiment={healthScores.sentiment}
+                  responsiveness={healthScores.responsiveness}
+                  engagement={healthScores.engagement}
+                />
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         {/* ── Contactos ── */}
@@ -685,6 +860,79 @@ export default function CompanyDetailPage() {
                 </TableBody>
               </Table>
             </div>
+          )}
+        </TabsContent>
+
+        {/* ── Finanzas ── */}
+        <TabsContent value="finanzas" className="space-y-6">
+          {revenueData.length === 0 ? (
+            <EmptyState
+              icon={DollarSign}
+              title="Sin datos financieros"
+              description="No hay datos de revenue disponibles para esta empresa."
+            />
+          ) : (
+            <>
+              {/* Summary stats */}
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Total Facturado
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                      $
+                      {revenueData
+                        .reduce((sum, r) => sum + r.invoiced, 0)
+                        .toLocaleString("es-MX", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">Total Pagado</p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                      $
+                      {revenueData
+                        .reduce((sum, r) => sum + r.paid, 0)
+                        .toLocaleString("es-MX", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                    </p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="pt-4">
+                    <p className="text-xs text-muted-foreground">
+                      Total Vencido
+                    </p>
+                    <p className="mt-1 text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">
+                      $
+                      {revenueData
+                        .reduce((sum, r) => sum + r.overdue, 0)
+                        .toLocaleString("es-MX", {
+                          minimumFractionDigits: 0,
+                          maximumFractionDigits: 0,
+                        })}
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              {/* Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Revenue Mensual</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <RevenueChart data={revenueData} />
+                </CardContent>
+              </Card>
+            </>
           )}
         </TabsContent>
       </Tabs>

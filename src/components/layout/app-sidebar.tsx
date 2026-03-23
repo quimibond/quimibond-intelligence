@@ -16,6 +16,8 @@ import {
   Network,
   MessageSquare,
   Settings,
+  MessagesSquare,
+  Search,
 } from "lucide-react";
 
 const navItems = [
@@ -23,6 +25,7 @@ const navItems = [
   { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/emails", label: "Emails", icon: Mail },
+  { href: "/threads", label: "Hilos", icon: MessagesSquare },
   { href: "/alerts", label: "Alertas", icon: Bell },
   { href: "/actions", label: "Acciones", icon: CheckSquare },
   { href: "/briefings", label: "Briefings", icon: FileText },
@@ -92,9 +95,25 @@ export function AppSidebar() {
         ))}
       </nav>
 
+      {/* Search hint */}
+      <div className="px-3 pb-2">
+        <button
+          onClick={() => {
+            document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true }));
+          }}
+          className="flex w-full items-center gap-2 rounded-md border border-sidebar-border px-3 py-2 text-xs text-muted-foreground hover:bg-sidebar-accent/50 transition-colors"
+        >
+          <Search className="h-3.5 w-3.5" />
+          <span>Buscar...</span>
+          <kbd className="ml-auto rounded border border-sidebar-border px-1.5 py-0.5 text-[10px] font-mono">
+            ⌘K
+          </kbd>
+        </button>
+      </div>
+
       {/* Footer */}
       <div className="border-t border-sidebar-border px-6 py-3">
-        <span className="text-xs text-muted-foreground">v1.0</span>
+        <span className="text-xs text-muted-foreground">v2.0</span>
       </div>
     </aside>
   );

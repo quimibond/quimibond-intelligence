@@ -82,6 +82,8 @@ export interface Alert {
   is_read: boolean;
   business_impact: string | null;
   suggested_action: string | null;
+  user_feedback?: string | null;
+  feedback_note?: string | null;
   created_at: string;
   resolved_at: string | null;
 }
@@ -101,6 +103,8 @@ export interface ActionItem {
   contact_company: string | null;
   source_thread_id: string | null;
   completed_date: string | null;
+  user_feedback?: string | null;
+  feedback_note?: string | null;
   created_at: string;
 }
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { SearchCommand } from "@/components/shared/search-command";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -19,6 +20,7 @@ export default function RootLayout({
         <main className="pl-64">
           <div className="min-h-screen p-6">{children}</div>
         </main>
+        <SearchCommand />
       </body>
     </html>
   );

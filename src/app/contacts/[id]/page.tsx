@@ -7,6 +7,7 @@ import {
   Brain,
   Bell,
   CheckSquare,
+  HeartPulse,
   Mail,
   MessageSquare,
   User,
@@ -35,6 +36,9 @@ import { RiskBadge } from "@/components/shared/risk-badge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
 import { EmptyState } from "@/components/shared/empty-state";
+import { HealthRadar } from "@/components/shared/health-radar";
+import { HealthTrendChart } from "@/components/shared/health-trend-chart";
+import { TrendBadge } from "@/components/shared/trend-badge";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -94,6 +98,8 @@ export default function ContactDetailPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [patterns, setPatterns] = useState<CommunicationPattern[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [healthScores, setHealthScores] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchAll() {
@@ -142,6 +148,20 @@ export default function ContactDetailPage() {
       setAlerts((alertsRes.data as Alert[] | null) ?? []);
       setActions((actionsRes.data as ActionItem[] | null) ?? []);
       setPatterns((patternsRes.data as CommunicationPattern[] | null) ?? []);
+
+      // Fetch health scores (table may not exist yet)
+      try {
+        const { data: healthData } = await supabase
+          .from("customer_health_scores")
+          .select("*")
+          .eq("contact_id", contactId)
+          .order("score_date", { ascending: false })
+          .limit(30);
+        setHealthScores(healthData ?? []);
+      } catch {
+        // Table may not exist — ignore
+        setHealthScores([]);
+      }
 
       // Emails need ilike on sender/recipient
       if (c?.email) {
@@ -300,6 +320,7 @@ export default function ContactDetailPage() {
       <Tabs defaultValue="perfil">
         <TabsList>
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
+          <TabsTrigger value="salud">Salud</TabsTrigger>
           <TabsTrigger value="comunicacion">Comunicacion</TabsTrigger>
           <TabsTrigger value="inteligencia">Inteligencia</TabsTrigger>
           <TabsTrigger value="alertas">Alertas</TabsTrigger>
@@ -402,6 +423,124 @@ export default function ContactDetailPage() {
               icon={User}
               title="Sin perfil"
               description="Aun no se ha generado un perfil para este contacto."
+            />
+          )}
+        </TabsContent>
+
+        {/* ── Salud ── */}
+        <TabsContent value="salud" className="space-y-6">
+          {healthScores.length > 0 ? (
+            (() => {
+              const latest = healthScores[0];
+              const trendData = [...healthScores]
+                .reverse()
+                .map((s: Record<string, unknown>) => ({
+                  date: s.score_date as string,
+                  total: s.total_score as number,
+                  communication: s.communication_score as number | undefined,
+                  financial: s.financial_score as number | undefined,
+                  sentiment: s.sentiment_score as number | undefined,
+                  responsiveness: s.responsiveness_score as number | undefined,
+                  engagement: s.engagement_score as number | undefined,
+                }));
+              const riskSignals: string[] =
+                Array.isArray(latest.risk_signals) ? latest.risk_signals : [];
+              const opportunitySignals: string[] =
+                Array.isArray(latest.opportunity_signals)
+                  ? latest.opportunity_signals
+                  : [];
+
+              return (
+                <>
+                  {/* Score + Trend */}
+                  <div className="flex items-center gap-4">
+                    <div className="text-5xl font-bold tabular-nums">
+                      {Math.round(latest.total_score ?? 0)}
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-sm text-muted-foreground">
+                        Health Score
+                      </p>
+                      {latest.trend && <TrendBadge trend={latest.trend} />}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-6 md:grid-cols-2">
+                    {/* Radar */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm">Dimensiones</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <HealthRadar
+                          communication={latest.communication_score ?? 0}
+                          financial={latest.financial_score ?? 0}
+                          sentiment={latest.sentiment_score ?? 0}
+                          responsiveness={latest.responsiveness_score ?? 0}
+                          engagement={latest.engagement_score ?? 0}
+                        />
+                      </CardContent>
+                    </Card>
+
+                    {/* Trend chart */}
+                    <Card>
+                      <CardHeader>
+                        <CardTitle className="text-sm">
+                          Tendencia (30 dias)
+                        </CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <HealthTrendChart data={trendData} />
+                      </CardContent>
+                    </Card>
+                  </div>
+
+                  {/* Signals */}
+                  {(riskSignals.length > 0 ||
+                    opportunitySignals.length > 0) && (
+                    <div className="grid gap-6 md:grid-cols-2">
+                      {riskSignals.length > 0 && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-sm">
+                              Senales de riesgo
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="flex flex-wrap gap-1.5">
+                            {riskSignals.map((s: string) => (
+                              <Badge key={s} variant="critical">
+                                {s}
+                              </Badge>
+                            ))}
+                          </CardContent>
+                        </Card>
+                      )}
+                      {opportunitySignals.length > 0 && (
+                        <Card>
+                          <CardHeader>
+                            <CardTitle className="text-sm">
+                              Oportunidades
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent className="flex flex-wrap gap-1.5">
+                            {opportunitySignals.map((s: string) => (
+                              <Badge key={s} variant="success">
+                                {s}
+                              </Badge>
+                            ))}
+                          </CardContent>
+                        </Card>
+                      )}
+                    </div>
+                  )}
+                </>
+              );
+            })()
+          ) : (
+            <EmptyState
+              icon={HeartPulse}
+              title="Sin datos de salud"
+              description="No hay datos de salud disponibles para este contacto."
             />
           )}
         </TabsContent>

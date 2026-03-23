@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
+import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -227,33 +228,40 @@ export default function AlertsPage() {
                             </p>
                           </div>
                         )}
-                        <div className="flex items-center gap-2 pt-1">
-                          {alert.state === "new" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateState(alert.id, "acknowledged");
-                              }}
-                            >
-                              <Eye className="h-3.5 w-3.5" />
-                              Reconocer
-                            </Button>
-                          )}
-                          {alert.state !== "resolved" && (
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                updateState(alert.id, "resolved");
-                              }}
-                            >
-                              <CheckCircle2 className="h-3.5 w-3.5" />
-                              Resolver
-                            </Button>
-                          )}
+                        <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center gap-2">
+                            {alert.state === "new" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateState(alert.id, "acknowledged");
+                                }}
+                              >
+                                <Eye className="h-3.5 w-3.5" />
+                                Reconocer
+                              </Button>
+                            )}
+                            {alert.state !== "resolved" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  updateState(alert.id, "resolved");
+                                }}
+                              >
+                                <CheckCircle2 className="h-3.5 w-3.5" />
+                                Resolver
+                              </Button>
+                            )}
+                          </div>
+                          <FeedbackButtons
+                            table="alerts"
+                            id={alert.id}
+                            currentFeedback={alert.user_feedback}
+                          />
                         </div>
                       </div>
                     </TableCell>

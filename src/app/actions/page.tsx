@@ -14,6 +14,7 @@ import type { ActionItem } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StateBadge } from "@/components/shared/state-badge";
+import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -243,26 +244,33 @@ export default function ActionsPage() {
                     {timeAgo(action.created_at)}
                   </TableCell>
                   <TableCell>
-                    {action.state === "pending" && (
-                      <div className="flex items-center gap-1">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Completar"
-                          onClick={() => markCompleted(action.id)}
-                        >
-                          <CheckCircle2 className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          title="Descartar"
-                          onClick={() => dismiss(action.id)}
-                        >
-                          <XCircle className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      {action.state === "pending" && (
+                        <>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Completar"
+                            onClick={() => markCompleted(action.id)}
+                          >
+                            <CheckCircle2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            title="Descartar"
+                            onClick={() => dismiss(action.id)}
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </Button>
+                        </>
+                      )}
+                      <FeedbackButtons
+                        table="action_items"
+                        id={action.id}
+                        currentFeedback={action.user_feedback}
+                      />
+                    </div>
                   </TableCell>
                 </TableRow>
               );

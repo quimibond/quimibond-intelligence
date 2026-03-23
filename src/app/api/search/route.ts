@@ -1,0 +1,76 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServiceClient } from "@/lib/supabase-server";
+
+export async function POST(req: NextRequest) {
+  try {
+    const { query } = (await req.json()) as { query?: string };
+
+    if (!query || query.trim().length < 2) {
+      return NextResponse.json(
+        { contacts: [], entities: [], alerts: [], facts: [], emails: [] },
+        { status: 200 }
+      );
+    }
+
+    const supabase = getServiceClient();
+    const trimmed = query.trim();
+
+    // Try RPC first
+    const { data: rpcData, error: rpcError } = await supabase.rpc(
+      "search_global",
+      { query: trimmed, max_results: 15 }
+    );
+
+    if (!rpcError && rpcData) {
+      return NextResponse.json(rpcData);
+    }
+
+    // Fallback: manual search across tables
+    const pattern = `%${trimmed}%`;
+
+    const [contacts, entities, alerts, facts, emails] = await Promise.all([
+      supabase
+        .from("contacts")
+        .select("id, name, email, company, risk_level")
+        .or(`name.ilike.${pattern},email.ilike.${pattern},company.ilike.${pattern}`)
+        .limit(10),
+      supabase
+        .from("entities")
+        .select("id, name, canonical_name, entity_type")
+        .or(`name.ilike.${pattern},canonical_name.ilike.${pattern}`)
+        .limit(10),
+      supabase
+        .from("alerts")
+        .select("id, title, description, severity, state, created_at")
+        .or(`title.ilike.${pattern},description.ilike.${pattern}`)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("facts")
+        .select("id, fact_text, confidence, entity_id, created_at")
+        .ilike("fact_text", pattern)
+        .order("created_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("emails")
+        .select("id, subject, snippet, sender, received_at")
+        .or(`subject.ilike.${pattern},snippet.ilike.${pattern},sender.ilike.${pattern}`)
+        .order("received_at", { ascending: false })
+        .limit(10),
+    ]);
+
+    return NextResponse.json({
+      contacts: contacts.data ?? [],
+      entities: entities.data ?? [],
+      alerts: alerts.data ?? [],
+      facts: facts.data ?? [],
+      emails: emails.data ?? [],
+    });
+  } catch (error) {
+    console.error("[search] Error:", error);
+    return NextResponse.json(
+      { error: "Error al buscar" },
+      { status: 500 }
+    );
+  }
+}
