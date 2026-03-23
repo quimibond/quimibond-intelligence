@@ -9,7 +9,6 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
-import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -208,26 +207,6 @@ export default function AlertsPage() {
                             <p className="mt-0.5 text-sm">{alert.description}</p>
                           </div>
                         )}
-                        {alert.business_impact && (
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Impacto de negocio
-                            </p>
-                            <p className="mt-0.5 text-sm">
-                              {alert.business_impact}
-                            </p>
-                          </div>
-                        )}
-                        {alert.suggested_action && (
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Accion sugerida
-                            </p>
-                            <p className="mt-0.5 text-sm">
-                              {alert.suggested_action}
-                            </p>
-                          </div>
-                        )}
                         <div className="flex items-center justify-between pt-1">
                           <div className="flex items-center gap-2">
                             {alert.state === "new" && (
@@ -257,11 +236,6 @@ export default function AlertsPage() {
                               </Button>
                             )}
                           </div>
-                          <FeedbackButtons
-                            table="alerts"
-                            id={alert.id}
-                            currentFeedback={alert.user_feedback}
-                          />
                         </div>
                       </div>
                     </TableCell>

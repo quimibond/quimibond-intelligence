@@ -13,11 +13,9 @@ export interface Contact {
   avg_response_time_hours: number | null;
   last_activity: string | null;
   first_seen: string | null;
-  last_seen: string | null;
   risk_level: string | null;
   relationship_score: number | null;
   sentiment_score: number | null;
-  tags: unknown;
   // Profile data (written by backend directly to contacts)
   role: string | null;
   decision_power: string | null;
@@ -35,8 +33,6 @@ export interface Contact {
   lifetime_value: number | null;
   open_alerts_count: number | null;
   pending_actions_count: number | null;
-  last_email_date: string | null;
-  days_since_last_contact: number | null;
   // Odoo refs
   odoo_partner_id: number | null;
   is_customer: boolean | null;
@@ -51,7 +47,6 @@ export interface Company {
   id: number;
   name: string;
   canonical_name: string | null;
-  domain: string | null;
   odoo_partner_id: number | null;
   entity_id: number | null;
   is_customer: boolean;
@@ -72,7 +67,6 @@ export interface Company {
   relationship_type: string | null;
   country: string | null;
   city: string | null;
-  website: string | null;
   risk_signals: unknown;
   opportunity_signals: unknown;
   strategic_notes: string | null;
@@ -139,10 +133,7 @@ export interface Email {
   is_reply: boolean;
   sender_type: string | null;
   has_attachments: boolean;
-  importance: string | null;
   kg_processed: boolean;
-  contact_id: number | null;
-  company_id: number | null;
   created_at: string;
 }
 
@@ -156,15 +147,11 @@ export interface Alert {
   contact_id: number | null;
   company_id: number | null;
   account: string | null;
-  related_thread_id: string | null;
   state: string;
   is_read: boolean;
   is_resolved: boolean;
-  business_impact: string | null;
-  suggested_action: string | null;
-  user_feedback: string | null;
-  feedback_note: string | null;
-  odoo_id: number | null;
+  prediction_id: string | null;
+  prediction_confidence: number | null;
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
@@ -187,9 +174,8 @@ export interface ActionItem {
   source_thread_id: string | null;
   completed_date: string | null;
   completed_at: string | null;
-  odoo_id: number | null;
-  user_feedback: string | null;
-  feedback_note: string | null;
+  prediction_id: string | null;
+  prediction_confidence: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -217,7 +203,6 @@ export interface Entity {
   attributes: Record<string, unknown>;
   first_seen: string | null;
   last_seen: string | null;
-  mention_count: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -229,7 +214,6 @@ export interface EntityRelationship {
   relationship_type: string;
   strength: number | null;
   context: string | null;
-  interaction_count: number | null;
   created_at: string;
 }
 
@@ -243,10 +227,8 @@ export interface Fact {
   fact_date: string | null;
   is_future: boolean;
   expired: boolean;
-  source_email_id: number | null;
   source_account: string | null;
   source_type: string | null;
-  company_id: number | null;
   created_at: string;
 }
 
@@ -276,7 +258,6 @@ export interface CustomerHealthScore {
   contact_email: string | null;
   score_date: string;
   overall_score: number | null;
-  previous_score: number | null;
   trend: string | null;
   communication_score: number | null;
   financial_score: number | null;

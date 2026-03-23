@@ -331,7 +331,6 @@ export default function KnowledgePage() {
                       <TableHead>Tipo relacion</TableHead>
                       <TableHead>Entidad B</TableHead>
                       <TableHead className="w-40">Fuerza</TableHead>
-                      <TableHead>Interacciones</TableHead>
                       <TableHead>Fecha</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -359,9 +358,6 @@ export default function KnowledgePage() {
                               {((rel.strength ?? 0) * 100).toFixed(0)}%
                             </span>
                           </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground text-center">
-                          {rel.interaction_count ?? 0}
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {formatDate(rel.created_at)}

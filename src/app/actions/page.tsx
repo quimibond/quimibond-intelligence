@@ -14,7 +14,6 @@ import type { ActionItem } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StateBadge } from "@/components/shared/state-badge";
-import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -265,11 +264,6 @@ export default function ActionsPage() {
                           </Button>
                         </>
                       )}
-                      <FeedbackButtons
-                        table="action_items"
-                        id={action.id}
-                        currentFeedback={action.user_feedback}
-                      />
                     </div>
                   </TableCell>
                 </TableRow>

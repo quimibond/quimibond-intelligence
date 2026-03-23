@@ -446,16 +446,6 @@ export default function ContactDetailPage() {
                     </p>
                   </div>
                 )}
-                {contact.days_since_last_contact != null && (
-                  <div>
-                    <p className="text-xs text-muted-foreground">
-                      Dias sin contacto
-                    </p>
-                    <p className="text-sm font-medium">
-                      {contact.days_since_last_contact}
-                    </p>
-                  </div>
-                )}
               </div>
 
               {/* Personality notes (text block) */}
