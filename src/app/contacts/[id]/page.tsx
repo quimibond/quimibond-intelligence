@@ -37,6 +37,8 @@ import { HealthRadar } from "@/components/shared/health-radar";
 import { HealthTrendChart } from "@/components/shared/health-trend-chart";
 import { ProfileCard } from "@/components/shared/profile-card";
 import { TrendBadge } from "@/components/shared/trend-badge";
+import { EnrichButton } from "@/components/shared/enrich-button";
+import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -259,7 +261,7 @@ export default function ContactDetailPage() {
             {getInitials(contact.name)}
           </AvatarFallback>
         </Avatar>
-        <div>
+        <div className="flex-1">
           <h1 className="text-2xl font-bold tracking-tight">
             {contact.name ?? "Sin nombre"}
           </h1>
@@ -279,6 +281,7 @@ export default function ContactDetailPage() {
             )}
           </div>
         </div>
+        <EnrichButton type="contact" id={contactId} name={contact.name ?? "contacto"} />
       </div>
 
       {/* Key metrics */}
@@ -622,6 +625,7 @@ export default function ContactDetailPage() {
                     <TableHead>Titulo</TableHead>
                     <TableHead>Estado</TableHead>
                     <TableHead>Fecha</TableHead>
+                    <TableHead className="w-[80px]">Feedback</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -638,6 +642,9 @@ export default function ContactDetailPage() {
                       </TableCell>
                       <TableCell className="text-muted-foreground whitespace-nowrap">
                         {formatDate(alert.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        <FeedbackButtons table="alerts" id={alert.id} currentFeedback={null} />
                       </TableCell>
                     </TableRow>
                   ))}

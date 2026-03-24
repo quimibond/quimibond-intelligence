@@ -1,8 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Send, User } from "lucide-react";
+import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/shared/page-header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -12,66 +13,127 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
+  rated?: "positive" | "negative" | null;
 }
 
 const WELCOME_MESSAGE: ChatMessage = {
   role: "assistant",
   content:
-    "Hola! Soy tu asistente de inteligencia comercial. Preguntame sobre contactos, empresas, alertas o cualquier dato de tu sistema.",
+    "Hola! Soy tu asistente de inteligencia comercial de Quimibond. Puedo ayudarte con informacion sobre contactos, empresas, alertas, riesgos, tendencias y mas. Que necesitas saber?",
 };
+
+const SUGGESTED_QUESTIONS = [
+  "Cuales son las alertas criticas de hoy?",
+  "Que contactos estan en mayor riesgo?",
+  "Resume el ultimo briefing diario",
+  "Que competidores han sido mencionados recientemente?",
+  "Cuales son las acciones pendientes mas urgentes?",
+  "Dame el estado general de la cartera de clientes",
+];
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages, loading]);
 
-  const sendMessage = useCallback(async () => {
-    const text = input.trim();
-    if (!text || loading) return;
+  const sendMessage = useCallback(
+    async (text?: string) => {
+      const messageText = (text ?? input).trim();
+      if (!messageText || loading) return;
 
-    const userMessage: ChatMessage = { role: "user", content: text };
-    const updatedMessages = [...messages, userMessage];
-    setMessages(updatedMessages);
-    setInput("");
-    setLoading(true);
+      const userMessage: ChatMessage = { role: "user", content: messageText };
+      const updatedMessages = [...messages, userMessage];
+      setMessages(updatedMessages);
+      setInput("");
+      setLoading(true);
 
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message: text,
-          history: updatedMessages,
-        }),
-      });
+      try {
+        const res = await fetch("/api/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            message: messageText,
+            history: updatedMessages.map((m) => ({
+              role: m.role,
+              content: m.content,
+            })),
+          }),
+        });
 
-      const data = await res.json();
-      const assistantMessage: ChatMessage = {
-        role: "assistant",
-        content: data.response ?? "Error: no se recibio respuesta.",
-      };
-
-      setMessages((prev) => [...prev, assistantMessage]);
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        {
+        const data = await res.json();
+        const assistantMessage: ChatMessage = {
           role: "assistant",
-          content: "Error de conexion. Intenta de nuevo.",
-        },
-      ]);
-    } finally {
-      setLoading(false);
+          content: data.response ?? data.error ?? "Error: no se recibio respuesta.",
+        };
+
+        setMessages((prev) => [...prev, assistantMessage]);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          {
+            role: "assistant",
+            content: "Error de conexion. Intenta de nuevo.",
+          },
+        ]);
+      } finally {
+        setLoading(false);
+        inputRef.current?.focus();
+      }
+    },
+    [input, loading, messages]
+  );
+
+  async function rateMessage(index: number, rating: "positive" | "negative") {
+    const msg = messages[index];
+    if (!msg || msg.role !== "assistant") return;
+
+    const newRating = msg.rated === rating ? null : rating;
+
+    setMessages((prev) =>
+      prev.map((m, i) => (i === index ? { ...m, rated: newRating } : m))
+    );
+
+    // Find the user question that preceded this answer
+    const questionMsg = messages[index - 1];
+    if (!questionMsg || questionMsg.role !== "user") return;
+
+    // Save to chat_memory if positive
+    if (newRating === "positive") {
+      try {
+        await supabase.from("chat_memory").insert({
+          question: questionMsg.content,
+          answer: msg.content,
+          rating: "positive",
+        });
+      } catch {
+        // Table may not exist yet
+      }
     }
-  }, [input, loading, messages]);
+
+    // Save feedback signal
+    try {
+      await supabase.from("feedback_signals").insert({
+        entity_type: "chat_response",
+        signal_type: newRating ?? "neutral",
+        signal_value: newRating === "positive" ? 1.0 : newRating === "negative" ? -1.0 : 0,
+        source: "frontend_chat",
+        metadata: {
+          question: questionMsg.content,
+          answer_preview: msg.content.slice(0, 200),
+        },
+      });
+    } catch {
+      // Table may not exist yet
+    }
+  }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -80,14 +142,15 @@ export default function ChatPage() {
     }
   }
 
+  const showSuggestions = messages.length <= 1 && !loading;
+
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
       <PageHeader
         title="Chat"
-        description="Pregunta sobre tu inteligencia comercial"
+        description="Asistente de inteligencia comercial con IA"
       />
 
-      {/* Messages area */}
       <Card className="flex-1 flex flex-col overflow-hidden">
         <ScrollArea className="flex-1 p-4">
           <div ref={scrollRef} className="space-y-4">
@@ -96,7 +159,9 @@ export default function ChatPage() {
                 key={i}
                 className={cn(
                   "flex gap-3 max-w-[85%]",
-                  msg.role === "user" ? "ml-auto flex-row-reverse" : "mr-auto"
+                  msg.role === "user"
+                    ? "ml-auto flex-row-reverse"
+                    : "mr-auto"
                 )}
               >
                 <div
@@ -113,15 +178,56 @@ export default function ChatPage() {
                     <Bot className="h-4 w-4" />
                   )}
                 </div>
-                <div
-                  className={cn(
-                    "rounded-lg px-4 py-2.5 text-sm leading-relaxed",
-                    msg.role === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted"
+                <div className="space-y-1">
+                  <div
+                    className={cn(
+                      "rounded-lg px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
+                      msg.role === "user"
+                        ? "bg-primary text-primary-foreground"
+                        : "bg-muted"
+                    )}
+                  >
+                    {msg.content}
+                  </div>
+                  {/* Feedback buttons for assistant messages (skip welcome) */}
+                  {msg.role === "assistant" && i > 0 && (
+                    <div className="flex items-center gap-1 pl-1">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className={cn(
+                          "h-6 w-6 p-0",
+                          msg.rated === "positive" &&
+                            "text-green-600 dark:text-green-400"
+                        )}
+                        onClick={() => rateMessage(i, "positive")}
+                      >
+                        <ThumbsUp
+                          className={cn(
+                            "h-3 w-3",
+                            msg.rated === "positive" && "fill-current"
+                          )}
+                        />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className={cn(
+                          "h-6 w-6 p-0",
+                          msg.rated === "negative" &&
+                            "text-red-600 dark:text-red-400"
+                        )}
+                        onClick={() => rateMessage(i, "negative")}
+                      >
+                        <ThumbsDown
+                          className={cn(
+                            "h-3 w-3",
+                            msg.rated === "negative" && "fill-current"
+                          )}
+                        />
+                      </Button>
+                    </div>
                   )}
-                >
-                  {msg.content}
                 </div>
               </div>
             ))}
@@ -145,6 +251,27 @@ export default function ChatPage() {
                 </div>
               </div>
             )}
+
+            {/* Suggested questions */}
+            {showSuggestions && (
+              <div className="pt-4">
+                <p className="text-xs text-muted-foreground mb-2 flex items-center gap-1.5">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Preguntas sugeridas
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {SUGGESTED_QUESTIONS.map((q) => (
+                    <button
+                      key={q}
+                      onClick={() => sendMessage(q)}
+                      className="rounded-lg border bg-background px-3 py-1.5 text-xs hover:bg-muted transition-colors text-left"
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </ScrollArea>
 
@@ -152,6 +279,7 @@ export default function ChatPage() {
         <div className="border-t p-4">
           <div className="flex items-center gap-2">
             <Input
+              ref={inputRef}
               placeholder="Escribe tu pregunta..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -160,13 +288,16 @@ export default function ChatPage() {
               className="flex-1"
             />
             <Button
-              onClick={sendMessage}
+              onClick={() => sendMessage()}
               disabled={loading || !input.trim()}
               size="icon"
             >
               <Send className="h-4 w-4" />
             </Button>
           </div>
+          <p className="mt-1.5 text-[10px] text-muted-foreground">
+            Conectado a Claude con contexto RAG de tu base de datos Supabase
+          </p>
         </div>
       </Card>
     </div>

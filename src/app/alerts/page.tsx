@@ -9,6 +9,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
+import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -28,6 +29,7 @@ export default function AlertsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -46,13 +48,19 @@ export default function AlertsPage() {
     fetchAlerts();
   }, []);
 
+  const alertTypes = useMemo(() => {
+    const types = new Set(alerts.map((a) => a.alert_type));
+    return Array.from(types).sort();
+  }, [alerts]);
+
   const filtered = useMemo(() => {
     return alerts.filter((a) => {
       if (severityFilter !== "all" && a.severity !== severityFilter) return false;
       if (stateFilter !== "all" && a.state !== stateFilter) return false;
+      if (typeFilter !== "all" && a.alert_type !== typeFilter) return false;
       return true;
     });
-  }, [alerts, severityFilter, stateFilter]);
+  }, [alerts, severityFilter, stateFilter, typeFilter]);
 
   const counts = useMemo(() => {
     const newCount = alerts.filter((a) => a.state === "new").length;
@@ -163,6 +171,16 @@ export default function AlertsPage() {
           <option value="new">Nuevas</option>
           <option value="acknowledged">Reconocidas</option>
           <option value="resolved">Resueltas</option>
+        </Select>
+
+        <Select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+        >
+          <option value="all">Todos los tipos</option>
+          {alertTypes.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </Select>
       </div>
 
@@ -289,6 +307,13 @@ export default function AlertsPage() {
                                 Resolver
                               </Button>
                             )}
+                          </div>
+                          <div onClick={(e) => e.stopPropagation()}>
+                            <FeedbackButtons
+                              table="alerts"
+                              id={alert.id}
+                              currentFeedback={null}
+                            />
                           </div>
                         </div>
                       </div>

@@ -270,6 +270,148 @@ export interface CustomerHealthScore {
   created_at: string;
 }
 
+// ── Phase 2 types (from qb19 backend) ──
+
+export interface ChatMemory {
+  id: string;
+  question: string;
+  answer: string;
+  context_used: Record<string, unknown>;
+  rating: "positive" | "neutral" | "negative" | null;
+  times_retrieved: number;
+  saved_at: string;
+  created_at: string;
+}
+
+export interface FeedbackSignal {
+  id: string;
+  entity_type: string;
+  entity_id: string | null;
+  signal_type: string;
+  signal_value: number;
+  source: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface CommunicationPattern {
+  id: string;
+  contact_id: string | null;
+  contact_email: string | null;
+  pattern_type: string | null;
+  day_of_week: number | null;
+  hour_of_day: number | null;
+  avg_response_hours: number | null;
+  email_frequency: number | null;
+  preferred_channel: string | null;
+  analysis_period: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CompanySnapshot {
+  id: string;
+  company_id: string | null;
+  company_name: string | null;
+  snapshot_date: string;
+  total_invoiced: number;
+  total_pending: number;
+  total_overdue: number;
+  active_contacts: number;
+  open_alerts: number;
+  health_score: number | null;
+  risk_level: string | null;
+  trend: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface AccountSummary {
+  id: string;
+  account: string;
+  department: string | null;
+  summary_date: string;
+  summary_text: string | null;
+  overall_sentiment: string | null;
+  sentiment_score: number | null;
+  total_emails: number;
+  external_count: number;
+  internal_count: number;
+  key_items: unknown[];
+  waiting_response: unknown[];
+  urgent_items: unknown[];
+  risks_detected: unknown[];
+  competitors_mentioned: unknown[];
+  topics_detected: unknown[];
+  created_at: string;
+}
+
+export interface ResponseMetric {
+  id: string;
+  account: string;
+  metric_date: string;
+  avg_response_hours: number | null;
+  median_response_hours: number | null;
+  total_threads: number;
+  threads_responded: number;
+  threads_pending: number;
+  threads_stalled: number;
+  response_rate: number | null;
+  created_at: string;
+}
+
+export interface PredictionOutcome {
+  id: string;
+  prediction_id: string | null;
+  prediction_type: string;
+  entity_type: string | null;
+  entity_id: string | null;
+  predicted_value: string | null;
+  actual_value: string | null;
+  confidence: number | null;
+  was_correct: boolean | null;
+  evaluated_at: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface Learning {
+  id: string;
+  learning_type: string;
+  description: string;
+  evidence: Record<string, unknown>;
+  confidence: number;
+  applied: boolean;
+  applied_at: string | null;
+  created_at: string;
+}
+
+export interface PipelineRun {
+  id: string;
+  run_type: string;
+  status: "running" | "completed" | "failed" | "partial";
+  started_at: string;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  emails_processed: number;
+  alerts_generated: number;
+  actions_generated: number;
+  errors: unknown[];
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PipelineLog {
+  id: string;
+  run_id: string | null;
+  level: string;
+  phase: string | null;
+  message: string | null;
+  details: Record<string, unknown>;
+  created_at: string;
+}
+
 // ── RPC response types ──
 
 export interface DashboardKPI {
