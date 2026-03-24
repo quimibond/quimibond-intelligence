@@ -8,6 +8,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { PredictionStats } from "@/components/shared/prediction-stats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
@@ -352,7 +353,11 @@ export default function DashboardPage() {
               <TableBody>
                 {contacts_at_risk.map((contact) => (
                   <TableRow key={contact.id}>
-                    <TableCell className="font-medium">{contact.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <Link href={`/contacts/${contact.id}`} className="text-primary hover:underline">
+                        {contact.name}
+                      </Link>
+                    </TableCell>
                     <TableCell className="text-muted-foreground">{contact.company ?? "—"}</TableCell>
                     <TableCell><RiskBadge level={contact.risk_level} /></TableCell>
                     <TableCell>
@@ -369,6 +374,9 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Prediction Stats */}
+      <PredictionStats />
     </div>
   );
 }

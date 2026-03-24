@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   Activity,
   AlertTriangle,
@@ -12,6 +12,7 @@ import {
   RefreshCw,
   Server,
   Users,
+  ChevronDown,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -19,6 +20,7 @@ import { formatDateTime, timeAgo } from "@/lib/utils";
 import type { PipelineRun, SyncState } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
+import { PredictionStats } from "@/components/shared/prediction-stats";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -51,6 +53,9 @@ export default function SystemPage() {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [syncStates, setSyncStates] = useState<SyncState[]>([]);
   const [pipelineRuns, setPipelineRuns] = useState<PipelineRun[]>([]);
+  const [expandedRunId, setExpandedRunId] = useState<string | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [runLogs, setRunLogs] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -82,6 +87,22 @@ export default function SystemPage() {
     }
     fetchData();
   }, []);
+
+  const toggleRunLogs = useCallback(async (runId: string) => {
+    if (expandedRunId === runId) {
+      setExpandedRunId(null);
+      return;
+    }
+    setExpandedRunId(runId);
+    if (!runLogs[runId]) {
+      const { data } = await supabase
+        .from("pipeline_logs")
+        .select("*")
+        .eq("run_id", runId)
+        .order("created_at", { ascending: true });
+      setRunLogs((prev) => ({ ...prev, [runId]: data ?? [] }));
+    }
+  }, [expandedRunId, runLogs]);
 
   if (loading) {
     return (
@@ -145,38 +166,68 @@ export default function SystemPage() {
                   {pipelineRuns.map((run) => {
                     const cfg = statusConfig[run.status] ?? statusConfig.partial;
                     const StatusIcon = cfg.icon;
+                    const isExpanded = expandedRunId === run.id;
+                    const logs = runLogs[run.id] ?? [];
                     return (
-                      <TableRow key={run.id}>
-                        <TableCell className="font-medium">{run.run_type}</TableCell>
-                        <TableCell>
-                          <Badge variant={cfg.variant} className="gap-1">
-                            <StatusIcon className="h-3 w-3" />
-                            {run.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground whitespace-nowrap">
-                          <span title={formatDateTime(run.started_at)}>
-                            {timeAgo(run.started_at)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="tabular-nums text-muted-foreground">
-                          {run.duration_seconds != null
-                            ? run.duration_seconds >= 60
-                              ? `${Math.floor(run.duration_seconds / 60)}m ${Math.round(run.duration_seconds % 60)}s`
-                              : `${Math.round(run.duration_seconds)}s`
-                            : "—"}
-                        </TableCell>
-                        <TableCell className="text-right tabular-nums">{run.emails_processed}</TableCell>
-                        <TableCell className="text-right tabular-nums">{run.alerts_generated}</TableCell>
-                        <TableCell className="text-right tabular-nums">{run.actions_generated}</TableCell>
-                        <TableCell>
-                          {Array.isArray(run.errors) && run.errors.length > 0 ? (
-                            <Badge variant="critical">{run.errors.length}</Badge>
-                          ) : (
-                            <span className="text-muted-foreground">—</span>
-                          )}
-                        </TableCell>
-                      </TableRow>
+                      <>
+                        <TableRow key={run.id} className="cursor-pointer" onClick={() => toggleRunLogs(run.id)}>
+                          <TableCell className="font-medium">
+                            <div className="flex items-center gap-1">
+                              <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
+                              {run.run_type}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant={cfg.variant} className="gap-1">
+                              <StatusIcon className="h-3 w-3" />
+                              {run.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground whitespace-nowrap">
+                            <span title={formatDateTime(run.started_at)}>
+                              {timeAgo(run.started_at)}
+                            </span>
+                          </TableCell>
+                          <TableCell className="tabular-nums text-muted-foreground">
+                            {run.duration_seconds != null
+                              ? run.duration_seconds >= 60
+                                ? `${Math.floor(run.duration_seconds / 60)}m ${Math.round(run.duration_seconds % 60)}s`
+                                : `${Math.round(run.duration_seconds)}s`
+                              : "—"}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">{run.emails_processed}</TableCell>
+                          <TableCell className="text-right tabular-nums">{run.alerts_generated}</TableCell>
+                          <TableCell className="text-right tabular-nums">{run.actions_generated}</TableCell>
+                          <TableCell>
+                            {Array.isArray(run.errors) && run.errors.length > 0 ? (
+                              <Badge variant="critical">{run.errors.length}</Badge>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                        {isExpanded && (
+                          <TableRow key={`${run.id}-logs`}>
+                            <TableCell colSpan={8}>
+                              <div className="rounded-lg bg-muted/50 p-3 space-y-1 max-h-48 overflow-y-auto">
+                                {logs.length === 0 ? (
+                                  <p className="text-xs text-muted-foreground">Sin logs para esta ejecucion.</p>
+                                ) : (
+                                  logs.map((log) => (
+                                    <div key={log.id} className="flex items-start gap-2 text-xs">
+                                      <Badge variant={log.level === "error" ? "critical" : log.level === "warning" ? "warning" : "secondary"} className="text-[10px] shrink-0">
+                                        {log.level}
+                                      </Badge>
+                                      {log.phase && <span className="font-medium text-muted-foreground shrink-0">[{log.phase}]</span>}
+                                      <span>{log.message}</span>
+                                    </div>
+                                  ))
+                                )}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )}
+                      </>
                     );
                   })}
                 </TableBody>
@@ -238,6 +289,9 @@ export default function SystemPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Prediction Stats */}
+      <PredictionStats />
     </div>
   );
 }

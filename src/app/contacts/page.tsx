@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Search, Users } from "lucide-react";
+import { Loader2, Search, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, getInitials, timeAgo } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -29,9 +30,13 @@ function sentimentColor(score: number | null): string {
   return "text-red-600 dark:text-red-400";
 }
 
+const PAGE_SIZE = 50;
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState("all");
 
@@ -41,12 +46,28 @@ export default function ContactsPage() {
         .from("contacts")
         .select("*")
         .order("name", { ascending: true })
-        .limit(100);
+        .limit(PAGE_SIZE);
       setContacts(data ?? []);
+      setHasMore((data ?? []).length === PAGE_SIZE);
       setLoading(false);
     }
     fetchContacts();
   }, []);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from("contacts")
+      .select("*")
+      .order("name", { ascending: true })
+      .range(contacts.length, contacts.length + PAGE_SIZE - 1);
+    if (data) {
+      setContacts((prev) => [...prev, ...(data as Contact[])]);
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -177,6 +198,15 @@ export default function ContactsPage() {
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {hasMore && filtered.length > 0 && (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {loadingMore ? "Cargando..." : "Cargar mas"}
+          </Button>
         </div>
       )}
     </div>

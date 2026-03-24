@@ -130,6 +130,8 @@ export default function CompanyDetailPage() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
   const [healthScores, setHealthScores] = useState<CustomerHealthScore[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [odooSnapshots, setOdooSnapshots] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchAll() {
@@ -156,6 +158,7 @@ export default function CompanyDetailPage() {
         actionsRes,
         revenueRes,
         healthRes,
+        snapshotsRes,
       ] = await Promise.all([
         supabase
           .from("contacts")
@@ -193,6 +196,12 @@ export default function CompanyDetailPage() {
           .eq("company_id", comp.id)
           .order("score_date", { ascending: false })
           .limit(30),
+        supabase
+          .from("company_odoo_snapshots")
+          .select("*")
+          .eq("company_id", comp.id)
+          .order("snapshot_date", { ascending: false })
+          .limit(12),
       ]);
 
       setContacts((contactsRes.data as Contact[] | null) ?? []);
@@ -200,6 +209,7 @@ export default function CompanyDetailPage() {
       setAlerts((alertsRes.data as Alert[] | null) ?? []);
       setActions((actionsRes.data as ActionItem[] | null) ?? []);
       setRevenueRows((revenueRes.data as RevenueRow[] | null) ?? []);
+      setOdooSnapshots(snapshotsRes.data ?? []);
       setHealthScores(
         (healthRes.data as CustomerHealthScore[] | null) ?? []
       );
@@ -802,6 +812,59 @@ export default function CompanyDetailPage() {
                 </CardContent>
               </Card>
             </>
+          )}
+
+          {/* Odoo Snapshots */}
+          {odooSnapshots.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Metricas Odoo (Snapshots)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead className="text-right">Facturado</TableHead>
+                        <TableHead className="text-right">Pendiente</TableHead>
+                        <TableHead className="text-right">Vencido</TableHead>
+                        <TableHead className="text-right">Ordenes</TableHead>
+                        <TableHead className="text-right">Pipeline CRM</TableHead>
+                        <TableHead className="text-right">Manufactura</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {odooSnapshots.slice(0, 6).map((s: Record<string, unknown>) => (
+                        <TableRow key={s.id as number}>
+                          <TableCell className="text-muted-foreground whitespace-nowrap">
+                            {s.snapshot_date as string}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(Number(s.total_invoiced ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(Number(s.pending_amount ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
+                            {formatCurrency(Number(s.overdue_amount ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {(s.open_orders_count as number) ?? 0}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(Number(s.crm_pipeline_value ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {(s.manufacturing_count as number) ?? 0}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 
