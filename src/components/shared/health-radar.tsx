@@ -15,6 +15,7 @@ interface HealthRadarProps {
   sentiment: number;
   responsiveness: number;
   engagement: number;
+  payment?: number;
   className?: string;
 }
 
@@ -24,6 +25,7 @@ export function HealthRadar({
   sentiment,
   responsiveness,
   engagement,
+  payment,
   className,
 }: HealthRadarProps) {
   const data = [
@@ -32,6 +34,7 @@ export function HealthRadar({
     { dimension: "Sentimiento", value: sentiment },
     { dimension: "Responsividad", value: responsiveness },
     { dimension: "Engagement", value: engagement },
+    ...(payment != null ? [{ dimension: "Pagos", value: payment }] : []),
   ];
 
   return (

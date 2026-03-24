@@ -2,14 +2,16 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Mail, Paperclip, Search } from "lucide-react";
+import { Loader2, Mail, Paperclip, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime, truncate } from "@/lib/utils";
 import type { Email } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -30,23 +32,65 @@ const senderTypeLabel: Record<string, string> = {
   outbound: "Enviado",
 };
 
+const PAGE_SIZE = 50;
+
 export default function EmailsPage() {
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
+  const [senderTypeFilter, setSenderTypeFilter] = useState("all");
+  const [accounts, setAccounts] = useState<string[]>([]);
+  const [accountFilter, setAccountFilter] = useState("all");
 
   useEffect(() => {
     async function fetchEmails() {
-      const { data } = await supabase
+      let query = supabase
         .from("emails")
         .select("*")
         .order("email_date", { ascending: false })
-        .limit(100);
-      setEmails((data as Email[] | null) ?? []);
+        .limit(PAGE_SIZE);
+      if (accountFilter !== "all") query = query.eq("account", accountFilter);
+      if (senderTypeFilter !== "all") query = query.eq("sender_type", senderTypeFilter);
+
+      const { data } = await query;
+      const rows = (data as Email[] | null) ?? [];
+      setEmails(rows);
+      setHasMore(rows.length === PAGE_SIZE);
+
+      // Get unique accounts for filter
+      if (accounts.length === 0) {
+        const { data: accts } = await supabase
+          .from("emails")
+          .select("account")
+          .not("account", "is", null)
+          .limit(500);
+        const unique = [...new Set((accts ?? []).map((a: { account: string }) => a.account).filter(Boolean))].sort();
+        setAccounts(unique as string[]);
+      }
       setLoading(false);
     }
     fetchEmails();
-  }, []);
+  }, [accountFilter, senderTypeFilter]);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    let query = supabase
+      .from("emails")
+      .select("*")
+      .order("email_date", { ascending: false })
+      .range(emails.length, emails.length + PAGE_SIZE - 1);
+    if (accountFilter !== "all") query = query.eq("account", accountFilter);
+    if (senderTypeFilter !== "all") query = query.eq("sender_type", senderTypeFilter);
+    const { data } = await query;
+    if (data) {
+      setEmails((prev) => [...prev, ...(data as Email[])]);
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -67,7 +111,7 @@ export default function EmailsPage() {
         description="Correos sincronizados e inteligencia extraida"
       />
 
-      <div className="flex items-center gap-3 pb-4">
+      <div className="flex flex-wrap items-center gap-3 pb-4">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -77,6 +121,17 @@ export default function EmailsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+          <option value="all">Todas las cuentas</option>
+          {accounts.map((a) => (
+            <option key={a} value={a}>{a}</option>
+          ))}
+        </Select>
+        <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)}>
+          <option value="all">Todos los tipos</option>
+          <option value="internal">Internos</option>
+          <option value="external">Externos</option>
+        </Select>
       </div>
 
       {loading ? (
@@ -151,6 +206,15 @@ export default function EmailsPage() {
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {hasMore && filtered.length > 0 && (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {loadingMore ? "Cargando..." : "Cargar mas"}
+          </Button>
         </div>
       )}
     </div>

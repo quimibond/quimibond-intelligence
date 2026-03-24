@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bell, Building2, Clock, Mail, User } from "lucide-react";
+import { ArrowLeft, Bell, Building2, Clock, Lightbulb, Mail, MessagesSquare, TrendingUp, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime, timeAgo } from "@/lib/utils";
 import type { Alert, Email } from "@/lib/types";
@@ -131,6 +131,43 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
+          {/* Business impact & suggested action */}
+          {(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const a = alert as any;
+            if (!a.business_impact && !a.suggested_action) return null;
+            return (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {a.business_impact && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5 text-amber-500" />
+                        Impacto de Negocio
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm">{String(a.business_impact)}</p>
+                    </CardContent>
+                  </Card>
+                )}
+                {a.suggested_action && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-1.5">
+                        <Lightbulb className="h-3.5 w-3.5 text-blue-500" />
+                        Accion Sugerida
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm">{String(a.suggested_action)}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
+
           {/* Related emails */}
           {relatedEmails.length > 0 && (
             <Card>
@@ -197,6 +234,22 @@ export default function AlertDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const threadId = (alert as any).related_thread_id;
+            if (!threadId) return null;
+            return (
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <p className="text-xs text-muted-foreground">Hilo Relacionado</p>
+                  <Link href={`/threads/${threadId}`} className="flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+                    <MessagesSquare className="h-4 w-4" /> Ver hilo
+                  </Link>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {alert.prediction_confidence != null && (
             <Card>

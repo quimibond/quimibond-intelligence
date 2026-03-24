@@ -290,8 +290,13 @@ export default function ActionsPage() {
                       className="h-4 w-4 rounded border-gray-300"
                     />
                   </TableCell>
-                  <TableCell className="max-w-[300px] font-medium">
-                    {action.description}
+                  <TableCell className="max-w-[300px]">
+                    <p className="font-medium">{action.description}</p>
+                    {typeof (action as unknown as Record<string, unknown>).reason === "string" && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {(action as unknown as Record<string, unknown>).reason as string}
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell>
                     {action.contact_id ? (

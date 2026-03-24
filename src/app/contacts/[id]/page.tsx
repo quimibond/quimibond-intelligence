@@ -111,6 +111,8 @@ export default function ContactDetailPage() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [healthScores, setHealthScores] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [personProfile, setPersonProfile] = useState<any>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -201,6 +203,19 @@ export default function ContactDetailPage() {
             .limit(20)
             .then(({ data }) => {
               setEmails((data as Email[] | null) ?? []);
+            })
+        );
+
+        // Person profile (personality traits, decision factors)
+        promises.push(
+          supabase
+            .from("person_profiles")
+            .select("*")
+            .eq("email", c.email)
+            .order("updated_at", { ascending: false, nullsFirst: false })
+            .limit(1)
+            .then(({ data }) => {
+              if (data && data.length > 0) setPersonProfile(data[0]);
             })
         );
       }
@@ -369,6 +384,51 @@ export default function ContactDetailPage() {
         {/* ── Perfil (from contact record) ── */}
         <TabsContent value="perfil" className="space-y-6">
           <ProfileCard contact={contact} />
+
+          {/* Person Profile (from person_profiles table) */}
+          {personProfile && (
+            <Card>
+              <CardHeader><CardTitle className="text-sm">Perfil de Personalidad</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                {Array.isArray(personProfile.personality_traits) && personProfile.personality_traits.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Rasgos de personalidad</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {personProfile.personality_traits.map((t: string, i: number) => (
+                        <Badge key={i} variant="outline">{t}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Array.isArray(personProfile.decision_factors) && personProfile.decision_factors.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Factores de decision</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {personProfile.decision_factors.map((f: string, i: number) => (
+                        <Badge key={i} variant="info">{f}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Array.isArray(personProfile.interests) && personProfile.interests.length > 0 && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1.5">Intereses</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {personProfile.interests.map((i: string, idx: number) => (
+                        <Badge key={idx} variant="secondary">{i}</Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {personProfile.summary && (
+                  <div>
+                    <p className="text-xs text-muted-foreground mb-1">Resumen</p>
+                    <p className="text-sm">{personProfile.summary}</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
 
           {/* Additional info not covered by ProfileCard */}
           <Card>
@@ -796,6 +856,7 @@ export default function ContactDetailPage() {
                           sentiment={latest.sentiment_score ?? 0}
                           responsiveness={latest.responsiveness_score ?? 0}
                           engagement={latest.engagement_score ?? 0}
+                          payment={latest.payment_compliance_score ?? undefined}
                         />
                       </CardContent>
                     </Card>
@@ -937,13 +998,18 @@ export default function ContactDetailPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-sm">
-                        {fact.fact_text}
+                        <span>{fact.fact_text}</span>
+                        <div className="flex gap-1 mt-1">
+                          {fact.verified && <Badge variant="success" className="text-[10px]">Verificado</Badge>}
+                          {fact.is_future && <Badge variant="info" className="text-[10px]">Futuro</Badge>}
+                          {fact.expired && <Badge variant="critical" className="text-[10px]">Expirado</Badge>}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {(fact.confidence * 100).toFixed(0)}%
                       </TableCell>
                       <TableCell className="text-muted-foreground whitespace-nowrap">
-                        {formatDate(fact.created_at)}
+                        {formatDate(fact.fact_date ?? fact.created_at)}
                       </TableCell>
                     </TableRow>
                   ))}
