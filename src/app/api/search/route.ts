@@ -53,9 +53,9 @@ export async function POST(req: NextRequest) {
         .limit(10),
       supabase
         .from("emails")
-        .select("id, subject, snippet, sender, received_at")
+        .select("id, subject, snippet, sender, email_date")
         .or(`subject.ilike.${pattern},snippet.ilike.${pattern},sender.ilike.${pattern}`)
-        .order("received_at", { ascending: false })
+        .order("email_date", { ascending: false })
         .limit(10),
     ]);
 

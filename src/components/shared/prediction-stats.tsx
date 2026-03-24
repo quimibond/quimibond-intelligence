@@ -11,10 +11,9 @@ import {
 } from "@/components/ui/card";
 
 interface Stats {
-  alertUseful: number;
-  alertFalsePositive: number;
-  actionUseful: number;
-  actionNotUseful: number;
+  useful: number;
+  falsePositive: number;
+  notUseful: number;
 }
 
 export function PredictionStats() {
@@ -24,34 +23,29 @@ export function PredictionStats() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const [alertUsefulRes, alertFpRes, actionUsefulRes, actionNuRes] =
-          await Promise.all([
-            supabase
-              .from("alerts")
-              .select("id", { count: "exact", head: true })
-              .eq("user_feedback", "useful"),
-            supabase
-              .from("alerts")
-              .select("id", { count: "exact", head: true })
-              .eq("user_feedback", "false_positive"),
-            supabase
-              .from("action_items")
-              .select("id", { count: "exact", head: true })
-              .eq("user_feedback", "useful"),
-            supabase
-              .from("action_items")
-              .select("id", { count: "exact", head: true })
-              .eq("user_feedback", "not_useful"),
-          ]);
+        // Read feedback from feedback_signals table (real schema)
+        const [usefulRes, fpRes, nuRes] = await Promise.all([
+          supabase
+            .from("feedback_signals")
+            .select("id", { count: "exact", head: true })
+            .eq("signal_type", "useful"),
+          supabase
+            .from("feedback_signals")
+            .select("id", { count: "exact", head: true })
+            .eq("signal_type", "false_positive"),
+          supabase
+            .from("feedback_signals")
+            .select("id", { count: "exact", head: true })
+            .eq("signal_type", "not_useful"),
+        ]);
 
         setStats({
-          alertUseful: alertUsefulRes.count ?? 0,
-          alertFalsePositive: alertFpRes.count ?? 0,
-          actionUseful: actionUsefulRes.count ?? 0,
-          actionNotUseful: actionNuRes.count ?? 0,
+          useful: usefulRes.count ?? 0,
+          falsePositive: fpRes.count ?? 0,
+          notUseful: nuRes.count ?? 0,
         });
       } catch {
-        // Columns may not exist yet — fail silently
+        // Table may not exist yet
       } finally {
         setLoading(false);
       }
@@ -60,24 +54,12 @@ export function PredictionStats() {
   }, []);
 
   const totalFeedback = stats
-    ? stats.alertUseful +
-      stats.alertFalsePositive +
-      stats.actionUseful +
-      stats.actionNotUseful
+    ? stats.useful + stats.falsePositive + stats.notUseful
     : 0;
 
-  const alertTotal = stats
-    ? stats.alertUseful + stats.alertFalsePositive
-    : 0;
-  const alertAccuracy =
-    alertTotal > 0 ? Math.round((stats!.alertUseful / alertTotal) * 100) : null;
-
-  const actionTotal = stats
-    ? stats.actionUseful + stats.actionNotUseful
-    : 0;
-  const actionAccuracy =
-    actionTotal > 0
-      ? Math.round((stats!.actionUseful / actionTotal) * 100)
+  const accuracy =
+    totalFeedback > 0
+      ? Math.round((stats!.useful / totalFeedback) * 100)
       : null;
 
   if (loading) {
@@ -100,22 +82,22 @@ export function PredictionStats() {
         ) : (
           <div className="space-y-2 text-sm">
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Alertas</span>
-              <span className="font-medium">
-                {alertAccuracy !== null ? `${alertAccuracy}% util` : "—"}
-              </span>
+              <span className="text-muted-foreground">Utiles</span>
+              <span className="font-medium">{stats!.useful}</span>
             </div>
             <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Acciones</span>
-              <span className="font-medium">
-                {actionAccuracy !== null ? `${actionAccuracy}% util` : "—"}
-              </span>
+              <span className="text-muted-foreground">Falsos positivos</span>
+              <span className="font-medium">{stats!.falsePositive}</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">No utiles</span>
+              <span className="font-medium">{stats!.notUseful}</span>
             </div>
             <div className="flex items-center justify-between border-t border-border pt-2">
-              <span className="text-muted-foreground">
-                Total retroalimentacion
+              <span className="text-muted-foreground">Precision</span>
+              <span className="font-medium">
+                {accuracy !== null ? `${accuracy}%` : "—"}
               </span>
-              <span className="font-medium">{totalFeedback}</span>
             </div>
           </div>
         )}

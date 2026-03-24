@@ -104,10 +104,10 @@ interface RevenueRow {
   id: number;
   company_id: number;
   total_invoiced: number | null;
-  total_collected: number | null;
   pending_amount: number | null;
   overdue_amount: number | null;
   num_orders: number | null;
+  avg_order_value: number | null;
   period_start: string;
   period_type: string | null;
 }
@@ -162,12 +162,15 @@ export default function CompanyDetailPage() {
           .select("*")
           .eq("company_id", comp.id)
           .order("name"),
-        supabase
-          .from("facts")
-          .select("*")
-          .eq("company_id", comp.id)
-          .order("created_at", { ascending: false })
-          .limit(100),
+        // facts don't have company_id — use company's entity_id
+        comp.entity_id
+          ? supabase
+              .from("facts")
+              .select("*")
+              .eq("entity_id", comp.entity_id)
+              .order("created_at", { ascending: false })
+              .limit(100)
+          : Promise.resolve({ data: [], error: null }),
         supabase
           .from("alerts")
           .select("*")
@@ -258,19 +261,24 @@ export default function CompanyDetailPage() {
         new Date(a.period_start).getTime() -
         new Date(b.period_start).getTime()
     )
-    .map((r) => ({
-      period: r.period_start,
-      invoiced: Number(r.total_invoiced ?? 0),
-      paid: Number(r.total_collected ?? 0),
-      overdue: Number(r.overdue_amount ?? 0),
-    }));
+    .map((r) => {
+      const invoiced = Number(r.total_invoiced ?? 0);
+      const pending = Number(r.pending_amount ?? 0);
+      const overdue = Number(r.overdue_amount ?? 0);
+      return {
+        period: r.period_start,
+        invoiced,
+        paid: Math.max(0, invoiced - pending - overdue),
+        overdue,
+      };
+    });
 
   const totalInvoiced = revenueRows.reduce(
     (s, r) => s + Number(r.total_invoiced ?? 0),
     0
   );
   const totalCollected = revenueRows.reduce(
-    (s, r) => s + Number(r.total_collected ?? 0),
+    (s, r) => s + Math.max(0, Number(r.total_invoiced ?? 0) - Number(r.pending_amount ?? 0) - Number(r.overdue_amount ?? 0)),
     0
   );
   const totalOverdue = revenueRows.reduce(
