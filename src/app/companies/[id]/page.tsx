@@ -1176,6 +1176,7 @@ export default function CompanyDetailPage() {
                       latestHealth.responsiveness_score ?? 0
                     )}
                     engagement={Number(latestHealth.engagement_score ?? 0)}
+                    payment={latestHealth.payment_compliance_score != null ? Number(latestHealth.payment_compliance_score) : undefined}
                   />
                 </CardContent>
               </Card>

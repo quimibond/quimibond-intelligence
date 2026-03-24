@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Activity,
   Bell,
@@ -25,6 +26,7 @@ type TimelineItemType = "alert" | "action" | "email" | "fact" | "event";
 
 interface TimelineItem {
   id: string;
+  rawId: number;
   type: TimelineItemType;
   title: string;
   subtitle: string | null;
@@ -123,6 +125,7 @@ export default function TimelinePage() {
       for (const a of (alertsRes.data ?? []) as Alert[]) {
         merged.push({
           id: `alert-${a.id}`,
+          rawId: a.id,
           type: "alert",
           title: a.title,
           subtitle: a.contact_name,
@@ -135,6 +138,7 @@ export default function TimelinePage() {
       for (const a of (actionsRes.data ?? []) as ActionItem[]) {
         merged.push({
           id: `action-${a.id}`,
+          rawId: a.id,
           type: "action",
           title: a.description,
           subtitle: a.contact_name,
@@ -147,6 +151,7 @@ export default function TimelinePage() {
       for (const e of (emailsRes.data ?? []) as Email[]) {
         merged.push({
           id: `email-${e.id}`,
+          rawId: e.id,
           type: "email",
           title: e.subject ?? "(sin asunto)",
           subtitle: e.sender,
@@ -158,6 +163,7 @@ export default function TimelinePage() {
       for (const f of (factsRes.data ?? []) as Fact[]) {
         merged.push({
           id: `fact-${f.id}`,
+          rawId: f.id,
           type: "fact",
           title: f.fact_text,
           subtitle: f.fact_type,
@@ -180,6 +186,7 @@ export default function TimelinePage() {
         const summary = summarizePayload(ev.payload);
         merged.push({
           id: `event-${ev.id}`,
+          rawId: ev.id,
           type: "event",
           title: `${ev.event_type}${ev.entity_type ? ` — ${ev.entity_type}` : ""}`,
           subtitle: ev.entity_ref ?? summary,
@@ -289,7 +296,19 @@ export default function TimelinePage() {
                 </div>
 
                 {/* Content card */}
-                <div className="rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50">
+                {(() => {
+                  const linkMap: Record<string, string> = {
+                    alert: `/alerts/${item.rawId}`,
+                    email: `/emails/${item.rawId}`,
+                    action: `/actions`,
+                    fact: `/knowledge`,
+                  };
+                  const href = linkMap[item.type];
+                  const Wrapper = href ? Link : "div";
+                  const wrapperProps = href ? { href } : {};
+                  return (
+                    // @ts-expect-error dynamic component
+                    <Wrapper {...wrapperProps} className="block rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex items-start gap-3 min-w-0">
                       <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${cfg.color}`} />
@@ -331,7 +350,9 @@ export default function TimelinePage() {
                       {timeAgo(item.created_at)}
                     </span>
                   </div>
-                </div>
+                    </Wrapper>
+                  );
+                })()}
               </div>
             );
           })}

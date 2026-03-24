@@ -421,9 +421,17 @@ export default function KnowledgePage() {
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge variant={fact.verified ? "success" : "outline"}>
-                            {fact.verified ? "Si" : "No"}
-                          </Badge>
+                          <div className="flex flex-wrap gap-1">
+                            <Badge variant={fact.verified ? "success" : "outline"}>
+                              {fact.verified ? "Verificado" : "No verificado"}
+                            </Badge>
+                            {fact.is_future && (
+                              <Badge variant="info">Futuro</Badge>
+                            )}
+                            {fact.expired && (
+                              <Badge variant="critical">Expirado</Badge>
+                            )}
+                          </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">
                           {fact.fact_date ? formatDate(fact.fact_date) : "—"}

@@ -370,6 +370,26 @@ export default function AlertsPage() {
                             <p className="mt-0.5 text-sm">{alert.description}</p>
                           </div>
                         )}
+                        {(() => {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          const a = alert as any;
+                          return (
+                            <>
+                              {a.business_impact && (
+                                <div>
+                                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Impacto de Negocio</p>
+                                  <p className="mt-0.5 text-sm">{String(a.business_impact)}</p>
+                                </div>
+                              )}
+                              {a.suggested_action && (
+                                <div>
+                                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Accion Sugerida</p>
+                                  <p className="mt-0.5 text-sm">{String(a.suggested_action)}</p>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                         <div className="flex items-center justify-between pt-1">
                           <div className="flex items-center gap-2">
                             {alert.state === "new" && (

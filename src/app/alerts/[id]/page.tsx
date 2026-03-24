@@ -3,10 +3,10 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bell, Building2, Clock, Mail, User } from "lucide-react";
+import { ArrowLeft, Bell, Brain, Building2, CheckSquare, Clock, Lightbulb, Mail, MessagesSquare, TrendingUp, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { formatDateTime, timeAgo } from "@/lib/utils";
-import type { Alert, Email } from "@/lib/types";
+import { formatDate, formatDateTime, timeAgo } from "@/lib/utils";
+import type { Alert } from "@/lib/types";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
 import { FeedbackButtons } from "@/components/shared/feedback-buttons";
@@ -14,52 +14,57 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyRecord = Record<string, any>;
+
+interface AlertContext {
+  alert: AnyRecord;
+  thread_emails: AnyRecord[];
+  related_actions: AnyRecord[];
+  contact_facts: AnyRecord[];
+}
 
 export default function AlertDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const [alert, setAlert] = useState<Alert | null>(null);
-  const [relatedEmails, setRelatedEmails] = useState<Email[]>([]);
+  const [threadEmails, setThreadEmails] = useState<AnyRecord[]>([]);
+  const [relatedActions, setRelatedActions] = useState<AnyRecord[]>([]);
+  const [contactFacts, setContactFacts] = useState<AnyRecord[]>([]);
   const [catalogName, setCatalogName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
-      const { data: alertData } = await supabase
-        .from("alerts")
-        .select("*")
-        .eq("id", params.id)
-        .single();
+      // Use RPC for rich context in one call
+      const { data: ctx, error } = await supabase.rpc("get_alert_with_context", {
+        p_alert_id: parseInt(params.id),
+      });
 
-      if (!alertData) {
+      if (error || !ctx) {
+        // Fallback to direct query
+        const { data: alertData } = await supabase
+          .from("alerts").select("*").eq("id", params.id).single();
+        if (alertData) setAlert(alertData as Alert);
         setLoading(false);
         return;
       }
 
-      const a = alertData as Alert;
-      setAlert(a);
+      const context = ctx as AlertContext;
+      setAlert(context.alert as unknown as Alert);
+      setThreadEmails(context.thread_emails ?? []);
+      setRelatedActions(context.related_actions ?? []);
+      setContactFacts(context.contact_facts ?? []);
 
       // Fetch catalog display name
       const { data: catalog } = await supabase
         .from("alert_type_catalog")
-        .select("display_name, description, category")
-        .eq("alert_type", a.alert_type)
+        .select("display_name")
+        .eq("alert_type", context.alert.alert_type)
         .single();
       if (catalog) setCatalogName(catalog.display_name);
-
-      // Fetch related emails if we have a contact
-      if (a.contact_name) {
-        const pattern = `%${a.contact_name.split(" ")[0]}%`;
-        const { data: emails } = await supabase
-          .from("emails")
-          .select("id, subject, sender, recipient, snippet, email_date")
-          .or(`sender.ilike.${pattern},recipient.ilike.${pattern}`)
-          .order("email_date", { ascending: false })
-          .limit(5);
-        setRelatedEmails((emails as Email[] | null) ?? []);
-      }
 
       setLoading(false);
     }
@@ -131,12 +136,54 @@ export default function AlertDetailPage() {
             </Card>
           )}
 
-          {/* Related emails */}
-          {relatedEmails.length > 0 && (
+          {/* Business impact & suggested action */}
+          {(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const a = alert as any;
+            if (!a.business_impact && !a.suggested_action) return null;
+            return (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {a.business_impact && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-1.5">
+                        <TrendingUp className="h-3.5 w-3.5 text-amber-500" />
+                        Impacto de Negocio
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm">{String(a.business_impact)}</p>
+                    </CardContent>
+                  </Card>
+                )}
+                {a.suggested_action && (
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CardTitle className="text-sm flex items-center gap-1.5">
+                        <Lightbulb className="h-3.5 w-3.5 text-blue-500" />
+                        Accion Sugerida
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <p className="text-sm">{String(a.suggested_action)}</p>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* Thread emails (from RPC context) */}
+          {threadEmails.length > 0 && (
             <Card>
-              <CardHeader><CardTitle className="text-sm">Emails Relacionados</CardTitle></CardHeader>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <Mail className="h-3.5 w-3.5" />
+                  Emails del Hilo ({threadEmails.length})
+                </CardTitle>
+              </CardHeader>
               <CardContent className="space-y-3">
-                {relatedEmails.map((email) => (
+                {threadEmails.map((email) => (
                   <Link key={email.id} href={`/emails/${email.id}`} className="block rounded-lg border p-3 hover:bg-muted/50 transition-colors">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium">{email.subject ?? "(sin asunto)"}</p>
@@ -149,6 +196,61 @@ export default function AlertDetailPage() {
                       <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{email.snippet}</p>
                     )}
                   </Link>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Related actions (from RPC context) */}
+          {relatedActions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <CheckSquare className="h-3.5 w-3.5" />
+                  Acciones Relacionadas ({relatedActions.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {relatedActions.map((action) => (
+                  <div key={action.id} className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                    <div className="space-y-1">
+                      <p className="text-sm font-medium">{action.description}</p>
+                      <div className="flex items-center gap-2">
+                        <StateBadge state={action.state ?? action.status} />
+                        {action.priority && <Badge variant="outline" className="text-[10px]">{action.priority}</Badge>}
+                      </div>
+                    </div>
+                    {action.due_date && (
+                      <span className="text-xs text-muted-foreground shrink-0">{formatDate(action.due_date)}</span>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Contact facts (from RPC context) */}
+          {contactFacts.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm flex items-center gap-1.5">
+                  <Brain className="h-3.5 w-3.5" />
+                  Hechos del Contacto ({contactFacts.length})
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-2">
+                {contactFacts.slice(0, 8).map((fact) => (
+                  <div key={fact.id} className="flex items-start justify-between gap-3 text-sm">
+                    <div className="space-y-0.5">
+                      <p>{fact.fact_text}</p>
+                      {fact.fact_type && <Badge variant="outline" className="text-[10px]">{fact.fact_type}</Badge>}
+                    </div>
+                    {fact.confidence != null && (
+                      <span className="text-xs text-muted-foreground shrink-0 tabular-nums">
+                        {Math.round(fact.confidence * 100)}%
+                      </span>
+                    )}
+                  </div>
                 ))}
               </CardContent>
             </Card>
@@ -197,6 +299,22 @@ export default function AlertDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const threadId = (alert as any).related_thread_id;
+            if (!threadId) return null;
+            return (
+              <Card>
+                <CardContent className="pt-4 space-y-2">
+                  <p className="text-xs text-muted-foreground">Hilo Relacionado</p>
+                  <Link href={`/threads/${threadId}`} className="flex items-center gap-2 text-sm font-medium text-primary hover:underline">
+                    <MessagesSquare className="h-4 w-4" /> Ver hilo
+                  </Link>
+                </CardContent>
+              </Card>
+            );
+          })()}
 
           {alert.prediction_confidence != null && (
             <Card>

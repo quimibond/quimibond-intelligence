@@ -226,7 +226,7 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-3">
                 {critical_alerts.map((alert) => (
-                  <div key={alert.id} className="flex items-start justify-between gap-3 rounded-lg border p-3">
+                  <Link key={alert.id} href={`/alerts/${alert.id}`} className="flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors">
                     <div className="min-w-0 flex-1 space-y-1">
                       <div className="flex items-center gap-2">
                         <SeverityBadge severity={alert.severity} />
@@ -237,7 +237,7 @@ export default function DashboardPage() {
                       )}
                     </div>
                     <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(alert.created_at)}</span>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}

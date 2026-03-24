@@ -57,6 +57,7 @@ export default function ActionsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
+  const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -93,13 +94,19 @@ export default function ActionsPage() {
     setLoadingMore(false);
   }
 
+  const assignees = useMemo(() => {
+    const set = new Set(actions.map((a) => a.assignee_email).filter(Boolean) as string[]);
+    return Array.from(set).sort();
+  }, [actions]);
+
   const filtered = useMemo(() => {
     return actions.filter((a) => {
       if (stateFilter !== "all" && a.state !== stateFilter) return false;
       if (priorityFilter !== "all" && a.priority !== priorityFilter) return false;
+      if (assigneeFilter !== "all" && a.assignee_email !== assigneeFilter) return false;
       return true;
     });
-  }, [actions, stateFilter, priorityFilter]);
+  }, [actions, stateFilter, priorityFilter, assigneeFilter]);
 
   const counts = useMemo(() => {
     const pending = actions.filter((a) => a.state === "pending").length;
@@ -231,6 +238,18 @@ export default function ActionsPage() {
           <option value="medium">Media</option>
           <option value="high">Alta</option>
         </Select>
+
+        {assignees.length > 0 && (
+          <Select
+            value={assigneeFilter}
+            onChange={(e) => setAssigneeFilter(e.target.value)}
+          >
+            <option value="all">Todos los responsables</option>
+            {assignees.map((a) => (
+              <option key={a} value={a}>{a}</option>
+            ))}
+          </Select>
+        )}
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -290,8 +309,13 @@ export default function ActionsPage() {
                       className="h-4 w-4 rounded border-gray-300"
                     />
                   </TableCell>
-                  <TableCell className="max-w-[300px] font-medium">
-                    {action.description}
+                  <TableCell className="max-w-[300px]">
+                    <p className="font-medium">{action.description}</p>
+                    {typeof (action as unknown as Record<string, unknown>).reason === "string" && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {(action as unknown as Record<string, unknown>).reason as string}
+                      </p>
+                    )}
                   </TableCell>
                   <TableCell>
                     {action.contact_id ? (

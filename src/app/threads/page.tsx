@@ -372,9 +372,9 @@ function ThreadRow({
         {/* Ultimo remitente */}
         <TableCell>
           <div className="flex items-center gap-2">
-            <span className="text-sm">
+            <Link href={`/contacts?q=${encodeURIComponent(thread.last_sender ?? "")}`} className="text-sm hover:underline">
               {truncate(thread.last_sender, 30) || "\u2014"}
-            </span>
+            </Link>
             {thread.last_sender_type && (
               <Badge
                 variant={senderTypeVariant(thread.last_sender_type)}
