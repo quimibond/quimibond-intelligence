@@ -13,6 +13,7 @@ import {
   Heart,
   MapPin,
   Sparkles,
+  TrendingDown,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -594,6 +595,137 @@ export default function CompanyDetailPage() {
               </CardContent>
             </Card>
           )}
+
+          {/* ── odoo_context: Purchase patterns, Inventory at risk, Cross-sell ── */}
+          {(() => {
+            const ctx = company.odoo_context ?? {};
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const pp = ctx.purchase_patterns as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const invAtRisk = pp?.inventory_at_risk ?? ctx.inventory_at_risk;
+
+            return (
+              <>
+                {/* Volume drops */}
+                {Array.isArray(pp?.volume_drops) && pp.volume_drops.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+                        <TrendingDown className="h-4 w-4" />
+                        Caidas de Volumen
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {pp.volume_drops.map((d: Record<string, unknown>, i: number) => (
+                          <Badge key={i} variant="critical" className="gap-1">
+                            {String(d.product_name ?? d.name ?? "Producto")}
+                            {d.drop_pct != null && ` (${Number(d.drop_pct).toFixed(0)}%)`}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Cross-sell */}
+                {Array.isArray(pp?.cross_sell) && pp.cross_sell.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+                        <Sparkles className="h-4 w-4" />
+                        Oportunidades Cross-sell
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {pp.cross_sell.map((cs: Record<string, unknown>, i: number) => (
+                          <Badge key={i} variant="success" className="gap-1">
+                            {String(cs.product_name ?? cs.name ?? "Producto")}
+                            {cs.adoption_rate != null && ` (${Math.round(Number(cs.adoption_rate) * 100)}%)`}
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Discount anomalies */}
+                {Array.isArray(pp?.discount_anomalies) && pp.discount_anomalies.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm text-amber-600 dark:text-amber-400">Descuentos Inusuales</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex flex-wrap gap-2">
+                        {pp.discount_anomalies.map((da: Record<string, unknown>, i: number) => (
+                          <Badge key={i} variant="warning">
+                            {String(da.product_name ?? da.name ?? "Producto")}: {String(da.discount_applied ?? da.discount ?? "?")}%
+                          </Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Revenue 12m summary */}
+                {pp?.total_revenue_12m != null && (
+                  <Card>
+                    <CardContent className="pt-4">
+                      <p className="text-xs text-muted-foreground">Revenue Total 12m (desde compras)</p>
+                      <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                        {formatCurrency(Number(pp.total_revenue_12m))}
+                      </p>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Inventory at risk */}
+                {Array.isArray(invAtRisk) && invAtRisk.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Inventario en Riesgo</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Producto</TableHead>
+                              <TableHead className="text-right">Stock</TableHead>
+                              <TableHead className="text-right">Dias Inv.</TableHead>
+                              <TableHead>Estado</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {invAtRisk.map((p: Record<string, unknown>, i: number) => {
+                              const status = String(p.status ?? "—");
+                              return (
+                                <TableRow key={i}>
+                                  <TableCell className="font-medium text-sm">{String(p.name ?? p.product_name ?? "—")}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{p.qty_available != null ? String(p.qty_available) : "—"}</TableCell>
+                                  <TableCell className="text-right tabular-nums">{p.days_of_inventory != null ? `${Math.round(Number(p.days_of_inventory))}d` : "—"}</TableCell>
+                                  <TableCell>
+                                    <Badge variant={
+                                      status === "stockout" ? "critical" :
+                                      status === "critical" ? "critical" :
+                                      status === "low" ? "warning" : "secondary"
+                                    }>
+                                      {status}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            );
+          })()}
 
           {/* Relationships */}
           {relationships.length > 0 && (
