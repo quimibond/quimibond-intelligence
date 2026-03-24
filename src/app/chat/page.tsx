@@ -105,33 +105,34 @@ export default function ChatPage() {
     const questionMsg = messages[index - 1];
     if (!questionMsg || questionMsg.role !== "user") return;
 
-    // Save to chat_memory if positive
+    // Save to chat_memory if positive (real schema: rating=integer, thumbs_up=boolean)
     if (newRating === "positive") {
       try {
         await supabase.from("chat_memory").insert({
           question: questionMsg.content,
           answer: msg.content,
-          rating: "positive",
+          thumbs_up: true,
+          rating: 1,
         });
       } catch {
-        // Table may not exist yet
+        // Table columns may differ
       }
     }
 
-    // Save feedback signal
+    // Save feedback signal (real schema: signal_source, source_type, reward_score, context)
     try {
       await supabase.from("feedback_signals").insert({
-        entity_type: "chat_response",
+        signal_source: "frontend_chat",
+        source_type: "chat_response",
         signal_type: newRating ?? "neutral",
-        signal_value: newRating === "positive" ? 1.0 : newRating === "negative" ? -1.0 : 0,
-        source: "frontend_chat",
-        metadata: {
+        reward_score: newRating === "positive" ? 1.0 : newRating === "negative" ? -1.0 : 0,
+        context: {
           question: questionMsg.content,
           answer_preview: msg.content.slice(0, 200),
         },
       });
     } catch {
-      // Table may not exist yet
+      // Table columns may differ
     }
   }
 

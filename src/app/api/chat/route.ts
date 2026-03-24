@@ -58,10 +58,11 @@ async function gatherContext(
         .limit(15),
 
       // Chat memory (successful Q&A pairs for few-shot)
+      // rating is integer in real schema; thumbs_up=true means positive
       supabase
         .from("chat_memory")
         .select("question, answer")
-        .eq("rating", "positive")
+        .eq("thumbs_up", true)
         .order("times_retrieved", { ascending: false })
         .limit(3),
     ]);

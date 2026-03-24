@@ -33,6 +33,9 @@ export interface Contact {
   lifetime_value: number | null;
   open_alerts_count: number | null;
   pending_actions_count: number | null;
+  total_credit_notes: number | null;
+  delivery_otd_rate: number | null;
+  odoo_context: Record<string, unknown> | null;
   // Odoo refs
   odoo_partner_id: number | null;
   is_customer: boolean | null;
@@ -113,8 +116,6 @@ export interface Thread {
   last_sender_type: string | null;
   hours_without_response: number | null;
   account: string | null;
-  response_times: unknown;
-  company_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -130,11 +131,13 @@ export interface Email {
   email_date: string | null;
   gmail_message_id: string | null;
   gmail_thread_id: string | null;
+  attachments: unknown;
   is_reply: boolean;
   sender_type: string | null;
   has_attachments: boolean;
   kg_processed: boolean;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Alert {
@@ -152,6 +155,7 @@ export interface Alert {
   is_resolved: boolean;
   prediction_id: string | null;
   prediction_confidence: number | null;
+  resolution_notes: string | null;
   created_at: string;
   updated_at: string;
   resolved_at: string | null;
@@ -170,6 +174,8 @@ export interface ActionItem {
   status: string | null;
   assignee_name: string | null;
   assignee_email: string | null;
+  assignee_entity_id: number | null;
+  related_entity_id: number | null;
   contact_company: string | null;
   source_thread_id: string | null;
   completed_date: string | null;
@@ -190,7 +196,6 @@ export interface DailySummary {
   accounts_failed: number | null;
   topics_identified: number | null;
   key_events: unknown;
-  account: string | null;
   created_at: string;
 }
 
@@ -200,6 +205,8 @@ export interface Entity {
   name: string;
   canonical_name: string | null;
   email: string | null;
+  odoo_model: string | null;
+  odoo_id: number | null;
   attributes: Record<string, unknown>;
   first_seen: string | null;
   last_seen: string | null;
@@ -214,7 +221,10 @@ export interface EntityRelationship {
   relationship_type: string;
   strength: number | null;
   context: string | null;
+  first_seen: string | null;
+  last_seen: string | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface Fact {
@@ -223,12 +233,16 @@ export interface Fact {
   fact_type: string | null;
   fact_text: string;
   verified: boolean;
+  verification_source: string | null;
+  verification_date: string | null;
   confidence: number;
   fact_date: string | null;
   is_future: boolean;
   expired: boolean;
   source_account: string | null;
   source_type: string | null;
+  fact_hash: string | null;
+  extracted_at: string | null;
   created_at: string;
 }
 
@@ -240,8 +254,11 @@ export interface Topic {
   priority: string | null;
   summary: string | null;
   related_accounts: string[] | null;
+  first_seen: string | null;
+  last_seen: string | null;
   times_seen: number | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface SyncState {
@@ -270,120 +287,159 @@ export interface CustomerHealthScore {
   created_at: string;
 }
 
-// ── Phase 2 types (from qb19 backend) ──
+// ── Phase 2 types (matching REAL Supabase schema) ──
 
 export interface ChatMemory {
-  id: string;
+  id: number;
   question: string;
   answer: string;
-  context_used: Record<string, unknown>;
-  rating: "positive" | "neutral" | "negative" | null;
+  context_used: Record<string, unknown> | null;
+  saved_at: string | null;
+  rating: number | null;
+  thumbs_up: boolean | null;
   times_retrieved: number;
-  saved_at: string;
+}
+
+export interface ChatFeedback {
+  id: number;
+  chat_memory_id: number | null;
+  feedback_type: string | null;
+  feedback_text: string | null;
   created_at: string;
 }
 
 export interface FeedbackSignal {
-  id: string;
-  entity_type: string;
-  entity_id: string | null;
-  signal_type: string;
-  signal_value: number;
-  source: string | null;
-  metadata: Record<string, unknown>;
+  id: number;
+  signal_source: string | null;
+  source_id: number | null;
+  source_type: string | null;
+  signal_type: string | null;
+  reward_score: number | null;
+  context: Record<string, unknown> | null;
+  account: string | null;
+  contact_email: string | null;
   created_at: string;
+  reward_processed: boolean;
 }
 
 export interface CommunicationPattern {
-  id: string;
-  contact_id: string | null;
-  contact_email: string | null;
-  pattern_type: string | null;
-  day_of_week: number | null;
-  hour_of_day: number | null;
+  id: number;
+  week_start: string | null;
+  account: string | null;
+  total_emails: number;
+  response_rate: number | null;
   avg_response_hours: number | null;
-  email_frequency: number | null;
-  preferred_channel: string | null;
-  analysis_period: string | null;
-  metadata: Record<string, unknown>;
+  top_external_contacts: string[] | null;
+  top_internal_contacts: string[] | null;
+  busiest_hour: number | null;
+  common_subjects: string[] | null;
+  sentiment_score: number | null;
   created_at: string;
-  updated_at: string;
 }
 
-export interface CompanySnapshot {
-  id: string;
-  company_id: string | null;
-  company_name: string | null;
+export interface CompanyOdooSnapshot {
+  id: number;
+  company_id: number | null;
   snapshot_date: string;
   total_invoiced: number;
-  total_pending: number;
-  total_overdue: number;
-  active_contacts: number;
-  open_alerts: number;
-  health_score: number | null;
-  risk_level: string | null;
-  trend: string | null;
-  metadata: Record<string, unknown>;
+  pending_amount: number;
+  overdue_amount: number;
+  monthly_avg: number | null;
+  open_orders_count: number;
+  pending_deliveries_count: number;
+  late_deliveries_count: number;
+  crm_pipeline_value: number | null;
+  crm_leads_count: number;
+  manufacturing_count: number;
+  credit_notes_total: number | null;
   created_at: string;
 }
 
 export interface AccountSummary {
-  id: string;
+  id: number;
   account: string;
   department: string | null;
   summary_date: string;
   summary_text: string | null;
   overall_sentiment: string | null;
-  sentiment_score: number | null;
+  sentiment_detail: Record<string, unknown> | null;
   total_emails: number;
-  external_count: number;
-  internal_count: number;
-  key_items: unknown[];
-  waiting_response: unknown[];
-  urgent_items: unknown[];
-  risks_detected: unknown[];
-  competitors_mentioned: unknown[];
-  topics_detected: unknown[];
+  external_emails: number;
+  internal_emails: number;
+  key_items: unknown;
+  waiting_response: unknown;
+  urgent_items: unknown;
+  external_contacts: unknown;
+  risks_detected: unknown;
+  topics_detected: unknown;
   created_at: string;
+  updated_at: string;
 }
 
 export interface ResponseMetric {
-  id: string;
+  id: number;
   account: string;
   metric_date: string;
   avg_response_hours: number | null;
-  median_response_hours: number | null;
-  total_threads: number;
-  threads_responded: number;
-  threads_pending: number;
-  threads_stalled: number;
-  response_rate: number | null;
+  emails_received: number;
+  emails_sent: number;
+  internal_received: number;
+  external_received: number;
+  threads_started: number;
+  threads_replied: number;
+  threads_unanswered: number;
+  fastest_response_hours: number | null;
+  slowest_response_hours: number | null;
   created_at: string;
+  updated_at: string;
 }
 
 export interface PredictionOutcome {
-  id: string;
-  prediction_id: string | null;
+  id: number;
   prediction_type: string;
-  entity_type: string | null;
-  entity_id: string | null;
-  predicted_value: string | null;
-  actual_value: string | null;
+  prediction_id: number | null;
+  prediction_date: string | null;
+  prediction_summary: string | null;
+  predicted_severity: string | null;
   confidence: number | null;
-  was_correct: boolean | null;
-  evaluated_at: string | null;
-  metadata: Record<string, unknown>;
+  outcome_type: string | null;
+  outcome_date: string | null;
+  outcome_summary: string | null;
+  outcome_data: Record<string, unknown> | null;
+  accuracy_score: number | null;
+  account: string | null;
+  contact_email: string | null;
+  created_at: string;
+  verified_at: string | null;
+}
+
+export interface SystemLearning {
+  id: number;
+  learning_date: string | null;
+  learning_type: string | null;
+  description: string | null;
+  data: Record<string, unknown> | null;
+  account: string | null;
   created_at: string;
 }
 
-export interface Learning {
-  id: string;
-  learning_type: string;
-  description: string;
-  evidence: Record<string, unknown>;
-  confidence: number;
-  applied: boolean;
-  applied_at: string | null;
+export interface AlertTypeCatalog {
+  id: number;
+  alert_type: string;
+  display_name: string | null;
+  description: string | null;
+  default_severity: string | null;
+  category: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface TopicCategoryCatalog {
+  id: number;
+  canonical_name: string;
+  aliases: string[] | null;
+  department_emails: string[] | null;
+  display_order: number | null;
   created_at: string;
 }
 

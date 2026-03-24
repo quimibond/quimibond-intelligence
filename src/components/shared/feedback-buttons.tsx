@@ -37,20 +37,24 @@ export function FeedbackButtons({
 
   async function saveFeedback(value: string) {
     if (saving) return;
-    // Toggle off if clicking the same button
     const newValue = feedback === value ? null : value;
     setSaving(true);
     try {
-      const { error } = await supabase
-        .from(table)
-        .update({ user_feedback: newValue })
-        .eq("id", id);
-      if (!error) {
-        setFeedback(newValue);
-        onFeedbackSaved?.();
+      // Write to feedback_signals table (real schema)
+      if (newValue) {
+        await supabase.from("feedback_signals").insert({
+          signal_source: "frontend",
+          source_id: typeof id === "string" ? parseInt(id, 10) : id,
+          source_type: table === "alerts" ? "alert" : "action_item",
+          signal_type: newValue,
+          reward_score: newValue === "useful" ? 1.0 : -0.8,
+          context: { feedback_value: newValue },
+        });
       }
+      setFeedback(newValue);
+      onFeedbackSaved?.();
     } catch {
-      // Columns may not exist yet — fail silently
+      // Fail silently if table/columns not available
     } finally {
       setSaving(false);
     }
