@@ -501,8 +501,6 @@ export interface DashboardCriticalAlert {
   severity: string;
   contact_name: string | null;
   description: string | null;
-  business_impact: string | null;
-  suggested_action: string | null;
   created_at: string;
   alert_type: string;
 }

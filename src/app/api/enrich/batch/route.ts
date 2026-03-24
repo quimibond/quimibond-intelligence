@@ -35,45 +35,22 @@ export async function POST(request: NextRequest) {
 
     if (type === "contacts") {
       // Find contacts without a person_profile
-      const { data: contacts, error: queryError } = await supabase
+      const { data: allContacts } = await supabase
         .from("contacts")
         .select("id, name, email")
-        .not(
-          "id",
-          "in",
-          supabase.from("person_profiles").select("contact_id")
-        )
-        .limit(limit);
+        .order("updated_at", { ascending: false })
+        .limit(100);
 
-      // Fallback: if the subquery approach doesn't work, use a raw query
-      let contactsToEnrich = contacts;
-      if (queryError || !contacts) {
-        const { data: fallbackContacts } = await supabase.rpc(
-          "get_contacts_without_profiles",
-          { p_limit: limit }
-        ).select("*");
+      const { data: existingProfiles } = await supabase
+        .from("person_profiles")
+        .select("contact_id");
 
-        // If RPC doesn't exist either, do it manually
-        if (!fallbackContacts) {
-          const { data: allContacts } = await supabase
-            .from("contacts")
-            .select("id, name, email")
-            .limit(50);
-
-          const { data: existingProfiles } = await supabase
-            .from("person_profiles")
-            .select("contact_id");
-
-          const profiledIds = new Set(
-            (existingProfiles ?? []).map((p) => p.contact_id)
-          );
-          contactsToEnrich = (allContacts ?? [])
-            .filter((c) => !profiledIds.has(c.id))
-            .slice(0, limit);
-        } else {
-          contactsToEnrich = fallbackContacts;
-        }
-      }
+      const profiledIds = new Set(
+        (existingProfiles ?? []).map((p) => p.contact_id)
+      );
+      const contactsToEnrich = (allContacts ?? [])
+        .filter((c) => !profiledIds.has(c.id))
+        .slice(0, limit);
 
       // Enrich each contact
       for (const contact of contactsToEnrich ?? []) {

@@ -45,7 +45,7 @@ async function fetchDashboardFallback(): Promise<DirectorDashboard> {
     supabase.from("contacts").select("id", { count: "exact", head: true }),
     supabase.from("emails").select("id", { count: "exact", head: true }),
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "resolved"),
-    supabase.from("alerts").select("id, title, severity, contact_name, description, business_impact, suggested_action, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(8),
+    supabase.from("alerts").select("id, title, severity, contact_name, description, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(8),
     supabase.from("action_items").select("id, description, contact_name, contact_company, assignee_email, assignee_name, due_date, priority, action_type").eq("state", "pending").lt("due_date", today).order("due_date", { ascending: true }).limit(10),
     supabase.from("contacts").select("id, name, company, risk_level, sentiment_score, relationship_score").eq("risk_level", "high").order("relationship_score", { ascending: true }).limit(8),
   ]);

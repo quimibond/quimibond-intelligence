@@ -182,7 +182,7 @@ export default function ContactDetailPage() {
             .from("emails")
             .select("*")
             .or(
-              `contact_id.eq.${contactId},sender.ilike.${emailPattern},recipient.ilike.${emailPattern}`
+              `sender.ilike.${emailPattern},recipient.ilike.${emailPattern}`
             )
             .order("email_date", { ascending: false })
             .limit(20)
