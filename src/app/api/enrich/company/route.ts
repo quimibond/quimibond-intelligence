@@ -54,21 +54,31 @@ export async function POST(request: NextRequest) {
       .eq("company_id", company.id)
       .limit(20);
 
-    // Fetch recent emails via company_id FK
-    const { data: emails } = await supabase
-      .from("emails")
-      .select("subject, snippet, sender, recipient, email_date")
-      .eq("company_id", company.id)
-      .order("email_date", { ascending: false })
-      .limit(30);
+    // Fetch recent emails via contacts' emails (emails table has no company_id)
+    const contactEmails = (contacts ?? []).map((c) => c.email).filter(Boolean);
+    let emails: { subject: string | null; snippet: string | null; sender: string | null; recipient: string | null; email_date: string | null }[] = [];
+    if (contactEmails.length > 0) {
+      const emailPattern = contactEmails.map((e) => `sender.ilike.%${e}%,recipient.ilike.%${e}%`).join(",");
+      const { data: emailData } = await supabase
+        .from("emails")
+        .select("subject, snippet, sender, recipient, email_date")
+        .or(emailPattern)
+        .order("email_date", { ascending: false })
+        .limit(30);
+      emails = emailData ?? [];
+    }
 
-    // Fetch facts via company_id FK
-    const { data: facts } = await supabase
-      .from("facts")
-      .select("fact_text, fact_type, confidence")
-      .eq("company_id", company.id)
-      .order("confidence", { ascending: false })
-      .limit(30);
+    // Fetch facts via entity_id (facts table has no company_id)
+    let facts: { fact_text: string; fact_type: string | null; confidence: number }[] = [];
+    if (company.entity_id) {
+      const { data: factsData } = await supabase
+        .from("facts")
+        .select("fact_text, fact_type, confidence")
+        .eq("entity_id", company.entity_id)
+        .order("confidence", { ascending: false })
+        .limit(30);
+      facts = factsData ?? [];
+    }
 
     // Build context
     const parts: string[] = [
@@ -115,7 +125,7 @@ export async function POST(request: NextRequest) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-20250514",
+        model: "claude-sonnet-4-6-20250610",
         max_tokens: 1024,
         system: "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed company profile. Respond ONLY with valid JSON.",
         messages: [{

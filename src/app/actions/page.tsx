@@ -1,11 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
   ClipboardList,
   Clock,
+  Loader2,
   X,
   XCircle,
 } from "lucide-react";
@@ -46,9 +48,13 @@ function isOverdue(item: ActionItem): boolean {
   return new Date(item.due_date) < new Date();
 }
 
+const PAGE_SIZE = 50;
+
 export default function ActionsPage() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -60,15 +66,32 @@ export default function ActionsPage() {
         .select("*")
         .order("due_date", { ascending: true, nullsFirst: false })
         .order("created_at", { ascending: false })
-        .limit(200);
+        .limit(PAGE_SIZE);
 
       if (!error && data) {
         setActions(data as ActionItem[]);
+        setHasMore(data.length === PAGE_SIZE);
       }
       setLoading(false);
     }
     fetchActions();
   }, []);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from("action_items")
+      .select("*")
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .range(actions.length, actions.length + PAGE_SIZE - 1);
+    if (data) {
+      setActions((prev) => [...prev, ...(data as ActionItem[])]);
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }
 
   const filtered = useMemo(() => {
     return actions.filter((a) => {
@@ -270,8 +293,20 @@ export default function ActionsPage() {
                   <TableCell className="max-w-[300px] font-medium">
                     {action.description}
                   </TableCell>
-                  <TableCell>{action.contact_name ?? "—"}</TableCell>
-                  <TableCell>{action.contact_company ?? "—"}</TableCell>
+                  <TableCell>
+                    {action.contact_id ? (
+                      <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
+                        {action.contact_name ?? "—"}
+                      </Link>
+                    ) : (action.contact_name ?? "—")}
+                  </TableCell>
+                  <TableCell>
+                    {action.company_id ? (
+                      <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
+                        {action.contact_company ?? "—"}
+                      </Link>
+                    ) : (action.contact_company ?? "—")}
+                  </TableCell>
                   <TableCell>
                     <Badge
                       variant={priorityVariantMap[action.priority] ?? "secondary"}
@@ -338,6 +373,16 @@ export default function ActionsPage() {
             })}
           </TableBody>
         </Table>
+      )}
+
+      {/* Load more */}
+      {hasMore && filtered.length > 0 && (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {loadingMore ? "Cargando..." : "Cargar mas"}
+          </Button>
+        </div>
       )}
 
       {/* Floating bulk action bar */}

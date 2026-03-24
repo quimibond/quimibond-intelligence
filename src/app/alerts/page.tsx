@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Eye, ShieldAlert, X } from "lucide-react";
+import Link from "next/link";
+import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Eye, Loader2, ShieldAlert, X } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { timeAgo } from "@/lib/utils";
 import type { Alert } from "@/lib/types";
@@ -23,25 +24,43 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+const PAGE_SIZE = 50;
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [severityFilter, setSeverityFilter] = useState<string>("all");
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [alertTypeNames, setAlertTypeNames] = useState<Record<string, string>>({});
 
   useEffect(() => {
     async function fetchAlerts() {
-      const { data, error } = await supabase
-        .from("alerts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(200);
+      const [alertsRes, catalogRes] = await Promise.all([
+        supabase
+          .from("alerts")
+          .select("*")
+          .order("created_at", { ascending: false })
+          .limit(PAGE_SIZE),
+        supabase
+          .from("alert_type_catalog")
+          .select("alert_type, display_name"),
+      ]);
 
-      if (!error && data) {
-        setAlerts(data as Alert[]);
+      if (!alertsRes.error && alertsRes.data) {
+        setAlerts(alertsRes.data as Alert[]);
+        setHasMore(alertsRes.data.length === PAGE_SIZE);
+      }
+      if (catalogRes.data) {
+        const map: Record<string, string> = {};
+        for (const c of catalogRes.data) {
+          if (c.alert_type && c.display_name) map[c.alert_type] = c.display_name;
+        }
+        setAlertTypeNames(map);
       }
       setLoading(false);
     }
@@ -85,6 +104,21 @@ export default function AlertsPage() {
         : new Set(filtered.map((a) => a.id))
     );
   }, [filtered]);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from("alerts")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .range(alerts.length, alerts.length + PAGE_SIZE - 1);
+    if (data) {
+      setAlerts((prev) => [...prev, ...(data as Alert[])]);
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }
 
   async function bulkUpdateState(state: "acknowledged" | "resolved") {
     const ids = [...selectedIds];
@@ -248,7 +282,9 @@ export default function AlertsPage() {
                   </TableCell>
                   <TableCell className="font-medium">
                     <div className="flex items-center gap-1.5">
-                      {alert.title}
+                      <Link href={`/alerts/${alert.id}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                        {alert.title}
+                      </Link>
                       <ChevronDown
                         className={`h-4 w-4 text-muted-foreground transition-transform ${
                           expandedId === alert.id ? "rotate-180" : ""
@@ -256,9 +292,17 @@ export default function AlertsPage() {
                       />
                     </div>
                   </TableCell>
-                  <TableCell>{alert.contact_name ?? "—"}</TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{alert.alert_type}</Badge>
+                    {alert.contact_id ? (
+                      <Link href={`/contacts/${alert.contact_id}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                        {alert.contact_name ?? "—"}
+                      </Link>
+                    ) : (
+                      alert.contact_name ?? "—"
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant="secondary">{alertTypeNames[alert.alert_type] ?? alert.alert_type}</Badge>
                   </TableCell>
                   <TableCell>
                     <StateBadge state={alert.state} />
@@ -324,6 +368,16 @@ export default function AlertsPage() {
             ))}
           </TableBody>
         </Table>
+      )}
+
+      {/* Load more */}
+      {hasMore && filtered.length > 0 && (
+        <div className="flex justify-center">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {loadingMore ? "Cargando..." : "Cargar mas"}
+          </Button>
+        </div>
       )}
 
       {/* Floating bulk action bar */}

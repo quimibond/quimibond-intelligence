@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import {
   Clock,
   AlertTriangle,
@@ -338,7 +339,9 @@ function ThreadRow({
 
         {/* Asunto */}
         <TableCell className="max-w-[260px] font-medium">
-          {truncate(thread.subject, 55) || "\u2014"}
+          <Link href={`/threads/${thread.id}`} className="hover:underline">
+            {truncate(thread.subject, 55) || "\u2014"}
+          </Link>
         </TableCell>
 
         {/* Participantes */}

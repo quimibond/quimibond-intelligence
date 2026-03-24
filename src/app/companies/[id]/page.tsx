@@ -104,10 +104,10 @@ interface RevenueRow {
   id: number;
   company_id: number;
   total_invoiced: number | null;
-  total_collected: number | null;
   pending_amount: number | null;
   overdue_amount: number | null;
   num_orders: number | null;
+  avg_order_value: number | null;
   period_start: string;
   period_type: string | null;
 }
@@ -130,6 +130,8 @@ export default function CompanyDetailPage() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
   const [healthScores, setHealthScores] = useState<CustomerHealthScore[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [odooSnapshots, setOdooSnapshots] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchAll() {
@@ -156,18 +158,22 @@ export default function CompanyDetailPage() {
         actionsRes,
         revenueRes,
         healthRes,
+        snapshotsRes,
       ] = await Promise.all([
         supabase
           .from("contacts")
           .select("*")
           .eq("company_id", comp.id)
           .order("name"),
-        supabase
-          .from("facts")
-          .select("*")
-          .eq("company_id", comp.id)
-          .order("created_at", { ascending: false })
-          .limit(100),
+        // facts don't have company_id — use company's entity_id
+        comp.entity_id
+          ? supabase
+              .from("facts")
+              .select("*")
+              .eq("entity_id", comp.entity_id)
+              .order("created_at", { ascending: false })
+              .limit(100)
+          : Promise.resolve({ data: [], error: null }),
         supabase
           .from("alerts")
           .select("*")
@@ -190,6 +196,12 @@ export default function CompanyDetailPage() {
           .eq("company_id", comp.id)
           .order("score_date", { ascending: false })
           .limit(30),
+        supabase
+          .from("company_odoo_snapshots")
+          .select("*")
+          .eq("company_id", comp.id)
+          .order("snapshot_date", { ascending: false })
+          .limit(12),
       ]);
 
       setContacts((contactsRes.data as Contact[] | null) ?? []);
@@ -197,6 +209,7 @@ export default function CompanyDetailPage() {
       setAlerts((alertsRes.data as Alert[] | null) ?? []);
       setActions((actionsRes.data as ActionItem[] | null) ?? []);
       setRevenueRows((revenueRes.data as RevenueRow[] | null) ?? []);
+      setOdooSnapshots(snapshotsRes.data ?? []);
       setHealthScores(
         (healthRes.data as CustomerHealthScore[] | null) ?? []
       );
@@ -258,19 +271,24 @@ export default function CompanyDetailPage() {
         new Date(a.period_start).getTime() -
         new Date(b.period_start).getTime()
     )
-    .map((r) => ({
-      period: r.period_start,
-      invoiced: Number(r.total_invoiced ?? 0),
-      paid: Number(r.total_collected ?? 0),
-      overdue: Number(r.overdue_amount ?? 0),
-    }));
+    .map((r) => {
+      const invoiced = Number(r.total_invoiced ?? 0);
+      const pending = Number(r.pending_amount ?? 0);
+      const overdue = Number(r.overdue_amount ?? 0);
+      return {
+        period: r.period_start,
+        invoiced,
+        paid: Math.max(0, invoiced - pending - overdue),
+        overdue,
+      };
+    });
 
   const totalInvoiced = revenueRows.reduce(
     (s, r) => s + Number(r.total_invoiced ?? 0),
     0
   );
   const totalCollected = revenueRows.reduce(
-    (s, r) => s + Number(r.total_collected ?? 0),
+    (s, r) => s + Math.max(0, Number(r.total_invoiced ?? 0) - Number(r.pending_amount ?? 0) - Number(r.overdue_amount ?? 0)),
     0
   );
   const totalOverdue = revenueRows.reduce(
@@ -794,6 +812,59 @@ export default function CompanyDetailPage() {
                 </CardContent>
               </Card>
             </>
+          )}
+
+          {/* Odoo Snapshots */}
+          {odooSnapshots.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Metricas Odoo (Snapshots)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead className="text-right">Facturado</TableHead>
+                        <TableHead className="text-right">Pendiente</TableHead>
+                        <TableHead className="text-right">Vencido</TableHead>
+                        <TableHead className="text-right">Ordenes</TableHead>
+                        <TableHead className="text-right">Pipeline CRM</TableHead>
+                        <TableHead className="text-right">Manufactura</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {odooSnapshots.slice(0, 6).map((s: Record<string, unknown>) => (
+                        <TableRow key={s.id as number}>
+                          <TableCell className="text-muted-foreground whitespace-nowrap">
+                            {s.snapshot_date as string}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(Number(s.total_invoiced ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(Number(s.pending_amount ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
+                            {formatCurrency(Number(s.overdue_amount ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {(s.open_orders_count as number) ?? 0}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {formatCurrency(Number(s.crm_pipeline_value ?? 0))}
+                          </TableCell>
+                          <TableCell className="text-right tabular-nums">
+                            {(s.manufacturing_count as number) ?? 0}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 

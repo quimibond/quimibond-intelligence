@@ -57,7 +57,7 @@ interface SearchResults {
     subject: string | null;
     snippet: string | null;
     sender: string | null;
-    received_at: string | null;
+    email_date: string | null;
   }>;
 }
 
@@ -295,9 +295,9 @@ export function SearchCommand() {
                           {e.sender}
                         </span>
                       </div>
-                      {e.received_at && (
+                      {e.email_date && (
                         <span className="shrink-0 text-xs text-muted-foreground">
-                          {timeAgo(e.received_at)}
+                          {timeAgo(e.email_date)}
                         </span>
                       )}
                     </ResultItem>
