@@ -122,7 +122,7 @@ export async function POST(request: NextRequest) {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6-20250610",
+          model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
           max_tokens: 1024,
           system:
             "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed person profile. Respond ONLY with valid JSON, no markdown or extra text.",
