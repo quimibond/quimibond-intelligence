@@ -64,13 +64,17 @@ export async function POST(request: NextRequest) {
       .order("email_date", { ascending: false })
       .limit(20);
 
-    // Fetch existing facts for this contact
-    const { data: facts } = await supabase
-      .from("facts")
-      .select("fact_text, fact_type, confidence")
-      .eq("contact_id", contact_id)
-      .order("confidence", { ascending: false })
-      .limit(30);
+    // Fetch existing facts via entity_id (facts don't have contact_id)
+    let facts: { fact_text: string; fact_type: string | null; confidence: number }[] = [];
+    if (contact.entity_id) {
+      const { data: factsData } = await supabase
+        .from("facts")
+        .select("fact_text, fact_type, confidence")
+        .eq("entity_id", contact.entity_id)
+        .order("confidence", { ascending: false })
+        .limit(30);
+      facts = factsData ?? [];
+    }
 
     // Build context
     const contextParts: string[] = [
@@ -80,10 +84,12 @@ export async function POST(request: NextRequest) {
       `Risk level: ${contact.risk_level ?? "Unknown"}`,
       `Sentiment score: ${contact.sentiment_score ?? "N/A"}`,
       `Relationship score: ${contact.relationship_score ?? "N/A"}`,
-      `Total emails: ${contact.total_emails ?? 0}`,
-      `Tags: ${(contact.tags ?? []).join(", ") || "None"}`,
-      `Location: ${[contact.city, contact.country].filter(Boolean).join(", ") || "Unknown"}`,
+      `Total emails sent: ${contact.total_sent ?? 0}, received: ${contact.total_received ?? 0}`,
     ];
+
+    if (contact.odoo_context) {
+      contextParts.push(`Odoo context: ${JSON.stringify(contact.odoo_context)}`);
+    }
 
     if (emails && emails.length > 0) {
       contextParts.push("\n--- Recent Emails ---");
@@ -94,7 +100,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    if (facts && facts.length > 0) {
+    if (facts.length > 0) {
       contextParts.push("\n--- Known Facts ---");
       for (const fact of facts) {
         contextParts.push(
@@ -116,7 +122,7 @@ export async function POST(request: NextRequest) {
           "anthropic-version": "2023-06-01",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "claude-sonnet-4-6-20250610",
           max_tokens: 1024,
           system:
             "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed person profile. Respond ONLY with valid JSON, no markdown or extra text.",
@@ -147,7 +153,6 @@ export async function POST(request: NextRequest) {
     try {
       profile = JSON.parse(rawText);
     } catch {
-      // Try extracting JSON from markdown code block
       const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
       if (jsonMatch) {
         profile = JSON.parse(jsonMatch[1].trim());
@@ -160,39 +165,30 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Upsert into person_profiles
-    const { data: savedProfile, error: upsertError } = await supabase
-      .from("person_profiles")
-      .upsert(
-        {
-          contact_id,
-          name: contact.name,
-          email: contact.email,
-          company: contact.company,
-          role: profile.role,
-          department: profile.department,
-          decision_power: profile.decision_power,
-          communication_style: profile.communication_style,
-          personality_traits: profile.personality_traits ?? [],
-          interests: profile.interests ?? [],
-          decision_factors: profile.decision_factors ?? [],
-          summary: profile.summary,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "contact_id" }
-      )
+    // Write profile data directly to contacts table (same as qb19 backend)
+    const { data: updated, error: updateError } = await supabase
+      .from("contacts")
+      .update({
+        role: profile.role,
+        department: profile.department,
+        decision_power: profile.decision_power,
+        communication_style: profile.communication_style,
+        key_interests: profile.interests ?? [],
+        personality_notes: profile.summary,
+      })
+      .eq("id", contact_id)
       .select()
       .single();
 
-    if (upsertError) {
-      console.error("Supabase upsert error:", upsertError);
+    if (updateError) {
+      console.error("Supabase update error:", updateError);
       return NextResponse.json(
         { error: "Error al guardar el perfil." },
         { status: 500 }
       );
     }
 
-    return NextResponse.json({ success: true, profile: savedProfile });
+    return NextResponse.json({ success: true, profile: updated });
   } catch (err) {
     console.error("Enrich contact error:", err);
     return NextResponse.json(

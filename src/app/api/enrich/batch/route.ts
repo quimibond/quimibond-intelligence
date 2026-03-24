@@ -34,48 +34,14 @@ export async function POST(request: NextRequest) {
     let errors = 0;
 
     if (type === "contacts") {
-      // Find contacts without a person_profile
-      const { data: contacts, error: queryError } = await supabase
+      // Find contacts without profile data (role is null = not enriched)
+      const { data: contactsToEnrich } = await supabase
         .from("contacts")
         .select("id, name, email")
-        .not(
-          "id",
-          "in",
-          supabase.from("person_profiles").select("contact_id")
-        )
+        .is("role", null)
+        .order("updated_at", { ascending: false })
         .limit(limit);
 
-      // Fallback: if the subquery approach doesn't work, use a raw query
-      let contactsToEnrich = contacts;
-      if (queryError || !contacts) {
-        const { data: fallbackContacts } = await supabase.rpc(
-          "get_contacts_without_profiles",
-          { p_limit: limit }
-        ).select("*");
-
-        // If RPC doesn't exist either, do it manually
-        if (!fallbackContacts) {
-          const { data: allContacts } = await supabase
-            .from("contacts")
-            .select("id, name, email")
-            .limit(50);
-
-          const { data: existingProfiles } = await supabase
-            .from("person_profiles")
-            .select("contact_id");
-
-          const profiledIds = new Set(
-            (existingProfiles ?? []).map((p) => p.contact_id)
-          );
-          contactsToEnrich = (allContacts ?? [])
-            .filter((c) => !profiledIds.has(c.id))
-            .slice(0, limit);
-        } else {
-          contactsToEnrich = fallbackContacts;
-        }
-      }
-
-      // Enrich each contact
       for (const contact of contactsToEnrich ?? []) {
         try {
           const origin = request.headers.get("origin") ?? request.nextUrl.origin;
@@ -100,14 +66,13 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      // Find companies without enrichment (from companies table)
+      // Find companies without enrichment
       const { data: companies } = await supabase
         .from("companies")
         .select("id, name")
         .is("enriched_at", null)
         .limit(limit);
 
-      // Enrich each company
       for (const company of companies ?? []) {
         try {
           const origin = request.headers.get("origin") ?? request.nextUrl.origin;

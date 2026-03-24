@@ -15,7 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { Bell, CheckSquare, Users, Mail, AlertTriangle, ClipboardList } from "lucide-react";
+import Link from "next/link";
+import { Bell, CheckSquare, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck } from "lucide-react";
 
 async function fetchDashboardFallback(): Promise<DirectorDashboard> {
   // Fallback: query tables directly when RPC doesn't exist
@@ -44,7 +45,7 @@ async function fetchDashboardFallback(): Promise<DirectorDashboard> {
     supabase.from("contacts").select("id", { count: "exact", head: true }),
     supabase.from("emails").select("id", { count: "exact", head: true }),
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "resolved"),
-    supabase.from("alerts").select("id, title, severity, contact_name, description, business_impact, suggested_action, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(8),
+    supabase.from("alerts").select("id, title, severity, contact_name, description, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(8),
     supabase.from("action_items").select("id, description, contact_name, contact_company, assignee_email, assignee_name, due_date, priority, action_type").eq("state", "pending").lt("due_date", today).order("due_date", { ascending: true }).limit(10),
     supabase.from("contacts").select("id, name, company, risk_level, sentiment_score, relationship_score").eq("risk_level", "high").order("relationship_score", { ascending: true }).limit(8),
   ]);
@@ -74,13 +75,50 @@ async function fetchDashboardFallback(): Promise<DirectorDashboard> {
     pending_actions: 0,
   }));
 
+  // Fetch latest briefing (try daily_summaries first, then briefings)
+  let latestBriefing = null;
+  const { data: dailySummary } = await supabase
+    .from("daily_summaries")
+    .select("*")
+    .order("summary_date", { ascending: false })
+    .limit(1)
+    .single();
+  if (dailySummary) {
+    latestBriefing = dailySummary;
+  }
+
+  // Fetch accountability (actions grouped by assignee)
+  const { data: accountabilityRaw } = await supabase
+    .from("action_items")
+    .select("assignee_name, assignee_email, state")
+    .not("assignee_email", "is", null);
+
+  const accountabilityMap = new Map<string, { name: string; email: string | null; pending: number; overdue: number; completed: number }>();
+  for (const item of accountabilityRaw ?? []) {
+    const key = item.assignee_email ?? "unknown";
+    if (!accountabilityMap.has(key)) {
+      accountabilityMap.set(key, {
+        name: item.assignee_name ?? key,
+        email: item.assignee_email,
+        pending: 0,
+        overdue: 0,
+        completed: 0,
+      });
+    }
+    const entry = accountabilityMap.get(key)!;
+    if (item.state === "pending") entry.pending++;
+    else if (item.state === "completed") entry.completed++;
+  }
+
   return {
     kpi,
     critical_alerts: criticalAlertsRes.data ?? [],
     overdue_actions: overdue,
-    accountability: [],
+    accountability: Array.from(accountabilityMap.values())
+      .sort((a, b) => b.pending - a.pending)
+      .slice(0, 10),
     contacts_at_risk: contactsRisk,
-    latest_briefing: null,
+    latest_briefing: latestBriefing,
     pending_actions: [],
   };
 }
@@ -140,7 +178,7 @@ export default function DashboardPage() {
     );
   }
 
-  const { kpi, critical_alerts, overdue_actions, contacts_at_risk } = data;
+  const { kpi, critical_alerts, overdue_actions, contacts_at_risk, latest_briefing, accountability } = data;
 
   return (
     <div className="space-y-6">
@@ -209,6 +247,84 @@ export default function DashboardPage() {
                   </div>
                 ))}
               </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Latest Briefing & Accountability */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Latest Briefing */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-4">
+            <FileText className="h-4 w-4 text-blue-500" />
+            <CardTitle>Ultimo Briefing</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {latest_briefing ? (
+              <div className="space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  {latest_briefing.summary_date} · {latest_briefing.total_emails ?? 0} emails procesados
+                </p>
+                <p className="text-sm line-clamp-6">
+                  {latest_briefing.summary_text
+                    ? latest_briefing.summary_text.slice(0, 400) + (latest_briefing.summary_text.length > 400 ? "..." : "")
+                    : "Sin resumen disponible."}
+                </p>
+                <Link
+                  href="/briefings"
+                  className="inline-block text-xs text-primary hover:underline mt-2"
+                >
+                  Ver todos los briefings
+                </Link>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No hay briefings generados aun.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Accountability */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-4">
+            <UserCheck className="h-4 w-4 text-purple-500" />
+            <CardTitle>Responsabilidad</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {accountability && accountability.length > 0 ? (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Responsable</TableHead>
+                    <TableHead className="text-right">Pendientes</TableHead>
+                    <TableHead className="text-right">Completadas</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {accountability.map((a) => (
+                    <TableRow key={a.email}>
+                      <TableCell className="text-sm">
+                        <div className="font-medium">{a.name}</div>
+                        <div className="text-xs text-muted-foreground">{a.email}</div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={a.pending > 3 ? "critical" : a.pending > 0 ? "warning" : "secondary"}>
+                          {a.pending}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant="success">{a.completed}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No hay datos de responsabilidad disponibles.
+              </p>
             )}
           </CardContent>
         </Card>
