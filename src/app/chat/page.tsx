@@ -68,13 +68,65 @@ export default function ChatPage() {
           }),
         });
 
-        const data = await res.json();
-        const assistantMessage: ChatMessage = {
-          role: "assistant",
-          content: data.response ?? data.error ?? "Error: no se recibio respuesta.",
-        };
+        const contentType = res.headers.get("content-type") ?? "";
 
-        setMessages((prev) => [...prev, assistantMessage]);
+        if (contentType.includes("text/event-stream")) {
+          // Streaming response — render progressively
+          const placeholder: ChatMessage = { role: "assistant", content: "" };
+          setMessages((prev) => [...prev, placeholder]);
+
+          const reader = res.body?.getReader();
+          const decoder = new TextDecoder();
+          let accumulated = "";
+
+          if (reader) {
+            let buffer = "";
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() ?? "";
+
+              for (const line of lines) {
+                if (!line.startsWith("data: ")) continue;
+                try {
+                  const event = JSON.parse(line.slice(6));
+                  if (event.type === "delta" && event.text) {
+                    accumulated += event.text;
+                    const text = accumulated;
+                    setMessages((prev) => {
+                      const copy = [...prev];
+                      copy[copy.length - 1] = { role: "assistant", content: text };
+                      return copy;
+                    });
+                  }
+                } catch {
+                  // skip
+                }
+              }
+            }
+          }
+
+          if (!accumulated) {
+            setMessages((prev) => {
+              const copy = [...prev];
+              copy[copy.length - 1] = { role: "assistant", content: "No se obtuvo respuesta." };
+              return copy;
+            });
+          }
+        } else {
+          // Non-streaming fallback (error responses come as JSON)
+          const data = await res.json();
+          setMessages((prev) => [
+            ...prev,
+            {
+              role: "assistant",
+              content: data.response ?? data.error ?? "Error: no se recibio respuesta.",
+            },
+          ]);
+        }
       } catch {
         setMessages((prev) => [
           ...prev,

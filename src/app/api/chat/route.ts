@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 
+// Allow up to 120s for streaming responses
+export const maxDuration = 120;
+
 interface ChatRequest {
   message: string;
   history: Array<{ role: string; content: string }>;
@@ -193,7 +196,7 @@ export async function POST(request: NextRequest) {
       conversationMessages.push({ role: "user", content: message });
     }
 
-    // Call Claude API
+    // Call Claude API with streaming
     const claudeResponse = await fetch(
       "https://api.anthropic.com/v1/messages",
       {
@@ -206,6 +209,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           model: "claude-sonnet-4-6-20250610",
           max_tokens: 2048,
+          stream: true,
           system: systemPrompt,
           messages: conversationMessages,
         }),
@@ -221,11 +225,67 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const claudeData = await claudeResponse.json();
-    const responseText =
-      claudeData.content?.[0]?.text ?? "No se obtuvo respuesta.";
+    // Stream the response to the client
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const reader = claudeResponse.body?.getReader();
+        if (!reader) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "No response body" })}\n\n`));
+          controller.close();
+          return;
+        }
 
-    return NextResponse.json({ response: responseText });
+        const decoder = new TextDecoder();
+        let buffer = "";
+
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() ?? "";
+
+            for (const line of lines) {
+              if (!line.startsWith("data: ")) continue;
+              const data = line.slice(6).trim();
+              if (data === "[DONE]") continue;
+
+              try {
+                const event = JSON.parse(data);
+                if (event.type === "content_block_delta" && event.delta?.text) {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ type: "delta", text: event.delta.text })}\n\n`)
+                  );
+                } else if (event.type === "message_stop") {
+                  controller.enqueue(
+                    encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`)
+                  );
+                }
+              } catch {
+                // Skip unparseable lines
+              }
+            }
+          }
+        } catch (err) {
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "error", error: "Stream interrupted" })}\n\n`)
+          );
+        } finally {
+          controller.close();
+        }
+      },
+    });
+
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   } catch (err) {
     console.error("Chat API error:", err);
     return NextResponse.json(
