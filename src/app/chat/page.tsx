@@ -119,11 +119,14 @@ export default function ChatPage() {
         } else {
           // Non-streaming fallback (error responses come as JSON)
           const data = await res.json();
+          const errorMsg = data.error
+            ? `${data.error}${data.detail ? `\n\n\`\`\`\n${typeof data.detail === "string" ? data.detail.slice(0, 500) : JSON.stringify(data.detail).slice(0, 500)}\n\`\`\`` : ""}`
+            : null;
           setMessages((prev) => [
             ...prev,
             {
               role: "assistant",
-              content: data.response ?? data.error ?? "Error: no se recibio respuesta.",
+              content: data.response ?? errorMsg ?? "Error: no se recibio respuesta.",
             },
           ]);
         }

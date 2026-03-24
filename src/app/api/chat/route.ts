@@ -204,10 +204,10 @@ export async function POST(request: NextRequest) {
         headers: {
           "Content-Type": "application/json",
           "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
+          "anthropic-version": "2024-10-22",
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-6-20250610",
+          model: process.env.CLAUDE_MODEL || "claude-sonnet-4-20250514",
           max_tokens: 2048,
           stream: true,
           system: systemPrompt,
@@ -220,7 +220,10 @@ export async function POST(request: NextRequest) {
       const errorBody = await claudeResponse.text();
       console.error("Claude API error:", claudeResponse.status, errorBody);
       return NextResponse.json(
-        { error: "Error al comunicarse con Claude API." },
+        {
+          error: `Error al llamar a Claude API (${claudeResponse.status}).`,
+          detail: errorBody,
+        },
         { status: 502 }
       );
     }
