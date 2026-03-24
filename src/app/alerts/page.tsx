@@ -2,7 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertTriangle, Bell, CheckCircle2, ChevronDown, Eye, Loader2, ShieldAlert, X } from "lucide-react";
+import {
+  AlertTriangle,
+  Bell,
+  CheckCircle2,
+  ChevronDown,
+  CreditCard,
+  Eye,
+  Loader2,
+  Package,
+  PackageX,
+  Percent,
+  ShieldAlert,
+  ShoppingCart,
+  TrendingDown,
+  X,
+} from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { timeAgo } from "@/lib/utils";
 import type { Alert } from "@/lib/types";
@@ -26,6 +41,24 @@ import {
 
 const PAGE_SIZE = 50;
 
+// Icon per alert_type for the new product/inventory/payment types
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+const alertTypeIcon: Record<string, any> = {
+  volume_drop: TrendingDown,
+  unusual_discount: Percent,
+  cross_sell: ShoppingCart,
+  stockout_risk: PackageX,
+  reorder_needed: Package,
+  payment_compliance: CreditCard,
+};
+
+// Category colors for badge variants
+const categoryVariant: Record<string, "info" | "warning" | "secondary"> = {
+  comercial: "info",
+  operativo: "warning",
+  financiero: "secondary",
+};
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
@@ -37,6 +70,7 @@ export default function AlertsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [alertTypeNames, setAlertTypeNames] = useState<Record<string, string>>({});
+  const [alertTypeCategories, setAlertTypeCategories] = useState<Record<string, string>>({});
 
   useEffect(() => {
     async function fetchAlerts() {
@@ -48,7 +82,7 @@ export default function AlertsPage() {
           .limit(PAGE_SIZE),
         supabase
           .from("alert_type_catalog")
-          .select("alert_type, display_name"),
+          .select("alert_type, display_name, category"),
       ]);
 
       if (!alertsRes.error && alertsRes.data) {
@@ -56,11 +90,14 @@ export default function AlertsPage() {
         setHasMore(alertsRes.data.length === PAGE_SIZE);
       }
       if (catalogRes.data) {
-        const map: Record<string, string> = {};
+        const nameMap: Record<string, string> = {};
+        const catMap: Record<string, string> = {};
         for (const c of catalogRes.data) {
-          if (c.alert_type && c.display_name) map[c.alert_type] = c.display_name;
+          if (c.alert_type && c.display_name) nameMap[c.alert_type] = c.display_name;
+          if (c.alert_type && c.category) catMap[c.alert_type] = c.category;
         }
-        setAlertTypeNames(map);
+        setAlertTypeNames(nameMap);
+        setAlertTypeCategories(catMap);
       }
       setLoading(false);
     }
@@ -213,7 +250,7 @@ export default function AlertsPage() {
         >
           <option value="all">Todos los tipos</option>
           {alertTypes.map((t) => (
-            <option key={t} value={t}>{t}</option>
+            <option key={t} value={t}>{alertTypeNames[t] ?? t}</option>
           ))}
         </Select>
       </div>
@@ -302,7 +339,17 @@ export default function AlertsPage() {
                     )}
                   </TableCell>
                   <TableCell>
-                    <Badge variant="secondary">{alertTypeNames[alert.alert_type] ?? alert.alert_type}</Badge>
+                    {(() => {
+                      const TypeIcon = alertTypeIcon[alert.alert_type];
+                      const cat = alertTypeCategories[alert.alert_type];
+                      const variant = (cat ? categoryVariant[cat] : undefined) ?? "secondary";
+                      return (
+                        <Badge variant={variant} className="gap-1">
+                          {TypeIcon && <TypeIcon className="h-3 w-3" />}
+                          {alertTypeNames[alert.alert_type] ?? alert.alert_type}
+                        </Badge>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     <StateBadge state={alert.state} />

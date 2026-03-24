@@ -17,7 +17,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { Bell, CheckSquare, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck } from "lucide-react";
+import { Bell, CheckSquare, CreditCard, PackageX, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck } from "lucide-react";
 
 async function fetchDashboardFallback(): Promise<DirectorDashboard> {
   // Fallback: query tables directly when RPC doesn't exist
@@ -127,6 +127,8 @@ async function fetchDashboardFallback(): Promise<DirectorDashboard> {
 export default function DashboardPage() {
   const [data, setData] = useState<DirectorDashboard | null>(null);
   const [loading, setLoading] = useState(true);
+  const [stockoutCount, setStockoutCount] = useState(0);
+  const [lowComplianceCount, setLowComplianceCount] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -143,6 +145,22 @@ export default function DashboardPage() {
           // Even fallback failed
         }
       }
+      // Extra KPIs for product/payment intelligence
+      const [stockoutRes, complianceRes] = await Promise.all([
+        supabase
+          .from("alerts")
+          .select("id", { count: "exact", head: true })
+          .eq("state", "new")
+          .eq("alert_type", "stockout_risk"),
+        supabase
+          .from("contacts")
+          .select("id", { count: "exact", head: true })
+          .lt("payment_compliance_score", 50)
+          .not("payment_compliance_score", "is", null),
+      ]);
+      setStockoutCount(stockoutRes.count ?? 0);
+      setLowComplianceCount(complianceRes.count ?? 0);
+
       setLoading(false);
     }
     load();
@@ -186,11 +204,13 @@ export default function DashboardPage() {
       <PageHeader title="Dashboard" description="Vista ejecutiva de inteligencia comercial" />
 
       {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Alertas Criticas" value={kpi.critical_alerts} icon={Bell} description={`${kpi.open_alerts} alertas abiertas en total`} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <StatCard title="Alertas Criticas" value={kpi.critical_alerts} icon={Bell} description={`${kpi.open_alerts} abiertas`} />
         <StatCard title="Acciones Pendientes" value={kpi.pending_actions} icon={CheckSquare} description={`${kpi.overdue_actions} vencidas`} />
-        <StatCard title="Contactos en Riesgo" value={kpi.at_risk_contacts} icon={Users} description={`de ${kpi.total_contacts} contactos`} />
+        <StatCard title="Contactos en Riesgo" value={kpi.at_risk_contacts} icon={Users} description={`de ${kpi.total_contacts}`} />
         <StatCard title="Emails Procesados" value={kpi.total_emails} icon={Mail} />
+        <StatCard title="Riesgo Desabasto" value={stockoutCount} icon={PackageX} description="alertas activas" />
+        <StatCard title="Compliance Bajo" value={lowComplianceCount} icon={CreditCard} description="contactos <50%" />
       </div>
 
       {/* Alerts & Overdue Actions */}

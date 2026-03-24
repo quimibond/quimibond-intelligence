@@ -35,6 +35,7 @@ export interface Contact {
   pending_actions_count: number | null;
   total_credit_notes: number | null;
   delivery_otd_rate: number | null;
+  payment_compliance_score: number | null;
   odoo_context: Record<string, unknown> | null;
   // Odoo refs
   odoo_partner_id: number | null;
@@ -263,6 +264,7 @@ export interface CustomerHealthScore {
   sentiment_score: number | null;
   responsiveness_score: number | null;
   engagement_score: number | null;
+  payment_compliance_score: number | null;
   risk_signals: unknown;
   opportunity_signals: unknown;
   company_id: number | null;
