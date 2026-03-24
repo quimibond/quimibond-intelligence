@@ -113,6 +113,7 @@ export default function ContactDetailPage() {
   const [healthScores, setHealthScores] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [personProfile, setPersonProfile] = useState<any>(null);
+  const [intelKpis, setIntelKpis] = useState<{ open_alerts: number; pending_actions: number; overdue_actions: number } | null>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -129,6 +130,24 @@ export default function ContactDetailPage() {
       if (!c) {
         setLoading(false);
         return;
+      }
+
+      // Fetch intelligence KPIs via RPC (non-blocking)
+      if (c.email) {
+        Promise.resolve(
+          supabase.rpc("get_contact_intelligence", { p_contact_email: c.email })
+        ).then(({ data: intel }) => {
+          if (intel) {
+            setIntelKpis({
+              open_alerts: intel.open_alerts ?? 0,
+              pending_actions: intel.pending_actions ?? 0,
+              overdue_actions: intel.overdue_actions ?? 0,
+            });
+            if (intel.person_profile) {
+              setPersonProfile(intel.person_profile);
+            }
+          }
+        }).catch(() => { /* RPC may not exist */ });
       }
 
       // Now fetch related data in parallel
@@ -365,6 +384,29 @@ export default function ContactDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Intelligence KPIs from RPC */}
+      {intelKpis && (intelKpis.open_alerts > 0 || intelKpis.pending_actions > 0) && (
+        <div className="flex flex-wrap items-center gap-3">
+          {intelKpis.open_alerts > 0 && (
+            <Badge variant="warning" className="gap-1.5 px-3 py-1">
+              <Bell className="h-3.5 w-3.5" />
+              {intelKpis.open_alerts} alerta{intelKpis.open_alerts !== 1 ? "s" : ""} abierta{intelKpis.open_alerts !== 1 ? "s" : ""}
+            </Badge>
+          )}
+          {intelKpis.pending_actions > 0 && (
+            <Badge variant="info" className="gap-1.5 px-3 py-1">
+              <CheckSquare className="h-3.5 w-3.5" />
+              {intelKpis.pending_actions} accion{intelKpis.pending_actions !== 1 ? "es" : ""} pendiente{intelKpis.pending_actions !== 1 ? "s" : ""}
+            </Badge>
+          )}
+          {intelKpis.overdue_actions > 0 && (
+            <Badge variant="critical" className="gap-1.5 px-3 py-1">
+              {intelKpis.overdue_actions} vencida{intelKpis.overdue_actions !== 1 ? "s" : ""}
+            </Badge>
+          )}
+        </div>
+      )}
 
       {/* Tabs */}
       <Tabs defaultValue="perfil">
