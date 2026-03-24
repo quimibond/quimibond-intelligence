@@ -349,7 +349,7 @@ export default function ContactDetailPage() {
           <TabsTrigger value="acciones">Acciones</TabsTrigger>
         </TabsList>
 
-        {/* ── Perfil (from contact record, NOT person_profiles) ── */}
+        {/* ── Perfil (from contact record) ── */}
         <TabsContent value="perfil" className="space-y-6">
           <ProfileCard contact={contact} />
 

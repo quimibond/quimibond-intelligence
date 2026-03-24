@@ -79,24 +79,6 @@ export interface Company {
   updated_at: string;
 }
 
-export interface PersonProfile {
-  id: number;
-  contact_id: number | null;
-  canonical_key: string | null;
-  name: string | null;
-  email: string | null;
-  company: string | null;
-  role: string | null;
-  department: string | null;
-  decision_power: string | null;
-  communication_style: string | null;
-  personality_traits: string[];
-  interests: string[];
-  decision_factors: string[];
-  summary: string | null;
-  created_at: string;
-  updated_at: string;
-}
 
 export interface Thread {
   id: number;
@@ -300,13 +282,6 @@ export interface ChatMemory {
   times_retrieved: number;
 }
 
-export interface ChatFeedback {
-  id: number;
-  chat_memory_id: number | null;
-  feedback_type: string | null;
-  feedback_text: string | null;
-  created_at: string;
-}
 
 export interface FeedbackSignal {
   id: number;
