@@ -106,8 +106,8 @@ export default function BriefingsPage() {
                 </CardContent>
                 <CardFooter className="pt-0">
                   <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                    {summary.accounts_read != null && (
-                      <span>{summary.accounts_read} cuentas leidas</span>
+                    {summary.accounts_processed != null && (
+                      <span>{summary.accounts_processed} cuentas leidas</span>
                     )}
                     {summary.accounts_failed != null &&
                       summary.accounts_failed > 0 && (
