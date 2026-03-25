@@ -7,6 +7,8 @@ import { ArrowLeft, Bell, Brain, Building2, CheckSquare, Clock, Lightbulb, Mail,
 import { supabase } from "@/lib/supabase";
 import { formatDate, formatDateTime, timeAgo } from "@/lib/utils";
 import type { Alert } from "@/lib/types";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
+import { EntityLink } from "@/components/shared/entity-link";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
 import { FeedbackButtons } from "@/components/shared/feedback-buttons";
@@ -103,16 +105,25 @@ export default function AlertDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => router.push("/alerts")}>
-        <ArrowLeft className="mr-1 h-4 w-4" /> Alertas
-      </Button>
+      {/* Breadcrumbs with connected entities */}
+      <Breadcrumbs items={[
+        { label: "Dashboard", href: "/" },
+        { label: "Alertas", href: "/alerts" },
+        { label: alert.title.slice(0, 50) },
+      ]} />
 
       {/* Header */}
       <div className="space-y-2">
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2">
           <SeverityBadge severity={alert.severity} />
           <StateBadge state={alert.state} />
           <Badge variant="secondary">{catalogName ?? alert.alert_type}</Badge>
+          {alert.contact_name && alert.contact_id && (
+            <EntityLink type="contact" id={alert.contact_id} label={alert.contact_name} />
+          )}
+          {alert.company_id && (
+            <EntityLink type="company" id={alert.company_id} label="Ver empresa" />
+          )}
         </div>
         <h1 className="text-2xl font-bold">{alert.title}</h1>
         <div className="flex items-center gap-4 text-sm text-muted-foreground">

@@ -52,7 +52,9 @@ import { RiskBadge } from "@/components/shared/risk-badge";
 import { ScoreGauge } from "@/components/shared/score-gauge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { EmptyState } from "@/components/shared/empty-state";
+import { EntityLink } from "@/components/shared/entity-link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -500,15 +502,12 @@ export default function CompanyDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/companies")}
-      >
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Empresas
-      </Button>
+      {/* Breadcrumbs */}
+      <Breadcrumbs items={[
+        { label: "Dashboard", href: "/" },
+        { label: "Empresas", href: "/companies" },
+        { label: company.name },
+      ]} />
 
       {/* Header */}
       <PageHeader title={company.name}>

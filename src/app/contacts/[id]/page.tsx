@@ -36,6 +36,8 @@ import type {
   Alert,
   ActionItem,
 } from "@/lib/types";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
+import { EntityLink } from "@/components/shared/entity-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -308,15 +310,15 @@ export default function ContactDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/contacts")}
-      >
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Contactos
-      </Button>
+      {/* Breadcrumbs — connected navigation */}
+      <Breadcrumbs items={[
+        { label: "Dashboard", href: "/" },
+        ...(contact.company_id
+          ? [{ label: "Empresas", href: "/companies" },
+             { label: contact.company ?? "Empresa", href: `/companies/${contact.company_id}` }]
+          : [{ label: "Contactos", href: "/contacts" }]),
+        { label: contact.name ?? contact.email },
+      ]} />
 
       {/* Header */}
       <div className="flex items-center gap-4">
