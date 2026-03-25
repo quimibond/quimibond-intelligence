@@ -11,6 +11,7 @@ export interface Company {
   canonical_name: string;
   name: string;
   odoo_partner_id: number | null;
+  entity_id: number | null;
   // Classification
   is_customer: boolean;
   is_supplier: boolean;
@@ -49,6 +50,7 @@ export interface Contact {
   name: string | null;
   company_id: number | null;
   odoo_partner_id: number | null;
+  entity_id: number | null;
   // Classification
   contact_type: string | null;
   department: string | null;
