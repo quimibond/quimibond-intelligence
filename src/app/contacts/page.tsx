@@ -77,7 +77,7 @@ export default function ContactsPage() {
       return (
         c.name?.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
-        ((c as Record<string, unknown>).company as string)?.toLowerCase().includes(q)
+        ((c as unknown as Record<string, unknown>).company as string)?.toLowerCase().includes(q)
       );
     });
   }, [contacts, search, riskFilter]);
@@ -165,7 +165,7 @@ export default function ContactsPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {(contact as Record<string, unknown>).company as string ?? "—"}
+                    {(contact as unknown as Record<string, unknown>).company as string ?? "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {contact.role ?? "—"}
