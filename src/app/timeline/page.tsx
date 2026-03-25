@@ -173,24 +173,24 @@ export default function TimelinePage() {
         });
       }
 
-      type EventRow = {
-        id: number;
-        event_type: string;
-        entity_type: string | null;
-        entity_ref: string | null;
-        payload: Record<string, unknown> | null;
+      type LogRow = {
+        id: string;
+        phase: string | null;
+        level: string;
+        message: string | null;
+        details: Record<string, unknown> | null;
         created_at: string;
       };
 
-      for (const ev of (eventsRes.data ?? []) as EventRow[]) {
-        const summary = summarizePayload(ev.payload);
+      for (const ev of (eventsRes.data ?? []) as unknown as LogRow[]) {
+        const summary = summarizePayload(ev.details);
         merged.push({
           id: `event-${ev.id}`,
-          rawId: ev.id,
+          rawId: ev.id as unknown as number,
           type: "event",
-          title: `${ev.event_type}${ev.entity_type ? ` — ${ev.entity_type}` : ""}`,
-          subtitle: ev.entity_ref ?? summary,
-          metadata: null,
+          title: ev.phase ?? ev.level,
+          subtitle: ev.message ?? summary,
+          metadata: ev.level !== "info" ? ev.level : null,
           created_at: ev.created_at,
         });
       }
