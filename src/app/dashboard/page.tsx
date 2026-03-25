@@ -17,7 +17,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { Bell, CheckSquare, CreditCard, PackageX, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck } from "lucide-react";
+import { Bell, CheckSquare, CreditCard, PackageX, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck, UserCog } from "lucide-react";
 
 async function fetchDashboardFallback(): Promise<DirectorDashboard> {
   // Fallback: query tables directly when RPC doesn't exist
@@ -129,6 +129,8 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [stockoutCount, setStockoutCount] = useState(0);
   const [lowComplianceCount, setLowComplianceCount] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -160,6 +162,13 @@ export default function DashboardPage() {
       ]);
       setStockoutCount(stockoutRes.count ?? 0);
       setLowComplianceCount(complianceRes.count ?? 0);
+
+      // Fetch team dashboard (non-blocking)
+      Promise.resolve(supabase.rpc("get_team_dashboard")).then(({ data: teamData }) => {
+        if (Array.isArray(teamData)) {
+          setTeamMembers(teamData);
+        }
+      }).catch(() => { /* RPC may not exist */ });
 
       setLoading(false);
     }
@@ -394,6 +403,51 @@ export default function DashboardPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Team Dashboard */}
+      {teamMembers.length > 0 && (
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-4">
+            <UserCog className="h-4 w-4 text-blue-500" />
+            <CardTitle>Equipo</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Miembro</TableHead>
+                  <TableHead>Departamento</TableHead>
+                  <TableHead className="text-right">Pendientes</TableHead>
+                  <TableHead className="text-right">Vencidas</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {teamMembers.map((member: Record<string, unknown>, idx: number) => {
+                  const overdue = Number(member.overdue_activities_count ?? member.overdue ?? 0);
+                  const pending = Number(member.pending_activities_count ?? member.pending ?? 0);
+                  return (
+                    <TableRow key={idx}>
+                      <TableCell>
+                        <div className="font-medium">{String(member.name ?? "—")}</div>
+                        {member.email ? <div className="text-xs text-muted-foreground">{String(member.email)}</div> : null}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground text-sm">
+                        {String(member.department ?? member.job_title ?? "—")}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={pending > 5 ? "warning" : "secondary"}>{pending}</Badge>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Badge variant={overdue > 0 ? "critical" : "success"}>{overdue}</Badge>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Prediction Stats */}
       <PredictionStats />

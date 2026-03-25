@@ -9,8 +9,11 @@ import {
   CheckCircle2,
   Clock,
   Mail,
+  Package,
   RefreshCw,
   Server,
+  ShoppingCart,
+  UserCog,
   Users,
   ChevronDown,
   XCircle,
@@ -40,6 +43,9 @@ interface SystemStats {
   totalEntities: number;
   totalFacts: number;
   totalActions: number;
+  totalOdooProducts: number;
+  totalOdooOrderLines: number;
+  totalOdooUsers: number;
 }
 
 const statusConfig: Record<string, { variant: "success" | "warning" | "critical" | "info" | "secondary"; icon: typeof CheckCircle2 }> = {
@@ -60,7 +66,7 @@ export default function SystemPage() {
 
   useEffect(() => {
     async function fetchData() {
-      const [emailsRes, contactsRes, alertsRes, entitiesRes, factsRes, actionsRes, syncRes, pipelineRes] =
+      const [emailsRes, contactsRes, alertsRes, entitiesRes, factsRes, actionsRes, syncRes, pipelineRes, odooProductsRes, odooOrderLinesRes, odooUsersRes] =
         await Promise.all([
           supabase.from("emails").select("id", { count: "exact", head: true }),
           supabase.from("contacts").select("id", { count: "exact", head: true }),
@@ -70,6 +76,9 @@ export default function SystemPage() {
           supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
           supabase.from("sync_state").select("*").order("last_sync_at", { ascending: false }),
           supabase.from("pipeline_runs").select("*").order("started_at", { ascending: false }).limit(20),
+          supabase.from("odoo_products").select("id", { count: "exact", head: true }),
+          supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }),
+          supabase.from("odoo_users").select("id", { count: "exact", head: true }),
         ]);
 
       setStats({
@@ -79,6 +88,9 @@ export default function SystemPage() {
         totalEntities: entitiesRes.count ?? 0,
         totalFacts: factsRes.count ?? 0,
         totalActions: actionsRes.count ?? 0,
+        totalOdooProducts: odooProductsRes.count ?? 0,
+        totalOdooOrderLines: odooOrderLinesRes.count ?? 0,
+        totalOdooUsers: odooUsersRes.count ?? 0,
       });
 
       setSyncStates((syncRes.data ?? []) as SyncState[]);
@@ -131,6 +143,13 @@ export default function SystemPage() {
         <StatCard title="Acciones pend." value={stats?.totalActions.toLocaleString() ?? "0"} icon={Clock} description="Estado: pending" />
         <StatCard title="Entidades" value={stats?.totalEntities.toLocaleString() ?? "0"} icon={Brain} description="Knowledge graph" />
         <StatCard title="Hechos" value={stats?.totalFacts.toLocaleString() ?? "0"} icon={Activity} description="Extraidos" />
+      </div>
+
+      {/* Odoo tables */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <StatCard title="Productos Odoo" value={stats?.totalOdooProducts.toLocaleString() ?? "0"} icon={Package} description="odoo_products" />
+        <StatCard title="Lineas de Orden" value={stats?.totalOdooOrderLines.toLocaleString() ?? "0"} icon={ShoppingCart} description="odoo_order_lines" />
+        <StatCard title="Usuarios Odoo" value={stats?.totalOdooUsers.toLocaleString() ?? "0"} icon={UserCog} description="odoo_users" />
       </div>
 
       {/* Pipeline Runs */}

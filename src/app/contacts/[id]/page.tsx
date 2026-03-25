@@ -114,6 +114,8 @@ export default function ContactDetailPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [personProfile, setPersonProfile] = useState<any>(null);
   const [intelKpis, setIntelKpis] = useState<{ open_alerts: number; pending_actions: number; overdue_actions: number } | null>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [contactComms, setContactComms] = useState<any>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -145,6 +147,31 @@ export default function ContactDetailPage() {
             });
             if (intel.person_profile) {
               setPersonProfile(intel.person_profile);
+            }
+          }
+        }).catch(() => { /* RPC may not exist */ });
+      }
+
+      // Fetch contact communications via RPC (non-blocking)
+      if (c.email) {
+        Promise.resolve(supabase.rpc("get_contact_communications", { p_contact_email: c.email })).then(({ data: commsData }) => {
+          if (commsData) {
+            setContactComms(commsData);
+            // If RPC returns emails, use them (more complete than direct query)
+            if (Array.isArray(commsData.emails_sent) || Array.isArray(commsData.emails_received)) {
+              const allEmails = [
+                ...(commsData.emails_sent ?? []),
+                ...(commsData.emails_received ?? []),
+              ].sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
+                new Date(b.email_date as string ?? 0).getTime() - new Date(a.email_date as string ?? 0).getTime()
+              );
+              if (allEmails.length > 0) {
+                setEmails(allEmails as Email[]);
+              }
+            }
+            // Update facts if provided
+            if (Array.isArray(commsData.facts) && commsData.facts.length > 0) {
+              setFacts(commsData.facts as Fact[]);
             }
           }
         }).catch(() => { /* RPC may not exist */ });
@@ -974,6 +1001,7 @@ export default function ContactDetailPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Fecha</TableHead>
+                    <TableHead>Remitente</TableHead>
                     <TableHead>Asunto</TableHead>
                     <TableHead>Tipo</TableHead>
                     <TableHead>Fragmento</TableHead>
@@ -984,6 +1012,9 @@ export default function ContactDetailPage() {
                     <TableRow key={email.id}>
                       <TableCell className="whitespace-nowrap text-muted-foreground">
                         {formatDateTime(email.email_date)}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {email.sender ?? "—"}
                       </TableCell>
                       <TableCell className="font-medium">
                         {email.subject ?? "—"}
@@ -1015,6 +1046,60 @@ export default function ContactDetailPage() {
               title="Sin emails"
               description="No se encontraron correos asociados a este contacto."
             />
+          )}
+
+          {/* Threads from RPC */}
+          {contactComms && Array.isArray(contactComms.threads) && contactComms.threads.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Hilos de Conversacion</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Asunto</TableHead>
+                        <TableHead>Mensajes</TableHead>
+                        <TableHead>Ultima Actividad</TableHead>
+                        <TableHead>Estado</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {contactComms.threads.map((thread: Record<string, unknown>, i: number) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium text-sm">{String(thread.subject ?? "—")}</TableCell>
+                          <TableCell className="tabular-nums">{String(thread.message_count ?? "—")}</TableCell>
+                          <TableCell className="text-muted-foreground">{timeAgo(thread.last_activity as string | null)}</TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">{String(thread.status ?? "—")}</Badge>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* KG relationships from RPC */}
+          {contactComms && Array.isArray(contactComms.relationships) && contactComms.relationships.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Relaciones (Knowledge Graph)</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex flex-wrap gap-2">
+                  {contactComms.relationships.map((rel: Record<string, unknown>, i: number) => (
+                    <Badge key={i} variant="outline" className="gap-1">
+                      {String(rel.related_entity_name ?? rel.entity_name ?? "Entidad")} — {String(rel.relationship_type ?? "relacion")}
+                      {rel.strength != null && ` (${(Number(rel.strength) * 100).toFixed(0)}%)`}
+                    </Badge>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
           )}
         </TabsContent>
 

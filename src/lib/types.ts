@@ -43,6 +43,7 @@ export interface Contact {
   is_supplier: boolean | null;
   company_id: number | null;
   entity_id: number | null;
+  commercial_partner_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -76,6 +77,20 @@ export interface Company {
   strategic_notes: string | null;
   enriched_at: string | null;
   enrichment_source: string | null;
+  // New JSONB columns from Odoo sync
+  recent_sales: unknown;
+  pending_invoices: unknown;
+  recent_payments: unknown;
+  recent_purchases: unknown;
+  crm_leads: unknown;
+  pending_deliveries: unknown;
+  manufacturing: unknown;
+  pending_activities: unknown;
+  payment_behavior: unknown;
+  aging: unknown;
+  products: unknown;
+  inventory_intelligence: unknown;
+  purchase_patterns: unknown;
   created_at: string;
   updated_at: string;
 }
@@ -119,6 +134,8 @@ export interface Email {
   sender_type: string | null;
   has_attachments: boolean;
   kg_processed: boolean;
+  company_id: number | null;
+  sender_odoo_partner_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -433,6 +450,56 @@ export interface PipelineRun {
   errors: unknown[];
   metadata: Record<string, unknown>;
   created_at: string;
+}
+
+export interface OdooProduct {
+  id: number;
+  odoo_product_id: number;
+  name: string;
+  internal_ref: string | null;
+  category: string | null;
+  uom: string;
+  stock_qty: number;
+  reserved_qty: number;
+  available_qty: number;
+  reorder_min: number;
+  reorder_max: number;
+  standard_price: number;
+  list_price: number;
+  active: boolean;
+  product_type: string | null;
+  updated_at: string;
+}
+
+export interface OdooOrderLine {
+  id: number;
+  odoo_order_id: number;
+  odoo_partner_id: number;
+  company_id: number | null;
+  order_name: string;
+  order_date: string | null;
+  order_type: 'sale' | 'purchase';
+  order_state: string | null;
+  product_name: string;
+  odoo_product_id: number | null;
+  qty: number;
+  price_unit: number;
+  discount: number;
+  subtotal: number;
+  currency: string;
+}
+
+export interface OdooUser {
+  id: number;
+  odoo_user_id: number;
+  name: string;
+  email: string | null;
+  department: string | null;
+  job_title: string | null;
+  pending_activities_count: number;
+  overdue_activities_count: number;
+  activities_json: any[];
+  updated_at: string;
 }
 
 export interface PipelineLog {
