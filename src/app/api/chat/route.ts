@@ -93,7 +93,7 @@ async function gatherContext(
 
   const briefing =
     briefingRes.data && briefingRes.data.length > 0
-      ? `Fecha: ${briefingRes.data[0].summary_date}\nEmails procesados: ${briefingRes.data[0].total_emails}\n${briefingRes.data[0].summary_text ?? "Sin resumen disponible."}`
+      ? `Fecha: ${briefingRes.data[0].briefing_date}\nEmails procesados: ${briefingRes.data[0].total_emails}\n${briefingRes.data[0].summary_text ?? "Sin resumen disponible."}`
       : "No hay briefing reciente disponible.";
 
   const facts =
