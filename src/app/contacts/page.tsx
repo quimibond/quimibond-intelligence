@@ -77,7 +77,7 @@ export default function ContactsPage() {
       return (
         c.name?.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
-        c.company?.toLowerCase().includes(q)
+        ((c as Record<string, unknown>).company as string)?.toLowerCase().includes(q)
       );
     });
   }, [contacts, search, riskFilter]);

@@ -212,62 +212,66 @@ export default function DashboardPage() {
       // ── Operational KPIs (non-blocking) ──
 
       // Global aging: sum all pending invoices across companies
-      supabase
-        .from("odoo_invoices")
-        .select("amount_residual, days_overdue")
-        .eq("move_type", "out_invoice")
-        .in("payment_state", ["not_paid", "partial"])
-        .then(({ data: invoices }) => {
-          if (!invoices) return;
-          const aging: GlobalAging = { current: 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0, total_outstanding: 0 };
-          for (const inv of invoices) {
-            const amt = Number(inv.amount_residual ?? 0);
-            const days = Number(inv.days_overdue ?? 0);
-            aging.total_outstanding += amt;
-            if (days <= 0) aging.current += amt;
-            else if (days <= 30) aging["1_30"] += amt;
-            else if (days <= 60) aging["31_60"] += amt;
-            else if (days <= 90) aging["61_90"] += amt;
-            else aging["90_plus"] += amt;
-          }
-          setGlobalAging(aging);
-        }).catch(() => {});
+      Promise.resolve(
+        supabase
+          .from("odoo_invoices")
+          .select("amount_residual, days_overdue")
+          .eq("move_type", "out_invoice")
+          .in("payment_state", ["not_paid", "partial"])
+      ).then(({ data: invoices }) => {
+        if (!invoices) return;
+        const aging: GlobalAging = { current: 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0, total_outstanding: 0 };
+        for (const inv of invoices) {
+          const amt = Number(inv.amount_residual ?? 0);
+          const days = Number(inv.days_overdue ?? 0);
+          aging.total_outstanding += amt;
+          if (days <= 0) aging.current += amt;
+          else if (days <= 30) aging["1_30"] += amt;
+          else if (days <= 60) aging["31_60"] += amt;
+          else if (days <= 90) aging["61_90"] += amt;
+          else aging["90_plus"] += amt;
+        }
+        setGlobalAging(aging);
+      }).catch(() => {});
 
       // Late deliveries
-      supabase
-        .from("odoo_deliveries")
-        .select("name, company_id, scheduled_date, picking_type, origin")
-        .eq("is_late", true)
-        .not("state", "in", '("done","cancel")')
-        .order("scheduled_date", { ascending: true })
-        .limit(15)
-        .then(({ data: dels }) => {
-          if (dels) setLateDeliveries(dels as LateDelivery[]);
-        }).catch(() => {});
+      Promise.resolve(
+        supabase
+          .from("odoo_deliveries")
+          .select("name, company_id, scheduled_date, picking_type, origin")
+          .eq("is_late", true)
+          .not("state", "in", '("done","cancel")')
+          .order("scheduled_date", { ascending: true })
+          .limit(15)
+      ).then(({ data: dels }) => {
+        if (dels) setLateDeliveries(dels as LateDelivery[]);
+      }).catch(() => {});
 
-      supabase
-        .from("odoo_deliveries")
-        .select("id", { count: "exact", head: true })
-        .eq("is_late", true)
-        .not("state", "in", '("done","cancel")')
-        .then(({ count }) => {
-          setLateDeliveryCount(count ?? 0);
-        }).catch(() => {});
+      Promise.resolve(
+        supabase
+          .from("odoo_deliveries")
+          .select("id", { count: "exact", head: true })
+          .eq("is_late", true)
+          .not("state", "in", '("done","cancel")')
+      ).then(({ count }) => {
+        setLateDeliveryCount(count ?? 0);
+      }).catch(() => {});
 
       // Global pipeline
-      supabase
-        .from("odoo_crm_leads")
-        .select("lead_type, expected_revenue, probability")
-        .eq("active", true)
-        .then(({ data: leads }) => {
-          if (!leads) return;
-          const opps = leads.filter((l) => l.lead_type === "opportunity");
-          setPipelineGlobal({
-            total_opportunities: opps.length,
-            pipeline_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0), 0),
-            weighted_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0) * Number(l.probability ?? 0) / 100, 0),
-          });
-        }).catch(() => {});
+      Promise.resolve(
+        supabase
+          .from("odoo_crm_leads")
+          .select("lead_type, expected_revenue, probability")
+          .eq("active", true)
+      ).then(({ data: leads }) => {
+        if (!leads) return;
+        const opps = leads.filter((l) => l.lead_type === "opportunity");
+        setPipelineGlobal({
+          total_opportunities: opps.length,
+          pipeline_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0), 0),
+          weighted_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0) * Number(l.probability ?? 0) / 100, 0),
+        });
+      }).catch(() => {});
 
       setLoading(false);
     }
@@ -476,7 +480,7 @@ export default function DashboardPage() {
             {latest_briefing ? (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  {latest_briefing.briefing_date ?? latest_briefing.summary_date} · {latest_briefing.total_emails ?? 0} emails procesados
+                  {latest_briefing.briefing_date} · {latest_briefing.total_emails ?? 0} emails procesados
                 </p>
                 <p className="text-sm line-clamp-6">
                   {latest_briefing.summary_text
