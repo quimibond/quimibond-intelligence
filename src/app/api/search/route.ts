@@ -31,8 +31,8 @@ export async function POST(req: NextRequest) {
     const [contacts, entities, alerts, facts, emails] = await Promise.all([
       supabase
         .from("contacts")
-        .select("id, name, email, company, risk_level")
-        .or(`name.ilike.${pattern},email.ilike.${pattern},company.ilike.${pattern}`)
+        .select("id, name, email, company_id, risk_level")
+        .or(`name.ilike.${pattern},email.ilike.${pattern}`)
         .limit(10),
       supabase
         .from("entities")

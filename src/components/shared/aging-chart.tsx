@@ -32,8 +32,8 @@ export function AgingChart({ data }: { data: AgingData | null }) {
     const total = data.total_outstanding || 1;
     return BUCKETS.map((b) => ({
       ...b,
-      value: Number((data as Record<string, number>)[b.key] ?? 0),
-      pct: (Number((data as Record<string, number>)[b.key] ?? 0) / total) * 100,
+      value: Number((data as unknown as Record<string, number>)[b.key] ?? 0),
+      pct: (Number((data as unknown as Record<string, number>)[b.key] ?? 0) / total) * 100,
     })).filter((b) => b.value > 0);
   }, [data]);
 
@@ -62,7 +62,7 @@ export function AgingChart({ data }: { data: AgingData | null }) {
       {/* Legend */}
       <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-5">
         {BUCKETS.map((b) => {
-          const value = Number((data as Record<string, number>)[b.key] ?? 0);
+          const value = Number((data as unknown as Record<string, number>)[b.key] ?? 0);
           return (
             <div key={b.key} className="flex items-center gap-2 text-sm">
               <span className={cn("h-3 w-3 rounded-sm shrink-0", b.color)} />

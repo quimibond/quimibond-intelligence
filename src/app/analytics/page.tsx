@@ -222,7 +222,7 @@ export default function AnalyticsPage() {
     for (const s of summaries) {
       const val = sentimentToNumber(s.overall_sentiment);
       if (val == null) continue;
-      const date = s.summary_date;
+      const date = (s as unknown as Record<string, unknown>).briefing_date as string ?? (s as unknown as Record<string, unknown>).summary_date as string;
       const existing = byDate.get(date) ?? { total: 0, count: 0 };
       existing.total += val;
       existing.count += 1;

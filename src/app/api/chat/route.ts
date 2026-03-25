@@ -29,9 +29,9 @@ async function gatherContext(
       supabase
         .from("contacts")
         .select(
-          "name, email, company, role, risk_level, sentiment_score, relationship_score, last_activity"
+          "name, email, company_id, role, risk_level, sentiment_score, relationship_score, last_activity"
         )
-        .or(`name.ilike.${q},email.ilike.${q},company.ilike.${q}`)
+        .or(`name.ilike.${q},email.ilike.${q}`)
         .order("last_activity", { ascending: false, nullsFirst: false })
         .limit(10),
 
@@ -76,7 +76,7 @@ async function gatherContext(
       ? contactsRes.data
           .map(
             (c) =>
-              `- ${c.name} <${c.email}> | ${c.company ?? "?"} | Rol: ${c.role ?? "?"} | Riesgo: ${c.risk_level ?? "?"} | Sentimiento: ${c.sentiment_score ?? "?"} | Relacion: ${c.relationship_score ?? "?"}`
+              `- ${c.name} <${c.email}> | Company ID: ${c.company_id ?? "?"} | Rol: ${c.role ?? "?"} | Riesgo: ${c.risk_level ?? "?"} | Sentimiento: ${c.sentiment_score ?? "?"} | Relacion: ${c.relationship_score ?? "?"}`
           )
           .join("\n")
       : "No se encontraron contactos relevantes.";

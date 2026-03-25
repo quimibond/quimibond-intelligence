@@ -28,7 +28,7 @@ interface SearchResults {
     id: string;
     name: string;
     email: string | null;
-    company: string | null;
+    company_id: number | null;
     risk_level: string | null;
   }>;
   entities: Array<{
@@ -202,9 +202,9 @@ export function SearchCommand() {
                     >
                       <div className="flex flex-1 items-center gap-2 min-w-0">
                         <span className="truncate font-medium">{c.name}</span>
-                        {c.company && (
+                        {c.company_id && (
                           <span className="truncate text-muted-foreground">
-                            {c.company}
+                            Empresa #{c.company_id}
                           </span>
                         )}
                       </div>
