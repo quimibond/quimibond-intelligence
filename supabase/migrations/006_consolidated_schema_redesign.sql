@@ -1,0 +1,60 @@
+-- ═══════════════════════════════════════════════════════════════════════════════
+-- Migration 006: Consolidated Schema Redesign (March 2026)
+-- ═══════════════════════════════════════════════════════════════════════════════
+--
+-- This migration replaces ALL previous migrations (001-005).
+-- It was applied via Supabase MCP as 4 separate migrations:
+--   1. drop_all_existing_schema
+--   2. create_core_tables
+--   3. create_intelligence_and_system_tables
+--   4. create_indexes_and_rls
+--   5. create_triggers_and_rpcs
+--
+-- CHANGES:
+-- ────────────────────────────────────────────────────────────────────────────
+-- Tables ELIMINATED (consolidated):
+--   - person_profiles       → merged into contacts
+--   - account_summaries     → merged into briefings (scope='account')
+--   - daily_summaries       → merged into briefings (scope='daily')
+--   - communication_patterns → merged into communication_metrics
+--   - response_metrics      → merged into communication_metrics
+--   - events                → replaced by pipeline_logs
+--   - entity_mentions       → removed (unused)
+--   - prediction_outcomes   → merged into feedback_signals
+--   - system_learnings      → removed
+--   - alert_type_catalog    → removed (CHECK constraints instead)
+--   - topic_category_catalog → removed (category field on topics)
+--
+-- Tables RENAMED:
+--   - customer_health_scores → health_scores
+--   - company_odoo_snapshots → odoo_snapshots
+--
+-- RESULT: 30+ tables → 22 tables
+-- ────────────────────────────────────────────────────────────────────────────
+--
+-- FINAL SCHEMA (22 tables, 7 tiers):
+--
+-- Tier 1: Core Business Entities
+--   companies, contacts
+--
+-- Tier 2: Communication
+--   threads, emails (with pgvector embeddings)
+--
+-- Tier 3: Knowledge Graph
+--   entities, facts, entity_relationships
+--
+-- Tier 4: Intelligence Outputs
+--   alerts, action_items, briefings, topics
+--
+-- Tier 5: Metrics & History
+--   health_scores, revenue_metrics, communication_metrics, odoo_snapshots
+--
+-- Tier 6: Odoo Integration
+--   odoo_products, odoo_order_lines, odoo_users
+--
+-- Tier 7: System & Operations
+--   sync_state, pipeline_runs, pipeline_logs, chat_memory, feedback_signals
+--
+-- See the individual Supabase migrations for full DDL.
+-- This file serves as documentation of the consolidated schema.
+-- ═══════════════════════════════════════════════════════════════════════════════

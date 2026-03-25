@@ -31,7 +31,7 @@ import type {
   Entity,
   Alert,
   ActionItem,
-  CustomerHealthScore,
+  HealthScore,
 } from "@/lib/types";
 import { EnrichButton } from "@/components/shared/enrich-button";
 import { HealthRadar } from "@/components/shared/health-radar";
@@ -134,7 +134,7 @@ export default function CompanyDetailPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
-  const [healthScores, setHealthScores] = useState<CustomerHealthScore[]>([]);
+  const [healthScores, setHealthScores] = useState<HealthScore[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [odooSnapshots, setOdooSnapshots] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -156,7 +156,7 @@ export default function CompanyDetailPage() {
         setFacts((ctx.facts as Fact[] | null) ?? []);
         setAlerts((ctx.alerts as Alert[] | null) ?? []);
         setActions((ctx.actions as ActionItem[] | null) ?? []);
-        setHealthScores((ctx.health_scores as CustomerHealthScore[] | null) ?? []);
+        setHealthScores((ctx.health_scores as HealthScore[] | null) ?? []);
         setRevenueRows((ctx.revenue as RevenueRow[] | null) ?? []);
         setOdooSnapshots(ctx.snapshots ?? []);
         setRecentEmails(ctx.recent_emails ?? []);
@@ -273,13 +273,13 @@ export default function CompanyDetailPage() {
           .order("period_start", { ascending: false })
           .limit(12),
         supabase
-          .from("customer_health_scores")
+          .from("health_scores")
           .select("*")
           .eq("company_id", comp.id)
           .order("score_date", { ascending: false })
           .limit(30),
         supabase
-          .from("company_odoo_snapshots")
+          .from("odoo_snapshots")
           .select("*")
           .eq("company_id", comp.id)
           .order("snapshot_date", { ascending: false })
@@ -300,7 +300,7 @@ export default function CompanyDetailPage() {
       setOdooSnapshots(snapshotsRes.data ?? []);
       setRecentEmails(emailsRes.data ?? []);
       setHealthScores(
-        (healthRes.data as CustomerHealthScore[] | null) ?? []
+        (healthRes.data as HealthScore[] | null) ?? []
       );
 
       // 3. Fetch relationships via entity_id

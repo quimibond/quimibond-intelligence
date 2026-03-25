@@ -76,12 +76,13 @@ async function fetchDashboardFallback(): Promise<DirectorDashboard> {
     pending_actions: 0,
   }));
 
-  // Fetch latest briefing (try daily_summaries first, then briefings)
+  // Fetch latest daily briefing
   let latestBriefing = null;
   const { data: dailySummary } = await supabase
-    .from("daily_summaries")
+    .from("briefings")
     .select("*")
-    .order("summary_date", { ascending: false })
+    .eq("scope", "daily")
+    .order("briefing_date", { ascending: false })
     .limit(1)
     .single();
   if (dailySummary) {

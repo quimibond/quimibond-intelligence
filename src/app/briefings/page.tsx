@@ -5,7 +5,7 @@ import Link from "next/link";
 import { BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, timeAgo, truncate } from "@/lib/utils";
-import type { DailySummary } from "@/lib/types";
+import type { Briefing } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -19,19 +19,20 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 
 export default function BriefingsPage() {
-  const [summaries, setSummaries] = useState<DailySummary[]>([]);
+  const [summaries, setSummaries] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchSummaries() {
       const { data, error } = await supabase
-        .from("daily_summaries")
+        .from("briefings")
         .select("*")
-        .order("summary_date", { ascending: false })
+        .eq("scope", "daily")
+        .order("briefing_date", { ascending: false })
         .limit(50);
 
       if (!error && data) {
-        setSummaries(data as DailySummary[]);
+        setSummaries(data as Briefing[]);
       }
       setLoading(false);
     }
@@ -75,8 +76,8 @@ export default function BriefingsPage() {
                     <div className="flex items-center gap-2">
                       <Calendar className="h-4 w-4 text-muted-foreground" />
                       <CardTitle className="text-base">
-                        {summary.summary_date
-                          ? formatDate(summary.summary_date)
+                        {summary.briefing_date
+                          ? formatDate(summary.briefing_date)
                           : "Sin fecha"}
                       </CardTitle>
                     </div>

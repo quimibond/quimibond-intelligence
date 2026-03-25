@@ -223,7 +223,7 @@ export default function ContactDetailPage() {
       promises.push(
         Promise.resolve(
           supabase
-            .from("customer_health_scores")
+            .from("health_scores")
             .select("*")
             .eq("contact_id", contactId)
             .order("score_date", { ascending: false })
@@ -252,18 +252,8 @@ export default function ContactDetailPage() {
             })
         );
 
-        // Person profile (personality traits, decision factors)
-        promises.push(
-          supabase
-            .from("person_profiles")
-            .select("*")
-            .eq("email", c.email)
-            .order("updated_at", { ascending: false, nullsFirst: false })
-            .limit(1)
-            .then(({ data }) => {
-              if (data && data.length > 0) setPersonProfile(data[0]);
-            })
-        );
+        // Person profile data is now consolidated into contacts table
+        // Profile fields (role, decision_power, etc.) are read from the contact itself
       }
 
       await Promise.all(promises);
@@ -454,7 +444,7 @@ export default function ContactDetailPage() {
         <TabsContent value="perfil" className="space-y-6">
           <ProfileCard contact={contact} />
 
-          {/* Person Profile (from person_profiles table) */}
+          {/* Person Profile (consolidated into contacts table) */}
           {personProfile && (
             <Card>
               <CardHeader><CardTitle className="text-sm">Perfil de Personalidad</CardTitle></CardHeader>

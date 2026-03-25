@@ -47,9 +47,10 @@ async function gatherContext(
 
       // Latest briefing
       supabase
-        .from("daily_summaries")
-        .select("summary_date, summary_text, total_emails, key_events")
-        .order("summary_date", { ascending: false })
+        .from("briefings")
+        .select("briefing_date, summary_text, total_emails, key_events")
+        .eq("scope", "daily")
+        .order("briefing_date", { ascending: false })
         .limit(1),
 
       // Relevant facts
