@@ -315,7 +315,7 @@ export default function ContactDetailPage() {
         { label: "Dashboard", href: "/" },
         ...(contact.company_id
           ? [{ label: "Empresas", href: "/companies" },
-             { label: contact.company ?? "Empresa", href: `/companies/${contact.company_id}` }]
+             { label: "Empresa", href: `/companies/${contact.company_id}` }]
           : [{ label: "Contactos", href: "/contacts" }]),
         { label: contact.name ?? contact.email },
       ]} />
