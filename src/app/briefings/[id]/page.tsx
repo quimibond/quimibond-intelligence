@@ -88,8 +88,8 @@ export default function BriefingDetailPage() {
               <Mail className="h-3.5 w-3.5" />
               {summary.total_emails} emails procesados
             </span>
-            {summary.accounts_read != null && (
-              <span>{summary.accounts_read} cuentas leidas</span>
+            {summary.accounts_processed != null && (
+              <span>{summary.accounts_processed} cuentas leidas</span>
             )}
             {summary.accounts_failed != null &&
               summary.accounts_failed > 0 && (
