@@ -45,7 +45,7 @@ import { HealthRadar } from "@/components/shared/health-radar";
 import { HealthTrendChart } from "@/components/shared/health-trend-chart";
 import { ProfileCard } from "@/components/shared/profile-card";
 import { TrendBadge } from "@/components/shared/trend-badge";
-import { EnrichButton } from "@/components/shared/enrich-button";
+
 import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -355,7 +355,6 @@ export default function ContactDetailPage() {
             )}
           </div>
         </div>
-        <EnrichButton type="contact" id={contactId} name={contact.name ?? "contacto"} />
       </div>
 
       {/* Key metrics */}

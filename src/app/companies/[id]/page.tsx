@@ -33,7 +33,7 @@ import type {
   ActionItem,
   CustomerHealthScore,
 } from "@/lib/types";
-import { EnrichButton } from "@/components/shared/enrich-button";
+
 import { HealthRadar } from "@/components/shared/health-radar";
 import { HealthTrendChart } from "@/components/shared/health-trend-chart";
 import { PageHeader } from "@/components/shared/page-header";
@@ -479,11 +479,6 @@ export default function CompanyDetailPage() {
               {timeAgo(company.enriched_at)}
             </span>
           )}
-          <EnrichButton
-            type="company"
-            id={String(company.id)}
-            name={company.name}
-          />
         </div>
       </PageHeader>
 

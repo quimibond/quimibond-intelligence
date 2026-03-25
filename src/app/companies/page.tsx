@@ -7,7 +7,7 @@ import { timeAgo } from "@/lib/utils";
 import type { Company } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
+
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -61,7 +61,6 @@ export default function CompaniesPage() {
         title="Empresas"
         description="Directorio de empresas e inteligencia comercial"
       >
-        <BatchEnrichButton type="companies" />
       </PageHeader>
 
       {/* Search */}
