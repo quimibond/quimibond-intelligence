@@ -33,12 +33,23 @@ import type {
   ActionItem,
   HealthScore,
 } from "@/lib/types";
+import type {
+  CompanyFinancials,
+  CompanyLogistics,
+  CompanyPipeline,
+} from "@/lib/types";
+import { AgingChart } from "@/components/shared/aging-chart";
+import { ActivityList } from "@/components/shared/activity-list";
+import { DeliveryStatus } from "@/components/shared/delivery-status";
 import { EnrichButton } from "@/components/shared/enrich-button";
 import { HealthRadar } from "@/components/shared/health-radar";
 import { HealthTrendChart } from "@/components/shared/health-trend-chart";
+import { InvoiceTable } from "@/components/shared/invoice-table";
 import { PageHeader } from "@/components/shared/page-header";
+import { PipelineFunnel } from "@/components/shared/pipeline-funnel";
 import { RevenueChart } from "@/components/shared/revenue-chart";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { ScoreGauge } from "@/components/shared/score-gauge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -135,6 +146,9 @@ export default function CompanyDetailPage() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
   const [healthScores, setHealthScores] = useState<HealthScore[]>([]);
+  const [financials, setFinancials] = useState<CompanyFinancials | null>(null);
+  const [logistics, setLogistics] = useState<CompanyLogistics | null>(null);
+  const [pipeline, setPipeline] = useState<CompanyPipeline | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [odooSnapshots, setOdooSnapshots] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -161,10 +175,34 @@ export default function CompanyDetailPage() {
         setOdooSnapshots(ctx.snapshots ?? []);
         setRecentEmails(ctx.recent_emails ?? []);
 
-        // Fetch products via separate RPC
-        Promise.resolve(supabase.rpc("get_company_products", { p_company_id: Number(companyId) })).then(({ data: prodData }) => {
+        // Fetch products + financials + logistics + pipeline via separate RPCs (non-blocking)
+        const cid = Number(companyId);
+        Promise.resolve(supabase.rpc("get_company_products", { p_company_id: cid })).then(({ data: prodData }) => {
           if (Array.isArray(prodData)) setCompanyProducts(prodData);
         }).catch(() => {});
+
+        // New Odoo detail RPCs
+        if (ctx.financials) {
+          setFinancials(ctx.financials as CompanyFinancials);
+        } else {
+          Promise.resolve(supabase.rpc("get_company_financials", { p_company_id: cid })).then(({ data }) => {
+            if (data) setFinancials(data as CompanyFinancials);
+          }).catch(() => {});
+        }
+        if (ctx.logistics) {
+          setLogistics(ctx.logistics as CompanyLogistics);
+        } else {
+          Promise.resolve(supabase.rpc("get_company_logistics", { p_company_id: cid })).then(({ data }) => {
+            if (data) setLogistics(data as CompanyLogistics);
+          }).catch(() => {});
+        }
+        if (ctx.pipeline) {
+          setPipeline(ctx.pipeline as CompanyPipeline);
+        } else {
+          Promise.resolve(supabase.rpc("get_company_pipeline", { p_company_id: cid })).then(({ data }) => {
+            if (data) setPipeline(data as CompanyPipeline);
+          }).catch(() => {});
+        }
 
         // Still fetch relationships if entity_id is available
         if (comp.entity_id) {
@@ -226,9 +264,19 @@ export default function CompanyDetailPage() {
       const comp = companyData as Company;
       setCompany(comp);
 
-      // Fetch products via RPC (non-blocking)
-      Promise.resolve(supabase.rpc("get_company_products", { p_company_id: Number(companyId) })).then(({ data: prodData }) => {
+      // Fetch products + Odoo detail RPCs (non-blocking)
+      const cid = Number(companyId);
+      Promise.resolve(supabase.rpc("get_company_products", { p_company_id: cid })).then(({ data: prodData }) => {
         if (Array.isArray(prodData)) setCompanyProducts(prodData);
+      }).catch(() => {});
+      Promise.resolve(supabase.rpc("get_company_financials", { p_company_id: cid })).then(({ data }) => {
+        if (data) setFinancials(data as CompanyFinancials);
+      }).catch(() => {});
+      Promise.resolve(supabase.rpc("get_company_logistics", { p_company_id: cid })).then(({ data }) => {
+        if (data) setLogistics(data as CompanyLogistics);
+      }).catch(() => {});
+      Promise.resolve(supabase.rpc("get_company_pipeline", { p_company_id: cid })).then(({ data }) => {
+        if (data) setPipeline(data as CompanyPipeline);
       }).catch(() => {});
 
       // 2. Parallel fetches
@@ -487,74 +535,80 @@ export default function CompanyDetailPage() {
         </div>
       </PageHeader>
 
-      {/* Key info cards */}
+      {/* KPI cards — operational command center */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Industria</p>
-            <p className="mt-1 text-sm font-medium">
-              {company.industry ?? "No especificada"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Lifetime Value</p>
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <DollarSign className="h-3.5 w-3.5" />
+              Lifetime Value
+            </div>
             <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
               {formatCurrency(company.lifetime_value)}
             </p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Promedio Mensual</p>
-            <p className="mt-1 text-lg font-bold tabular-nums">
-              {formatCurrency(company.monthly_avg)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Tendencia</p>
-            <p
-              className={cn(
-                "mt-1 text-lg font-bold tabular-nums",
-                company.trend_pct != null && company.trend_pct > 0
-                  ? "text-emerald-600 dark:text-emerald-400"
-                  : company.trend_pct != null && company.trend_pct < 0
-                    ? "text-red-600 dark:text-red-400"
-                    : "text-muted-foreground"
-              )}
-            >
-              {company.trend_pct != null
-                ? `${company.trend_pct > 0 ? "+" : ""}${company.trend_pct.toFixed(1)}%`
-                : "—"}
-            </p>
+          <CardContent className="pt-4 flex flex-col items-center">
+            <ScoreGauge
+              value={latestHealth?.overall_score ?? null}
+              label="Salud"
+              size="sm"
+            />
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-              Contactos
+              <CreditCard className="h-3.5 w-3.5" />
+              Saldo Vencido
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums">
-              {contacts.length}
-            </p>
+            {(() => {
+              const aging = financials?.aging;
+              const overdue = aging
+                ? (aging["1_30"] ?? 0) + (aging["31_60"] ?? 0) + (aging["61_90"] ?? 0) + (aging["90_plus"] ?? 0)
+                : null;
+              return (
+                <p className={cn(
+                  "mt-1 text-lg font-bold tabular-nums",
+                  overdue && overdue > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"
+                )}>
+                  {overdue != null ? formatCurrency(overdue) : "—"}
+                </p>
+              );
+            })()}
           </CardContent>
         </Card>
         <Card>
           <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Ubicacion</p>
-            <p className="mt-1 text-sm font-medium">
-              {company.city || company.country ? (
-                <span className="flex items-center gap-1">
-                  <MapPin className="h-3.5 w-3.5 shrink-0" />
-                  {[company.city, company.country].filter(Boolean).join(", ")}
-                </span>
-              ) : (
-                "—"
-              )}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Bell className="h-3.5 w-3.5" />
+              Alertas Abiertas
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">
+              {alerts.filter(a => a.state !== "resolved" && a.state !== "dismissed").length}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4 flex flex-col items-center">
+            <ScoreGauge
+              value={logistics?.delivery_performance?.on_time_rate ?? null}
+              label="OTD Rate"
+              size="sm"
+            />
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Pipeline
+            </div>
+            <p className="mt-1 text-lg font-bold tabular-nums text-blue-600 dark:text-blue-400">
+              {pipeline?.pipeline_summary?.pipeline_value != null
+                ? formatCurrency(pipeline.pipeline_summary.pipeline_value)
+                : "—"}
             </p>
           </CardContent>
         </Card>
@@ -992,58 +1046,131 @@ export default function CompanyDetailPage() {
 
         {/* ── Finanzas ── */}
         <TabsContent value="finanzas" className="space-y-6">
-          {revenueRows.length === 0 ? (
-            <EmptyState
-              icon={DollarSign}
-              title="Sin datos financieros"
-              description="No hay datos de revenue disponibles para esta empresa."
-            />
-          ) : (
-            <>
-              {/* Summary stats */}
-              <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">
-                      Total Facturado
-                    </p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
-                      {formatCurrency(totalInvoiced)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">
-                      Total Cobrado
-                    </p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                      {formatCurrency(totalCollected)}
-                    </p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent className="pt-4">
-                    <p className="text-xs text-muted-foreground">
-                      Total Vencido
-                    </p>
-                    <p className="mt-1 text-2xl font-bold tabular-nums text-red-600 dark:text-red-400">
-                      {formatCurrency(totalOverdue)}
-                    </p>
-                  </CardContent>
-                </Card>
-              </div>
+          {/* Aging Analysis */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CreditCard className="h-4 w-4" />
+                Antiguedad de Saldos (Aging)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <AgingChart data={financials?.aging ?? null} />
+            </CardContent>
+          </Card>
 
-              {/* Chart */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Revenue Mensual</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <RevenueChart data={revenueChartData} />
-                </CardContent>
-              </Card>
-            </>
+          {/* Payment Compliance + Revenue summary */}
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <Card>
+              <CardContent className="pt-4 flex flex-col items-center">
+                <ScoreGauge
+                  value={financials?.payment_behavior?.compliance_score ?? null}
+                  label="Compliance de Pago"
+                  size="md"
+                />
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Total Facturado</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+                  {formatCurrency(totalInvoiced)}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Total Cobrado</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                  {formatCurrency(totalCollected)}
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-4">
+                <p className="text-xs text-muted-foreground">Dias Prom. de Pago</p>
+                <p className="mt-1 text-2xl font-bold tabular-nums">
+                  {financials?.payment_behavior?.avg_days_to_pay != null
+                    ? `${financials.payment_behavior.avg_days_to_pay}d`
+                    : "—"}
+                </p>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Pending invoices table */}
+          {financials?.recent_invoices && financials.recent_invoices.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Facturas Recientes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InvoiceTable invoices={financials.recent_invoices} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Revenue chart */}
+          {revenueChartData.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Revenue Mensual</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <RevenueChart data={revenueChartData} />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Recent payments */}
+          {financials?.recent_payments && financials.recent_payments.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Pagos Recientes</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Referencia</TableHead>
+                        <TableHead>Fecha</TableHead>
+                        <TableHead>Tipo</TableHead>
+                        <TableHead className="text-right">Monto</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {financials.recent_payments.map((p, i) => (
+                        <TableRow key={i}>
+                          <TableCell className="font-medium text-sm">{p.name}</TableCell>
+                          <TableCell className="text-sm tabular-nums text-muted-foreground">{p.payment_date}</TableCell>
+                          <TableCell>
+                            <Badge variant={p.payment_type === "inbound" ? "success" : "warning"}>
+                              {p.payment_type === "inbound" ? "Cobro" : "Pago"}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="text-right text-sm tabular-nums font-medium">
+                            {formatCurrency(p.amount)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Credit notes */}
+          {financials?.credit_notes && financials.credit_notes.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Notas de Credito</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <InvoiceTable invoices={financials.credit_notes} title="" />
+              </CardContent>
+            </Card>
           )}
 
           {/* Odoo Snapshots */}
@@ -1406,287 +1533,56 @@ export default function CompanyDetailPage() {
         </TabsContent>
 
         {/* ── Operaciones Odoo ── */}
+        {/* ── Operaciones: Logistica + Pipeline + Actividades ── */}
         <TabsContent value="operaciones" className="space-y-6">
-          {(() => {
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const payBehavior = company.payment_behavior as any;
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const agingData = company.aging as any;
-            const pendingDeliveries = Array.isArray(company.pending_deliveries) ? company.pending_deliveries : [];
-            const recentSales = Array.isArray(company.recent_sales) ? company.recent_sales : [];
-            const pendingInvoices = Array.isArray(company.pending_invoices) ? company.pending_invoices : [];
-            const recentPayments = Array.isArray(company.recent_payments) ? company.recent_payments : [];
+          {/* Logistics */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Truck className="h-4 w-4" />
+                Logistica &amp; Entregas
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DeliveryStatus
+                pending={logistics?.pending_deliveries ?? []}
+                performance={logistics?.delivery_performance ?? null}
+                lateCount={logistics?.late_count ?? 0}
+              />
+            </CardContent>
+          </Card>
 
-            const hasData = payBehavior || agingData || pendingDeliveries.length > 0 || recentSales.length > 0 || pendingInvoices.length > 0 || recentPayments.length > 0;
+          {/* Pipeline */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4" />
+                Pipeline de Ventas (CRM)
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <PipelineFunnel
+                summary={pipeline?.pipeline_summary ?? null}
+                leads={pipeline?.leads ?? []}
+              />
+            </CardContent>
+          </Card>
 
-            if (!hasData) {
-              return (
-                <EmptyState
-                  icon={Truck}
-                  title="Sin datos operativos"
-                  description="No hay datos operativos de Odoo disponibles para esta empresa."
-                />
-              );
-            }
-
-            return (
-              <>
-                {/* Payment Behavior */}
-                {payBehavior && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-sm">
-                        <CreditCard className="h-4 w-4" />
-                        Comportamiento de Pago
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-                        {payBehavior.compliance_score != null && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Compliance</p>
-                            <div className="mt-1 flex items-center gap-2">
-                              <Progress value={Number(payBehavior.compliance_score)} className="flex-1" />
-                              <span className="text-sm font-bold tabular-nums">{Math.round(Number(payBehavior.compliance_score))}%</span>
-                            </div>
-                          </div>
-                        )}
-                        {payBehavior.avg_days_late != null && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Prom. dias tarde</p>
-                            <p className={cn(
-                              "mt-1 text-2xl font-bold tabular-nums",
-                              Number(payBehavior.avg_days_late) > 15 ? "text-red-600 dark:text-red-400" :
-                              Number(payBehavior.avg_days_late) > 5 ? "text-amber-600 dark:text-amber-400" :
-                              "text-emerald-600 dark:text-emerald-400"
-                            )}>
-                              {Math.round(Number(payBehavior.avg_days_late))}d
-                            </p>
-                          </div>
-                        )}
-                        {payBehavior.trend && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Tendencia</p>
-                            <p className="mt-1 text-lg font-bold">
-                              {payBehavior.trend === "improving" ? "Mejorando" :
-                               payBehavior.trend === "declining" ? "Declinando" : "Estable"}
-                            </p>
-                          </div>
-                        )}
-                      </div>
-                    </CardContent>
-                  </Card>
+          {/* Odoo Activities */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <CheckSquare className="h-4 w-4" />
+                Actividades Pendientes
+                {pipeline?.overdue_activities != null && pipeline.overdue_activities > 0 && (
+                  <Badge variant="critical">{pipeline.overdue_activities} vencidas</Badge>
                 )}
-
-                {/* Aging */}
-                {agingData && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Antigüedad de Saldos (Aging)</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
-                        <div>
-                          <p className="text-xs text-muted-foreground">Corriente</p>
-                          <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
-                            {formatCurrency(Number(agingData.current ?? 0))}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">1-30 dias</p>
-                          <p className="mt-1 text-lg font-bold tabular-nums text-amber-600 dark:text-amber-400">
-                            {formatCurrency(Number(agingData["1_30"] ?? agingData.days_1_30 ?? 0))}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">31-60 dias</p>
-                          <p className="mt-1 text-lg font-bold tabular-nums text-orange-600 dark:text-orange-400">
-                            {formatCurrency(Number(agingData["31_60"] ?? agingData.days_31_60 ?? 0))}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">61-90 dias</p>
-                          <p className="mt-1 text-lg font-bold tabular-nums text-red-500 dark:text-red-400">
-                            {formatCurrency(Number(agingData["61_90"] ?? agingData.days_61_90 ?? 0))}
-                          </p>
-                        </div>
-                        <div>
-                          <p className="text-xs text-muted-foreground">90+ dias</p>
-                          <p className="mt-1 text-lg font-bold tabular-nums text-red-700 dark:text-red-300">
-                            {formatCurrency(Number(agingData["90_plus"] ?? agingData.days_90_plus ?? 0))}
-                          </p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Pending Deliveries */}
-                {pendingDeliveries.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-2 text-sm">
-                        <Truck className="h-4 w-4" />
-                        Entregas Pendientes
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Referencia</TableHead>
-                              <TableHead>Fecha programada</TableHead>
-                              <TableHead>Estado</TableHead>
-                              <TableHead>Productos</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {(pendingDeliveries as Record<string, unknown>[]).map((d, i) => (
-                              <TableRow key={i}>
-                                <TableCell className="font-medium text-sm">{String(d.name ?? d.reference ?? "—")}</TableCell>
-                                <TableCell className="text-muted-foreground">{formatDate(d.scheduled_date as string | null ?? d.date as string | null)}</TableCell>
-                                <TableCell>
-                                  <Badge variant={d.state === "late" ? "critical" : "secondary"}>
-                                    {String(d.state ?? "—")}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-sm text-muted-foreground">
-                                  {String(d.products ?? d.product_names ?? "—")}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Recent Sales */}
-                {recentSales.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Ventas Recientes</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Orden</TableHead>
-                              <TableHead>Fecha</TableHead>
-                              <TableHead>Estado</TableHead>
-                              <TableHead className="text-right">Total</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {(recentSales as Record<string, unknown>[]).slice(0, 10).map((s, i) => (
-                              <TableRow key={i}>
-                                <TableCell className="font-medium text-sm">{String(s.name ?? s.order_name ?? "—")}</TableCell>
-                                <TableCell className="text-muted-foreground">{formatDate(s.date_order as string | null ?? s.order_date as string | null)}</TableCell>
-                                <TableCell>
-                                  <Badge variant="secondary">{String(s.state ?? s.order_state ?? "—")}</Badge>
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {formatCurrency(Number(s.amount_total ?? s.subtotal ?? 0))}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Pending Invoices */}
-                {pendingInvoices.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Facturas Pendientes</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Factura</TableHead>
-                              <TableHead>Vencimiento</TableHead>
-                              <TableHead>Estado</TableHead>
-                              <TableHead className="text-right">Monto</TableHead>
-                              <TableHead className="text-right">Residual</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {(pendingInvoices as Record<string, unknown>[]).slice(0, 10).map((inv, i) => (
-                              <TableRow key={i}>
-                                <TableCell className="font-medium text-sm">{String(inv.name ?? inv.number ?? "—")}</TableCell>
-                                <TableCell className="text-muted-foreground">{formatDate(inv.invoice_date_due as string | null ?? inv.date_due as string | null)}</TableCell>
-                                <TableCell>
-                                  <Badge variant={
-                                    String(inv.payment_state ?? "") === "not_paid" ? "warning" :
-                                    String(inv.payment_state ?? "") === "paid" ? "success" : "secondary"
-                                  }>
-                                    {String(inv.payment_state ?? inv.state ?? "—")}
-                                  </Badge>
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums">
-                                  {formatCurrency(Number(inv.amount_total ?? 0))}
-                                </TableCell>
-                                <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
-                                  {formatCurrency(Number(inv.amount_residual ?? inv.residual ?? 0))}
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-
-                {/* Recent Payments */}
-                {recentPayments.length > 0 && (
-                  <Card>
-                    <CardHeader>
-                      <CardTitle className="text-sm">Pagos Recientes</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="rounded-md border">
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Referencia</TableHead>
-                              <TableHead>Fecha</TableHead>
-                              <TableHead className="text-right">Monto</TableHead>
-                              <TableHead>Estado</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {(recentPayments as Record<string, unknown>[]).slice(0, 10).map((p, i) => (
-                              <TableRow key={i}>
-                                <TableCell className="font-medium text-sm">{String(p.name ?? p.ref ?? "—")}</TableCell>
-                                <TableCell className="text-muted-foreground">{formatDate(p.date as string | null ?? p.payment_date as string | null)}</TableCell>
-                                <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
-                                  {formatCurrency(Number(p.amount ?? 0))}
-                                </TableCell>
-                                <TableCell>
-                                  <Badge variant={String(p.state ?? "") === "posted" ? "success" : "secondary"}>
-                                    {String(p.state ?? "—")}
-                                  </Badge>
-                                </TableCell>
-                              </TableRow>
-                            ))}
-                          </TableBody>
-                        </Table>
-                      </div>
-                    </CardContent>
-                  </Card>
-                )}
-              </>
-            );
-          })()}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ActivityList activities={pipeline?.activities ?? []} />
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
