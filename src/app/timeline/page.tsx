@@ -113,8 +113,8 @@ export default function TimelinePage() {
             .order("created_at", { ascending: false })
             .limit(30),
           supabase
-            .from("events")
-            .select("id, event_type, entity_type, entity_ref, payload, created_at")
+            .from("pipeline_logs")
+            .select("id, phase, level, message, details, created_at")
             .gte("created_at", threshold)
             .order("created_at", { ascending: false })
             .limit(30),

@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, timeAgo } from "@/lib/utils";
-import type { DailySummary } from "@/lib/types";
+import type { Briefing } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,19 +19,19 @@ import { Separator } from "@/components/ui/separator";
 export default function BriefingDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const [summary, setSummary] = useState<DailySummary | null>(null);
+  const [summary, setSummary] = useState<Briefing | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchSummary() {
       const { data, error } = await supabase
-        .from("daily_summaries")
+        .from("briefings")
         .select("*")
         .eq("id", params.id)
         .single();
 
       if (!error && data) {
-        setSummary(data as DailySummary);
+        setSummary(data as Briefing);
       }
       setLoading(false);
     }
@@ -77,8 +77,8 @@ export default function BriefingDetailPage() {
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-1.5 text-sm">
               <Calendar className="h-4 w-4 text-muted-foreground" />
-              {summary.summary_date
-                ? formatDate(summary.summary_date)
+              {summary.briefing_date
+                ? formatDate(summary.briefing_date)
                 : "Sin fecha"}
             </div>
             <Badge variant="info">Resumen Diario</Badge>

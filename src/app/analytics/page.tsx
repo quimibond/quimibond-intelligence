@@ -143,14 +143,15 @@ export default function AnalyticsPage() {
     async function fetchData() {
       const [metricsRes, summariesRes] = await Promise.all([
         supabase
-          .from("response_metrics")
+          .from("communication_metrics")
           .select("*")
           .order("metric_date", { ascending: false })
           .limit(90),
         supabase
-          .from("account_summaries")
+          .from("briefings")
           .select("*")
-          .order("summary_date", { ascending: false })
+          .eq("scope", "account")
+          .order("briefing_date", { ascending: false })
           .limit(60),
       ]);
 

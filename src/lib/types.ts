@@ -1,22 +1,60 @@
-// ── Database types matching REAL Supabase schema (March 2026) ──
+// ── Database types matching Supabase schema (March 2026 redesign) ──
 // All IDs are bigint in Postgres but come as number via Supabase JS client
+// Schema: 22 tables across 7 tiers
+
+// ═══════════════════════════════════════════════════════════════
+// TIER 1: CORE BUSINESS ENTITIES
+// ═══════════════════════════════════════════════════════════════
+
+export interface Company {
+  id: number;
+  canonical_name: string;
+  name: string;
+  odoo_partner_id: number | null;
+  // Classification
+  is_customer: boolean;
+  is_supplier: boolean;
+  industry: string | null;
+  business_type: string | null;
+  country: string | null;
+  city: string | null;
+  // Financial (from Odoo)
+  lifetime_value: number | null;
+  credit_limit: number | null;
+  total_pending: number | null;
+  total_credit_notes: number | null;
+  monthly_avg: number | null;
+  trend_pct: number | null;
+  delivery_otd_rate: number | null;
+  // Intelligence (from Claude)
+  description: string | null;
+  key_products: unknown;
+  relationship_summary: string | null;
+  relationship_type: string | null;
+  risk_signals: unknown;
+  opportunity_signals: unknown;
+  strategic_notes: string | null;
+  // Odoo context
+  odoo_context: Record<string, unknown> | null;
+  // Enrichment
+  enriched_at: string | null;
+  enrichment_source: string | null;
+  created_at: string;
+  updated_at: string;
+}
 
 export interface Contact {
   id: number;
-  email: string | null;
+  email: string;
   name: string | null;
-  company: string | null;
+  company_id: number | null;
+  odoo_partner_id: number | null;
+  // Classification
   contact_type: string | null;
   department: string | null;
-  total_sent: number;
-  total_received: number;
-  avg_response_time_hours: number | null;
-  last_activity: string | null;
-  first_seen: string | null;
-  risk_level: string | null;
-  relationship_score: number | null;
-  sentiment_score: number | null;
-  // Profile data (written by backend directly to contacts)
+  is_customer: boolean;
+  is_supplier: boolean;
+  // Profile (consolidated from person_profiles)
   role: string | null;
   decision_power: string | null;
   communication_style: string | null;
@@ -26,192 +64,126 @@ export interface Contact {
   negotiation_style: string | null;
   response_pattern: string | null;
   influence_on_deals: string | null;
-  interaction_count: number | null;
-  // Health & business
+  // Scores
+  relationship_score: number | null;
+  sentiment_score: number | null;
+  risk_level: string | null;
+  payment_compliance_score: number | null;
   current_health_score: number | null;
   health_trend: string | null;
+  // Financial
   lifetime_value: number | null;
-  open_alerts_count: number | null;
-  pending_actions_count: number | null;
   total_credit_notes: number | null;
   delivery_otd_rate: number | null;
-  payment_compliance_score: number | null;
+  // Computed aggregates
+  total_sent: number;
+  total_received: number;
+  avg_response_time_hours: number | null;
+  interaction_count: number;
+  last_activity: string | null;
+  first_seen: string | null;
+  open_alerts_count: number;
+  pending_actions_count: number;
+  // Odoo context
   odoo_context: Record<string, unknown> | null;
-  // Odoo refs
-  odoo_partner_id: number | null;
-  is_customer: boolean | null;
-  is_supplier: boolean | null;
-  company_id: number | null;
-  entity_id: number | null;
-  commercial_partner_id: number | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Company {
-  id: number;
-  name: string;
-  canonical_name: string | null;
-  odoo_partner_id: number | null;
-  entity_id: number | null;
-  is_customer: boolean;
-  is_supplier: boolean;
-  industry: string | null;
-  lifetime_value: number | null;
-  total_credit_notes: number | null;
-  delivery_otd_rate: number | null;
-  credit_limit: number | null;
-  total_pending: number | null;
-  monthly_avg: number | null;
-  trend_pct: number | null;
-  odoo_context: Record<string, unknown> | null;
-  description: string | null;
-  business_type: string | null;
-  key_products: unknown;
-  relationship_summary: string | null;
-  relationship_type: string | null;
-  country: string | null;
-  city: string | null;
-  risk_signals: unknown;
-  opportunity_signals: unknown;
-  strategic_notes: string | null;
-  enriched_at: string | null;
-  enrichment_source: string | null;
-  // New JSONB columns from Odoo sync
-  recent_sales: unknown;
-  pending_invoices: unknown;
-  recent_payments: unknown;
-  recent_purchases: unknown;
-  crm_leads: unknown;
-  pending_deliveries: unknown;
-  manufacturing: unknown;
-  pending_activities: unknown;
-  payment_behavior: unknown;
-  aging: unknown;
-  products: unknown;
-  inventory_intelligence: unknown;
-  purchase_patterns: unknown;
-  created_at: string;
-  updated_at: string;
-}
-
+// ═══════════════════════════════════════════════════════════════
+// TIER 2: COMMUNICATION
+// ═══════════════════════════════════════════════════════════════
 
 export interface Thread {
   id: number;
-  gmail_thread_id: string | null;
+  gmail_thread_id: string;
   subject: string | null;
   subject_normalized: string | null;
+  account: string;
+  company_id: number | null;
+  // Participants
   started_by: string | null;
   started_by_type: string | null;
-  started_at: string | null;
-  last_activity: string | null;
-  status: string | null;
-  message_count: number;
-  participant_emails: string[];
-  has_internal_reply: boolean;
-  has_external_reply: boolean;
+  started_by_contact_id: number | null;
   last_sender: string | null;
   last_sender_type: string | null;
+  participant_emails: string[];
+  // Status
+  status: string;
+  message_count: number;
+  has_internal_reply: boolean;
+  has_external_reply: boolean;
   hours_without_response: number | null;
-  account: string | null;
+  // Timestamps
+  started_at: string | null;
+  last_activity: string | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface Email {
   id: number;
-  account: string | null;
-  sender: string | null;
+  gmail_message_id: string;
+  gmail_thread_id: string | null;
+  account: string;
+  thread_id: number | null;
+  sender_contact_id: number | null;
+  company_id: number | null;
+  // Content
+  sender: string;
   recipient: string | null;
   subject: string | null;
   body: string | null;
   snippet: string | null;
   email_date: string | null;
-  gmail_message_id: string | null;
-  gmail_thread_id: string | null;
-  attachments: unknown;
+  // Classification
   is_reply: boolean;
   sender_type: string | null;
   has_attachments: boolean;
+  attachments: unknown;
+  // Processing
   kg_processed: boolean;
-  company_id: number | null;
-  sender_odoo_partner_id: number | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Alert {
-  id: number;
-  alert_type: string;
-  severity: string;
-  title: string;
-  description: string | null;
-  contact_name: string | null;
-  contact_id: number | null;
-  company_id: number | null;
-  account: string | null;
-  state: string;
-  is_read: boolean;
-  is_resolved: boolean;
-  prediction_id: string | null;
-  prediction_confidence: number | null;
-  resolution_notes: string | null;
-  created_at: string;
-  updated_at: string;
-  resolved_at: string | null;
-}
-
-export interface ActionItem {
-  id: number;
-  action_type: string;
-  description: string;
-  contact_name: string | null;
-  contact_id: number | null;
-  company_id: number | null;
-  priority: string;
-  due_date: string | null;
-  state: string;
-  status: string | null;
-  assignee_name: string | null;
-  assignee_email: string | null;
-  assignee_entity_id: number | null;
-  related_entity_id: number | null;
-  contact_company: string | null;
-  source_thread_id: string | null;
-  completed_date: string | null;
-  completed_at: string | null;
-  prediction_id: string | null;
-  prediction_confidence: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface DailySummary {
-  id: number;
-  summary_date: string | null;
-  summary_html: string | null;
-  summary_text: string | null;
-  total_emails: number;
-  accounts_read: number | null;
-  accounts_failed: number | null;
-  topics_identified: number | null;
-  key_events: unknown;
-  created_at: string;
-}
+// ═══════════════════════════════════════════════════════════════
+// TIER 3: KNOWLEDGE GRAPH
+// ═══════════════════════════════════════════════════════════════
 
 export interface Entity {
   id: number;
   entity_type: string;
+  canonical_name: string;
   name: string;
-  canonical_name: string | null;
   email: string | null;
   odoo_model: string | null;
   odoo_id: number | null;
   attributes: Record<string, unknown>;
+  mention_count: number;
   first_seen: string | null;
   last_seen: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface Fact {
+  id: number;
+  entity_id: number;
+  fact_type: string;
+  fact_text: string;
+  fact_hash: string | null;
+  fact_date: string | null;
+  confidence: number;
+  verified: boolean;
+  verification_source: string | null;
+  verification_date: string | null;
+  is_future: boolean;
+  expired: boolean;
+  source_type: string | null;
+  source_account: string | null;
+  extracted_at: string | null;
+  created_at: string;
 }
 
 export interface EntityRelationship {
@@ -221,28 +193,98 @@ export interface EntityRelationship {
   relationship_type: string;
   strength: number | null;
   context: string | null;
+  interaction_count: number;
   first_seen: string | null;
   last_seen: string | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface Fact {
+// ═══════════════════════════════════════════════════════════════
+// TIER 4: INTELLIGENCE OUTPUTS
+// ═══════════════════════════════════════════════════════════════
+
+export interface Alert {
   id: number;
-  entity_id: number | null;
-  fact_type: string | null;
-  fact_text: string;
-  verified: boolean;
-  verification_source: string | null;
-  verification_date: string | null;
-  confidence: number;
-  fact_date: string | null;
-  is_future: boolean;
-  expired: boolean;
-  source_account: string | null;
-  source_type: string | null;
-  fact_hash: string | null;
-  extracted_at: string | null;
+  alert_type: string;
+  severity: string;
+  title: string;
+  description: string | null;
+  contact_id: number | null;
+  contact_name: string | null;
+  company_id: number | null;
+  thread_id: number | null;
+  account: string | null;
+  // State
+  state: string;
+  is_read: boolean;
+  resolved_at: string | null;
+  resolution_notes: string | null;
+  time_to_resolve_hours: number | null;
+  // AI context
+  business_impact: string | null;
+  suggested_action: string | null;
+  prediction_confidence: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ActionItem {
+  id: number;
+  action_type: string;
+  action_category: string | null;
+  description: string;
+  reason: string | null;
+  priority: string;
+  // Linked entities
+  contact_id: number | null;
+  contact_name: string | null;
+  contact_company: string | null;
+  company_id: number | null;
+  thread_id: number | null;
+  // Assignment
+  assignee_name: string | null;
+  assignee_email: string | null;
+  // State
+  state: string;
+  due_date: string | null;
+  completed_at: string | null;
+  // AI context
+  prediction_confidence: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** Consolidated from daily_summaries + account_summaries */
+export interface Briefing {
+  id: number;
+  scope: "daily" | "account" | "company" | "weekly";
+  briefing_date: string;
+  account: string | null;
+  company_id: number | null;
+  // Content
+  title: string | null;
+  summary_text: string | null;
+  summary_html: string | null;
+  // Metrics
+  total_emails: number;
+  key_events: unknown;
+  topics_identified: unknown;
+  risks_detected: unknown;
+  overall_sentiment: string | null;
+  sentiment_detail: Record<string, unknown> | null;
+  // Account-scope
+  department: string | null;
+  external_emails: number;
+  internal_emails: number;
+  waiting_response: unknown;
+  urgent_items: unknown;
+  external_contacts: unknown;
+  // Daily-scope
+  accounts_processed: number;
+  accounts_failed: number;
+  // Metadata
+  metadata: Record<string, unknown>;
   created_at: string;
 }
 
@@ -253,28 +295,28 @@ export interface Topic {
   status: string | null;
   priority: string | null;
   summary: string | null;
+  company_id: number | null;
   related_accounts: string[] | null;
+  times_seen: number;
   first_seen: string | null;
   last_seen: string | null;
-  times_seen: number | null;
   created_at: string;
   updated_at: string;
 }
 
-export interface SyncState {
-  account: string;
-  last_history_id: string | null;
-  last_sync_at: string | null;
-  emails_synced: number;
-  updated_at: string;
-}
+// ═══════════════════════════════════════════════════════════════
+// TIER 5: METRICS & HISTORY
+// ═══════════════════════════════════════════════════════════════
 
-export interface CustomerHealthScore {
+/** Renamed from CustomerHealthScore */
+export interface HealthScore {
   id: number;
   contact_id: number | null;
-  contact_email: string | null;
+  contact_email: string;
+  company_id: number | null;
   score_date: string;
   overall_score: number | null;
+  previous_score: number | null;
   trend: string | null;
   communication_score: number | null;
   financial_score: number | null;
@@ -284,157 +326,276 @@ export interface CustomerHealthScore {
   payment_compliance_score: number | null;
   risk_signals: unknown;
   opportunity_signals: unknown;
-  company_id: number | null;
   created_at: string;
 }
 
-// ── Phase 2 types (matching REAL Supabase schema) ──
-
-export interface ChatMemory {
+export interface RevenueMetric {
   id: number;
-  question: string;
-  answer: string;
-  context_used: Record<string, unknown> | null;
-  saved_at: string | null;
-  rating: number | null;
-  thumbs_up: boolean | null;
-  times_retrieved: number;
-}
-
-
-export interface FeedbackSignal {
-  id: number;
-  signal_source: string | null;
-  source_id: number | null;
-  source_type: string | null;
-  signal_type: string | null;
-  reward_score: number | null;
-  context: Record<string, unknown> | null;
-  account: string | null;
   contact_email: string | null;
+  contact_id: number | null;
+  company_id: number | null;
+  odoo_partner_id: number | null;
+  period_type: string;
+  period_start: string;
+  period_end: string;
+  total_invoiced: number;
+  total_collected: number;
+  pending_amount: number;
+  overdue_amount: number;
+  overdue_days_max: number;
+  num_orders: number;
+  avg_order_value: number;
   created_at: string;
-  reward_processed: boolean;
+  updated_at: string;
 }
 
-export interface CommunicationPattern {
+/** Consolidated from ResponseMetric + CommunicationPattern */
+export interface CommunicationMetric {
   id: number;
-  week_start: string | null;
-  account: string | null;
-  total_emails: number;
-  response_rate: number | null;
+  account: string;
+  metric_date: string;
+  // Volume
+  emails_received: number;
+  emails_sent: number;
+  internal_received: number;
+  external_received: number;
+  // Threads
+  threads_started: number;
+  threads_replied: number;
+  threads_unanswered: number;
+  // Response times
   avg_response_hours: number | null;
+  fastest_response_hours: number | null;
+  slowest_response_hours: number | null;
+  // Weekly patterns
+  response_rate: number | null;
   top_external_contacts: string[] | null;
   top_internal_contacts: string[] | null;
   busiest_hour: number | null;
   common_subjects: string[] | null;
   sentiment_score: number | null;
   created_at: string;
+  updated_at: string;
 }
 
-export interface CompanyOdooSnapshot {
+/** Renamed from CompanyOdooSnapshot */
+export interface OdooSnapshot {
   id: number;
-  company_id: number | null;
+  company_id: number;
   snapshot_date: string;
   total_invoiced: number;
   pending_amount: number;
   overdue_amount: number;
   monthly_avg: number | null;
+  credit_notes_total: number;
   open_orders_count: number;
   pending_deliveries_count: number;
   late_deliveries_count: number;
-  crm_pipeline_value: number | null;
+  crm_pipeline_value: number;
   crm_leads_count: number;
   manufacturing_count: number;
-  credit_notes_total: number | null;
   created_at: string;
 }
 
-export interface AccountSummary {
-  id: number;
-  account: string;
-  department: string | null;
-  summary_date: string;
-  summary_text: string | null;
-  overall_sentiment: string | null;
-  sentiment_detail: Record<string, unknown> | null;
-  total_emails: number;
-  external_emails: number;
-  internal_emails: number;
-  key_items: unknown;
-  waiting_response: unknown;
-  urgent_items: unknown;
-  external_contacts: unknown;
-  risks_detected: unknown;
-  topics_detected: unknown;
-  created_at: string;
-  updated_at: string;
-}
+// ═══════════════════════════════════════════════════════════════
+// TIER 6: ODOO INTEGRATION
+// ═══════════════════════════════════════════════════════════════
 
-export interface ResponseMetric {
+export interface OdooProduct {
   id: number;
-  account: string;
-  metric_date: string;
-  avg_response_hours: number | null;
-  emails_received: number;
-  emails_sent: number;
-  internal_received: number;
-  external_received: number;
-  threads_started: number;
-  threads_replied: number;
-  threads_unanswered: number;
-  fastest_response_hours: number | null;
-  slowest_response_hours: number | null;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface PredictionOutcome {
-  id: number;
-  prediction_type: string;
-  prediction_id: number | null;
-  prediction_date: string | null;
-  prediction_summary: string | null;
-  predicted_severity: string | null;
-  confidence: number | null;
-  outcome_type: string | null;
-  outcome_date: string | null;
-  outcome_summary: string | null;
-  outcome_data: Record<string, unknown> | null;
-  accuracy_score: number | null;
-  account: string | null;
-  contact_email: string | null;
-  created_at: string;
-  verified_at: string | null;
-}
-
-export interface SystemLearning {
-  id: number;
-  learning_date: string | null;
-  learning_type: string | null;
-  description: string | null;
-  data: Record<string, unknown> | null;
-  account: string | null;
-  created_at: string;
-}
-
-export interface AlertTypeCatalog {
-  id: number;
-  alert_type: string;
-  display_name: string | null;
-  description: string | null;
-  default_severity: string | null;
+  odoo_product_id: number;
+  name: string;
+  internal_ref: string | null;
   category: string | null;
-  is_active: boolean;
-  created_at: string;
+  uom: string;
+  product_type: string | null;
+  stock_qty: number;
+  reserved_qty: number;
+  available_qty: number;
+  reorder_min: number;
+  reorder_max: number;
+  standard_price: number;
+  list_price: number;
+  active: boolean;
+  updated_at: string;
 }
 
-export interface TopicCategoryCatalog {
+export interface OdooOrderLine {
   id: number;
-  canonical_name: string;
-  aliases: string[] | null;
-  department_emails: string[] | null;
-  display_order: number | null;
-  created_at: string;
+  odoo_order_id: number;
+  odoo_partner_id: number;
+  company_id: number | null;
+  odoo_product_id: number | null;
+  order_name: string;
+  order_date: string | null;
+  order_type: "sale" | "purchase";
+  order_state: string | null;
+  product_name: string;
+  qty: number;
+  price_unit: number;
+  discount: number;
+  subtotal: number;
+  currency: string;
+}
+
+export interface OdooUser {
+  id: number;
+  odoo_user_id: number;
+  name: string;
+  email: string | null;
+  department: string | null;
+  job_title: string | null;
+  pending_activities_count: number;
+  overdue_activities_count: number;
+  activities_json: unknown[];
+  updated_at: string;
+}
+
+export interface OdooInvoice {
+  id: number;
+  company_id: number;
+  odoo_partner_id: number;
+  name: string;
+  move_type: "out_invoice" | "out_refund" | "in_invoice" | "in_refund";
+  amount_total: number;
+  amount_residual: number;
+  currency: string;
+  invoice_date: string | null;
+  due_date: string | null;
+  payment_date: string | null;
+  state: string;
+  payment_state: string | null;
+  days_overdue: number;
+  days_to_pay: number | null;
+  payment_status: string | null;
+  ref: string | null;
+  synced_at: string;
+}
+
+export interface OdooPayment {
+  id: number;
+  company_id: number;
+  odoo_partner_id: number;
+  name: string;
+  payment_type: "inbound" | "outbound";
+  amount: number;
+  currency: string;
+  payment_date: string;
+  state: string;
+  synced_at: string;
+}
+
+export interface OdooDelivery {
+  id: number;
+  company_id: number;
+  odoo_partner_id: number;
+  name: string;
+  picking_type: string | null;
+  origin: string | null;
+  scheduled_date: string | null;
+  date_done: string | null;
+  create_date: string | null;
+  state: string;
+  is_late: boolean;
+  lead_time_days: number | null;
+  synced_at: string;
+}
+
+export interface OdooCrmLead {
+  id: number;
+  company_id: number | null;
+  odoo_partner_id: number | null;
+  odoo_lead_id: number;
+  name: string;
+  lead_type: "lead" | "opportunity";
+  stage: string | null;
+  expected_revenue: number;
+  probability: number;
+  date_deadline: string | null;
+  create_date: string | null;
+  days_open: number;
+  assigned_user: string | null;
+  active: boolean;
+  synced_at: string;
+}
+
+export interface OdooActivity {
+  id: number;
+  company_id: number | null;
+  odoo_partner_id: number | null;
+  activity_type: string;
+  summary: string | null;
+  res_model: string;
+  res_id: number | null;
+  date_deadline: string | null;
+  assigned_to: string | null;
+  is_overdue: boolean;
+  synced_at: string;
+}
+
+// ── RPC response types for new Odoo tables ──
+
+export interface CompanyAging {
+  current: number;
+  "1_30": number;
+  "31_60": number;
+  "61_90": number;
+  "90_plus": number;
+  total_outstanding: number;
+}
+
+export interface PaymentBehavior {
+  invoices_analyzed: number;
+  compliance_score: number | null;
+  avg_days_to_pay: number | null;
+  on_time_count: number;
+  late_count: number;
+}
+
+export interface CompanyFinancials {
+  aging: CompanyAging;
+  recent_invoices: OdooInvoice[];
+  recent_payments: OdooPayment[];
+  payment_behavior: PaymentBehavior;
+  credit_notes: OdooInvoice[];
+}
+
+export interface DeliveryPerformance {
+  total_delivered: number;
+  on_time_rate: number | null;
+  avg_lead_time_days: number | null;
+}
+
+export interface CompanyLogistics {
+  pending_deliveries: OdooDelivery[];
+  delivery_performance: DeliveryPerformance;
+  late_count: number;
+}
+
+export interface PipelineSummary {
+  total_opportunities: number;
+  total_leads: number;
+  pipeline_value: number;
+  weighted_value: number;
+}
+
+export interface CompanyPipeline {
+  leads: OdooCrmLead[];
+  pipeline_summary: PipelineSummary;
+  activities: OdooActivity[];
+  overdue_activities: number;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TIER 7: SYSTEM & OPERATIONS
+// ═══════════════════════════════════════════════════════════════
+
+export interface SyncState {
+  account: string;
+  last_history_id: string | null;
+  emails_synced: number;
+  last_sync_at: string | null;
+  updated_at: string;
 }
 
 export interface PipelineRun {
@@ -452,56 +613,6 @@ export interface PipelineRun {
   created_at: string;
 }
 
-export interface OdooProduct {
-  id: number;
-  odoo_product_id: number;
-  name: string;
-  internal_ref: string | null;
-  category: string | null;
-  uom: string;
-  stock_qty: number;
-  reserved_qty: number;
-  available_qty: number;
-  reorder_min: number;
-  reorder_max: number;
-  standard_price: number;
-  list_price: number;
-  active: boolean;
-  product_type: string | null;
-  updated_at: string;
-}
-
-export interface OdooOrderLine {
-  id: number;
-  odoo_order_id: number;
-  odoo_partner_id: number;
-  company_id: number | null;
-  order_name: string;
-  order_date: string | null;
-  order_type: 'sale' | 'purchase';
-  order_state: string | null;
-  product_name: string;
-  odoo_product_id: number | null;
-  qty: number;
-  price_unit: number;
-  discount: number;
-  subtotal: number;
-  currency: string;
-}
-
-export interface OdooUser {
-  id: number;
-  odoo_user_id: number;
-  name: string;
-  email: string | null;
-  department: string | null;
-  job_title: string | null;
-  pending_activities_count: number;
-  overdue_activities_count: number;
-  activities_json: any[];
-  updated_at: string;
-}
-
 export interface PipelineLog {
   id: string;
   run_id: string | null;
@@ -512,7 +623,33 @@ export interface PipelineLog {
   created_at: string;
 }
 
-// ── RPC response types ──
+export interface ChatMemory {
+  id: number;
+  question: string;
+  answer: string;
+  context_used: Record<string, unknown> | null;
+  rating: number | null;
+  thumbs_up: boolean | null;
+  times_retrieved: number;
+  saved_at: string | null;
+}
+
+export interface FeedbackSignal {
+  id: number;
+  source_type: string;
+  source_id: number | null;
+  signal_type: string;
+  reward_score: number | null;
+  context: Record<string, unknown> | null;
+  account: string | null;
+  contact_email: string | null;
+  reward_processed: boolean;
+  created_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// RPC RESPONSE TYPES
+// ═══════════════════════════════════════════════════════════════
 
 export interface DashboardKPI {
   open_alerts: number;
@@ -564,8 +701,26 @@ export interface DirectorDashboard {
   kpi: DashboardKPI;
   overdue_actions: DashboardOverdueAction[];
   critical_alerts: DashboardCriticalAlert[];
-  accountability: { name: string; email: string | null; pending: number; overdue: number; completed: number }[];
+  accountability: {
+    name: string;
+    email: string | null;
+    pending: number;
+    overdue: number;
+    completed: number;
+  }[];
   contacts_at_risk: DashboardContactAtRisk[];
-  latest_briefing: DailySummary | null;
+  latest_briefing: Briefing | null;
   pending_actions: DashboardOverdueAction[];
 }
+
+// ── Type aliases for backwards compatibility during migration ──
+/** @deprecated Use HealthScore instead */
+export type CustomerHealthScore = HealthScore;
+/** @deprecated Use OdooSnapshot instead */
+export type CompanyOdooSnapshot = OdooSnapshot;
+/** @deprecated Use CommunicationMetric instead */
+export type ResponseMetric = CommunicationMetric;
+/** @deprecated Use Briefing with scope='daily' instead */
+export type DailySummary = Briefing;
+/** @deprecated Use Briefing with scope='account' instead */
+export type AccountSummary = Briefing;

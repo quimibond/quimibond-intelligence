@@ -2,9 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { timeAgo, scoreToPercent } from "@/lib/utils";
+import { cn, timeAgo, scoreToPercent } from "@/lib/utils";
 import type { DirectorDashboard, DashboardKPI } from "@/lib/types";
+import { AgingChart } from "@/components/shared/aging-chart";
 import { PageHeader } from "@/components/shared/page-header";
+import { ScoreGauge } from "@/components/shared/score-gauge";
 import { StatCard } from "@/components/shared/stat-card";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { RiskBadge } from "@/components/shared/risk-badge";
@@ -17,7 +19,39 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import Link from "next/link";
-import { Bell, CheckSquare, CreditCard, PackageX, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck, UserCog } from "lucide-react";
+import { Bell, CheckSquare, CreditCard, DollarSign, PackageX, Truck, TrendingUp, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck, UserCog } from "lucide-react";
+
+function formatCurrency(value: number | null): string {
+  if (value == null) return "—";
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
+  return `$${value.toFixed(0)}`;
+}
+
+// ── Global operational data types ──
+interface GlobalAging {
+  current: number;
+  "1_30": number;
+  "31_60": number;
+  "61_90": number;
+  "90_plus": number;
+  total_outstanding: number;
+}
+
+interface LateDelivery {
+  name: string;
+  company_name: string | null;
+  company_id: number | null;
+  scheduled_date: string | null;
+  picking_type: string | null;
+  origin: string | null;
+}
+
+interface PipelineGlobal {
+  total_opportunities: number;
+  pipeline_value: number;
+  weighted_value: number;
+}
 
 async function fetchDashboardFallback(): Promise<DirectorDashboard> {
   // Fallback: query tables directly when RPC doesn't exist
@@ -76,12 +110,13 @@ async function fetchDashboardFallback(): Promise<DirectorDashboard> {
     pending_actions: 0,
   }));
 
-  // Fetch latest briefing (try daily_summaries first, then briefings)
+  // Fetch latest daily briefing
   let latestBriefing = null;
   const { data: dailySummary } = await supabase
-    .from("daily_summaries")
+    .from("briefings")
     .select("*")
-    .order("summary_date", { ascending: false })
+    .eq("scope", "daily")
+    .order("briefing_date", { ascending: false })
     .limit(1)
     .single();
   if (dailySummary) {
@@ -131,6 +166,10 @@ export default function DashboardPage() {
   const [lowComplianceCount, setLowComplianceCount] = useState(0);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [globalAging, setGlobalAging] = useState<GlobalAging | null>(null);
+  const [lateDeliveries, setLateDeliveries] = useState<LateDelivery[]>([]);
+  const [pipelineGlobal, setPipelineGlobal] = useState<PipelineGlobal | null>(null);
+  const [lateDeliveryCount, setLateDeliveryCount] = useState(0);
 
   useEffect(() => {
     async function load() {
@@ -168,7 +207,67 @@ export default function DashboardPage() {
         if (Array.isArray(teamData)) {
           setTeamMembers(teamData);
         }
-      }).catch(() => { /* RPC may not exist */ });
+      }).catch(() => {});
+
+      // ── Operational KPIs (non-blocking) ──
+
+      // Global aging: sum all pending invoices across companies
+      supabase
+        .from("odoo_invoices")
+        .select("amount_residual, days_overdue")
+        .eq("move_type", "out_invoice")
+        .in("payment_state", ["not_paid", "partial"])
+        .then(({ data: invoices }) => {
+          if (!invoices) return;
+          const aging: GlobalAging = { current: 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0, total_outstanding: 0 };
+          for (const inv of invoices) {
+            const amt = Number(inv.amount_residual ?? 0);
+            const days = Number(inv.days_overdue ?? 0);
+            aging.total_outstanding += amt;
+            if (days <= 0) aging.current += amt;
+            else if (days <= 30) aging["1_30"] += amt;
+            else if (days <= 60) aging["31_60"] += amt;
+            else if (days <= 90) aging["61_90"] += amt;
+            else aging["90_plus"] += amt;
+          }
+          setGlobalAging(aging);
+        }).catch(() => {});
+
+      // Late deliveries
+      supabase
+        .from("odoo_deliveries")
+        .select("name, company_id, scheduled_date, picking_type, origin")
+        .eq("is_late", true)
+        .not("state", "in", '("done","cancel")')
+        .order("scheduled_date", { ascending: true })
+        .limit(15)
+        .then(({ data: dels }) => {
+          if (dels) setLateDeliveries(dels as LateDelivery[]);
+        }).catch(() => {});
+
+      supabase
+        .from("odoo_deliveries")
+        .select("id", { count: "exact", head: true })
+        .eq("is_late", true)
+        .not("state", "in", '("done","cancel")')
+        .then(({ count }) => {
+          setLateDeliveryCount(count ?? 0);
+        }).catch(() => {});
+
+      // Global pipeline
+      supabase
+        .from("odoo_crm_leads")
+        .select("lead_type, expected_revenue, probability")
+        .eq("active", true)
+        .then(({ data: leads }) => {
+          if (!leads) return;
+          const opps = leads.filter((l) => l.lead_type === "opportunity");
+          setPipelineGlobal({
+            total_opportunities: opps.length,
+            pipeline_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0), 0),
+            weighted_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0) * Number(l.probability ?? 0) / 100, 0),
+          });
+        }).catch(() => {});
 
       setLoading(false);
     }
@@ -212,13 +311,43 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <PageHeader title="Dashboard" description="Vista ejecutiva de inteligencia comercial" />
 
-      {/* KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      {/* KPI Cards — 8 cards with operational metrics */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
         <StatCard title="Alertas Criticas" value={kpi.critical_alerts} icon={Bell} description={`${kpi.open_alerts} abiertas`} />
-        <StatCard title="Acciones Pendientes" value={kpi.pending_actions} icon={CheckSquare} description={`${kpi.overdue_actions} vencidas`} />
-        <StatCard title="Contactos en Riesgo" value={kpi.at_risk_contacts} icon={Users} description={`de ${kpi.total_contacts}`} />
-        <StatCard title="Emails Procesados" value={kpi.total_emails} icon={Mail} />
-        <StatCard title="Riesgo Desabasto" value={stockoutCount} icon={PackageX} description="alertas activas" />
+        <StatCard title="Acciones Vencidas" value={kpi.overdue_actions} icon={CheckSquare} description={`${kpi.pending_actions} pendientes`} />
+        <StatCard title="Contactos Riesgo" value={kpi.at_risk_contacts} icon={Users} description={`de ${kpi.total_contacts}`} />
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <DollarSign className="h-3.5 w-3.5" />
+              Saldo Vencido
+            </div>
+            <p className={cn(
+              "mt-1 text-lg font-bold tabular-nums",
+              globalAging && (globalAging["1_30"] + globalAging["31_60"] + globalAging["61_90"] + globalAging["90_plus"]) > 0
+                ? "text-red-600 dark:text-red-400"
+                : "text-muted-foreground"
+            )}>
+              {globalAging ? formatCurrency(globalAging["1_30"] + globalAging["31_60"] + globalAging["61_90"] + globalAging["90_plus"]) : "—"}
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="pt-4">
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <TrendingUp className="h-3.5 w-3.5" />
+              Pipeline
+            </div>
+            <p className="mt-1 text-lg font-bold tabular-nums text-blue-600 dark:text-blue-400">
+              {pipelineGlobal ? formatCurrency(pipelineGlobal.pipeline_value) : "—"}
+            </p>
+            {pipelineGlobal && (
+              <p className="text-xs text-muted-foreground">{pipelineGlobal.total_opportunities} opps</p>
+            )}
+          </CardContent>
+        </Card>
+        <StatCard title="Entregas Atrasadas" value={lateDeliveryCount} icon={Truck} description="pendientes" />
+        <StatCard title="Desabasto" value={stockoutCount} icon={PackageX} description="alertas activas" />
         <StatCard title="Compliance Bajo" value={lowComplianceCount} icon={CreditCard} description="contactos <50%" />
       </div>
 
@@ -282,6 +411,59 @@ export default function DashboardPage() {
         </Card>
       </div>
 
+      {/* Global Aging & Late Deliveries */}
+      <div className="grid gap-6 lg:grid-cols-2">
+        {/* Global Aging */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-4">
+            <DollarSign className="h-4 w-4 text-amber-500" />
+            <CardTitle>Antiguedad de Saldos (Global)</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AgingChart data={globalAging} />
+          </CardContent>
+        </Card>
+
+        {/* Late Deliveries */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-2 pb-4">
+            <Truck className="h-4 w-4 text-red-500" />
+            <CardTitle>Entregas Atrasadas</CardTitle>
+            {lateDeliveryCount > 0 && (
+              <Badge variant="critical">{lateDeliveryCount}</Badge>
+            )}
+          </CardHeader>
+          <CardContent>
+            {lateDeliveries.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Sin entregas atrasadas.</p>
+            ) : (
+              <div className="space-y-2">
+                {lateDeliveries.map((d, i) => (
+                  <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{d.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {d.origin ?? ""} {d.picking_type ? `· ${d.picking_type}` : ""}
+                      </p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-xs tabular-nums text-red-600 dark:text-red-400">
+                        {d.scheduled_date ?? "—"}
+                      </p>
+                      {d.company_id && (
+                        <Link href={`/companies/${d.company_id}`} className="text-xs text-primary hover:underline">
+                          Ver empresa
+                        </Link>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Latest Briefing & Accountability */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Latest Briefing */}
@@ -294,7 +476,7 @@ export default function DashboardPage() {
             {latest_briefing ? (
               <div className="space-y-2">
                 <p className="text-xs text-muted-foreground">
-                  {latest_briefing.summary_date} · {latest_briefing.total_emails ?? 0} emails procesados
+                  {latest_briefing.briefing_date ?? latest_briefing.summary_date} · {latest_briefing.total_emails ?? 0} emails procesados
                 </p>
                 <p className="text-sm line-clamp-6">
                   {latest_briefing.summary_text

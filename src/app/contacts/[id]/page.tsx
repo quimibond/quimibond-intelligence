@@ -36,6 +36,8 @@ import type {
   Alert,
   ActionItem,
 } from "@/lib/types";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
+import { EntityLink } from "@/components/shared/entity-link";
 import { PageHeader } from "@/components/shared/page-header";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -223,7 +225,7 @@ export default function ContactDetailPage() {
       promises.push(
         Promise.resolve(
           supabase
-            .from("customer_health_scores")
+            .from("health_scores")
             .select("*")
             .eq("contact_id", contactId)
             .order("score_date", { ascending: false })
@@ -252,18 +254,8 @@ export default function ContactDetailPage() {
             })
         );
 
-        // Person profile (personality traits, decision factors)
-        promises.push(
-          supabase
-            .from("person_profiles")
-            .select("*")
-            .eq("email", c.email)
-            .order("updated_at", { ascending: false, nullsFirst: false })
-            .limit(1)
-            .then(({ data }) => {
-              if (data && data.length > 0) setPersonProfile(data[0]);
-            })
-        );
+        // Person profile data is now consolidated into contacts table
+        // Profile fields (role, decision_power, etc.) are read from the contact itself
       }
 
       await Promise.all(promises);
@@ -318,15 +310,15 @@ export default function ContactDetailPage() {
 
   return (
     <div className="space-y-6">
-      {/* Back */}
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/contacts")}
-      >
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Contactos
-      </Button>
+      {/* Breadcrumbs — connected navigation */}
+      <Breadcrumbs items={[
+        { label: "Dashboard", href: "/" },
+        ...(contact.company_id
+          ? [{ label: "Empresas", href: "/companies" },
+             { label: contact.company ?? "Empresa", href: `/companies/${contact.company_id}` }]
+          : [{ label: "Contactos", href: "/contacts" }]),
+        { label: contact.name ?? contact.email },
+      ]} />
 
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -454,7 +446,7 @@ export default function ContactDetailPage() {
         <TabsContent value="perfil" className="space-y-6">
           <ProfileCard contact={contact} />
 
-          {/* Person Profile (from person_profiles table) */}
+          {/* Person Profile (consolidated into contacts table) */}
           {personProfile && (
             <Card>
               <CardHeader><CardTitle className="text-sm">Perfil de Personalidad</CardTitle></CardHeader>
