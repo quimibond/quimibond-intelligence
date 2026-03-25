@@ -451,6 +451,141 @@ export interface OdooUser {
   updated_at: string;
 }
 
+export interface OdooInvoice {
+  id: number;
+  company_id: number;
+  odoo_partner_id: number;
+  name: string;
+  move_type: "out_invoice" | "out_refund" | "in_invoice" | "in_refund";
+  amount_total: number;
+  amount_residual: number;
+  currency: string;
+  invoice_date: string | null;
+  due_date: string | null;
+  payment_date: string | null;
+  state: string;
+  payment_state: string | null;
+  days_overdue: number;
+  days_to_pay: number | null;
+  payment_status: string | null;
+  ref: string | null;
+  synced_at: string;
+}
+
+export interface OdooPayment {
+  id: number;
+  company_id: number;
+  odoo_partner_id: number;
+  name: string;
+  payment_type: "inbound" | "outbound";
+  amount: number;
+  currency: string;
+  payment_date: string;
+  state: string;
+  synced_at: string;
+}
+
+export interface OdooDelivery {
+  id: number;
+  company_id: number;
+  odoo_partner_id: number;
+  name: string;
+  picking_type: string | null;
+  origin: string | null;
+  scheduled_date: string | null;
+  date_done: string | null;
+  create_date: string | null;
+  state: string;
+  is_late: boolean;
+  lead_time_days: number | null;
+  synced_at: string;
+}
+
+export interface OdooCrmLead {
+  id: number;
+  company_id: number | null;
+  odoo_partner_id: number | null;
+  odoo_lead_id: number;
+  name: string;
+  lead_type: "lead" | "opportunity";
+  stage: string | null;
+  expected_revenue: number;
+  probability: number;
+  date_deadline: string | null;
+  create_date: string | null;
+  days_open: number;
+  assigned_user: string | null;
+  active: boolean;
+  synced_at: string;
+}
+
+export interface OdooActivity {
+  id: number;
+  company_id: number | null;
+  odoo_partner_id: number | null;
+  activity_type: string;
+  summary: string | null;
+  res_model: string;
+  res_id: number | null;
+  date_deadline: string | null;
+  assigned_to: string | null;
+  is_overdue: boolean;
+  synced_at: string;
+}
+
+// ── RPC response types for new Odoo tables ──
+
+export interface CompanyAging {
+  current: number;
+  "1_30": number;
+  "31_60": number;
+  "61_90": number;
+  "90_plus": number;
+  total_outstanding: number;
+}
+
+export interface PaymentBehavior {
+  invoices_analyzed: number;
+  compliance_score: number | null;
+  avg_days_to_pay: number | null;
+  on_time_count: number;
+  late_count: number;
+}
+
+export interface CompanyFinancials {
+  aging: CompanyAging;
+  recent_invoices: OdooInvoice[];
+  recent_payments: OdooPayment[];
+  payment_behavior: PaymentBehavior;
+  credit_notes: OdooInvoice[];
+}
+
+export interface DeliveryPerformance {
+  total_delivered: number;
+  on_time_rate: number | null;
+  avg_lead_time_days: number | null;
+}
+
+export interface CompanyLogistics {
+  pending_deliveries: OdooDelivery[];
+  delivery_performance: DeliveryPerformance;
+  late_count: number;
+}
+
+export interface PipelineSummary {
+  total_opportunities: number;
+  total_leads: number;
+  pipeline_value: number;
+  weighted_value: number;
+}
+
+export interface CompanyPipeline {
+  leads: OdooCrmLead[];
+  pipeline_summary: PipelineSummary;
+  activities: OdooActivity[];
+  overdue_activities: number;
+}
+
 // ═══════════════════════════════════════════════════════════════
 // TIER 7: SYSTEM & OPERATIONS
 // ═══════════════════════════════════════════════════════════════
