@@ -569,7 +569,7 @@ export default function DashboardPage() {
                         {contact.name}
                       </Link>
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{contact.company ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground">{(contact as Record<string, unknown>).company as string ?? "—"}</TableCell>
                     <TableCell><RiskBadge level={contact.risk_level} /></TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">

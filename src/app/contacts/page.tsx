@@ -165,7 +165,7 @@ export default function ContactsPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {contact.company ?? "—"}
+                    {(contact as Record<string, unknown>).company as string ?? "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {contact.role ?? "—"}

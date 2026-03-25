@@ -79,7 +79,7 @@ export async function POST(request: NextRequest) {
     // Build context
     const contextParts: string[] = [
       `Contact: ${contact.name ?? "Unknown"} <${contactEmail}>`,
-      `Company: ${contact.company ?? "Unknown"}`,
+      `Company ID: ${contact.company_id ?? "Unknown"}`,
       `Contact type: ${contact.contact_type ?? "Unknown"}`,
       `Risk level: ${contact.risk_level ?? "Unknown"}`,
       `Sentiment score: ${contact.sentiment_score ?? "N/A"}`,

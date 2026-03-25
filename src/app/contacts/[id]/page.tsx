@@ -333,10 +333,10 @@ export default function ContactDetailPage() {
           </h1>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             {contact.email && <span>{contact.email}</span>}
-            {contact.company && (
+            {contact.company_id && (
               <>
                 <span>·</span>
-                <span>{contact.company}</span>
+                <Link href={`/companies/${contact.company_id}`} className="text-primary hover:underline">Ver empresa</Link>
               </>
             )}
             {contact.role && (
