@@ -9,16 +9,20 @@ import {
   Brain,
   Building2,
   CheckSquare,
+  CreditCard,
   DollarSign,
   Heart,
+  Mail,
   MapPin,
+  Package,
   Sparkles,
+  Truck,
   TrendingDown,
   TrendingUp,
   Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { cn, formatDate, scoreToPercent, timeAgo } from "@/lib/utils";
+import { cn, formatDate, formatDateTime, scoreToPercent, timeAgo, truncate } from "@/lib/utils";
 import type {
   Company,
   Contact,
@@ -133,10 +137,81 @@ export default function CompanyDetailPage() {
   const [healthScores, setHealthScores] = useState<CustomerHealthScore[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [odooSnapshots, setOdooSnapshots] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [recentEmails, setRecentEmails] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [companyProducts, setCompanyProducts] = useState<any[]>([]);
 
   useEffect(() => {
     async function fetchAll() {
-      // 1. Fetch company
+      // Try RPC first for full context
+      const { data: rpcData, error: rpcError } = await supabase.rpc("get_company_full_context", { p_company_id: Number(companyId) });
+
+      if (!rpcError && rpcData) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const ctx = rpcData as any;
+        const comp = (ctx.company ?? ctx) as Company;
+        setCompany(comp);
+        setContacts((ctx.contacts as Contact[] | null) ?? []);
+        setFacts((ctx.facts as Fact[] | null) ?? []);
+        setAlerts((ctx.alerts as Alert[] | null) ?? []);
+        setActions((ctx.actions as ActionItem[] | null) ?? []);
+        setHealthScores((ctx.health_scores as CustomerHealthScore[] | null) ?? []);
+        setRevenueRows((ctx.revenue as RevenueRow[] | null) ?? []);
+        setOdooSnapshots(ctx.snapshots ?? []);
+        setRecentEmails(ctx.recent_emails ?? []);
+
+        // Fetch products via separate RPC
+        Promise.resolve(supabase.rpc("get_company_products", { p_company_id: Number(companyId) })).then(({ data: prodData }) => {
+          if (Array.isArray(prodData)) setCompanyProducts(prodData);
+        }).catch(() => {});
+
+        // Still fetch relationships if entity_id is available
+        if (comp.entity_id) {
+          const entityId = comp.entity_id;
+          const { data: relData } = await supabase
+            .from("entity_relationships")
+            .select("*")
+            .or(`entity_a_id.eq.${entityId},entity_b_id.eq.${entityId}`)
+            .order("strength", { ascending: false });
+
+          const rawRels = (relData as EntityRelationship[] | null) ?? [];
+
+          if (rawRels.length > 0) {
+            const relatedIds = rawRels.map((r) =>
+              r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id
+            );
+            const uniqueIds = [...new Set(relatedIds)];
+
+            const { data: relatedEntities } = await supabase
+              .from("entities")
+              .select("*")
+              .in("id", uniqueIds);
+
+            const entityMap = new Map<number, Entity>();
+            if (relatedEntities) {
+              for (const e of relatedEntities as Entity[]) {
+                entityMap.set(e.id, e);
+              }
+            }
+
+            const resolved: ResolvedRelationship[] = rawRels.map((r) => {
+              const relatedId =
+                r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id;
+              return {
+                ...r,
+                related_entity: entityMap.get(relatedId) ?? null,
+              };
+            });
+            setRelationships(resolved);
+          }
+        }
+
+        setLoading(false);
+        return;
+      }
+
+      // Fallback: fetch company directly
       const { data: companyData } = await supabase
         .from("companies")
         .select("*")
@@ -151,6 +226,11 @@ export default function CompanyDetailPage() {
       const comp = companyData as Company;
       setCompany(comp);
 
+      // Fetch products via RPC (non-blocking)
+      Promise.resolve(supabase.rpc("get_company_products", { p_company_id: Number(companyId) })).then(({ data: prodData }) => {
+        if (Array.isArray(prodData)) setCompanyProducts(prodData);
+      }).catch(() => {});
+
       // 2. Parallel fetches
       const [
         contactsRes,
@@ -160,6 +240,7 @@ export default function CompanyDetailPage() {
         revenueRes,
         healthRes,
         snapshotsRes,
+        emailsRes,
       ] = await Promise.all([
         supabase
           .from("contacts")
@@ -203,6 +284,12 @@ export default function CompanyDetailPage() {
           .eq("company_id", comp.id)
           .order("snapshot_date", { ascending: false })
           .limit(12),
+        supabase
+          .from("emails")
+          .select("*")
+          .eq("company_id", comp.id)
+          .order("email_date", { ascending: false })
+          .limit(20),
       ]);
 
       setContacts((contactsRes.data as Contact[] | null) ?? []);
@@ -211,6 +298,7 @@ export default function CompanyDetailPage() {
       setActions((actionsRes.data as ActionItem[] | null) ?? []);
       setRevenueRows((revenueRes.data as RevenueRow[] | null) ?? []);
       setOdooSnapshots(snapshotsRes.data ?? []);
+      setRecentEmails(emailsRes.data ?? []);
       setHealthScores(
         (healthRes.data as CustomerHealthScore[] | null) ?? []
       );
@@ -491,6 +579,18 @@ export default function CompanyDetailPage() {
           </TabsTrigger>
           <TabsTrigger value="acciones">
             Acciones ({actions.length})
+          </TabsTrigger>
+          <TabsTrigger value="emails">
+            <Mail className="mr-1 h-3.5 w-3.5" />
+            Emails ({recentEmails.length})
+          </TabsTrigger>
+          <TabsTrigger value="productos">
+            <Package className="mr-1 h-3.5 w-3.5" />
+            Productos
+          </TabsTrigger>
+          <TabsTrigger value="operaciones">
+            <Truck className="mr-1 h-3.5 w-3.5" />
+            Operaciones
           </TabsTrigger>
           <TabsTrigger value="salud">
             <Heart className="mr-1 h-3.5 w-3.5" />
@@ -1194,6 +1294,399 @@ export default function CompanyDetailPage() {
               )}
             </>
           )}
+        </TabsContent>
+
+        {/* ── Emails ── */}
+        <TabsContent value="emails">
+          {recentEmails.length === 0 ? (
+            <EmptyState
+              icon={Mail}
+              title="Sin emails"
+              description="No se encontraron correos asociados a esta empresa."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Fecha</TableHead>
+                    <TableHead>Remitente</TableHead>
+                    <TableHead>Asunto</TableHead>
+                    <TableHead>Fragmento</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {recentEmails.map((email: Record<string, unknown>) => (
+                    <TableRow key={email.id as number}>
+                      <TableCell className="whitespace-nowrap text-muted-foreground">
+                        {formatDateTime(email.email_date as string | null)}
+                      </TableCell>
+                      <TableCell className="text-sm font-medium">
+                        {String(email.sender ?? "—")}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {String(email.subject ?? "—")}
+                      </TableCell>
+                      <TableCell className="max-w-xs text-sm text-muted-foreground">
+                        {truncate(email.snippet as string | null, 80)}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Productos ── */}
+        <TabsContent value="productos" className="space-y-6">
+          {companyProducts.length === 0 ? (
+            <EmptyState
+              icon={Package}
+              title="Sin productos"
+              description="No se encontraron productos asociados a esta empresa."
+            />
+          ) : (
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Producto</TableHead>
+                    <TableHead className="text-right">Ordenes</TableHead>
+                    <TableHead className="text-right">Qty Total</TableHead>
+                    <TableHead className="text-right">Revenue Total</TableHead>
+                    <TableHead className="text-right">Precio Prom.</TableHead>
+                    <TableHead className="text-right">Stock</TableHead>
+                    <TableHead className="text-right">Disponible</TableHead>
+                    <TableHead>Tendencia Vol.</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {companyProducts.map((p: Record<string, unknown>, i: number) => {
+                    const qty6m = Number(p.qty_6m ?? 0);
+                    const qtyPrev6m = Number(p.qty_prev_6m ?? 0);
+                    const trendPct = qtyPrev6m > 0
+                      ? ((qty6m - qtyPrev6m) / qtyPrev6m) * 100
+                      : qty6m > 0 ? 100 : 0;
+                    return (
+                      <TableRow key={i}>
+                        <TableCell className="font-medium text-sm">
+                          {String(p.product_name ?? p.name ?? "—")}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {String(p.order_count ?? p.orders ?? "—")}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {Number(p.total_qty ?? 0).toLocaleString("es-MX")}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCurrency(Number(p.total_revenue ?? 0))}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {formatCurrency(Number(p.avg_price ?? 0))}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {p.stock_qty != null ? Number(p.stock_qty).toLocaleString("es-MX") : "—"}
+                        </TableCell>
+                        <TableCell className="text-right tabular-nums">
+                          {p.available_qty != null ? Number(p.available_qty).toLocaleString("es-MX") : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={trendPct > 10 ? "success" : trendPct < -20 ? "critical" : trendPct < 0 ? "warning" : "secondary"}>
+                            {trendPct > 0 ? "+" : ""}{trendPct.toFixed(0)}%
+                          </Badge>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ── Operaciones Odoo ── */}
+        <TabsContent value="operaciones" className="space-y-6">
+          {(() => {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const payBehavior = company.payment_behavior as any;
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const agingData = company.aging as any;
+            const pendingDeliveries = Array.isArray(company.pending_deliveries) ? company.pending_deliveries : [];
+            const recentSales = Array.isArray(company.recent_sales) ? company.recent_sales : [];
+            const pendingInvoices = Array.isArray(company.pending_invoices) ? company.pending_invoices : [];
+            const recentPayments = Array.isArray(company.recent_payments) ? company.recent_payments : [];
+
+            const hasData = payBehavior || agingData || pendingDeliveries.length > 0 || recentSales.length > 0 || pendingInvoices.length > 0 || recentPayments.length > 0;
+
+            if (!hasData) {
+              return (
+                <EmptyState
+                  icon={Truck}
+                  title="Sin datos operativos"
+                  description="No hay datos operativos de Odoo disponibles para esta empresa."
+                />
+              );
+            }
+
+            return (
+              <>
+                {/* Payment Behavior */}
+                {payBehavior && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-sm">
+                        <CreditCard className="h-4 w-4" />
+                        Comportamiento de Pago
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                        {payBehavior.compliance_score != null && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Compliance</p>
+                            <div className="mt-1 flex items-center gap-2">
+                              <Progress value={Number(payBehavior.compliance_score)} className="flex-1" />
+                              <span className="text-sm font-bold tabular-nums">{Math.round(Number(payBehavior.compliance_score))}%</span>
+                            </div>
+                          </div>
+                        )}
+                        {payBehavior.avg_days_late != null && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Prom. dias tarde</p>
+                            <p className={cn(
+                              "mt-1 text-2xl font-bold tabular-nums",
+                              Number(payBehavior.avg_days_late) > 15 ? "text-red-600 dark:text-red-400" :
+                              Number(payBehavior.avg_days_late) > 5 ? "text-amber-600 dark:text-amber-400" :
+                              "text-emerald-600 dark:text-emerald-400"
+                            )}>
+                              {Math.round(Number(payBehavior.avg_days_late))}d
+                            </p>
+                          </div>
+                        )}
+                        {payBehavior.trend && (
+                          <div>
+                            <p className="text-xs text-muted-foreground">Tendencia</p>
+                            <p className="mt-1 text-lg font-bold">
+                              {payBehavior.trend === "improving" ? "Mejorando" :
+                               payBehavior.trend === "declining" ? "Declinando" : "Estable"}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Aging */}
+                {agingData && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Antigüedad de Saldos (Aging)</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+                        <div>
+                          <p className="text-xs text-muted-foreground">Corriente</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+                            {formatCurrency(Number(agingData.current ?? 0))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">1-30 dias</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-amber-600 dark:text-amber-400">
+                            {formatCurrency(Number(agingData["1_30"] ?? agingData.days_1_30 ?? 0))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">31-60 dias</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-orange-600 dark:text-orange-400">
+                            {formatCurrency(Number(agingData["31_60"] ?? agingData.days_31_60 ?? 0))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">61-90 dias</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-red-500 dark:text-red-400">
+                            {formatCurrency(Number(agingData["61_90"] ?? agingData.days_61_90 ?? 0))}
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-xs text-muted-foreground">90+ dias</p>
+                          <p className="mt-1 text-lg font-bold tabular-nums text-red-700 dark:text-red-300">
+                            {formatCurrency(Number(agingData["90_plus"] ?? agingData.days_90_plus ?? 0))}
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Pending Deliveries */}
+                {pendingDeliveries.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="flex items-center gap-2 text-sm">
+                        <Truck className="h-4 w-4" />
+                        Entregas Pendientes
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Referencia</TableHead>
+                              <TableHead>Fecha programada</TableHead>
+                              <TableHead>Estado</TableHead>
+                              <TableHead>Productos</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(pendingDeliveries as Record<string, unknown>[]).map((d, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="font-medium text-sm">{String(d.name ?? d.reference ?? "—")}</TableCell>
+                                <TableCell className="text-muted-foreground">{formatDate(d.scheduled_date as string | null ?? d.date as string | null)}</TableCell>
+                                <TableCell>
+                                  <Badge variant={d.state === "late" ? "critical" : "secondary"}>
+                                    {String(d.state ?? "—")}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-sm text-muted-foreground">
+                                  {String(d.products ?? d.product_names ?? "—")}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Recent Sales */}
+                {recentSales.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Ventas Recientes</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Orden</TableHead>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead>Estado</TableHead>
+                              <TableHead className="text-right">Total</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(recentSales as Record<string, unknown>[]).slice(0, 10).map((s, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="font-medium text-sm">{String(s.name ?? s.order_name ?? "—")}</TableCell>
+                                <TableCell className="text-muted-foreground">{formatDate(s.date_order as string | null ?? s.order_date as string | null)}</TableCell>
+                                <TableCell>
+                                  <Badge variant="secondary">{String(s.state ?? s.order_state ?? "—")}</Badge>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums">
+                                  {formatCurrency(Number(s.amount_total ?? s.subtotal ?? 0))}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Pending Invoices */}
+                {pendingInvoices.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Facturas Pendientes</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Factura</TableHead>
+                              <TableHead>Vencimiento</TableHead>
+                              <TableHead>Estado</TableHead>
+                              <TableHead className="text-right">Monto</TableHead>
+                              <TableHead className="text-right">Residual</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(pendingInvoices as Record<string, unknown>[]).slice(0, 10).map((inv, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="font-medium text-sm">{String(inv.name ?? inv.number ?? "—")}</TableCell>
+                                <TableCell className="text-muted-foreground">{formatDate(inv.invoice_date_due as string | null ?? inv.date_due as string | null)}</TableCell>
+                                <TableCell>
+                                  <Badge variant={
+                                    String(inv.payment_state ?? "") === "not_paid" ? "warning" :
+                                    String(inv.payment_state ?? "") === "paid" ? "success" : "secondary"
+                                  }>
+                                    {String(inv.payment_state ?? inv.state ?? "—")}
+                                  </Badge>
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums">
+                                  {formatCurrency(Number(inv.amount_total ?? 0))}
+                                </TableCell>
+                                <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
+                                  {formatCurrency(Number(inv.amount_residual ?? inv.residual ?? 0))}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Recent Payments */}
+                {recentPayments.length > 0 && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Pagos Recientes</CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="rounded-md border">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead>Referencia</TableHead>
+                              <TableHead>Fecha</TableHead>
+                              <TableHead className="text-right">Monto</TableHead>
+                              <TableHead>Estado</TableHead>
+                            </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                            {(recentPayments as Record<string, unknown>[]).slice(0, 10).map((p, i) => (
+                              <TableRow key={i}>
+                                <TableCell className="font-medium text-sm">{String(p.name ?? p.ref ?? "—")}</TableCell>
+                                <TableCell className="text-muted-foreground">{formatDate(p.date as string | null ?? p.payment_date as string | null)}</TableCell>
+                                <TableCell className="text-right tabular-nums text-emerald-600 dark:text-emerald-400">
+                                  {formatCurrency(Number(p.amount ?? 0))}
+                                </TableCell>
+                                <TableCell>
+                                  <Badge variant={String(p.state ?? "") === "posted" ? "success" : "secondary"}>
+                                    {String(p.state ?? "—")}
+                                  </Badge>
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+              </>
+            );
+          })()}
         </TabsContent>
       </Tabs>
     </div>
