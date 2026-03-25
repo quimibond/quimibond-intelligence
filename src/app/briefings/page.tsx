@@ -99,7 +99,7 @@ export default function BriefingsPage() {
                     </div>
                     {summary.topics_identified != null && (
                       <Badge variant="secondary" className="text-xs">
-                        {summary.topics_identified} temas
+                        {Array.isArray(summary.topics_identified) ? summary.topics_identified.length : String(summary.topics_identified)} temas
                       </Badge>
                     )}
                   </div>

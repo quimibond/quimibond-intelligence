@@ -99,7 +99,7 @@ export default function BriefingDetailPage() {
                 </span>
               )}
             {summary.topics_identified != null && (
-              <span>{summary.topics_identified} temas identificados</span>
+              <span>{Array.isArray(summary.topics_identified) ? summary.topics_identified.length : String(summary.topics_identified)} temas identificados</span>
             )}
             <span>{timeAgo(summary.created_at)}</span>
           </div>
