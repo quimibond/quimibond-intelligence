@@ -74,13 +74,11 @@ export default function AlertsPage() {
 
   useEffect(() => {
     async function fetchAlerts() {
-      const [alertsRes] = await Promise.all([
-        supabase
-          .from("alerts")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(PAGE_SIZE),
-      ]);
+      const alertsRes = await supabase
+        .from("alerts")
+        .select("*")
+        .order("created_at", { ascending: false })
+        .limit(PAGE_SIZE);
 
       if (!alertsRes.error && alertsRes.data) {
         setAlerts(alertsRes.data as Alert[]);
