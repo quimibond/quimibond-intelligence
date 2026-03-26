@@ -243,7 +243,7 @@ export function SearchCommand() {
                   {results.alerts.map((a) => (
                     <ResultItem
                       key={a.id}
-                      onClick={() => navigate("/alerts")}
+                      onClick={() => navigate(`/alerts/${a.id}`)}
                     >
                       <div className="flex flex-1 items-center gap-2 min-w-0">
                         <SeverityBadge severity={a.severity} />

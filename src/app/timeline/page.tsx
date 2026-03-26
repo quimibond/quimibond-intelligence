@@ -283,7 +283,7 @@ export default function TimelinePage() {
           description="No hay eventos en el periodo seleccionado."
         />
       ) : (
-        <div className="relative ml-4 border-l-2 border-border pl-6">
+        <div className="relative ml-2 border-l-2 border-border pl-4 sm:ml-4 sm:pl-6">
           {filtered.map((item) => {
             const cfg = typeConfig[item.type];
             const Icon = cfg.icon;

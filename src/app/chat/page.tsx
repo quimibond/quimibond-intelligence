@@ -214,7 +214,7 @@ export default function ChatPage() {
               <div
                 key={i}
                 className={cn(
-                  "flex gap-3 max-w-[85%]",
+                  "flex gap-3 max-w-[92%] sm:max-w-[85%]",
                   msg.role === "user"
                     ? "ml-auto flex-row-reverse"
                     : "mr-auto"
@@ -290,7 +290,7 @@ export default function ChatPage() {
 
             {/* Typing indicator */}
             {loading && (
-              <div className="flex gap-3 mr-auto max-w-[85%]">
+              <div className="flex gap-3 mr-auto max-w-[92%] sm:max-w-[85%]">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-muted">
                   <Bot className="h-4 w-4" />
                 </div>

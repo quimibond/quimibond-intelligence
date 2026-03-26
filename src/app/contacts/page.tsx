@@ -102,7 +102,7 @@ export default function ContactsPage() {
         <Select
           value={riskFilter}
           onChange={(e) => setRiskFilter(e.target.value)}
-          className="w-36"
+          className="w-full sm:w-36"
         >
           <option value="all">Todos</option>
           <option value="low">Bajo</option>

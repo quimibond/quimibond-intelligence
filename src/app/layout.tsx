@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AppSidebar } from "@/components/layout/app-sidebar";
+import { SidebarProvider } from "@/components/layout/sidebar-context";
+import { MainContent } from "@/components/layout/main-content";
 import { SearchCommand } from "@/components/shared/search-command";
 import "./globals.css";
 
@@ -24,11 +26,11 @@ export default function RootLayout({
         />
       </head>
       <body>
-        <AppSidebar />
-        <main className="md:pl-64">
-          <div className="min-h-screen p-4 pt-16 md:p-6 md:pt-6">{children}</div>
-        </main>
-        <SearchCommand />
+        <SidebarProvider>
+          <AppSidebar />
+          <MainContent>{children}</MainContent>
+          <SearchCommand />
+        </SidebarProvider>
       </body>
     </html>
   );
