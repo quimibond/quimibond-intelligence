@@ -55,6 +55,152 @@ const statusConfig: Record<string, { variant: "success" | "warning" | "critical"
   partial: { variant: "warning", icon: AlertTriangle },
 };
 
+// ── Sync Control Panel ──
+function SyncPanel({ onComplete }: { onComplete: () => void }) {
+  const [running, setRunning] = useState<string | null>(null);
+  const [result, setResult] = useState<{ type: "success" | "error"; msg: string } | null>(null);
+
+  async function runAction(id: string, label: string, fn: () => Promise<string>) {
+    setRunning(id);
+    setResult(null);
+    try {
+      const msg = await fn();
+      setResult({ type: "success", msg: `${label}: ${msg}` });
+      onComplete();
+    } catch (e) {
+      setResult({ type: "error", msg: `${label}: ${e instanceof Error ? e.message : "Error"}` });
+    } finally {
+      setRunning(null);
+    }
+  }
+
+  const actions: { id: string; label: string; desc: string; icon: typeof RefreshCw; fn: () => Promise<string> }[] = [
+    {
+      id: "resolve_connections",
+      label: "Resolver Conexiones",
+      desc: "Vincula emails→contactos, threads→empresas, entity_id",
+      icon: RefreshCw,
+      fn: async () => {
+        const { data, error } = await supabase.rpc("resolve_all_connections");
+        if (error) throw error;
+        const r = data as Record<string, number>;
+        const total = Object.values(r).reduce((s, v) => s + (v || 0), 0);
+        return `${total} conexiones resueltas`;
+      },
+    },
+    {
+      id: "refresh_stats",
+      label: "Recalcular Stats de Contactos",
+      desc: "Actualiza total_sent, total_received, last_activity",
+      icon: Users,
+      fn: async () => {
+        const { error } = await supabase.rpc("refresh_contact_360");
+        if (error) throw error;
+        return "Stats de contactos actualizados";
+      },
+    },
+    {
+      id: "resolve_assignees",
+      label: "Resolver Asignados",
+      desc: "Vincula action_items.assignee_name → email de odoo_users",
+      icon: UserCog,
+      fn: async () => {
+        const { data, error } = await supabase.rpc("resolve_assignee_emails");
+        if (error) throw error;
+        return `${data ?? 0} asignados resueltos`;
+      },
+    },
+    {
+      id: "enrich_contacts",
+      label: "Enriquecer Contactos (Claude)",
+      desc: "Genera perfiles con IA para contactos sin rol",
+      icon: Brain,
+      fn: async () => {
+        const res = await fetch("/api/enrich/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "contacts", limit: 5 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Error");
+        return `${data.enriched ?? 0} contactos enriquecidos`;
+      },
+    },
+    {
+      id: "enrich_companies",
+      label: "Enriquecer Empresas (Claude)",
+      desc: "Genera perfiles de empresa con IA",
+      icon: Brain,
+      fn: async () => {
+        const res = await fetch("/api/enrich/batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: "companies", limit: 5 }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Error");
+        return `${data.enriched ?? 0} empresas enriquecidas`;
+      },
+    },
+    {
+      id: "decay_facts",
+      label: "Decay de Hechos",
+      desc: "Reduce confianza de hechos no verificados",
+      icon: Clock,
+      fn: async () => {
+        const { data, error } = await supabase.rpc("decay_fact_confidence");
+        if (error) throw error;
+        return `Decay aplicado: ${JSON.stringify(data ?? {})}`;
+      },
+    },
+  ];
+
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center gap-2 pb-4">
+        <RefreshCw className="h-5 w-5 text-blue-500" />
+        <CardTitle>Panel de Sync</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {result && (
+          <div className={`rounded-lg p-3 text-sm ${result.type === "success" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-red-500/10 text-red-700 dark:text-red-300"}`}>
+            {result.msg}
+          </div>
+        )}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {actions.map((action) => {
+            const Icon = action.icon;
+            const isRunning = running === action.id;
+            return (
+              <button
+                key={action.id}
+                onClick={() => runAction(action.id, action.label, action.fn)}
+                disabled={running !== null}
+                className={`flex items-start gap-3 rounded-lg border p-3 text-left transition-colors ${
+                  running !== null ? "opacity-50 cursor-not-allowed" : "hover:bg-muted/50 cursor-pointer"
+                }`}
+              >
+                {isRunning ? (
+                  <RefreshCw className="h-5 w-5 text-blue-500 animate-spin shrink-0 mt-0.5" />
+                ) : (
+                  <Icon className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="text-sm font-medium">{action.label}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{action.desc}</p>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Para sync de datos Odoo (emails, facturas, entregas) y analisis con Claude, usa los botones en Odoo → Intelligence → Configuracion.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 export default function SystemPage() {
   const [stats, setStats] = useState<SystemStats | null>(null);
   const [syncStates, setSyncStates] = useState<SyncState[]>([]);
@@ -151,6 +297,9 @@ export default function SystemPage() {
         <StatCard title="Lineas de Orden" value={stats?.totalOdooOrderLines.toLocaleString() ?? "0"} icon={ShoppingCart} description="odoo_order_lines" />
         <StatCard title="Usuarios Odoo" value={stats?.totalOdooUsers.toLocaleString() ?? "0"} icon={UserCog} description="odoo_users" />
       </div>
+
+      {/* Sync Control Panel */}
+      <SyncPanel onComplete={() => window.location.reload()} />
 
       {/* Pipeline Runs */}
       <Card>
