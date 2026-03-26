@@ -280,164 +280,286 @@ export default function AlertsPage() {
           description="No hay alertas que coincidan con los filtros seleccionados."
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]">
-                <input
-                  type="checkbox"
-                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                  onChange={toggleSelectAll}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-              </TableHead>
-              <TableHead className="w-[100px]">Severidad</TableHead>
-              <TableHead>Titulo</TableHead>
-              <TableHead>Contacto</TableHead>
-              <TableHead>Tipo</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead className="w-[100px]">Fecha</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          {/* Mobile card layout */}
+          <div className="space-y-3 md:hidden">
+            <div className="flex items-center gap-2 px-1">
+              <input
+                type="checkbox"
+                checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <span className="text-xs text-muted-foreground">Seleccionar todas</span>
+            </div>
             {filtered.map((alert) => (
-              <>
-                <TableRow
-                  key={alert.id}
-                  className="cursor-pointer"
-                  onClick={() =>
-                    setExpandedId(expandedId === alert.id ? null : alert.id)
-                  }
-                >
-                  <TableCell onClick={(e) => e.stopPropagation()}>
+              <div
+                key={alert.id}
+                className="rounded-lg border bg-card p-4 space-y-3"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-start gap-2 min-w-0">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(alert.id)}
                       onChange={() => toggleSelect(alert.id)}
-                      className="h-4 w-4 rounded border-gray-300"
+                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300"
                     />
-                  </TableCell>
-                  <TableCell>
-                    <SeverityBadge severity={alert.severity} />
-                  </TableCell>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-1.5">
-                      <Link href={`/alerts/${alert.id}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                    <div className="min-w-0">
+                      <Link href={`/alerts/${alert.id}`} className="text-sm font-medium hover:underline line-clamp-2">
                         {alert.title}
                       </Link>
-                      <ChevronDown
-                        className={`h-4 w-4 text-muted-foreground transition-transform ${
-                          expandedId === alert.id ? "rotate-180" : ""
-                        }`}
-                      />
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {alert.contact_id ? (
+                          <Link href={`/contacts/${alert.contact_id}`} className="text-primary hover:underline">
+                            {alert.contact_name ?? "—"}
+                          </Link>
+                        ) : (
+                          alert.contact_name ?? "—"
+                        )}
+                        {" · "}{timeAgo(alert.created_at)}
+                      </div>
                     </div>
-                  </TableCell>
-                  <TableCell>
-                    {alert.contact_id ? (
-                      <Link href={`/contacts/${alert.contact_id}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
-                        {alert.contact_name ?? "—"}
-                      </Link>
-                    ) : (
-                      alert.contact_name ?? "—"
+                  </div>
+                  <button
+                    onClick={() => setExpandedId(expandedId === alert.id ? null : alert.id)}
+                    className="shrink-0 p-1"
+                  >
+                    <ChevronDown
+                      className={`h-4 w-4 text-muted-foreground transition-transform ${
+                        expandedId === alert.id ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <SeverityBadge severity={alert.severity} />
+                  <StateBadge state={alert.state} />
+                  {(() => {
+                    const TypeIcon = alertTypeIcon[alert.alert_type];
+                    const cat = alertTypeCategories[alert.alert_type];
+                    const variant = (cat ? categoryVariant[cat] : undefined) ?? "secondary";
+                    return (
+                      <Badge variant={variant} className="gap-1">
+                        {TypeIcon && <TypeIcon className="h-3 w-3" />}
+                        {alertTypeNames[alert.alert_type] ?? alert.alert_type}
+                      </Badge>
+                    );
+                  })()}
+                </div>
+                {expandedId === alert.id && (
+                  <div className="space-y-3 rounded-lg bg-muted/50 p-3">
+                    {alert.description && (
+                      <div>
+                        <p className="text-xs font-medium text-muted-foreground">Descripcion</p>
+                        <p className="mt-0.5 text-sm">{alert.description}</p>
+                      </div>
                     )}
-                  </TableCell>
-                  <TableCell>
                     {(() => {
-                      const TypeIcon = alertTypeIcon[alert.alert_type];
-                      const cat = alertTypeCategories[alert.alert_type];
-                      const variant = (cat ? categoryVariant[cat] : undefined) ?? "secondary";
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const a = alert as any;
                       return (
-                        <Badge variant={variant} className="gap-1">
-                          {TypeIcon && <TypeIcon className="h-3 w-3" />}
-                          {alertTypeNames[alert.alert_type] ?? alert.alert_type}
-                        </Badge>
+                        <>
+                          {a.business_impact && (
+                            <div>
+                              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Impacto de Negocio</p>
+                              <p className="mt-0.5 text-sm">{String(a.business_impact)}</p>
+                            </div>
+                          )}
+                          {a.suggested_action && (
+                            <div>
+                              <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Accion Sugerida</p>
+                              <p className="mt-0.5 text-sm">{String(a.suggested_action)}</p>
+                            </div>
+                          )}
+                        </>
                       );
                     })()}
-                  </TableCell>
-                  <TableCell>
-                    <StateBadge state={alert.state} />
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {timeAgo(alert.created_at)}
-                  </TableCell>
-                </TableRow>
-                {expandedId === alert.id && (
-                  <TableRow key={`${alert.id}-detail`}>
-                    <TableCell colSpan={7}>
-                      <div className="space-y-3 rounded-lg bg-muted/50 p-4">
-                        {alert.description && (
-                          <div>
-                            <p className="text-xs font-medium text-muted-foreground">
-                              Descripcion
-                            </p>
-                            <p className="mt-0.5 text-sm">{alert.description}</p>
-                          </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-2">
+                        {alert.state === "new" && (
+                          <Button size="sm" variant="outline" onClick={() => updateState(alert.id, "acknowledged")}>
+                            <Eye className="h-3.5 w-3.5" />
+                            Reconocer
+                          </Button>
                         )}
+                        {alert.state !== "resolved" && (
+                          <Button size="sm" variant="outline" onClick={() => updateState(alert.id, "resolved")}>
+                            <CheckCircle2 className="h-3.5 w-3.5" />
+                            Resolver
+                          </Button>
+                        )}
+                      </div>
+                      <FeedbackButtons table="alerts" id={alert.id} currentFeedback={null} />
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {/* Desktop table layout */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40px]">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                  </TableHead>
+                  <TableHead className="w-[100px]">Severidad</TableHead>
+                  <TableHead>Titulo</TableHead>
+                  <TableHead>Contacto</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead className="w-[100px]">Fecha</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((alert) => (
+                  <>
+                    <TableRow
+                      key={alert.id}
+                      className="cursor-pointer"
+                      onClick={() =>
+                        setExpandedId(expandedId === alert.id ? null : alert.id)
+                      }
+                    >
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(alert.id)}
+                          onChange={() => toggleSelect(alert.id)}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <SeverityBadge severity={alert.severity} />
+                      </TableCell>
+                      <TableCell className="font-medium">
+                        <div className="flex items-center gap-1.5">
+                          <Link href={`/alerts/${alert.id}`} className="hover:underline" onClick={(e) => e.stopPropagation()}>
+                            {alert.title}
+                          </Link>
+                          <ChevronDown
+                            className={`h-4 w-4 text-muted-foreground transition-transform ${
+                              expandedId === alert.id ? "rotate-180" : ""
+                            }`}
+                          />
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {alert.contact_id ? (
+                          <Link href={`/contacts/${alert.contact_id}`} className="text-primary hover:underline" onClick={(e) => e.stopPropagation()}>
+                            {alert.contact_name ?? "—"}
+                          </Link>
+                        ) : (
+                          alert.contact_name ?? "—"
+                        )}
+                      </TableCell>
+                      <TableCell>
                         {(() => {
-                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                          const a = alert as any;
+                          const TypeIcon = alertTypeIcon[alert.alert_type];
+                          const cat = alertTypeCategories[alert.alert_type];
+                          const variant = (cat ? categoryVariant[cat] : undefined) ?? "secondary";
                           return (
-                            <>
-                              {a.business_impact && (
-                                <div>
-                                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Impacto de Negocio</p>
-                                  <p className="mt-0.5 text-sm">{String(a.business_impact)}</p>
-                                </div>
-                              )}
-                              {a.suggested_action && (
-                                <div>
-                                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Accion Sugerida</p>
-                                  <p className="mt-0.5 text-sm">{String(a.suggested_action)}</p>
-                                </div>
-                              )}
-                            </>
+                            <Badge variant={variant} className="gap-1">
+                              {TypeIcon && <TypeIcon className="h-3 w-3" />}
+                              {alertTypeNames[alert.alert_type] ?? alert.alert_type}
+                            </Badge>
                           );
                         })()}
-                        <div className="flex items-center justify-between pt-1">
-                          <div className="flex items-center gap-2">
-                            {alert.state === "new" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateState(alert.id, "acknowledged");
-                                }}
-                              >
-                                <Eye className="h-3.5 w-3.5" />
-                                Reconocer
-                              </Button>
+                      </TableCell>
+                      <TableCell>
+                        <StateBadge state={alert.state} />
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {timeAgo(alert.created_at)}
+                      </TableCell>
+                    </TableRow>
+                    {expandedId === alert.id && (
+                      <TableRow key={`${alert.id}-detail`}>
+                        <TableCell colSpan={7}>
+                          <div className="space-y-3 rounded-lg bg-muted/50 p-4">
+                            {alert.description && (
+                              <div>
+                                <p className="text-xs font-medium text-muted-foreground">
+                                  Descripcion
+                                </p>
+                                <p className="mt-0.5 text-sm">{alert.description}</p>
+                              </div>
                             )}
-                            {alert.state !== "resolved" && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  updateState(alert.id, "resolved");
-                                }}
-                              >
-                                <CheckCircle2 className="h-3.5 w-3.5" />
-                                Resolver
-                              </Button>
-                            )}
+                            {(() => {
+                              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                              const a = alert as any;
+                              return (
+                                <>
+                                  {a.business_impact && (
+                                    <div>
+                                      <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Impacto de Negocio</p>
+                                      <p className="mt-0.5 text-sm">{String(a.business_impact)}</p>
+                                    </div>
+                                  )}
+                                  {a.suggested_action && (
+                                    <div>
+                                      <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Accion Sugerida</p>
+                                      <p className="mt-0.5 text-sm">{String(a.suggested_action)}</p>
+                                    </div>
+                                  )}
+                                </>
+                              );
+                            })()}
+                            <div className="flex items-center justify-between pt-1">
+                              <div className="flex items-center gap-2">
+                                {alert.state === "new" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateState(alert.id, "acknowledged");
+                                    }}
+                                  >
+                                    <Eye className="h-3.5 w-3.5" />
+                                    Reconocer
+                                  </Button>
+                                )}
+                                {alert.state !== "resolved" && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      updateState(alert.id, "resolved");
+                                    }}
+                                  >
+                                    <CheckCircle2 className="h-3.5 w-3.5" />
+                                    Resolver
+                                  </Button>
+                                )}
+                              </div>
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <FeedbackButtons
+                                  table="alerts"
+                                  id={alert.id}
+                                  currentFeedback={null}
+                                />
+                              </div>
+                            </div>
                           </div>
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <FeedbackButtons
-                              table="alerts"
-                              id={alert.id}
-                              currentFeedback={null}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )}
-              </>
-            ))}
-          </TableBody>
-        </Table>
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {/* Load more */}
@@ -452,21 +574,21 @@ export default function AlertsPage() {
 
       {/* Floating bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-background px-5 py-3 shadow-lg">
-          <span className="text-sm font-medium">
-            {selectedIds.size} seleccionada{selectedIds.size !== 1 ? "s" : ""}
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2 md:gap-3 rounded-lg border bg-background px-3 md:px-5 py-3 shadow-lg max-w-[calc(100vw-2rem)]">
+          <span className="text-xs md:text-sm font-medium whitespace-nowrap">
+            {selectedIds.size} sel.
           </span>
           <Button size="sm" variant="outline" onClick={() => bulkUpdateState("acknowledged")}>
-            <Eye className="mr-1 h-3.5 w-3.5" />
-            Reconocer
+            <Eye className="h-3.5 w-3.5 md:mr-1" />
+            <span className="hidden md:inline">Reconocer</span>
           </Button>
           <Button size="sm" variant="outline" onClick={() => bulkUpdateState("resolved")}>
-            <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-            Resolver
+            <CheckCircle2 className="h-3.5 w-3.5 md:mr-1" />
+            <span className="hidden md:inline">Resolver</span>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
-            <X className="mr-1 h-3.5 w-3.5" />
-            Deseleccionar
+            <X className="h-3.5 w-3.5 md:mr-1" />
+            <span className="hidden md:inline">Deseleccionar</span>
           </Button>
         </div>
       )}

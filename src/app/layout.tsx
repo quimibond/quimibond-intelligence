@@ -25,8 +25,8 @@ export default function RootLayout({
       </head>
       <body>
         <AppSidebar />
-        <main className="pl-64">
-          <div className="min-h-screen p-6">{children}</div>
+        <main className="md:pl-64">
+          <div className="min-h-screen p-4 pt-16 md:p-6 md:pt-6">{children}</div>
         </main>
         <SearchCommand />
       </body>
