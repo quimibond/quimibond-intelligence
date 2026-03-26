@@ -74,7 +74,7 @@ export default function AlertsPage() {
 
   useEffect(() => {
     async function fetchAlerts() {
-      const [alertsRes, catalogRes] = await Promise.all([
+      const [alertsRes] = await Promise.all([
         supabase
           .from("alerts")
           .select("*")
