@@ -96,8 +96,15 @@ export default function ActionsPage() {
   }
 
   const assignees = useMemo(() => {
-    const set = new Set(actions.map((a) => a.assignee_email).filter(Boolean) as string[]);
-    return Array.from(set).sort();
+    const map = new Map<string, string>();
+    for (const a of actions) {
+      const email = a.assignee_email;
+      if (email) {
+        map.set(email, a.assignee_name ?? email);
+      }
+    }
+    return Array.from(map.entries())
+      .sort((a, b) => a[1].localeCompare(b[1]));
   }, [actions]);
 
   const filtered = useMemo(() => {
@@ -224,8 +231,9 @@ export default function ActionsPage() {
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
         >
-          <option value="all">Todas los estados</option>
+          <option value="all">Todos los estados</option>
           <option value="pending">Pendientes</option>
+          <option value="in_progress">En progreso</option>
           <option value="completed">Completadas</option>
           <option value="dismissed">Descartadas</option>
         </Select>
@@ -246,8 +254,8 @@ export default function ActionsPage() {
             onChange={(e) => setAssigneeFilter(e.target.value)}
           >
             <option value="all">Todos los responsables</option>
-            {assignees.map((a) => (
-              <option key={a} value={a}>{a}</option>
+            {assignees.map(([email, name]) => (
+              <option key={email} value={email}>{name}</option>
             ))}
           </Select>
         )}
@@ -340,8 +348,8 @@ export default function ActionsPage() {
                         Vence {formatDate(action.due_date)}
                       </span>
                     )}
-                    {action.assignee_email && (
-                      <span className="text-xs text-muted-foreground">{action.assignee_email}</span>
+                    {(action.assignee_name || action.assignee_email) && (
+                      <span className="text-xs text-muted-foreground">{action.assignee_name ?? action.assignee_email}</span>
                     )}
                   </div>
                   <div className="flex items-center justify-between">
@@ -448,7 +456,7 @@ export default function ActionsPage() {
                         <StateBadge state={action.state} />
                       </TableCell>
                       <TableCell className="text-sm">
-                        {action.assignee_email ?? "—"}
+                        {action.assignee_name ?? action.assignee_email ?? "—"}
                       </TableCell>
                       <TableCell>
                         {action.due_date ? (
