@@ -138,7 +138,7 @@ export default function ActionsPage() {
     if (ids.length === 0) return;
     const updates: Record<string, unknown> = { state };
     if (state === "completed") {
-      updates.completed_date = new Date().toISOString();
+      updates.completed_at = new Date().toISOString();
     }
     const { error } = await supabase.from("action_items").update(updates).in("id", ids);
     if (!error) {
@@ -149,7 +149,7 @@ export default function ActionsPage() {
                 ...a,
                 state: state as ActionItem["state"],
                 ...(state === "completed"
-                  ? { completed_date: new Date().toISOString() }
+                  ? { completed_at: new Date().toISOString() }
                   : {}),
               }
             : a
@@ -162,13 +162,13 @@ export default function ActionsPage() {
   async function markCompleted(id: number) {
     const { error } = await supabase
       .from("action_items")
-      .update({ state: "completed", completed_date: new Date().toISOString() })
+      .update({ state: "completed", completed_at: new Date().toISOString() })
       .eq("id", id);
     if (!error) {
       setActions((prev) =>
         prev.map((a) =>
           a.id === id
-            ? { ...a, state: "completed" as const, completed_date: new Date().toISOString() }
+            ? { ...a, state: "completed" as const, completed_at: new Date().toISOString() }
             : a
         )
       );
