@@ -55,6 +55,40 @@ const statusConfig: Record<string, { variant: "success" | "warning" | "critical"
   partial: { variant: "warning", icon: AlertTriangle },
 };
 
+// ── Odoo Command Dispatcher ──
+async function sendOdooCommand(command: string): Promise<string> {
+  // Insert command into sync_commands table — Odoo picks it up every 5 min
+  const { data, error } = await supabase
+    .from("sync_commands")
+    .insert({ command, status: "pending" })
+    .select("id")
+    .single();
+  if (error) throw new Error(error.message);
+
+  // Poll for completion (max 10 min)
+  const cmdId = data.id;
+  const maxWait = 600_000;
+  const start = Date.now();
+  while (Date.now() - start < maxWait) {
+    await new Promise((r) => setTimeout(r, 5000));
+    const { data: cmd } = await supabase
+      .from("sync_commands")
+      .select("status, result")
+      .eq("id", cmdId)
+      .single();
+    if (!cmd) break;
+    if (cmd.status === "completed") {
+      const elapsed = cmd.result?.elapsed_s ? ` (${cmd.result.elapsed_s}s)` : "";
+      return `Completado${elapsed}`;
+    }
+    if (cmd.status === "failed") {
+      throw new Error(cmd.result?.error ?? "Fallo en Odoo");
+    }
+    // still running or pending...
+  }
+  return "Enviado a Odoo (revisa logs para resultado)";
+}
+
 // ── Sync Control Panel ──
 function SyncPanel({ onComplete }: { onComplete: () => void }) {
   const [running, setRunning] = useState<string | null>(null);
@@ -155,13 +189,58 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
     },
   ];
 
+  const odooActions: { id: string; label: string; desc: string; icon: typeof RefreshCw; command: string }[] = [
+    {
+      id: "odoo_sync_emails",
+      label: "Sync Emails (Gmail)",
+      desc: "Descarga emails nuevos de las 52 cuentas",
+      icon: Mail,
+      command: "run_sync_emails",
+    },
+    {
+      id: "odoo_analyze",
+      label: "Analizar Emails (Claude)",
+      desc: "Genera alertas, acciones, KG, perfiles. ~3-10 min",
+      icon: Brain,
+      command: "run_analyze_emails",
+    },
+    {
+      id: "odoo_enrich",
+      label: "Sync Contactos (Odoo)",
+      desc: "Partners + empresas con datos financieros y operacionales",
+      icon: Users,
+      command: "run_enrich_only",
+    },
+    {
+      id: "odoo_tables",
+      label: "Sync 8 Tablas Odoo",
+      desc: "Facturas, pagos, entregas, CRM, actividades, equipo",
+      icon: Server,
+      command: "run_sync_odoo_tables",
+    },
+    {
+      id: "odoo_scores",
+      label: "Recalcular Scores (Odoo)",
+      desc: "Health scores, risk level, sentiment",
+      icon: Activity,
+      command: "run_update_scores",
+    },
+    {
+      id: "odoo_full",
+      label: "Pipeline Completo (Diario)",
+      desc: "Todo: sync + analisis + enrichment + scores + briefing. ~5-15 min",
+      icon: RefreshCw,
+      command: "run_daily_intelligence",
+    },
+  ];
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 pb-4">
         <RefreshCw className="h-5 w-5 text-blue-500" />
         <CardTitle>Panel de Sync</CardTitle>
       </CardHeader>
-      <CardContent className="space-y-4">
+      <CardContent className="space-y-6">
         {result && (
           <div className={`rounded-lg p-3 text-sm ${result.type === "success" ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-red-500/10 text-red-700 dark:text-red-300"}`}>
             {result.msg}
@@ -193,9 +272,48 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
             );
           })}
         </div>
-        <p className="text-xs text-muted-foreground">
-          Para sync de datos Odoo (emails, facturas, entregas) y analisis con Claude, usa los botones en Odoo → Intelligence → Configuracion.
-        </p>
+
+        {/* Odoo commands section */}
+        <div className="border-t pt-4">
+          <div className="flex items-center gap-2 mb-3">
+            <Server className="h-4 w-4 text-amber-500" />
+            <h3 className="text-sm font-semibold">Ejecutar en Odoo</h3>
+            <span className="text-xs text-muted-foreground">(se envia comando, Odoo lo ejecuta)</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {odooActions.map((action) => {
+              const Icon = action.icon;
+              const isRunning = running === action.id;
+              return (
+                <button
+                  key={action.id}
+                  onClick={() => runAction(
+                    action.id,
+                    action.label,
+                    () => sendOdooCommand(action.command),
+                  )}
+                  disabled={running !== null}
+                  className={`flex items-start gap-3 rounded-lg border border-amber-500/20 bg-amber-500/5 p-3 text-left transition-colors ${
+                    running !== null ? "opacity-50 cursor-not-allowed" : "hover:bg-amber-500/10 cursor-pointer"
+                  }`}
+                >
+                  {isRunning ? (
+                    <RefreshCw className="h-5 w-5 text-amber-500 animate-spin shrink-0 mt-0.5" />
+                  ) : (
+                    <Icon className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="text-sm font-medium">{action.label}</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">{action.desc}</p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground mt-2">
+            Los comandos de Odoo se ejecutan en el servidor de Odoo.sh. El boton espera a que termine (~5 min max para el cron).
+          </p>
+        </div>
       </CardContent>
     </Card>
   );
