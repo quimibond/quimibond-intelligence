@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
 import { ArrowLeft, Mail, Paperclip } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime } from "@/lib/utils";
 import type { Email } from "@/lib/types";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
+import { EntityLink } from "@/components/shared/entity-link";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -82,14 +85,11 @@ export default function EmailDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={() => router.push("/emails")}
-      >
-        <ArrowLeft className="mr-1 h-4 w-4" />
-        Emails
-      </Button>
+      <Breadcrumbs items={[
+        { label: "Dashboard", href: "/" },
+        { label: "Emails", href: "/emails" },
+        { label: email.subject?.slice(0, 40) ?? "Email" },
+      ]} />
 
       <Card>
         <CardHeader>
@@ -121,6 +121,21 @@ export default function EmailDetailPage() {
                 <Paperclip className="h-3.5 w-3.5" />
                 Adjuntos
               </span>
+            )}
+          </div>
+
+          {/* Entity links */}
+          <div className="flex flex-wrap gap-2 pt-2">
+            {email.sender_contact_id && (
+              <EntityLink type="contact" id={email.sender_contact_id} label="Ver contacto" />
+            )}
+            {email.company_id && (
+              <EntityLink type="company" id={email.company_id} label="Ver empresa" />
+            )}
+            {email.thread_id && (
+              <Link href={`/threads`} className="text-xs text-primary hover:underline">
+                Ver hilo
+              </Link>
             )}
           </div>
 

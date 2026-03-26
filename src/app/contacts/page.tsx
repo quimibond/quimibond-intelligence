@@ -165,7 +165,11 @@ export default function ContactsPage() {
                     )}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
-                    {(contact as unknown as Record<string, unknown>).company as string ?? "—"}
+                    {contact.company_id ? (
+                      <Link href={`/companies/${contact.company_id}`} className="hover:underline hover:text-foreground">
+                        {(contact as unknown as Record<string, unknown>).company as string ?? `Empresa #${contact.company_id}`}
+                      </Link>
+                    ) : "—"}
                   </TableCell>
                   <TableCell className="text-muted-foreground">
                     {contact.role ?? "—"}

@@ -60,13 +60,15 @@ export default function AlertDetailPage() {
       setRelatedActions(context.related_actions ?? []);
       setContactFacts(context.contact_facts ?? []);
 
-      // Fetch catalog display name
-      const { data: catalog } = await supabase
-        .from("alert_type_catalog")
-        .select("display_name")
-        .eq("alert_type", context.alert.alert_type)
-        .single();
-      if (catalog) setCatalogName(catalog.display_name);
+      // Alert type display names (hardcoded — table removed)
+      const typeNames: Record<string, string> = {
+        no_response: "Sin respuesta", stalled_thread: "Hilo estancado",
+        overdue_invoice: "Factura vencida", at_risk_client: "Cliente en riesgo",
+        volume_drop: "Caida de volumen", stockout_risk: "Riesgo de desabasto",
+        payment_compliance: "Compliance de pago", churn_risk: "Riesgo de churn",
+        cross_sell: "Cross-sell", opportunity: "Oportunidad",
+      };
+      setCatalogName(typeNames[context.alert.alert_type] ?? null);
 
       setLoading(false);
     }

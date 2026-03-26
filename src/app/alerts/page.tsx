@@ -80,25 +80,28 @@ export default function AlertsPage() {
           .select("*")
           .order("created_at", { ascending: false })
           .limit(PAGE_SIZE),
-        supabase
-          .from("alert_type_catalog")
-          .select("alert_type, display_name, category"),
       ]);
 
       if (!alertsRes.error && alertsRes.data) {
         setAlerts(alertsRes.data as Alert[]);
         setHasMore(alertsRes.data.length === PAGE_SIZE);
       }
-      if (catalogRes.data) {
-        const nameMap: Record<string, string> = {};
-        const catMap: Record<string, string> = {};
-        for (const c of catalogRes.data) {
-          if (c.alert_type && c.display_name) nameMap[c.alert_type] = c.display_name;
-          if (c.alert_type && c.category) catMap[c.alert_type] = c.category;
-        }
-        setAlertTypeNames(nameMap);
-        setAlertTypeCategories(catMap);
-      }
+      // Alert type display names (hardcoded — alert_type_catalog was removed)
+      const nameMap: Record<string, string> = {
+        no_response: "Sin respuesta", stalled_thread: "Hilo estancado",
+        high_volume: "Alto volumen", overdue_invoice: "Factura vencida",
+        at_risk_client: "Cliente en riesgo", accountability: "Responsabilidad",
+        anomaly: "Anomalia", competitor: "Competidor",
+        negative_sentiment: "Sentimiento negativo", churn_risk: "Riesgo de churn",
+        invoice_silence: "Silencio de factura", delivery_risk: "Riesgo de entrega",
+        payment_delay: "Retraso de pago", opportunity: "Oportunidad",
+        quality_issue: "Problema de calidad", volume_drop: "Caida de volumen",
+        unusual_discount: "Descuento inusual", cross_sell: "Cross-sell",
+        stockout_risk: "Riesgo de desabasto", reorder_needed: "Reorden necesario",
+        payment_compliance: "Compliance de pago",
+      };
+      setAlertTypeNames(nameMap);
+      setAlertTypeCategories({});
       setLoading(false);
     }
     fetchAlerts();
