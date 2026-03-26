@@ -6,20 +6,19 @@ import { cn, timeAgo, scoreToPercent } from "@/lib/utils";
 import type { DirectorDashboard, DashboardKPI } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
 import { PageHeader } from "@/components/shared/page-header";
-import { ScoreGauge } from "@/components/shared/score-gauge";
-import { StatCard } from "@/components/shared/stat-card";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { RiskBadge } from "@/components/shared/risk-badge";
-import { PredictionStats } from "@/components/shared/prediction-stats";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import {
-  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
-} from "@/components/ui/table";
 import Link from "next/link";
-import { Bell, CheckSquare, CreditCard, DollarSign, PackageX, Truck, TrendingUp, Users, Mail, AlertTriangle, ClipboardList, FileText, UserCheck, UserCog } from "lucide-react";
+import {
+  Bell, CheckSquare, CreditCard, DollarSign, PackageX, Truck,
+  TrendingUp, Users, Mail, AlertTriangle, ClipboardList, FileText,
+  UserCheck, Brain, MessageSquare, BarChart3, Target, Shield,
+  ArrowRight, Activity,
+} from "lucide-react";
 
 function formatCurrency(value: number | null): string {
   if (value == null) return "—";
@@ -28,7 +27,7 @@ function formatCurrency(value: number | null): string {
   return `$${value.toFixed(0)}`;
 }
 
-// ── Global operational data types ──
+// ── Types ──
 interface GlobalAging {
   current: number;
   "1_30": number;
@@ -37,7 +36,6 @@ interface GlobalAging {
   "90_plus": number;
   total_outstanding: number;
 }
-
 interface LateDelivery {
   name: string;
   company_name: string | null;
@@ -46,339 +44,320 @@ interface LateDelivery {
   picking_type: string | null;
   origin: string | null;
 }
-
 interface PipelineGlobal {
   total_opportunities: number;
   pipeline_value: number;
   weighted_value: number;
 }
 
-async function fetchDashboardFallback(): Promise<DirectorDashboard> {
-  // Fallback: query tables directly when RPC doesn't exist
+// ── Clickable KPI Card ──
+function KPICard({
+  title, value, subtitle, icon: Icon, href, variant = "default", className,
+}: {
+  title: string;
+  value: string | number;
+  subtitle?: string;
+  icon: React.ElementType;
+  href: string;
+  variant?: "default" | "danger" | "warning" | "success" | "info";
+  className?: string;
+}) {
+  const colors = {
+    default: "hover:border-foreground/20",
+    danger: "border-red-500/30 bg-red-500/5 hover:bg-red-500/10",
+    warning: "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10",
+    success: "border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10",
+    info: "border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10",
+  };
+  const iconColors = {
+    default: "text-muted-foreground",
+    danger: "text-red-500",
+    warning: "text-amber-500",
+    success: "text-emerald-500",
+    info: "text-blue-500",
+  };
+  const valueColors = {
+    default: "",
+    danger: "text-red-600 dark:text-red-400",
+    warning: "text-amber-600 dark:text-amber-400",
+    success: "text-emerald-600 dark:text-emerald-400",
+    info: "text-blue-600 dark:text-blue-400",
+  };
+
+  return (
+    <Link href={href} className={cn("block group", className)}>
+      <Card className={cn("transition-all cursor-pointer", colors[variant])}>
+        <CardContent className="pt-4 pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <Icon className={cn("h-4 w-4", iconColors[variant])} />
+              <span>{title}</span>
+            </div>
+            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all" />
+          </div>
+          <p className={cn("mt-1 text-2xl font-bold tabular-nums", valueColors[variant])}>
+            {value}
+          </p>
+          {subtitle && (
+            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+          )}
+        </CardContent>
+      </Card>
+    </Link>
+  );
+}
+
+// ── Section Header ──
+function SectionHeader({ title, icon: Icon, color }: { title: string; icon: React.ElementType; color: string }) {
+  return (
+    <div className="flex items-center gap-2 pt-2">
+      <Icon className={cn("h-4 w-4", color)} />
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
+      <div className="flex-1 border-b" />
+    </div>
+  );
+}
+
+// ── Main data fetch ──
+async function fetchDashboard() {
   const today = new Date().toISOString().split("T")[0];
 
   const [
-    alertsNewRes,
-    alertsCritRes,
-    actionsPendingRes,
-    actionsOverdueRes,
-    actionsCompletedRes,
-    contactsRiskRes,
-    totalContactsRes,
-    totalEmailsRes,
-    alertsResolvedRes,
-    criticalAlertsRes,
-    overdueActionsRes,
-    contactsAtRiskRes,
+    alertsNewRes, alertsCritRes, actionsPendingRes, actionsOverdueRes,
+    actionsCompletedRes, contactsRiskRes, totalContactsRes, totalEmailsRes,
+    alertsResolvedRes, criticalAlertsRes, overdueActionsRes, contactsAtRiskRes,
+    stockoutRes, complianceRes, threadsStalled, totalCompanies, totalThreads,
+    entitiesRes, factsRes,
   ] = await Promise.all([
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new").in("severity", ["critical", "high"]),
     supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
     supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending").lt("due_date", today),
     supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "completed"),
-    supabase.from("contacts").select("id", { count: "exact", head: true }).eq("risk_level", "high"),
-    supabase.from("contacts").select("id", { count: "exact", head: true }),
+    supabase.from("contacts").select("id", { count: "exact", head: true }).in("risk_level", ["high", "critical"]),
+    supabase.from("contacts").select("id", { count: "exact", head: true }).eq("contact_type", "external"),
     supabase.from("emails").select("id", { count: "exact", head: true }),
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "resolved"),
-    supabase.from("alerts").select("id, title, severity, contact_name, description, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(8),
-    supabase.from("action_items").select("id, description, contact_name, contact_company, assignee_email, assignee_name, due_date, priority, action_type").eq("state", "pending").lt("due_date", today).order("due_date", { ascending: true }).limit(10),
-    supabase.from("contacts").select("id, name, company, risk_level, sentiment_score, relationship_score").eq("risk_level", "high").order("relationship_score", { ascending: true }).limit(8),
+    supabase.from("alerts").select("id, title, severity, contact_name, description, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(5),
+    supabase.from("action_items").select("id, description, contact_name, contact_company, assignee_email, assignee_name, due_date, priority, action_type").eq("state", "pending").lt("due_date", today).order("due_date", { ascending: true }).limit(5),
+    supabase.from("contacts").select("id, name, risk_level, sentiment_score, relationship_score, open_alerts_count, pending_actions_count, company_id").in("risk_level", ["high", "critical"]).order("relationship_score", { ascending: true }).limit(5),
+    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new").eq("alert_type", "stockout_risk"),
+    supabase.from("contacts").select("id", { count: "exact", head: true }).lt("payment_compliance_score", 50).not("payment_compliance_score", "is", null),
+    supabase.from("threads").select("id", { count: "exact", head: true }).in("status", ["stalled", "needs_response"]),
+    supabase.from("companies").select("id", { count: "exact", head: true }),
+    supabase.from("threads").select("id", { count: "exact", head: true }),
+    supabase.from("entities").select("id", { count: "exact", head: true }),
+    supabase.from("facts").select("id", { count: "exact", head: true }),
   ]);
 
-  const kpi: DashboardKPI = {
-    open_alerts: alertsNewRes.count ?? 0,
-    critical_alerts: alertsCritRes.count ?? 0,
-    pending_actions: actionsPendingRes.count ?? 0,
-    overdue_actions: actionsOverdueRes.count ?? 0,
-    at_risk_contacts: contactsRiskRes.count ?? 0,
-    total_contacts: totalContactsRes.count ?? 0,
-    total_emails: totalEmailsRes.count ?? 0,
-    completed_actions: actionsCompletedRes.count ?? 0,
-    resolved_alerts: alertsResolvedRes.count ?? 0,
-  };
-
-  const overdue = (overdueActionsRes.data ?? []).map((a) => ({
-    ...a,
-    days_overdue: a.due_date
-      ? Math.max(0, Math.floor((Date.now() - new Date(a.due_date).getTime()) / 86400000))
-      : 0,
-  }));
-
-  const contactsRisk = (contactsAtRiskRes.data ?? []).map((c) => ({
-    ...c,
-    open_alerts: 0,
-    pending_actions: 0,
-  }));
-
-  // Fetch latest daily briefing
-  let latestBriefing = null;
-  const { data: dailySummary } = await supabase
-    .from("briefings")
-    .select("*")
-    .eq("scope", "daily")
-    .order("briefing_date", { ascending: false })
-    .limit(1)
-    .single();
-  if (dailySummary) {
-    latestBriefing = dailySummary;
-  }
-
-  // Fetch accountability (actions grouped by assignee)
-  const { data: accountabilityRaw } = await supabase
-    .from("action_items")
-    .select("assignee_name, assignee_email, state")
-    .not("assignee_email", "is", null);
-
-  const accountabilityMap = new Map<string, { name: string; email: string | null; pending: number; overdue: number; completed: number }>();
-  for (const item of accountabilityRaw ?? []) {
-    const key = item.assignee_email ?? "unknown";
-    if (!accountabilityMap.has(key)) {
-      accountabilityMap.set(key, {
-        name: item.assignee_name ?? key,
-        email: item.assignee_email,
-        pending: 0,
-        overdue: 0,
-        completed: 0,
-      });
-    }
-    const entry = accountabilityMap.get(key)!;
-    if (item.state === "pending") entry.pending++;
-    else if (item.state === "completed") entry.completed++;
-  }
-
   return {
-    kpi,
+    kpi: {
+      open_alerts: alertsNewRes.count ?? 0,
+      critical_alerts: alertsCritRes.count ?? 0,
+      pending_actions: actionsPendingRes.count ?? 0,
+      overdue_actions: actionsOverdueRes.count ?? 0,
+      at_risk_contacts: contactsRiskRes.count ?? 0,
+      total_contacts: totalContactsRes.count ?? 0,
+      total_emails: totalEmailsRes.count ?? 0,
+      completed_actions: actionsCompletedRes.count ?? 0,
+      resolved_alerts: alertsResolvedRes.count ?? 0,
+    },
     critical_alerts: criticalAlertsRes.data ?? [],
-    overdue_actions: overdue,
-    accountability: Array.from(accountabilityMap.values())
-      .sort((a, b) => b.pending - a.pending)
-      .slice(0, 10),
-    contacts_at_risk: contactsRisk,
-    latest_briefing: latestBriefing,
-    pending_actions: [],
+    overdue_actions: (overdueActionsRes.data ?? []).map((a) => ({
+      ...a,
+      days_overdue: a.due_date ? Math.max(0, Math.floor((Date.now() - new Date(a.due_date).getTime()) / 86400000)) : 0,
+    })),
+    contacts_at_risk: contactsAtRiskRes.data ?? [],
+    stockoutCount: stockoutRes.count ?? 0,
+    lowComplianceCount: complianceRes.count ?? 0,
+    threadsStalled: threadsStalled.count ?? 0,
+    totalCompanies: totalCompanies.count ?? 0,
+    totalThreads: totalThreads.count ?? 0,
+    totalEntities: entitiesRes.count ?? 0,
+    totalFacts: factsRes.count ?? 0,
   };
 }
 
 export default function DashboardPage() {
-  const [data, setData] = useState<DirectorDashboard | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [stockoutCount, setStockoutCount] = useState(0);
-  const [lowComplianceCount, setLowComplianceCount] = useState(0);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [data, setData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
   const [globalAging, setGlobalAging] = useState<GlobalAging | null>(null);
-  const [lateDeliveries, setLateDeliveries] = useState<LateDelivery[]>([]);
-  const [pipelineGlobal, setPipelineGlobal] = useState<PipelineGlobal | null>(null);
   const [lateDeliveryCount, setLateDeliveryCount] = useState(0);
+  const [pipelineGlobal, setPipelineGlobal] = useState<PipelineGlobal | null>(null);
+  const [latestBriefing, setLatestBriefing] = useState<{ briefing_date: string; summary_text: string | null; total_emails: number } | null>(null);
+  const [accountability, setAccountability] = useState<{ name: string; email: string | null; pending: number; overdue: number; completed: number }[]>([]);
 
   useEffect(() => {
     async function load() {
-      // Try RPC first, fallback to direct queries
-      const { data: result, error } = await supabase.rpc("get_director_dashboard");
-      if (!error && result) {
-        setData(result as unknown as DirectorDashboard);
-      } else {
-        // RPC failed (probably doesn't exist) — use fallback
-        try {
-          const fallback = await fetchDashboardFallback();
-          setData(fallback);
-        } catch {
-          // Even fallback failed
-        }
-      }
-      // Extra KPIs for product/payment intelligence
-      const [stockoutRes, complianceRes] = await Promise.all([
-        supabase
-          .from("alerts")
-          .select("id", { count: "exact", head: true })
-          .eq("state", "new")
-          .eq("alert_type", "stockout_risk"),
-        supabase
-          .from("contacts")
-          .select("id", { count: "exact", head: true })
-          .lt("payment_compliance_score", 50)
-          .not("payment_compliance_score", "is", null),
-      ]);
-      setStockoutCount(stockoutRes.count ?? 0);
-      setLowComplianceCount(complianceRes.count ?? 0);
+      try {
+        const result = await fetchDashboard();
+        setData(result);
+      } catch { /* ignore */ }
 
-      // Fetch team dashboard (non-blocking)
-      Promise.resolve(supabase.rpc("get_team_dashboard")).then(({ data: teamData }) => {
-        if (Array.isArray(teamData)) {
-          setTeamMembers(teamData);
-        }
-      }).catch(() => {});
-
-      // ── Operational KPIs (non-blocking) ──
-
-      // Global aging: sum all pending invoices across companies
-      Promise.resolve(
-        supabase
-          .from("odoo_invoices")
-          .select("amount_residual, days_overdue")
-          .eq("move_type", "out_invoice")
-          .in("payment_state", ["not_paid", "partial"])
-      ).then(({ data: invoices }) => {
-        if (!invoices) return;
-        const aging: GlobalAging = { current: 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0, total_outstanding: 0 };
-        for (const inv of invoices) {
-          const amt = Number(inv.amount_residual ?? 0);
-          const days = Number(inv.days_overdue ?? 0);
-          aging.total_outstanding += amt;
-          if (days <= 0) aging.current += amt;
-          else if (days <= 30) aging["1_30"] += amt;
-          else if (days <= 60) aging["31_60"] += amt;
-          else if (days <= 90) aging["61_90"] += amt;
-          else aging["90_plus"] += amt;
-        }
-        setGlobalAging(aging);
-      }).catch(() => {});
-
-      // Late deliveries
-      Promise.resolve(
-        supabase
-          .from("odoo_deliveries")
-          .select("name, company_id, scheduled_date, picking_type, origin")
-          .eq("is_late", true)
-          .not("state", "in", '("done","cancel")')
-          .order("scheduled_date", { ascending: true })
-          .limit(15)
-      ).then(({ data: dels }) => {
-        if (dels) setLateDeliveries(dels as LateDelivery[]);
-      }).catch(() => {});
-
-      Promise.resolve(
-        supabase
-          .from("odoo_deliveries")
-          .select("id", { count: "exact", head: true })
-          .eq("is_late", true)
-          .not("state", "in", '("done","cancel")')
-      ).then(({ count }) => {
-        setLateDeliveryCount(count ?? 0);
-      }).catch(() => {});
-
-      // Global pipeline
-      Promise.resolve(
-        supabase
-          .from("odoo_crm_leads")
-          .select("lead_type, expected_revenue, probability")
-          .eq("active", true)
-      ).then(({ data: leads }) => {
-        if (!leads) return;
-        const opps = leads.filter((l) => l.lead_type === "opportunity");
-        setPipelineGlobal({
-          total_opportunities: opps.length,
-          pipeline_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0), 0),
-          weighted_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0) * Number(l.probability ?? 0) / 100, 0),
+      // Non-blocking: aging, deliveries, pipeline, briefing, accountability
+      supabase
+        .from("odoo_invoices")
+        .select("amount_residual, days_overdue")
+        .eq("move_type", "out_invoice")
+        .in("payment_state", ["not_paid", "partial"])
+        .then(({ data: invoices }) => {
+          if (!invoices) return;
+          const aging: GlobalAging = { current: 0, "1_30": 0, "31_60": 0, "61_90": 0, "90_plus": 0, total_outstanding: 0 };
+          for (const inv of invoices) {
+            const amt = Number(inv.amount_residual ?? 0);
+            const days = Number(inv.days_overdue ?? 0);
+            aging.total_outstanding += amt;
+            if (days <= 0) aging.current += amt;
+            else if (days <= 30) aging["1_30"] += amt;
+            else if (days <= 60) aging["31_60"] += amt;
+            else if (days <= 90) aging["61_90"] += amt;
+            else aging["90_plus"] += amt;
+          }
+          setGlobalAging(aging);
         });
-      }).catch(() => {});
+
+      supabase
+        .from("odoo_deliveries")
+        .select("id", { count: "exact", head: true })
+        .eq("is_late", true)
+        .not("state", "in", '("done","cancel")')
+        .then(({ count }) => setLateDeliveryCount(count ?? 0));
+
+      supabase
+        .from("odoo_crm_leads")
+        .select("lead_type, expected_revenue, probability")
+        .eq("active", true)
+        .then(({ data: leads }) => {
+          if (!leads) return;
+          const opps = leads.filter((l) => l.lead_type === "opportunity");
+          setPipelineGlobal({
+            total_opportunities: opps.length,
+            pipeline_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0), 0),
+            weighted_value: opps.reduce((s, l) => s + Number(l.expected_revenue ?? 0) * Number(l.probability ?? 0) / 100, 0),
+          });
+        });
+
+      supabase
+        .from("briefings")
+        .select("briefing_date, summary_text, total_emails")
+        .eq("scope", "daily")
+        .order("briefing_date", { ascending: false })
+        .limit(1)
+        .single()
+        .then(({ data: b }) => { if (b) setLatestBriefing(b); });
+
+      supabase
+        .from("action_items")
+        .select("assignee_name, assignee_email, state, due_date")
+        .not("assignee_email", "is", null)
+        .then(({ data: items }) => {
+          if (!items) return;
+          const today = new Date().toISOString().split("T")[0];
+          const map = new Map<string, { name: string; email: string | null; pending: number; overdue: number; completed: number }>();
+          for (const item of items) {
+            const key = item.assignee_email ?? "?";
+            if (!map.has(key)) map.set(key, { name: item.assignee_name ?? key, email: item.assignee_email, pending: 0, overdue: 0, completed: 0 });
+            const e = map.get(key)!;
+            if (item.state === "completed") e.completed++;
+            else if (item.state === "pending") {
+              e.pending++;
+              if (item.due_date && item.due_date < today) e.overdue++;
+            }
+          }
+          setAccountability(Array.from(map.values()).sort((a, b) => b.overdue - a.overdue || b.pending - a.pending).slice(0, 8));
+        });
 
       setLoading(false);
     }
     load();
   }, []);
 
-  if (loading) {
+  if (loading || !data) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Dashboard" description="Vista ejecutiva de inteligencia comercial" />
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[120px] w-full" />
+        <PageHeader title="Centro de Control" description="Balanced Scorecard — Quimibond Intelligence" />
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <Skeleton key={i} className="h-[100px] w-full" />
           ))}
         </div>
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Skeleton className="h-[300px] w-full" />
-          <Skeleton className="h-[300px] w-full" />
-        </div>
-        <Skeleton className="h-[300px] w-full" />
       </div>
     );
   }
 
-  if (!data) {
-    return (
-      <div className="space-y-6">
-        <PageHeader title="Dashboard" description="Vista ejecutiva de inteligencia comercial" />
-        <Card>
-          <CardContent className="py-12 text-center text-muted-foreground">
-            No se pudieron cargar los datos del dashboard. Verifica la conexion a Supabase.
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
-
-  const { kpi, critical_alerts, overdue_actions, contacts_at_risk, latest_briefing, accountability } = data;
+  const { kpi, critical_alerts, overdue_actions, contacts_at_risk } = data;
+  const overdueAmt = globalAging ? globalAging["1_30"] + globalAging["31_60"] + globalAging["61_90"] + globalAging["90_plus"] : 0;
 
   return (
-    <div className="space-y-6">
-      <PageHeader title="Dashboard" description="Vista ejecutiva de inteligencia comercial" />
+    <div className="space-y-5">
+      <PageHeader
+        title="Centro de Control"
+        description="Balanced Scorecard — Quimibond Intelligence"
+      />
 
-      {/* KPI Cards — 8 cards with operational metrics */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-8">
-        <StatCard title="Alertas Criticas" value={kpi.critical_alerts} icon={Bell} description={`${kpi.open_alerts} abiertas`} />
-        <StatCard title="Acciones Vencidas" value={kpi.overdue_actions} icon={CheckSquare} description={`${kpi.pending_actions} pendientes`} />
-        <StatCard title="Contactos Riesgo" value={kpi.at_risk_contacts} icon={Users} description={`de ${kpi.total_contacts}`} />
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <DollarSign className="h-3.5 w-3.5" />
-              Saldo Vencido
-            </div>
-            <p className={cn(
-              "mt-1 text-lg font-bold tabular-nums",
-              globalAging && (globalAging["1_30"] + globalAging["31_60"] + globalAging["61_90"] + globalAging["90_plus"]) > 0
-                ? "text-red-600 dark:text-red-400"
-                : "text-muted-foreground"
-            )}>
-              {globalAging ? formatCurrency(globalAging["1_30"] + globalAging["31_60"] + globalAging["61_90"] + globalAging["90_plus"]) : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Pipeline
-            </div>
-            <p className="mt-1 text-lg font-bold tabular-nums text-blue-600 dark:text-blue-400">
-              {pipelineGlobal ? formatCurrency(pipelineGlobal.pipeline_value) : "—"}
-            </p>
-            {pipelineGlobal && (
-              <p className="text-xs text-muted-foreground">{pipelineGlobal.total_opportunities} opps</p>
-            )}
-          </CardContent>
-        </Card>
-        <StatCard title="Entregas Atrasadas" value={lateDeliveryCount} icon={Truck} description="pendientes" />
-        <StatCard title="Desabasto" value={stockoutCount} icon={PackageX} description="alertas activas" />
-        <StatCard title="Compliance Bajo" value={lowComplianceCount} icon={CreditCard} description="contactos <50%" />
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  PERSPECTIVA 1: ALERTAS Y RIESGOS                           */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Alertas y Riesgos" icon={Shield} color="text-red-500" />
+
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="Alertas Criticas"
+          value={kpi.critical_alerts}
+          subtitle={`${kpi.open_alerts} abiertas total`}
+          icon={Bell}
+          href="/alerts?state=new&severity=critical"
+          variant={kpi.critical_alerts > 0 ? "danger" : "default"}
+        />
+        <KPICard
+          title="Contactos en Riesgo"
+          value={kpi.at_risk_contacts}
+          subtitle={`de ${kpi.total_contacts} externos`}
+          icon={Users}
+          href="/contacts?risk=high"
+          variant={kpi.at_risk_contacts > 0 ? "danger" : "default"}
+        />
+        <KPICard
+          title="Desabasto"
+          value={data.stockoutCount}
+          subtitle="alertas activas"
+          icon={PackageX}
+          href="/alerts?type=stockout_risk"
+          variant={data.stockoutCount > 0 ? "warning" : "default"}
+        />
+        <KPICard
+          title="Threads sin Respuesta"
+          value={data.threadsStalled}
+          subtitle="necesitan atencion"
+          icon={MessageSquare}
+          href="/threads?status=stalled"
+          variant={data.threadsStalled > 0 ? "warning" : "default"}
+        />
       </div>
 
-      {/* Alerts & Overdue Actions */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      {/* Alert + Risk detail cards */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <AlertTriangle className="h-4 w-4 text-red-500" />
-            <CardTitle>Alertas Recientes</CardTitle>
+          <CardHeader className="pb-3">
+            <Link href="/alerts" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-red-500" />
+                <CardTitle className="text-base">Alertas Recientes</CardTitle>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </CardHeader>
           <CardContent>
             {critical_alerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay alertas criticas.</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">Sin alertas criticas</p>
             ) : (
-              <div className="space-y-3">
-                {critical_alerts.map((alert) => (
-                  <Link key={alert.id} href={`/alerts/${alert.id}`} className="flex items-start justify-between gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <SeverityBadge severity={alert.severity} />
-                        <span className="text-sm font-medium leading-tight">{alert.title}</span>
-                      </div>
-                      {alert.contact_name && (
-                        <p className="text-xs text-muted-foreground">{alert.contact_name}</p>
-                      )}
-                    </div>
-                    <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(alert.created_at)}</span>
+              <div className="space-y-2">
+                {critical_alerts.map((alert: { id: number; title: string; severity: string; contact_name: string | null; created_at: string }) => (
+                  <Link key={alert.id} href={`/alerts/${alert.id}`} className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
+                    <SeverityBadge severity={alert.severity} />
+                    <span className="text-sm font-medium truncate flex-1">{alert.title}</span>
+                    <span className="text-xs text-muted-foreground shrink-0">{timeAgo(alert.created_at)}</span>
                   </Link>
                 ))}
               </div>
@@ -387,27 +366,29 @@ export default function DashboardPage() {
         </Card>
 
         <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <ClipboardList className="h-4 w-4 text-amber-500" />
-            <CardTitle>Acciones Vencidas</CardTitle>
+          <CardHeader className="pb-3">
+            <Link href="/contacts?risk=high" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <Users className="h-4 w-4 text-red-500" />
+                <CardTitle className="text-base">Contactos en Riesgo</CardTitle>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </CardHeader>
           <CardContent>
-            {overdue_actions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">No hay acciones vencidas.</p>
+            {contacts_at_risk.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Sin contactos en riesgo</p>
             ) : (
-              <div className="space-y-3">
-                {overdue_actions.map((action) => (
-                  <div key={action.id} className="flex items-start justify-between gap-3 rounded-lg border p-3">
-                    <div className="min-w-0 flex-1 space-y-1">
-                      <p className="text-sm font-medium leading-tight">{action.description}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {action.assignee_name ?? action.assignee_email ?? "Sin asignar"}
-                      </p>
+              <div className="space-y-2">
+                {contacts_at_risk.map((c: { id: number; name: string; risk_level: string; relationship_score: number | null; company_id: number | null }) => (
+                  <Link key={c.id} href={`/contacts/${c.id}`} className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
+                    <RiskBadge level={c.risk_level} />
+                    <span className="text-sm font-medium truncate flex-1">{c.name}</span>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Progress value={scoreToPercent(c.relationship_score)} className="h-1.5 w-16" />
+                      <span className="text-xs text-muted-foreground w-6 text-right">{c.relationship_score ?? 0}</span>
                     </div>
-                    <Badge variant="critical" className="shrink-0">
-                      {action.days_overdue}d vencida
-                    </Badge>
-                  </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -415,50 +396,160 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Global Aging & Late Deliveries */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Global Aging */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  PERSPECTIVA 2: FINANZAS Y OPERACIONES                      */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Finanzas y Operaciones" icon={DollarSign} color="text-amber-500" />
+
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="Saldo Vencido"
+          value={globalAging ? formatCurrency(overdueAmt) : "—"}
+          subtitle={globalAging ? `${formatCurrency(globalAging.total_outstanding)} total` : "cargando..."}
+          icon={CreditCard}
+          href="/analytics"
+          variant={overdueAmt > 0 ? "danger" : "default"}
+        />
+        <KPICard
+          title="Pipeline CRM"
+          value={pipelineGlobal ? formatCurrency(pipelineGlobal.pipeline_value) : "—"}
+          subtitle={pipelineGlobal ? `${pipelineGlobal.total_opportunities} oportunidades` : "cargando..."}
+          icon={TrendingUp}
+          href="/companies"
+          variant="info"
+        />
+        <KPICard
+          title="Entregas Atrasadas"
+          value={lateDeliveryCount}
+          subtitle="pendientes de envio"
+          icon={Truck}
+          href="/companies"
+          variant={lateDeliveryCount > 0 ? "warning" : "default"}
+        />
+        <KPICard
+          title="Compliance Bajo"
+          value={data.lowComplianceCount}
+          subtitle="contactos <50%"
+          icon={Target}
+          href="/contacts"
+          variant={data.lowComplianceCount > 0 ? "warning" : "default"}
+        />
+      </div>
+
+      {/* Aging chart */}
+      {globalAging && (
         <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <DollarSign className="h-4 w-4 text-amber-500" />
-            <CardTitle>Antiguedad de Saldos (Global)</CardTitle>
+          <CardHeader className="pb-3">
+            <Link href="/analytics" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-amber-500" />
+                <CardTitle className="text-base">Antiguedad de Saldos</CardTitle>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </CardHeader>
           <CardContent>
             <AgingChart data={globalAging} />
           </CardContent>
         </Card>
+      )}
 
-        {/* Late Deliveries */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  PERSPECTIVA 3: EJECUCION Y ACCOUNTABILITY                  */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Ejecucion y Accountability" icon={CheckSquare} color="text-purple-500" />
+
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="Acciones Vencidas"
+          value={kpi.overdue_actions}
+          subtitle={`${kpi.pending_actions} pendientes`}
+          icon={ClipboardList}
+          href="/actions?state=pending"
+          variant={kpi.overdue_actions > 0 ? "danger" : "default"}
+        />
+        <KPICard
+          title="Completadas"
+          value={kpi.completed_actions}
+          subtitle="acciones cerradas"
+          icon={CheckSquare}
+          href="/actions?state=completed"
+          variant="success"
+        />
+        <KPICard
+          title="Alertas Resueltas"
+          value={kpi.resolved_alerts}
+          subtitle="alertas cerradas"
+          icon={Bell}
+          href="/alerts?state=resolved"
+          variant="success"
+        />
+        <KPICard
+          title="Emails Procesados"
+          value={kpi.total_emails}
+          subtitle={`${data.totalThreads} threads`}
+          icon={Mail}
+          href="/threads"
+          variant="info"
+        />
+      </div>
+
+      {/* Overdue + Accountability */}
+      <div className="grid gap-4 lg:grid-cols-2">
         <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <Truck className="h-4 w-4 text-red-500" />
-            <CardTitle>Entregas Atrasadas</CardTitle>
-            {lateDeliveryCount > 0 && (
-              <Badge variant="critical">{lateDeliveryCount}</Badge>
-            )}
+          <CardHeader className="pb-3">
+            <Link href="/actions?state=pending" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <ClipboardList className="h-4 w-4 text-amber-500" />
+                <CardTitle className="text-base">Acciones Vencidas</CardTitle>
+                {overdue_actions.length > 0 && <Badge variant="critical">{overdue_actions.length}</Badge>}
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </CardHeader>
           <CardContent>
-            {lateDeliveries.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Sin entregas atrasadas.</p>
+            {overdue_actions.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Sin acciones vencidas</p>
             ) : (
               <div className="space-y-2">
-                {lateDeliveries.map((d, i) => (
-                  <div key={i} className="flex items-center justify-between gap-3 rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                {overdue_actions.map((a: { id: number; description: string; assignee_name: string | null; assignee_email: string | null; days_overdue: number }) => (
+                  <div key={a.id} className="flex items-center gap-3 rounded-lg border p-2.5">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{d.name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {d.origin ?? ""} {d.picking_type ? `· ${d.picking_type}` : ""}
-                      </p>
+                      <p className="text-sm font-medium truncate">{a.description}</p>
+                      <p className="text-xs text-muted-foreground">{a.assignee_name ?? a.assignee_email ?? "Sin asignar"}</p>
                     </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-xs tabular-nums text-red-600 dark:text-red-400">
-                        {d.scheduled_date ?? "—"}
-                      </p>
-                      {d.company_id && (
-                        <Link href={`/companies/${d.company_id}`} className="text-xs text-primary hover:underline">
-                          Ver empresa
-                        </Link>
-                      )}
+                    <Badge variant="critical" className="shrink-0">{a.days_overdue}d</Badge>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <Link href="/actions" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <UserCheck className="h-4 w-4 text-purple-500" />
+                <CardTitle className="text-base">Accountability</CardTitle>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          </CardHeader>
+          <CardContent>
+            {accountability.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">Sin datos de responsabilidad</p>
+            ) : (
+              <div className="space-y-2">
+                {accountability.map((a) => (
+                  <div key={a.email} className="flex items-center gap-3 rounded-lg border p-2.5">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">{a.name}</p>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {a.overdue > 0 && <Badge variant="critical" className="text-xs">{a.overdue} vencidas</Badge>}
+                      {a.pending > 0 && <Badge variant="warning" className="text-xs">{a.pending} pend.</Badge>}
+                      <Badge variant="success" className="text-xs">{a.completed}</Badge>
                     </div>
                   </div>
                 ))}
@@ -468,181 +559,68 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Latest Briefing & Accountability */}
-      <div className="grid gap-6 lg:grid-cols-2">
-        {/* Latest Briefing */}
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <FileText className="h-4 w-4 text-blue-500" />
-            <CardTitle>Ultimo Briefing</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {latest_briefing ? (
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  {latest_briefing.briefing_date} · {latest_briefing.total_emails ?? 0} emails procesados
-                </p>
-                <p className="text-sm line-clamp-6">
-                  {latest_briefing.summary_text
-                    ? latest_briefing.summary_text.slice(0, 400) + (latest_briefing.summary_text.length > 400 ? "..." : "")
-                    : "Sin resumen disponible."}
-                </p>
-                <Link
-                  href="/briefings"
-                  className="inline-block text-xs text-primary hover:underline mt-2"
-                >
-                  Ver todos los briefings
-                </Link>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No hay briefings generados aun.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  PERSPECTIVA 4: INTELIGENCIA Y CONOCIMIENTO                 */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Inteligencia y Conocimiento" icon={Brain} color="text-blue-500" />
 
-        {/* Accountability */}
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <UserCheck className="h-4 w-4 text-purple-500" />
-            <CardTitle>Responsabilidad</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {accountability && accountability.length > 0 ? (
-              <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Responsable</TableHead>
-                    <TableHead className="text-right">Pendientes</TableHead>
-                    <TableHead className="text-right">Completadas</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {accountability.map((a) => (
-                    <TableRow key={a.email}>
-                      <TableCell className="text-sm">
-                        <div className="font-medium">{a.name}</div>
-                        <div className="text-xs text-muted-foreground">{a.email}</div>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={a.pending > 3 ? "critical" : a.pending > 0 ? "warning" : "secondary"}>
-                          {a.pending}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant="success">{a.completed}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-              </div>
-            ) : (
-              <p className="text-sm text-muted-foreground">
-                No hay datos de responsabilidad disponibles.
-              </p>
-            )}
-          </CardContent>
-        </Card>
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <KPICard
+          title="Empresas"
+          value={data.totalCompanies}
+          subtitle="en el sistema"
+          icon={BarChart3}
+          href="/companies"
+          variant="info"
+        />
+        <KPICard
+          title="Knowledge Graph"
+          value={data.totalEntities}
+          subtitle={`${data.totalFacts} hechos`}
+          icon={Brain}
+          href="/knowledge"
+          variant={data.totalEntities > 0 ? "info" : "default"}
+        />
+        <KPICard
+          title="Chat IA"
+          value="Preguntar"
+          subtitle="Claude + RAG"
+          icon={MessageSquare}
+          href="/chat"
+          variant="info"
+        />
+        <KPICard
+          title="Sistema"
+          value="Monitor"
+          subtitle="pipelines y sync"
+          icon={Activity}
+          href="/system"
+          variant="default"
+        />
       </div>
 
-      {/* Contacts at Risk */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Contactos en Riesgo</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {contacts_at_risk.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No hay contactos en riesgo.</p>
-          ) : (
-            <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Nombre</TableHead>
-                  <TableHead>Empresa</TableHead>
-                  <TableHead>Riesgo</TableHead>
-                  <TableHead className="w-[140px]">Relacion</TableHead>
-                  <TableHead className="text-right">Alertas</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {contacts_at_risk.map((contact) => (
-                  <TableRow key={contact.id}>
-                    <TableCell className="font-medium">
-                      <Link href={`/contacts/${contact.id}`} className="text-primary hover:underline">
-                        {contact.name}
-                      </Link>
-                    </TableCell>
-                    <TableCell className="text-muted-foreground">{(contact as unknown as Record<string, unknown>).company as string ?? "—"}</TableCell>
-                    <TableCell><RiskBadge level={contact.risk_level} /></TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <Progress value={scoreToPercent(contact.relationship_score)} className="h-2 flex-1" />
-                        <span className="text-xs text-muted-foreground w-8 text-right">{contact.relationship_score ?? 0}</span>
-                      </div>
-                    </TableCell>
-                    <TableCell className="text-right">{contact.open_alerts}</TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-
-      {/* Team Dashboard */}
-      {teamMembers.length > 0 && (
+      {/* Briefing */}
+      {latestBriefing && (
         <Card>
-          <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <UserCog className="h-4 w-4 text-blue-500" />
-            <CardTitle>Equipo</CardTitle>
+          <CardHeader className="pb-3">
+            <Link href="/briefings" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-blue-500" />
+                <CardTitle className="text-base">Ultimo Briefing — {latestBriefing.briefing_date}</CardTitle>
+                <span className="text-xs text-muted-foreground">{latestBriefing.total_emails ?? 0} emails</span>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
           </CardHeader>
           <CardContent>
-            <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Miembro</TableHead>
-                  <TableHead>Departamento</TableHead>
-                  <TableHead className="text-right">Pendientes</TableHead>
-                  <TableHead className="text-right">Vencidas</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {teamMembers.map((member: Record<string, unknown>, idx: number) => {
-                  const overdue = Number(member.overdue_activities_count ?? member.overdue ?? 0);
-                  const pending = Number(member.pending_activities_count ?? member.pending ?? 0);
-                  return (
-                    <TableRow key={idx}>
-                      <TableCell>
-                        <div className="font-medium">{String(member.name ?? "—")}</div>
-                        {member.email ? <div className="text-xs text-muted-foreground">{String(member.email)}</div> : null}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-sm">
-                        {String(member.department ?? member.job_title ?? "—")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={pending > 5 ? "warning" : "secondary"}>{pending}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <Badge variant={overdue > 0 ? "critical" : "success"}>{overdue}</Badge>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-            </div>
+            <p className="text-sm line-clamp-4">
+              {latestBriefing.summary_text
+                ? latestBriefing.summary_text.slice(0, 500) + (latestBriefing.summary_text.length > 500 ? "..." : "")
+                : "Sin resumen disponible."}
+            </p>
           </CardContent>
         </Card>
       )}
-
-      {/* Prediction Stats */}
-      <PredictionStats />
     </div>
   );
 }
