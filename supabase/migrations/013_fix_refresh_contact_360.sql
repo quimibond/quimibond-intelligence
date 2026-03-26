@@ -1,0 +1,11 @@
+-- Migration 013: Fix refresh_contact_360 email parsing
+-- Same "Name <email>" bug as resolve_all_connections (fix #10).
+-- The RPC compared e.sender = contact_email directly, which never matched.
+-- Also: now counts received emails (was only counting sent).
+-- Applied via Supabase MCP on 2026-03-26.
+--
+-- Impact: 70 contacts now have email stats (was 0).
+--   sum_sent=91, sum_received=305
+
+-- See full RPC source in Supabase dashboard.
+-- The function was replaced in-place via CREATE OR REPLACE.
