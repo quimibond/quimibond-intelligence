@@ -1,0 +1,12 @@
+-- Migration 011: Add entity_id resolution to resolve_all_connections RPC
+-- Previously the RPC resolved company_id across tables but never linked
+-- contacts.entity_id or companies.entity_id to the knowledge graph.
+-- This caused 100% of contacts and companies to have entity_id = NULL.
+-- Applied via Supabase MCP on 2026-03-26.
+--
+-- New steps added:
+--   9. contacts → entities (by email, then by canonical_name)
+--  10. companies → entities (by canonical_name)
+
+-- See full function source in Supabase dashboard.
+-- The RPC was replaced in-place via CREATE OR REPLACE FUNCTION.
