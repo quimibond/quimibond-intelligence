@@ -840,7 +840,7 @@ export default function CompanyDetailPage() {
                       <CardTitle className="text-sm">Inventario en Riesgo</CardTitle>
                     </CardHeader>
                     <CardContent>
-                      <div className="rounded-md border">
+                      <div className="overflow-x-auto rounded-md border">
                         <Table>
                           <TableHeader>
                             <TableRow>
@@ -930,7 +930,7 @@ export default function CompanyDetailPage() {
               description="No se encontraron contactos asociados a esta empresa."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1008,7 +1008,7 @@ export default function CompanyDetailPage() {
               description="No se han extraido hechos relacionados con esta empresa."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1128,7 +1128,7 @@ export default function CompanyDetailPage() {
                 <CardTitle className="text-sm">Pagos Recientes</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
+                <div className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1179,7 +1179,7 @@ export default function CompanyDetailPage() {
                 <CardTitle className="text-sm">Metricas Odoo (Snapshots)</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="rounded-md border">
+                <div className="overflow-x-auto rounded-md border">
                   <Table>
                     <TableHeader>
                       <TableRow>
@@ -1235,7 +1235,7 @@ export default function CompanyDetailPage() {
               description="No hay alertas asociadas a esta empresa."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1281,7 +1281,7 @@ export default function CompanyDetailPage() {
               description="No hay acciones pendientes para esta empresa."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1431,7 +1431,7 @@ export default function CompanyDetailPage() {
               description="No se encontraron correos asociados a esta empresa."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -1473,7 +1473,7 @@ export default function CompanyDetailPage() {
               description="No se encontraron productos asociados a esta empresa."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>

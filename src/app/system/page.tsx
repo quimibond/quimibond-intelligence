@@ -167,7 +167,7 @@ export default function SystemPage() {
               </p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -271,7 +271,7 @@ export default function SystemPage() {
               </p>
             </div>
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>

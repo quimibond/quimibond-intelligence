@@ -233,8 +233,8 @@ export default function KnowledgePage() {
 
         {/* ── Tab: Entidades ── */}
         <TabsContent value="entities">
-          <div className="flex items-center gap-3 py-4">
-            <div className="relative flex-1 max-w-sm">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 py-4">
+            <div className="relative flex-1 sm:max-w-sm">
               <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 placeholder="Buscar por nombre o email..."
@@ -266,7 +266,7 @@ export default function KnowledgePage() {
               description="No se encontraron entidades con los filtros actuales."
             />
           ) : (
-            <div className="rounded-md border">
+            <div className="overflow-x-auto rounded-md border">
               <Table>
                 <TableHeader>
                   <TableRow>

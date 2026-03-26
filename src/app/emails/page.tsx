@@ -112,7 +112,7 @@ export default function EmailsPage() {
       />
 
       <div className="flex flex-wrap items-center gap-3 pb-4">
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar por remitente, destinatario o asunto..."
@@ -147,66 +147,96 @@ export default function EmailsPage() {
           description="No se encontraron correos con los filtros actuales."
         />
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Fecha</TableHead>
-                <TableHead>Remitente</TableHead>
-                <TableHead>Destinatario</TableHead>
-                <TableHead>Asunto</TableHead>
-                <TableHead>Tipo</TableHead>
-                <TableHead className="w-10" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((email) => (
-                <TableRow key={email.id} className="cursor-pointer hover:bg-muted/50">
-                  <TableCell className="whitespace-nowrap text-muted-foreground">
-                    <Link href={`/emails/${email.id}`} className="contents">
-                      {formatDateTime(email.email_date)}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/emails/${email.id}`}
-                      className="text-sm hover:underline"
-                    >
-                      {truncate(email.sender, 40) || "—"}
-                    </Link>
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {truncate(email.recipient, 40) || "—"}
-                  </TableCell>
-                  <TableCell>
-                    <Link
-                      href={`/emails/${email.id}`}
-                      className="font-medium hover:underline"
-                    >
-                      {truncate(email.subject, 60) || "—"}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    {email.sender_type && (
-                      <Badge
-                        variant={
-                          senderTypeBadgeVariant[email.sender_type] ?? "secondary"
-                        }
-                      >
-                        {senderTypeLabel[email.sender_type] ?? email.sender_type}
-                      </Badge>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {email.has_attachments && (
-                      <Paperclip className="h-4 w-4 text-muted-foreground" />
-                    )}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+        <>
+        {/* Mobile card layout */}
+        <div className="space-y-3 md:hidden">
+          {filtered.map((email) => (
+            <div key={email.id} className="rounded-lg border bg-card p-4 space-y-2">
+              <Link href={`/emails/${email.id}`} className="block">
+                <p className="text-sm font-medium line-clamp-1">{email.subject || "—"}</p>
+                <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
+                  <span className="truncate">{email.sender || "—"}</span>
+                  <span>→</span>
+                  <span className="truncate">{truncate(email.recipient, 30) || "—"}</span>
+                </div>
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-muted-foreground">{formatDateTime(email.email_date)}</span>
+                  {email.sender_type && (
+                    <Badge variant={senderTypeBadgeVariant[email.sender_type] ?? "secondary"}>
+                      {senderTypeLabel[email.sender_type] ?? email.sender_type}
+                    </Badge>
+                  )}
+                  {email.has_attachments && <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />}
+                </div>
+              </Link>
+            </div>
+          ))}
         </div>
+
+        {/* Desktop table layout */}
+        <div className="hidden md:block">
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Fecha</TableHead>
+                  <TableHead>Remitente</TableHead>
+                  <TableHead>Destinatario</TableHead>
+                  <TableHead>Asunto</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead className="w-10" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((email) => (
+                  <TableRow key={email.id} className="cursor-pointer hover:bg-muted/50">
+                    <TableCell className="whitespace-nowrap text-muted-foreground">
+                      <Link href={`/emails/${email.id}`} className="contents">
+                        {formatDateTime(email.email_date)}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/emails/${email.id}`}
+                        className="text-sm hover:underline"
+                      >
+                        {truncate(email.sender, 40) || "—"}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {truncate(email.recipient, 40) || "—"}
+                    </TableCell>
+                    <TableCell>
+                      <Link
+                        href={`/emails/${email.id}`}
+                        className="font-medium hover:underline"
+                      >
+                        {truncate(email.subject, 60) || "—"}
+                      </Link>
+                    </TableCell>
+                    <TableCell>
+                      {email.sender_type && (
+                        <Badge
+                          variant={
+                            senderTypeBadgeVariant[email.sender_type] ?? "secondary"
+                          }
+                        >
+                          {senderTypeLabel[email.sender_type] ?? email.sender_type}
+                        </Badge>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {email.has_attachments && (
+                        <Paperclip className="h-4 w-4 text-muted-foreground" />
+                      )}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
+        </>
       )}
 
       {hasMore && filtered.length > 0 && (

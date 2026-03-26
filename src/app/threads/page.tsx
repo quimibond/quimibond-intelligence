@@ -197,7 +197,7 @@ export default function ThreadsPage() {
 
       {/* Filter bar */}
       <div className="flex flex-wrap items-center gap-3 pb-4">
-        <div className="w-48">
+        <div className="w-full sm:w-48">
           <Select
             value={statusFilter}
             onChange={(e) =>
@@ -256,40 +256,185 @@ export default function ThreadsPage() {
           description="No se encontraron hilos de conversaci\u00f3n con los filtros actuales."
         />
       ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-8" />
-                <TableHead>Asunto</TableHead>
-                <TableHead>Participantes</TableHead>
-                <TableHead className="text-center">Mensajes</TableHead>
-                <TableHead>\u00daltimo remitente</TableHead>
-                <TableHead>Sin respuesta</TableHead>
-                <TableHead>Estado</TableHead>
-                <TableHead>Fecha</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((thread) => {
-                const isExpanded = expandedId === thread.id;
-                const emails = threadEmails[thread.id];
-                const isLoadingRow = loadingEmails === thread.id;
+        <>
+          {/* Mobile card layout */}
+          <div className="space-y-3 md:hidden">
+            {filtered.map((thread) => {
+              const hours = thread.hours_without_response;
+              const participants = thread.participant_emails ?? [];
+              const displayParticipants = participants.slice(0, 3);
+              const extraCount = participants.length - displayParticipants.length;
+              const type = thread.last_sender_type;
+              const isExpanded = expandedId === thread.id;
+              const emails = threadEmails[thread.id];
+              const isLoadingRow = loadingEmails === thread.id;
 
-                return (
-                  <ThreadRow
-                    key={thread.id}
-                    thread={thread}
-                    isExpanded={isExpanded}
-                    emails={emails}
-                    isLoadingEmails={isLoadingRow}
-                    onToggle={() => toggleRow(thread)}
-                  />
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+              return (
+                <div
+                  key={thread.id}
+                  className={cn(
+                    "rounded-lg border bg-card p-4 space-y-2",
+                    rowBgClass(hours)
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <Link
+                        href={`/threads/${thread.id}`}
+                        className="text-sm font-medium hover:underline line-clamp-2"
+                      >
+                        {thread.subject || "\u2014"}
+                      </Link>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {truncate(thread.last_sender, 30)} &middot;{" "}
+                        {thread.message_count} msgs &middot;{" "}
+                        {timeAgo(thread.created_at)}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => toggleRow(thread)}
+                      className="shrink-0 p-1"
+                    >
+                      <ChevronDown
+                        className={`h-4 w-4 transition-transform ${
+                          isExpanded ? "rotate-180" : ""
+                        }`}
+                      />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={urgencyBadgeVariant(hours)}>
+                      {urgencyLabel(hours)}
+                    </Badge>
+                    <span className="text-xs tabular-nums font-medium">
+                      {formatHoursWithout(hours)}
+                    </span>
+                    {type && (
+                      <Badge
+                        variant={senderTypeVariant(type)}
+                        className="text-[10px]"
+                      >
+                        {senderTypeLabel(type)}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Participants */}
+                  <div className="flex flex-wrap gap-1">
+                    {displayParticipants.map((email) => (
+                      <Badge
+                        key={email}
+                        variant="secondary"
+                        className="truncate max-w-[140px] text-[10px]"
+                      >
+                        {email}
+                      </Badge>
+                    ))}
+                    {extraCount > 0 && (
+                      <Badge variant="outline" className="text-[10px]">
+                        +{extraCount}
+                      </Badge>
+                    )}
+                  </div>
+
+                  {/* Expanded emails */}
+                  {isExpanded && (
+                    <div className="space-y-2 pt-2 border-t">
+                      {isLoadingRow ? (
+                        <div className="space-y-2">
+                          {Array.from({ length: 3 }).map((_, i) => (
+                            <Skeleton key={i} className="h-16 w-full" />
+                          ))}
+                        </div>
+                      ) : !emails || emails.length === 0 ? (
+                        <p className="py-4 text-center text-sm text-muted-foreground">
+                          No se encontraron emails para este hilo.
+                        </p>
+                      ) : (
+                        emails.map((email) => (
+                          <div
+                            key={email.id}
+                            className={cn(
+                              "rounded-lg border bg-background p-3",
+                              email.sender_type === "outbound"
+                                ? "border-blue-200 dark:border-blue-800/40"
+                                : "border-border"
+                            )}
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="text-sm font-medium truncate">
+                                  {email.sender || "\u2014"}
+                                </span>
+                                {email.sender_type && (
+                                  <Badge
+                                    variant={senderTypeVariant(
+                                      email.sender_type
+                                    )}
+                                    className="shrink-0 text-[10px]"
+                                  >
+                                    {senderTypeLabel(email.sender_type)}
+                                  </Badge>
+                                )}
+                              </div>
+                              <span className="shrink-0 text-xs text-muted-foreground">
+                                {timeAgo(email.email_date)}
+                              </span>
+                            </div>
+                            {email.snippet && (
+                              <p className="mt-1.5 text-sm text-muted-foreground leading-relaxed">
+                                {truncate(email.snippet, 200)}
+                              </p>
+                            )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Desktop table layout */}
+          <div className="hidden md:block">
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead className="w-8" />
+                    <TableHead>Asunto</TableHead>
+                    <TableHead>Participantes</TableHead>
+                    <TableHead className="text-center">Mensajes</TableHead>
+                    <TableHead>\u00daltimo remitente</TableHead>
+                    <TableHead>Sin respuesta</TableHead>
+                    <TableHead>Estado</TableHead>
+                    <TableHead>Fecha</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((thread) => {
+                    const isExpanded = expandedId === thread.id;
+                    const emails = threadEmails[thread.id];
+                    const isLoadingRow = loadingEmails === thread.id;
+
+                    return (
+                      <ThreadRow
+                        key={thread.id}
+                        thread={thread}
+                        isExpanded={isExpanded}
+                        emails={emails}
+                        isLoadingEmails={isLoadingRow}
+                        onToggle={() => toggleRow(thread)}
+                      />
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+        </>
       )}
     </div>
   );

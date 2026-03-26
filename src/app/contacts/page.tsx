@@ -89,8 +89,8 @@ export default function ContactsPage() {
         description="Directorio de contactos con inteligencia relacional"
       />
 
-      <div className="flex items-center gap-3 pb-4">
-        <div className="relative flex-1 max-w-sm">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pb-4">
+        <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar por nombre, email o empresa..."
@@ -124,6 +124,60 @@ export default function ContactsPage() {
           description="No se encontraron contactos con los filtros actuales."
         />
       ) : (
+        <>
+        {/* Mobile card layout */}
+        <div className="space-y-3 md:hidden">
+          {filtered.map((contact) => (
+            <div key={contact.id} className="rounded-lg border bg-card p-4 space-y-2">
+              <div className="flex items-center gap-3">
+                <Avatar className="h-10 w-10">
+                  <AvatarFallback>{getInitials(contact.name)}</AvatarFallback>
+                </Avatar>
+                <div className="min-w-0 flex-1">
+                  <Link href={`/contacts/${contact.id}`} className="text-sm font-medium hover:underline">
+                    {contact.name ?? "—"}
+                  </Link>
+                  {contact.email && (
+                    <p className="text-xs text-muted-foreground truncate">{contact.email}</p>
+                  )}
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {contact.company_id ? (
+                  <Link href={`/companies/${contact.company_id}`} className="hover:underline hover:text-foreground">
+                    {(contact as unknown as Record<string, unknown>).company as string ?? `Empresa #${contact.company_id}`}
+                  </Link>
+                ) : "—"}
+                {" · "}
+                {contact.role ?? "—"}
+                {" · "}
+                {contact.contact_type ?? "—"}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <RiskBadge level={contact.risk_level} />
+                <span
+                  className={cn(
+                    "tabular-nums font-medium",
+                    sentimentColor(contact.sentiment_score)
+                  )}
+                >
+                  Sent: {contact.sentiment_score != null
+                    ? contact.sentiment_score.toFixed(2)
+                    : "—"}
+                </span>
+                <span className="text-muted-foreground">
+                  Emails: {(contact.total_sent ?? 0) + (contact.total_received ?? 0)}
+                </span>
+                <span className="text-muted-foreground">
+                  {timeAgo(contact.last_activity)}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Desktop table layout */}
+        <div className="hidden md:block">
         <div className="rounded-md border">
           <Table>
             <TableHeader>
@@ -203,6 +257,8 @@ export default function ContactsPage() {
             </TableBody>
           </Table>
         </div>
+        </div>
+        </>
       )}
 
       {hasMore && filtered.length > 0 && (

@@ -510,6 +510,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {accountability && accountability.length > 0 ? (
+              <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -537,6 +538,7 @@ export default function DashboardPage() {
                   ))}
                 </TableBody>
               </Table>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground">
                 No hay datos de responsabilidad disponibles.
@@ -555,6 +557,7 @@ export default function DashboardPage() {
           {contacts_at_risk.length === 0 ? (
             <p className="text-sm text-muted-foreground">No hay contactos en riesgo.</p>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -586,6 +589,7 @@ export default function DashboardPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
@@ -598,6 +602,7 @@ export default function DashboardPage() {
             <CardTitle>Equipo</CardTitle>
           </CardHeader>
           <CardContent>
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -631,6 +636,7 @@ export default function DashboardPage() {
                 })}
               </TableBody>
             </Table>
+            </div>
           </CardContent>
         </Card>
       )}

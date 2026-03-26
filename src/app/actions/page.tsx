@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   ClipboardList,
   Clock,
   Loader2,
@@ -274,97 +275,77 @@ export default function ActionsPage() {
           description="No hay acciones que coincidan con los filtros seleccionados."
         />
       ) : (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-[40px]">
-                <input
-                  type="checkbox"
-                  checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                  onChange={toggleSelectAll}
-                  className="h-4 w-4 rounded border-gray-300"
-                />
-              </TableHead>
-              <TableHead>Descripcion</TableHead>
-              <TableHead>Contacto</TableHead>
-              <TableHead>Empresa</TableHead>
-              <TableHead>Prioridad</TableHead>
-              <TableHead>Estado</TableHead>
-              <TableHead>Responsable</TableHead>
-              <TableHead>Vencimiento</TableHead>
-              <TableHead className="w-[100px]">Creada</TableHead>
-              <TableHead className="w-[120px]" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
+        <>
+          {/* Mobile card layout */}
+          <div className="space-y-3 md:hidden">
+            {/* Select all row for mobile */}
+            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2">
+              <input
+                type="checkbox"
+                checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                onChange={toggleSelectAll}
+                className="h-4 w-4 rounded border-gray-300"
+              />
+              <span className="text-sm text-muted-foreground">
+                Seleccionar todas ({filtered.length})
+              </span>
+            </div>
+
             {filtered.map((action) => {
               const overdue = isOverdue(action);
+              const reason = (action as unknown as Record<string, unknown>).reason;
               return (
-                <TableRow key={action.id}>
-                  <TableCell>
+                <div key={action.id} className="rounded-lg border bg-card p-4 space-y-3">
+                  <div className="flex items-start gap-2">
                     <input
                       type="checkbox"
                       checked={selectedIds.has(action.id)}
                       onChange={() => toggleSelect(action.id)}
-                      className="h-4 w-4 rounded border-gray-300"
+                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
                     />
-                  </TableCell>
-                  <TableCell className="max-w-[300px]">
-                    <p className="font-medium">{action.description}</p>
-                    {typeof (action as unknown as Record<string, unknown>).reason === "string" && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {(action as unknown as Record<string, unknown>).reason as string}
-                      </p>
-                    )}
-                  </TableCell>
-                  <TableCell>
-                    {action.contact_id ? (
-                      <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
-                        {action.contact_name ?? "—"}
-                      </Link>
-                    ) : (action.contact_name ?? "—")}
-                  </TableCell>
-                  <TableCell>
-                    {action.company_id ? (
-                      <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
-                        {action.contact_company ?? "—"}
-                      </Link>
-                    ) : (action.contact_company ?? "—")}
-                  </TableCell>
-                  <TableCell>
-                    <Badge
-                      variant={priorityVariantMap[action.priority] ?? "secondary"}
-                    >
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium">{action.description}</p>
+                      {typeof reason === "string" && (
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {reason}
+                        </p>
+                      )}
+                      <div className="mt-1 text-xs text-muted-foreground">
+                        {action.contact_id ? (
+                          <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
+                            {action.contact_name ?? "—"}
+                          </Link>
+                        ) : (action.contact_name ?? "—")}
+                        {" · "}
+                        {action.company_id ? (
+                          <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
+                            {action.contact_company ?? "—"}
+                          </Link>
+                        ) : (action.contact_company ?? "—")}
+                        {" · "}
+                        {timeAgo(action.created_at)}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant={priorityVariantMap[action.priority] ?? "secondary"}>
                       {priorityLabelMap[action.priority] ?? action.priority}
                     </Badge>
-                  </TableCell>
-                  <TableCell>
                     <StateBadge state={action.state} />
-                  </TableCell>
-                  <TableCell className="text-sm">
-                    {action.assignee_email ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    {action.due_date ? (
-                      <span
-                        className={
-                          overdue
-                            ? "font-medium text-red-600 dark:text-red-400"
-                            : "text-muted-foreground"
-                        }
-                      >
-                        {formatDate(action.due_date)}
-                        {overdue && " (vencida)"}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
+                    {overdue && action.due_date && (
+                      <Badge variant="critical">Vencida {formatDate(action.due_date)}</Badge>
                     )}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {timeAgo(action.created_at)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-1">
+                    {!overdue && action.due_date && (
+                      <span className="text-xs text-muted-foreground">
+                        Vence {formatDate(action.due_date)}
+                      </span>
+                    )}
+                    {action.assignee_email && (
+                      <span className="text-xs text-muted-foreground">{action.assignee_email}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
                       {action.state === "pending" && (
                         <>
                           <Button
@@ -385,18 +366,145 @@ export default function ActionsPage() {
                           </Button>
                         </>
                       )}
-                      <FeedbackButtons
-                        table="action_items"
-                        id={action.id}
-                        currentFeedback={null}
-                      />
                     </div>
-                  </TableCell>
-                </TableRow>
+                    <FeedbackButtons
+                      table="action_items"
+                      id={action.id}
+                      currentFeedback={null}
+                    />
+                  </div>
+                </div>
               );
             })}
-          </TableBody>
-        </Table>
+          </div>
+
+          {/* Desktop table layout */}
+          <div className="hidden md:block">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-[40px]">
+                    <input
+                      type="checkbox"
+                      checked={filtered.length > 0 && selectedIds.size === filtered.length}
+                      onChange={toggleSelectAll}
+                      className="h-4 w-4 rounded border-gray-300"
+                    />
+                  </TableHead>
+                  <TableHead>Descripcion</TableHead>
+                  <TableHead>Contacto</TableHead>
+                  <TableHead>Empresa</TableHead>
+                  <TableHead>Prioridad</TableHead>
+                  <TableHead>Estado</TableHead>
+                  <TableHead>Responsable</TableHead>
+                  <TableHead>Vencimiento</TableHead>
+                  <TableHead className="w-[100px]">Creada</TableHead>
+                  <TableHead className="w-[120px]" />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filtered.map((action) => {
+                  const overdue = isOverdue(action);
+                  return (
+                    <TableRow key={action.id}>
+                      <TableCell>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(action.id)}
+                          onChange={() => toggleSelect(action.id)}
+                          className="h-4 w-4 rounded border-gray-300"
+                        />
+                      </TableCell>
+                      <TableCell className="max-w-[300px]">
+                        <p className="font-medium">{action.description}</p>
+                        {typeof (action as unknown as Record<string, unknown>).reason === "string" && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {(action as unknown as Record<string, unknown>).reason as string}
+                          </p>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        {action.contact_id ? (
+                          <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
+                            {action.contact_name ?? "—"}
+                          </Link>
+                        ) : (action.contact_name ?? "—")}
+                      </TableCell>
+                      <TableCell>
+                        {action.company_id ? (
+                          <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
+                            {action.contact_company ?? "—"}
+                          </Link>
+                        ) : (action.contact_company ?? "—")}
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={priorityVariantMap[action.priority] ?? "secondary"}
+                        >
+                          {priorityLabelMap[action.priority] ?? action.priority}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <StateBadge state={action.state} />
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        {action.assignee_email ?? "—"}
+                      </TableCell>
+                      <TableCell>
+                        {action.due_date ? (
+                          <span
+                            className={
+                              overdue
+                                ? "font-medium text-red-600 dark:text-red-400"
+                                : "text-muted-foreground"
+                            }
+                          >
+                            {formatDate(action.due_date)}
+                            {overdue && " (vencida)"}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {timeAgo(action.created_at)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-1">
+                          {action.state === "pending" && (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Completar"
+                                onClick={() => markCompleted(action.id)}
+                              >
+                                <CheckCircle2 className="h-4 w-4" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                title="Descartar"
+                                onClick={() => dismiss(action.id)}
+                              >
+                                <XCircle className="h-4 w-4" />
+                              </Button>
+                            </>
+                          )}
+                          <FeedbackButtons
+                            table="action_items"
+                            id={action.id}
+                            currentFeedback={null}
+                          />
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        </>
       )}
 
       {/* Load more */}
@@ -411,21 +519,21 @@ export default function ActionsPage() {
 
       {/* Floating bulk action bar */}
       {selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-background px-5 py-3 shadow-lg">
+        <div className="fixed bottom-6 left-1/2 z-50 flex max-w-[calc(100vw-2rem)] -translate-x-1/2 items-center gap-2 md:gap-3 rounded-lg border bg-background px-3 md:px-5 py-3 shadow-lg">
           <span className="text-sm font-medium">
             {selectedIds.size} seleccionada{selectedIds.size !== 1 ? "s" : ""}
           </span>
           <Button size="sm" variant="outline" onClick={() => bulkUpdateState("completed")}>
             <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-            Completar
+            <span className="hidden md:inline">Completar</span>
           </Button>
           <Button size="sm" variant="outline" onClick={() => bulkUpdateState("dismissed")}>
             <XCircle className="mr-1 h-3.5 w-3.5" />
-            Descartar
+            <span className="hidden md:inline">Descartar</span>
           </Button>
           <Button size="sm" variant="ghost" onClick={() => setSelectedIds(new Set())}>
             <X className="mr-1 h-3.5 w-3.5" />
-            Deseleccionar
+            <span className="hidden md:inline">Deseleccionar</span>
           </Button>
         </div>
       )}

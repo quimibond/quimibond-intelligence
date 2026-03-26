@@ -595,6 +595,7 @@ export default function AnalyticsPage() {
               Sin datos de cuentas.
             </p>
           ) : (
+            <div className="overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
@@ -635,6 +636,7 @@ export default function AnalyticsPage() {
                 ))}
               </TableBody>
             </Table>
+            </div>
           )}
         </CardContent>
       </Card>
