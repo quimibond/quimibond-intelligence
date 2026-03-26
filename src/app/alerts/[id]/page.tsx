@@ -137,7 +137,7 @@ export default function AlertDetailPage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
         {/* Main content */}
         <div className="lg:col-span-2 space-y-6">
           {alert.description && (

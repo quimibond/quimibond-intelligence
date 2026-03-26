@@ -17,7 +17,7 @@ const severityLabelMap: Record<string, string> = {
   low: "Baja",
   medium: "Media",
   high: "Alta",
-  critical: "Critica",
+  critical: "Crítica",
 };
 
 export function SeverityBadge({ severity }: SeverityBadgeProps) {

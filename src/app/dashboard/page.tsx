@@ -277,7 +277,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Centro de Control" description="Balanced Scorecard — Quimibond Intelligence" />
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-[100px] w-full" />
           ))}
@@ -301,7 +301,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Alertas y Riesgos" icon={Shield} color="text-red-500" />
 
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KPICard
           title="Alertas Criticas"
           value={kpi.critical_alerts}
@@ -401,7 +401,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Finanzas y Operaciones" icon={DollarSign} color="text-amber-500" />
 
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KPICard
           title="Saldo Vencido"
           value={globalAging ? formatCurrency(overdueAmt) : "—"}
@@ -459,7 +459,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Ejecucion y Accountability" icon={CheckSquare} color="text-purple-500" />
 
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KPICard
           title="Acciones Vencidas"
           value={kpi.overdue_actions}
@@ -564,7 +564,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Inteligencia y Conocimiento" icon={Brain} color="text-blue-500" />
 
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KPICard
           title="Empresas"
           value={data.totalCompanies}

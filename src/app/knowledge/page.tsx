@@ -246,7 +246,7 @@ export default function KnowledgePage() {
             <Select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-40"
+              className="w-full sm:w-40"
             >
               <option value="all">Todas</option>
               {entityTypes.map((t) => (
