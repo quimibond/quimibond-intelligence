@@ -262,7 +262,7 @@ export interface Briefing {
   id: number;
   scope: "daily" | "account" | "company" | "weekly";
   briefing_date: string;
-  account: string | null;
+  account: string;
   company_id: number | null;
   // Content
   title: string | null;

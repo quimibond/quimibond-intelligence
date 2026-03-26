@@ -1,0 +1,15 @@
+-- Migration 012: Fix email parsing in resolve_all_connections
+-- emails.sender stores "Name <email>" format but contacts.email is just "email".
+-- The old RPC compared lower(trim(sender)) = email which NEVER matched.
+-- Result: 236/238 emails had sender_contact_id = NULL.
+--
+-- Fix: extract email from "Name <email>" format using substring regex.
+-- Also added threads.started_by_contact_id resolution (step 3b).
+-- Applied via Supabase MCP on 2026-03-26.
+--
+-- Impact of first run:
+--   89 emails → contacts, 88 emails → companies,
+--   69 threads → companies, 65 threads → contacts, 8 contacts named
+
+-- See full RPC source in Supabase dashboard.
+-- The function was replaced in-place via CREATE OR REPLACE.
