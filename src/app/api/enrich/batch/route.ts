@@ -33,8 +33,9 @@ export async function POST(request: NextRequest) {
     let enriched = 0;
     let errors = 0;
 
+    const origin = request.headers.get("origin") ?? request.nextUrl.origin;
+
     if (type === "contacts") {
-      // Find contacts without profile data (role is null = not enriched)
       const { data: contactsToEnrich } = await supabase
         .from("contacts")
         .select("id, name, email")
@@ -42,60 +43,45 @@ export async function POST(request: NextRequest) {
         .order("updated_at", { ascending: false })
         .limit(limit);
 
-      for (const contact of contactsToEnrich ?? []) {
-        try {
-          const origin = request.headers.get("origin") ?? request.nextUrl.origin;
+      const results = await Promise.allSettled(
+        (contactsToEnrich ?? []).map(async (contact) => {
           const res = await fetch(`${origin}/api/enrich/contact`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ contact_id: contact.id }),
           });
-
-          if (res.ok) {
-            enriched++;
-          } else {
-            errors++;
-            console.error(
-              `Failed to enrich contact ${contact.id}:`,
-              await res.text()
-            );
+          if (!res.ok) {
+            const text = await res.text();
+            console.error(`Failed to enrich contact ${contact.id}:`, text);
+            throw new Error(text);
           }
-        } catch (err) {
-          errors++;
-          console.error(`Error enriching contact ${contact.id}:`, err);
-        }
-      }
+        })
+      );
+      enriched = results.filter((r) => r.status === "fulfilled").length;
+      errors = results.filter((r) => r.status === "rejected").length;
     } else {
-      // Find companies without enrichment
       const { data: companies } = await supabase
         .from("companies")
         .select("id, name")
         .is("enriched_at", null)
         .limit(limit);
 
-      for (const company of companies ?? []) {
-        try {
-          const origin = request.headers.get("origin") ?? request.nextUrl.origin;
+      const results = await Promise.allSettled(
+        (companies ?? []).map(async (company) => {
           const res = await fetch(`${origin}/api/enrich/company`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ company_id: company.id }),
           });
-
-          if (res.ok) {
-            enriched++;
-          } else {
-            errors++;
-            console.error(
-              `Failed to enrich company ${company.id}:`,
-              await res.text()
-            );
+          if (!res.ok) {
+            const text = await res.text();
+            console.error(`Failed to enrich company ${company.id}:`, text);
+            throw new Error(text);
           }
-        } catch (err) {
-          errors++;
-          console.error(`Error enriching company ${company.id}:`, err);
-        }
-      }
+        })
+      );
+      enriched = results.filter((r) => r.status === "fulfilled").length;
+      errors = results.filter((r) => r.status === "rejected").length;
     }
 
     return NextResponse.json({ success: errors === 0, enriched, errors });
