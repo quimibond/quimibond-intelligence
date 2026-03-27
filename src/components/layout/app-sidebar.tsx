@@ -73,6 +73,9 @@ export function AppSidebar() {
   const isActive = (href: string) =>
     pathname === href || pathname.startsWith(href + "/");
 
+  // Hide sidebar on login page
+  if (pathname === "/login") return null;
+
   return (
     <>
       {/* Mobile hamburger */}

@@ -1,10 +1,17 @@
 "use client";
 
+import { usePathname } from "next/navigation";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
 
 export function MainContent({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();
+  const pathname = usePathname();
+
+  // Login page: no sidebar padding, no mobile top padding
+  if (pathname === "/login") {
+    return <main>{children}</main>;
+  }
 
   return (
     <main
