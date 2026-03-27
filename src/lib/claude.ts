@@ -1,8 +1,22 @@
 /**
- * Shared Claude API helper with retry logic and token logging.
+ * Shared Claude API helper with retry logic, token logging, and usage tracking.
  */
+import { createClient } from "@supabase/supabase-js";
 
 const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
+
+/** Fire-and-forget token usage logging to Supabase */
+export function logTokenUsage(endpoint: string, model: string, input_tokens: number, output_tokens: number) {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    if (!url || !key) return;
+    const supabase = createClient(url, key);
+    supabase.from("token_usage").insert({ endpoint, model, input_tokens, output_tokens }).then();
+  } catch {
+    // Never block on usage logging
+  }
+}
 const MAX_RETRIES = 3;
 const RETRYABLE_STATUSES = [429, 529, 502, 503];
 
@@ -90,8 +104,10 @@ export async function callClaudeJSON<T>(
 
   const data: ClaudeResponse = await response.json();
 
+  const model = options.model || process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
   if (data.usage) {
     console.log(`[${label}] Tokens — in: ${data.usage.input_tokens}, out: ${data.usage.output_tokens}`);
+    logTokenUsage(label, model, data.usage.input_tokens, data.usage.output_tokens);
   }
 
   const rawText = data.content?.[0]?.text ?? "";
@@ -111,4 +127,39 @@ export async function callClaudeJSON<T>(
   }
 
   return { result: parsed, usage: data.usage };
+}
+
+/**
+ * Generate embeddings using Voyage AI API (same model as qb19 backend: voyage-3, 1024 dims).
+ * Returns null if VOYAGE_API_KEY is not set — allows graceful fallback.
+ */
+export async function getVoyageEmbedding(text: string): Promise<number[] | null> {
+  const apiKey = process.env.VOYAGE_API_KEY;
+  if (!apiKey) return null;
+
+  try {
+    const response = await fetch("https://api.voyageai.com/v1/embeddings", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({
+        model: "voyage-3",
+        input: [text.slice(0, 4000)], // Voyage max ~4K chars per input
+        input_type: "query",
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn("[voyage] Embedding API error:", response.status);
+      return null;
+    }
+
+    const data = await response.json();
+    return data.data?.[0]?.embedding ?? null;
+  } catch (err) {
+    console.warn("[voyage] Embedding error:", err);
+    return null;
+  }
 }

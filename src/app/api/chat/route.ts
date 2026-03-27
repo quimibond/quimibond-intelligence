@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-import { callClaude } from "@/lib/claude";
+import { callClaude, getVoyageEmbedding, logTokenUsage } from "@/lib/claude";
 
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
@@ -16,6 +16,7 @@ interface ContextData {
   briefing: string;
   facts: string;
   chatMemory: string;
+  semanticEmails: string;
 }
 
 async function gatherContext(
@@ -114,7 +115,26 @@ async function gatherContext(
           .join("\n\n")
       : "";
 
-  return { contacts, alerts, briefing, facts, chatMemory };
+  // Semantic email search via Voyage embeddings + pgvector
+  let semanticEmails = "";
+  const embedding = await getVoyageEmbedding(query);
+  if (embedding) {
+    const { data: similarEmails } = await supabase.rpc("search_similar_emails", {
+      query_embedding: JSON.stringify(embedding),
+      match_threshold: 0.3,
+      match_count: 8,
+    });
+    if (similarEmails && similarEmails.length > 0) {
+      semanticEmails = similarEmails
+        .map(
+          (e: { subject: string; sender: string; snippet: string; email_date: string; similarity: number }) =>
+            `- [${Math.round(e.similarity * 100)}%] ${e.email_date?.split("T")[0] ?? "?"} | ${e.sender ?? "?"}\n  ${e.subject ?? "(sin asunto)"}\n  ${(e.snippet ?? "").slice(0, 200)}`
+        )
+        .join("\n");
+    }
+  }
+
+  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails };
 }
 
 function buildSystemPrompt(ctx: ContextData): string {
@@ -142,6 +162,10 @@ ${ctx.contacts}`;
 
   if (ctx.facts) {
     prompt += `\n\n### Hechos del knowledge graph\n${ctx.facts}`;
+  }
+
+  if (ctx.semanticEmails) {
+    prompt += `\n\n### Emails relevantes (busqueda semantica)\n${ctx.semanticEmails}`;
   }
 
   if (ctx.chatMemory) {
@@ -269,6 +293,9 @@ export async function POST(request: NextRequest) {
                   );
                 } else if (event.type === "message_delta" && event.usage) {
                   console.log("[chat] Token usage:", JSON.stringify(event.usage));
+                  logTokenUsage("chat", process.env.CLAUDE_MODEL || "claude-sonnet-4-6", 0, event.usage.output_tokens ?? 0);
+                } else if (event.type === "message_start" && event.message?.usage) {
+                  logTokenUsage("chat", process.env.CLAUDE_MODEL || "claude-sonnet-4-6", event.message.usage.input_tokens ?? 0, 0);
                 }
               } catch {
                 // Skip unparseable lines
