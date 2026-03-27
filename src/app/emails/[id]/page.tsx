@@ -10,6 +10,7 @@ import type { Email } from "@/lib/types";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { EntityLink } from "@/components/shared/entity-link";
 import { EmptyState } from "@/components/shared/empty-state";
+import { SanitizedHtml } from "@/components/shared/sanitized-html";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -151,9 +152,9 @@ export default function EmailDetailPage() {
         <CardContent className="pt-6">
           {email.body ? (
             looksLikeHtml(email.body) ? (
-              <div
+              <SanitizedHtml
+                html={email.body}
                 className="prose prose-sm dark:prose-invert max-w-none"
-                dangerouslySetInnerHTML={{ __html: email.body }}
               />
             ) : (
               <div className="whitespace-pre-wrap text-sm leading-relaxed">

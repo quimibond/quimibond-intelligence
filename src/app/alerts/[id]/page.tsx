@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import { ArrowLeft, Bell, Brain, Building2, CheckSquare, Clock, Lightbulb, Mail, MessagesSquare, TrendingUp, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDate, formatDateTime, timeAgo } from "@/lib/utils";
@@ -80,9 +81,12 @@ export default function AlertDetailPage() {
     const updates: Record<string, unknown> = { state };
     if (state === "resolved") updates.resolved_at = new Date().toISOString();
     const { error } = await supabase.from("alerts").update(updates).eq("id", alert.id);
-    if (!error) {
-      setAlert({ ...alert, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) });
+    if (error) {
+      toast.error("Error al actualizar alerta");
+      return;
     }
+    setAlert({ ...alert, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) });
+    toast.success("Alerta actualizada");
   }
 
   if (loading) {

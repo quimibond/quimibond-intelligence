@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -148,22 +149,25 @@ export default function ActionsPage() {
       updates.completed_at = new Date().toISOString();
     }
     const { error } = await supabase.from("action_items").update(updates).in("id", ids);
-    if (!error) {
-      setActions((prev) =>
-        prev.map((a) =>
-          selectedIds.has(a.id)
-            ? {
-                ...a,
-                state: state as ActionItem["state"],
-                ...(state === "completed"
-                  ? { completed_at: new Date().toISOString() }
-                  : {}),
-              }
-            : a
-        )
-      );
-      setSelectedIds(new Set());
+    if (error) {
+      toast.error("Error al actualizar acciones");
+      return;
     }
+    setActions((prev) =>
+      prev.map((a) =>
+        selectedIds.has(a.id)
+          ? {
+              ...a,
+              state: state as ActionItem["state"],
+              ...(state === "completed"
+                ? { completed_at: new Date().toISOString() }
+                : {}),
+            }
+          : a
+      )
+    );
+    setSelectedIds(new Set());
+    toast.success(`${ids.length} accion${ids.length > 1 ? "es" : ""} actualizada${ids.length > 1 ? "s" : ""}`);
   }
 
   async function markCompleted(id: number) {
@@ -171,15 +175,18 @@ export default function ActionsPage() {
       .from("action_items")
       .update({ state: "completed", completed_at: new Date().toISOString() })
       .eq("id", id);
-    if (!error) {
-      setActions((prev) =>
-        prev.map((a) =>
-          a.id === id
-            ? { ...a, state: "completed" as const, completed_at: new Date().toISOString() }
-            : a
-        )
-      );
+    if (error) {
+      toast.error("Error al completar accion");
+      return;
     }
+    setActions((prev) =>
+      prev.map((a) =>
+        a.id === id
+          ? { ...a, state: "completed" as const, completed_at: new Date().toISOString() }
+          : a
+      )
+    );
+    toast.success("Accion completada");
   }
 
   async function dismiss(id: number) {

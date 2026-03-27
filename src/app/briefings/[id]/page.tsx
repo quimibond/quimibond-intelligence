@@ -13,6 +13,7 @@ import {
   CardContent,
   CardHeader,
 } from "@/components/ui/card";
+import { SanitizedHtml } from "@/components/shared/sanitized-html";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
 
@@ -109,9 +110,9 @@ export default function BriefingDetailPage() {
 
         <CardContent className="pt-6">
           {summary.summary_html ? (
-            <div
+            <SanitizedHtml
+              html={summary.summary_html}
               className="prose prose-sm dark:prose-invert max-w-none"
-              dangerouslySetInnerHTML={{ __html: summary.summary_html }}
             />
           ) : summary.summary_text ? (
             <p className="whitespace-pre-wrap text-sm leading-relaxed">
