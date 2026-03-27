@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    return NextResponse.json({ success: true, enriched, errors });
+    return NextResponse.json({ success: errors === 0, enriched, errors });
   } catch (err) {
     console.error("Batch enrich error:", err);
     return NextResponse.json(

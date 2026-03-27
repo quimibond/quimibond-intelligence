@@ -124,12 +124,13 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
           max_tokens: 1024,
+          temperature: 0.3,
           system:
-            "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed person profile. Respond ONLY with valid JSON, no markdown or extra text.",
+            "Eres un analista de inteligencia comercial de Quimibond, empresa manufacturera de textiles no tejidos en Mexico. A partir de comunicaciones por email y hechos conocidos, genera un perfil detallado de la persona. Responde UNICAMENTE con JSON valido, sin markdown ni texto adicional.",
           messages: [
             {
               role: "user",
-              content: `Analyze the following contact data and generate a person profile.\n\n${contextString}\n\nReturn a JSON object with these fields:\n- role (string): their likely job role/title\n- department (string): their department\n- decision_power ("high" | "medium" | "low"): their influence on purchasing/business decisions\n- communication_style (string): brief description of how they communicate\n- personality_traits (string[]): 3-5 personality traits observed\n- interests (string[]): professional interests or topics they engage with\n- decision_factors (string[]): factors that influence their decisions\n- summary (string): 2-3 sentence executive summary of this person`,
+              content: `Analiza los siguientes datos del contacto y genera un perfil.\n\n${contextString}\n\nDevuelve un objeto JSON con estos campos:\n- role (string): su cargo o rol probable\n- department (string): su departamento\n- decision_power ("high" | "medium" | "low"): su influencia en decisiones de compra/negocio\n- communication_style (string): breve descripcion de como se comunica\n- personality_traits (string[]): 3-5 rasgos de personalidad observados\n- interests (string[]): intereses profesionales o temas con los que se involucra\n- decision_factors (string[]): factores que influyen en sus decisiones\n- summary (string): resumen ejecutivo de 2-3 oraciones sobre esta persona`,
             },
           ],
         }),
@@ -146,6 +147,9 @@ export async function POST(request: NextRequest) {
     }
 
     const claudeData = await claudeResponse.json();
+    if (claudeData.usage) {
+      console.log(`[enrich/contact] Tokens — in: ${claudeData.usage.input_tokens}, out: ${claudeData.usage.output_tokens}`);
+    }
     const rawText =
       claudeData.content?.[0]?.text ?? claudeData.content?.[0]?.value ?? "";
 

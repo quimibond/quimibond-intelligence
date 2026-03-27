@@ -210,6 +210,7 @@ export async function POST(request: NextRequest) {
         body: JSON.stringify({
           model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
           max_tokens: 2048,
+          temperature: 0.5,
           stream: true,
           system: systemPrompt,
           messages: conversationMessages,
@@ -267,6 +268,8 @@ export async function POST(request: NextRequest) {
                   controller.enqueue(
                     encoder.encode(`data: ${JSON.stringify({ type: "done" })}\n\n`)
                   );
+                } else if (event.type === "message_delta" && event.usage) {
+                  console.log("[chat] Token usage:", JSON.stringify(event.usage));
                 }
               } catch {
                 // Skip unparseable lines

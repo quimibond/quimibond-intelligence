@@ -127,10 +127,11 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
         max_tokens: 1024,
-        system: "You are a business intelligence analyst for Quimibond, a Mexican textile manufacturer. Based on email communications and known facts, generate a detailed company profile. Respond ONLY with valid JSON.",
+        temperature: 0.3,
+        system: "Eres un analista de inteligencia comercial de Quimibond, empresa manufacturera de textiles no tejidos en Mexico. A partir de comunicaciones por email y hechos conocidos, genera un perfil detallado de la empresa. Responde UNICAMENTE con JSON valido.",
         messages: [{
           role: "user",
-          content: `Analyze the following company data and generate a profile.\n\n${parts.join("\n")}\n\nReturn JSON with: description, business_type, industry, relationship_type, relationship_summary, key_products (array), risk_signals (array), opportunity_signals (array), strategic_notes`,
+          content: `Analiza los siguientes datos de la empresa y genera un perfil.\n\n${parts.join("\n")}\n\nDevuelve JSON con: description, business_type, industry, relationship_type, relationship_summary, key_products (array), risk_signals (array), opportunity_signals (array), strategic_notes`,
         }],
       }),
     });
@@ -140,6 +141,9 @@ export async function POST(request: NextRequest) {
     }
 
     const claudeData = await claudeResponse.json();
+    if (claudeData.usage) {
+      console.log(`[enrich/company] Tokens — in: ${claudeData.usage.input_tokens}, out: ${claudeData.usage.output_tokens}`);
+    }
     const rawText = claudeData.content?.[0]?.text ?? "";
 
     let profile: ClaudeCompanyProfile;
