@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { callClaude } from "@/lib/claude";
 
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
@@ -197,35 +198,33 @@ export async function POST(request: NextRequest) {
       conversationMessages.push({ role: "user", content: message });
     }
 
-    // Call Claude API with streaming
-    const claudeResponse = await fetch(
-      "https://api.anthropic.com/v1/messages",
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
-        body: JSON.stringify({
-          model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    // Call Claude API with streaming (includes retry for 429/529)
+    let claudeResponse: Response;
+    try {
+      claudeResponse = await callClaude(
+        apiKey,
+        {
           max_tokens: 2048,
           temperature: 0.5,
           stream: true,
           system: systemPrompt,
           messages: conversationMessages,
-        }),
-      }
-    );
+        },
+        "chat"
+      );
+    } catch (err) {
+      console.error("Claude API error:", err);
+      return NextResponse.json(
+        { error: "Error al llamar a Claude API.", detail: err instanceof Error ? err.message : "" },
+        { status: 502 }
+      );
+    }
 
     if (!claudeResponse.ok) {
       const errorBody = await claudeResponse.text();
       console.error("Claude API error:", claudeResponse.status, errorBody);
       return NextResponse.json(
-        {
-          error: `Error al llamar a Claude API (${claudeResponse.status}).`,
-          detail: errorBody,
-        },
+        { error: `Error al llamar a Claude API (${claudeResponse.status}).`, detail: errorBody },
         { status: 502 }
       );
     }

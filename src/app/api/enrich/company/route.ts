@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-
-interface EnrichCompanyRequest {
-  company_id: string;
-}
+import { callClaudeJSON } from "@/lib/claude";
 
 interface ClaudeCompanyProfile {
   description: string;
@@ -17,26 +14,25 @@ interface ClaudeCompanyProfile {
   strategic_notes: string;
 }
 
+const ENRICHMENT_COOLDOWN_DAYS = 7;
+
 export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "Se requiere ANTHROPIC_API_KEY. Configurala en Vercel → Settings → Environment Variables." },
+        { error: "Se requiere ANTHROPIC_API_KEY." },
         { status: 503 }
       );
     }
 
-    const body: EnrichCompanyRequest = await request.json();
-    const companyId = body.company_id;
-
+    const { company_id: companyId } = (await request.json()) as { company_id?: string };
     if (!companyId) {
       return NextResponse.json({ error: "company_id es requerido." }, { status: 400 });
     }
 
     const supabase = getServiceClient();
 
-    // Fetch company from companies table
     const { data: company, error: companyError } = await supabase
       .from("companies")
       .select("*")
@@ -47,6 +43,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Empresa no encontrada." }, { status: 404 });
     }
 
+    // Skip if recently enriched
+    if (company.enriched_at) {
+      const daysSinceEnrich = (Date.now() - new Date(company.enriched_at).getTime()) / 86_400_000;
+      if (daysSinceEnrich < ENRICHMENT_COOLDOWN_DAYS) {
+        return NextResponse.json({
+          success: true,
+          skipped: true,
+          message: `Empresa enriquecida hace ${Math.floor(daysSinceEnrich)} dias.`,
+        });
+      }
+    }
+
     // Fetch contacts via company_id FK
     const { data: contacts } = await supabase
       .from("contacts")
@@ -54,7 +62,7 @@ export async function POST(request: NextRequest) {
       .eq("company_id", company.id)
       .limit(20);
 
-    // Fetch recent emails via contacts' emails (emails table has no company_id)
+    // Fetch recent emails via contacts' emails
     const contactEmails = (contacts ?? []).map((c) => c.email).filter(Boolean);
     let emails: { subject: string | null; snippet: string | null; sender: string | null; recipient: string | null; email_date: string | null }[] = [];
     if (contactEmails.length > 0) {
@@ -68,7 +76,7 @@ export async function POST(request: NextRequest) {
       emails = emailData ?? [];
     }
 
-    // Fetch facts via entity_id (facts table has no company_id)
+    // Fetch facts via entity_id
     let facts: { fact_text: string; fact_type: string | null; confidence: number }[] = [];
     if (company.entity_id) {
       const { data: factsData } = await supabase
@@ -82,50 +90,44 @@ export async function POST(request: NextRequest) {
 
     // Build context
     const parts: string[] = [
-      `Company: ${company.name}`,
-      `Industry: ${company.industry ?? "Unknown"}`,
-      `Is customer: ${company.is_customer}`,
-      `Is supplier: ${company.is_supplier}`,
-      `Lifetime value: ${company.lifetime_value ?? "Unknown"}`,
-      `Country: ${company.country ?? "Unknown"}`,
-      `City: ${company.city ?? "Unknown"}`,
+      `Empresa: ${company.name}`,
+      `Industria: ${company.industry ?? "Desconocida"}`,
+      `Es cliente: ${company.is_customer}`,
+      `Es proveedor: ${company.is_supplier}`,
+      `Valor de por vida: ${company.lifetime_value ?? "Desconocido"}`,
+      `Pais: ${company.country ?? "Desconocido"}`,
+      `Ciudad: ${company.city ?? "Desconocida"}`,
     ];
 
     if (company.odoo_context) {
-      parts.push(`Odoo context: ${JSON.stringify(company.odoo_context)}`);
+      parts.push(`Contexto Odoo: ${JSON.stringify(company.odoo_context)}`);
     }
 
     if (contacts && contacts.length > 0) {
-      parts.push(`\n--- Contacts (${contacts.length}) ---`);
+      parts.push(`\n--- Contactos (${contacts.length}) ---`);
       for (const c of contacts) {
-        parts.push(`${c.name ?? "?"} <${c.email ?? "?"}> - Role: ${c.role ?? "?"}, Risk: ${c.risk_level ?? "?"}, Sentiment: ${c.sentiment_score ?? "N/A"}`);
+        parts.push(`${c.name ?? "?"} <${c.email ?? "?"}> - Rol: ${c.role ?? "?"}, Riesgo: ${c.risk_level ?? "?"}, Sentimiento: ${c.sentiment_score ?? "N/A"}`);
       }
     }
 
-    if (emails && emails.length > 0) {
-      parts.push(`\n--- Recent Emails (${emails.length}) ---`);
+    if (emails.length > 0) {
+      parts.push(`\n--- Emails Recientes (${emails.length}) ---`);
       for (const e of emails) {
-        parts.push(`${e.email_date ?? "?"} | ${e.sender ?? "?"} → ${e.recipient ?? "?"}\n  ${e.subject ?? "(no subject)"}\n  ${e.snippet ?? ""}`);
+        parts.push(`${e.email_date ?? "?"} | ${e.sender ?? "?"} → ${e.recipient ?? "?"}\n  ${e.subject ?? "(sin asunto)"}\n  ${(e.snippet ?? "").slice(0, 300)}`);
       }
     }
 
-    if (facts && facts.length > 0) {
-      parts.push("\n--- Known Facts ---");
+    if (facts.length > 0) {
+      parts.push("\n--- Hechos Conocidos ---");
       for (const f of facts) {
-        parts.push(`[${f.fact_type ?? "general"}] ${f.fact_text} (confidence: ${f.confidence})`);
+        parts.push(`[${f.fact_type ?? "general"}] ${f.fact_text} (confianza: ${f.confidence})`);
       }
     }
 
-    // Call Claude
-    const claudeResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
+    // Call Claude with retry
+    const { result: profile } = await callClaudeJSON<ClaudeCompanyProfile>(
+      apiKey,
+      {
         max_tokens: 1024,
         temperature: 0.3,
         system: "Eres un analista de inteligencia comercial de Quimibond, empresa manufacturera de textiles no tejidos en Mexico. A partir de comunicaciones por email y hechos conocidos, genera un perfil detallado de la empresa. Responde UNICAMENTE con JSON valido.",
@@ -133,32 +135,11 @@ export async function POST(request: NextRequest) {
           role: "user",
           content: `Analiza los siguientes datos de la empresa y genera un perfil.\n\n${parts.join("\n")}\n\nDevuelve JSON con: description, business_type, industry, relationship_type, relationship_summary, key_products (array), risk_signals (array), opportunity_signals (array), strategic_notes`,
         }],
-      }),
-    });
+      },
+      "enrich/company"
+    );
 
-    if (!claudeResponse.ok) {
-      return NextResponse.json({ error: "Error al llamar a Claude API." }, { status: 502 });
-    }
-
-    const claudeData = await claudeResponse.json();
-    if (claudeData.usage) {
-      console.log(`[enrich/company] Tokens — in: ${claudeData.usage.input_tokens}, out: ${claudeData.usage.output_tokens}`);
-    }
-    const rawText = claudeData.content?.[0]?.text ?? "";
-
-    let profile: ClaudeCompanyProfile;
-    try {
-      profile = JSON.parse(rawText);
-    } catch {
-      const jsonMatch = rawText.match(/```(?:json)?\s*([\s\S]*?)```/);
-      if (jsonMatch) {
-        profile = JSON.parse(jsonMatch[1].trim());
-      } else {
-        return NextResponse.json({ error: "No se pudo interpretar la respuesta de Claude." }, { status: 502 });
-      }
-    }
-
-    // Update COMPANIES table (not entities)
+    // Update companies table
     const { error: updateError } = await supabase
       .from("companies")
       .update({
@@ -184,6 +165,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, profile });
   } catch (err) {
     console.error("Enrich company error:", err);
-    return NextResponse.json({ error: "Error interno." }, { status: 500 });
+    const message = err instanceof Error ? err.message : "Error interno.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
