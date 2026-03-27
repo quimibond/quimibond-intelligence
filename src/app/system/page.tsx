@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Activity,
@@ -490,8 +490,8 @@ export default function SystemPage() {
                     const isExpanded = expandedRunId === run.id;
                     const logs = runLogs[run.id] ?? [];
                     return (
-                      <>
-                        <TableRow key={run.id} className="cursor-pointer" onClick={() => toggleRunLogs(run.id)}>
+                      <Fragment key={run.id}>
+                        <TableRow className="cursor-pointer" onClick={() => toggleRunLogs(run.id)}>
                           <TableCell className="font-medium">
                             <div className="flex items-center gap-1">
                               <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? "rotate-180" : ""}`} />
@@ -548,7 +548,7 @@ export default function SystemPage() {
                             </TableCell>
                           </TableRow>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })}
                 </TableBody>
