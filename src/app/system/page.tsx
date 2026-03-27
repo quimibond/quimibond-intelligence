@@ -220,6 +220,18 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
         return `${data ?? 0} hechos actualizados`;
       },
     },
+    {
+      id: "refresh_network",
+      label: "Refrescar Red",
+      desc: "Recalcula la red de comunicacion entre contactos",
+      icon: RefreshCw,
+      fn: async () => {
+        const { data, error } = await supabase.rpc("refresh_communication_edges");
+        if (error) throw error;
+        const r = data as { edges_created: number; bidirectional_marked: number };
+        return `${r.edges_created} conexiones, ${r.bidirectional_marked} bidireccionales`;
+      },
+    },
   ];
 
   const odooActions: { id: string; label: string; desc: string; icon: typeof RefreshCw; command: string }[] = [

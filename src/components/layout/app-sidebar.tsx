@@ -27,6 +27,7 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
+  Share2,
 } from "lucide-react";
 
 const navItems = [
@@ -40,6 +41,7 @@ const navItems = [
   { href: "/briefings", label: "Briefings", icon: FileText },
   { href: "/timeline", label: "Timeline", icon: Activity },
   { href: "/competitors", label: "Competidores", icon: Swords },
+  { href: "/network", label: "Red", icon: Share2 },
   { href: "/analytics", label: "Analitica", icon: BarChart3 },
   { href: "/knowledge", label: "Knowledge", icon: Network },
   { href: "/chat", label: "Chat", icon: MessageSquare },
