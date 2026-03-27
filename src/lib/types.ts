@@ -625,6 +625,15 @@ export interface PipelineLog {
   created_at: string;
 }
 
+export interface SyncCommand {
+  id: string;
+  command: string;
+  status: "pending" | "running" | "completed" | "failed";
+  result: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ChatMemory {
   id: number;
   question: string;
