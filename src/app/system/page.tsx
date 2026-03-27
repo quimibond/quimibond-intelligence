@@ -205,7 +205,7 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
       fn: async () => {
         const { data, error } = await supabase.rpc("decay_fact_confidence");
         if (error) throw error;
-        return `Decay aplicado: ${JSON.stringify(data ?? {})}`;
+        return `${data ?? 0} hechos actualizados`;
       },
     },
   ];
