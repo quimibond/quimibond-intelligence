@@ -64,14 +64,22 @@ async function sendOdooCommand(command: string): Promise<string> {
     .insert({ command, status: "pending" })
     .select("id")
     .single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === "42P01" || error.message?.includes("does not exist")) {
+      throw new Error(
+        "La tabla sync_commands no existe. Ejecuta la migracion 017_sync_commands_and_decay.sql en Supabase."
+      );
+    }
+    throw new Error(error.message);
+  }
 
   // Poll for completion (max 10 min)
   const cmdId = data.id;
   const maxWait = 600_000;
+  const pollInterval = 5000;
   const start = Date.now();
   while (Date.now() - start < maxWait) {
-    await new Promise((r) => setTimeout(r, 5000));
+    await new Promise((r) => setTimeout(r, pollInterval));
     const { data: cmd } = await supabase
       .from("sync_commands")
       .select("status, result")
@@ -103,8 +111,17 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
       setResult({ type: "success", msg: `${label}: ${msg}` });
       toast.success(`${label}: ${msg}`);
       onComplete();
-    } catch (e) {
-      const errMsg = e instanceof Error ? e.message : "Error";
+    } catch (e: unknown) {
+      let errMsg = "Error desconocido";
+      if (e instanceof Error) {
+        errMsg = e.message;
+      } else if (typeof e === "object" && e !== null && "message" in e) {
+        errMsg = String((e as { message: string }).message);
+      }
+      // Friendlier message for missing RPC functions
+      if (errMsg.includes("Could not find the function") || errMsg.includes("function") && errMsg.includes("does not exist")) {
+        errMsg = "Funcion no encontrada en Supabase. Verifica que las migraciones estan aplicadas.";
+      }
       setResult({ type: "error", msg: `${label}: ${errMsg}` });
       toast.error(`${label}: ${errMsg}`);
     } finally {
@@ -331,34 +348,48 @@ export default function SystemPage() {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [runLogs, setRunLogs] = useState<Record<string, any[]>>({});
   const [loading, setLoading] = useState(true);
+  const [fetchKey, setFetchKey] = useState(0);
+
+  const refreshData = useCallback(() => setFetchKey((k) => k + 1), []);
 
   useEffect(() => {
     async function fetchData() {
-      const [emailsRes, contactsRes, alertsRes, entitiesRes, factsRes, actionsRes, syncRes, pipelineRes, odooProductsRes, odooOrderLinesRes, odooUsersRes] =
-        await Promise.all([
-          supabase.from("emails").select("id", { count: "exact", head: true }),
-          supabase.from("contacts").select("id", { count: "exact", head: true }),
-          supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
-          supabase.from("entities").select("id", { count: "exact", head: true }),
-          supabase.from("facts").select("id", { count: "exact", head: true }),
-          supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
-          supabase.from("sync_state").select("*").order("last_sync_at", { ascending: false }),
-          supabase.from("pipeline_runs").select("*").order("started_at", { ascending: false }).limit(20),
-          supabase.from("odoo_products").select("id", { count: "exact", head: true }),
-          supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }),
-          supabase.from("odoo_users").select("id", { count: "exact", head: true }),
-        ]);
+      // Helper: safe count query that returns 0 if table doesn't exist
+      async function safeCount(table: string, filter?: { col: string; val: string }) {
+        let query = supabase.from(table).select("id", { count: "exact", head: true });
+        if (filter) query = query.eq(filter.col, filter.val);
+        const { count } = await query;
+        return count ?? 0;
+      }
+
+      const [
+        totalEmails, totalContacts, activeAlerts, totalEntities,
+        totalFacts, totalActions, totalOdooProducts, totalOdooOrderLines,
+        totalOdooUsers, syncRes, pipelineRes,
+      ] = await Promise.all([
+        safeCount("emails"),
+        safeCount("contacts"),
+        safeCount("alerts", { col: "state", val: "new" }),
+        safeCount("entities"),
+        safeCount("facts"),
+        safeCount("action_items", { col: "state", val: "pending" }),
+        safeCount("odoo_products"),
+        safeCount("odoo_order_lines"),
+        safeCount("odoo_users"),
+        supabase.from("sync_state").select("*").order("last_sync_at", { ascending: false }),
+        supabase.from("pipeline_runs").select("*").order("started_at", { ascending: false }).limit(20),
+      ]);
 
       setStats({
-        totalEmails: emailsRes.count ?? 0,
-        totalContacts: contactsRes.count ?? 0,
-        activeAlerts: alertsRes.count ?? 0,
-        totalEntities: entitiesRes.count ?? 0,
-        totalFacts: factsRes.count ?? 0,
-        totalActions: actionsRes.count ?? 0,
-        totalOdooProducts: odooProductsRes.count ?? 0,
-        totalOdooOrderLines: odooOrderLinesRes.count ?? 0,
-        totalOdooUsers: odooUsersRes.count ?? 0,
+        totalEmails,
+        totalContacts,
+        activeAlerts,
+        totalEntities,
+        totalFacts,
+        totalActions,
+        totalOdooProducts,
+        totalOdooOrderLines,
+        totalOdooUsers,
       });
 
       setSyncStates((syncRes.data ?? []) as SyncState[]);
@@ -366,7 +397,7 @@ export default function SystemPage() {
       setLoading(false);
     }
     fetchData();
-  }, []);
+  }, [fetchKey]);
 
   const toggleRunLogs = useCallback(async (runId: string) => {
     if (expandedRunId === runId) {
@@ -421,7 +452,7 @@ export default function SystemPage() {
       </div>
 
       {/* Sync Control Panel */}
-      <SyncPanel onComplete={() => window.location.reload()} />
+      <SyncPanel onComplete={refreshData} />
 
       {/* Pipeline Runs */}
       <Card>
