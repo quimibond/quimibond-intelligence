@@ -5,6 +5,15 @@ import { callClaude, getVoyageEmbedding, logTokenUsage } from "@/lib/claude";
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
 
+// Cache for static context (alerts, briefing, memory) — 5 min TTL
+const STATIC_CTX_TTL = 5 * 60 * 1000;
+let staticCtxCache: {
+  alerts: string;
+  briefing: string;
+  chatMemory: string;
+  expiry: number;
+} | null = null;
+
 interface ChatRequest {
   message: string;
   history: Array<{ role: string; content: string }>;
@@ -19,69 +28,37 @@ interface ContextData {
   semanticEmails: string;
 }
 
-async function gatherContext(
-  query: string,
+async function getStaticContext(
   supabase: ReturnType<typeof getServiceClient>
-): Promise<ContextData> {
-  const q = `%${query.toLowerCase()}%`;
+): Promise<{ alerts: string; briefing: string; chatMemory: string }> {
+  if (staticCtxCache && Date.now() < staticCtxCache.expiry) {
+    return staticCtxCache;
+  }
 
-  const [contactsRes, alertsRes, briefingRes, factsRes, memoryRes] =
-    await Promise.all([
-      // Relevant contacts
-      supabase
-        .from("contacts")
-        .select(
-          "name, email, company_id, role, risk_level, sentiment_score, relationship_score, last_activity"
-        )
-        .or(`name.ilike.${q},email.ilike.${q}`)
-        .order("last_activity", { ascending: false, nullsFirst: false })
-        .limit(10),
+  const [alertsRes, briefingRes, memoryRes] = await Promise.all([
+    supabase
+      .from("alerts")
+      .select(
+        "title, severity, alert_type, contact_name, description, state, created_at"
+      )
+      .eq("state", "new")
+      .order("created_at", { ascending: false })
+      .limit(15),
 
-      // Open alerts
-      supabase
-        .from("alerts")
-        .select(
-          "title, severity, alert_type, contact_name, description, state, created_at"
-        )
-        .eq("state", "new")
-        .order("created_at", { ascending: false })
-        .limit(15),
+    supabase
+      .from("briefings")
+      .select("briefing_date, summary_text, total_emails, key_events")
+      .eq("scope", "daily")
+      .order("briefing_date", { ascending: false })
+      .limit(1),
 
-      // Latest briefing
-      supabase
-        .from("briefings")
-        .select("briefing_date, summary_text, total_emails, key_events")
-        .eq("scope", "daily")
-        .order("briefing_date", { ascending: false })
-        .limit(1),
-
-      // Relevant facts
-      supabase
-        .from("facts")
-        .select("fact_text, fact_type, confidence, created_at")
-        .ilike("fact_text", q)
-        .order("confidence", { ascending: false })
-        .limit(15),
-
-      // Chat memory (successful Q&A pairs for few-shot)
-      // rating is integer in real schema; thumbs_up=true means positive
-      supabase
-        .from("chat_memory")
-        .select("question, answer")
-        .eq("thumbs_up", true)
-        .order("times_retrieved", { ascending: false })
-        .limit(3),
-    ]);
-
-  const contacts =
-    contactsRes.data && contactsRes.data.length > 0
-      ? contactsRes.data
-          .map(
-            (c) =>
-              `- ${c.name} <${c.email}> | Company ID: ${c.company_id ?? "?"} | Rol: ${c.role ?? "?"} | Riesgo: ${c.risk_level ?? "?"} | Sentimiento: ${c.sentiment_score ?? "?"} | Relacion: ${c.relationship_score ?? "?"}`
-          )
-          .join("\n")
-      : "No se encontraron contactos relevantes.";
+    supabase
+      .from("chat_memory")
+      .select("question, answer")
+      .eq("thumbs_up", true)
+      .order("times_retrieved", { ascending: false })
+      .limit(3),
+  ]);
 
   const alerts =
     alertsRes.data && alertsRes.data.length > 0
@@ -98,6 +75,58 @@ async function gatherContext(
       ? `Fecha: ${briefingRes.data[0].briefing_date}\nEmails procesados: ${briefingRes.data[0].total_emails}\n${briefingRes.data[0].summary_text ?? "Sin resumen disponible."}`
       : "No hay briefing reciente disponible.";
 
+  const chatMemory =
+    memoryRes.data && memoryRes.data.length > 0
+      ? memoryRes.data
+          .map((m) => `Q: ${m.question}\nA: ${m.answer}`)
+          .join("\n\n")
+      : "";
+
+  staticCtxCache = { alerts, briefing, chatMemory, expiry: Date.now() + STATIC_CTX_TTL };
+  return staticCtxCache;
+}
+
+async function gatherContext(
+  query: string,
+  supabase: ReturnType<typeof getServiceClient>
+): Promise<ContextData> {
+  const q = `%${query.toLowerCase()}%`;
+
+  // Fetch static context (cached) + query-specific context in parallel
+  const [staticCtx, contactsRes, factsRes] = await Promise.all([
+    getStaticContext(supabase),
+
+    // Relevant contacts (query-specific)
+    supabase
+      .from("contacts")
+      .select(
+        "name, email, company_id, role, risk_level, sentiment_score, relationship_score, last_activity"
+      )
+      .or(`name.ilike.${q},email.ilike.${q}`)
+      .order("last_activity", { ascending: false, nullsFirst: false })
+      .limit(10),
+
+    // Relevant facts (query-specific)
+    supabase
+      .from("facts")
+      .select("fact_text, fact_type, confidence, created_at")
+      .ilike("fact_text", q)
+      .order("confidence", { ascending: false })
+      .limit(15),
+  ]);
+
+  const contacts =
+    contactsRes.data && contactsRes.data.length > 0
+      ? contactsRes.data
+          .map(
+            (c) =>
+              `- ${c.name} <${c.email}> | Company ID: ${c.company_id ?? "?"} | Rol: ${c.role ?? "?"} | Riesgo: ${c.risk_level ?? "?"} | Sentimiento: ${c.sentiment_score ?? "?"} | Relacion: ${c.relationship_score ?? "?"}`
+          )
+          .join("\n")
+      : "No se encontraron contactos relevantes.";
+
+  const { alerts, briefing, chatMemory } = staticCtx;
+
   const facts =
     factsRes.data && factsRes.data.length > 0
       ? factsRes.data
@@ -106,13 +135,6 @@ async function gatherContext(
               `- [${f.fact_type ?? "general"}] ${f.fact_text} (confianza: ${Math.round(f.confidence * 100)}%)`
           )
           .join("\n")
-      : "";
-
-  const chatMemory =
-    memoryRes.data && memoryRes.data.length > 0
-      ? memoryRes.data
-          .map((m) => `Q: ${m.question}\nA: ${m.answer}`)
-          .join("\n\n")
       : "";
 
   // Semantic email search via Voyage embeddings + pgvector
