@@ -80,9 +80,9 @@ export function InvoiceTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {invoices.map((inv, i) => (
+            {invoices.map((inv) => (
               <TableRow
-                key={i}
+                key={inv.name}
                 className={cn(
                   inv.days_overdue > 60 && inv.amount_residual > 0
                     ? "bg-red-500/5"
