@@ -1,0 +1,19 @@
+-- ============================================================
+-- Migration 021: Improved resolve_all_connections
+-- ============================================================
+-- Major fixes applied:
+-- 1. emails → threads: link via gmail_thread_id (was missing, 841 emails unlinked)
+-- 2. action_items → contacts: link via assignee_email
+-- 3. thread message_count: recalculated from actual email count
+-- 4. Fixed JSON cast bug in recipient resolution
+-- 5. Added emails_to_threads and actions_to_contacts to return value
+--
+-- Already applied in production via MCP.
+-- ============================================================
+
+-- See resolve_all_connections() source in migration for full function.
+-- Key additions vs prior version:
+--   Step 1: UPDATE emails SET thread_id = t.id FROM threads t WHERE gmail_thread_id match
+--   Step 6: UPDATE action_items SET contact_id = c.id FROM contacts c WHERE assignee_email match
+--   Step 15: UPDATE threads SET message_count from actual email count
+--   Fix: recip_result->>'resolved_to_contacts' uses ->> (text) then ::int, not -> (json)
