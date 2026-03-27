@@ -193,7 +193,9 @@ export default function DashboardPage() {
       try {
         const result = await fetchDashboard();
         setData(result);
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error("[dashboard] Failed to load:", err);
+      }
 
       // Non-blocking: aging, deliveries, pipeline, briefing, accountability
       supabase
@@ -350,7 +352,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {critical_alerts.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Sin alertas criticas</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                {kpi.open_alerts === 0 ? "No hay alertas. Ejecuta el pipeline de analisis desde Sistema." : "Sin alertas criticas — todo en orden."}
+              </p>
             ) : (
               <div className="space-y-2">
                 {critical_alerts.map((alert: { id: number; title: string; severity: string; contact_name: string | null; created_at: string }) => (
@@ -377,7 +381,9 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {contacts_at_risk.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Sin contactos en riesgo</p>
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                {kpi.total_contacts === 0 ? "No hay contactos. Sincroniza desde Sistema." : "Sin contactos en riesgo alto — ejecuta el scoring desde Sistema."}
+              </p>
             ) : (
               <div className="space-y-2">
                 {contacts_at_risk.map((c: { id: number; name: string; risk_level: string; relationship_score: number | null; company_id: number | null }) => (
@@ -405,7 +411,7 @@ export default function DashboardPage() {
         <KPICard
           title="Saldo Vencido"
           value={globalAging ? formatCurrency(overdueAmt) : "—"}
-          subtitle={globalAging ? `${formatCurrency(globalAging.total_outstanding)} total` : "cargando..."}
+          subtitle={globalAging ? `${formatCurrency(globalAging.total_outstanding)} total` : "sin datos de facturacion"}
           icon={CreditCard}
           href="/analytics"
           variant={overdueAmt > 0 ? "danger" : "default"}
@@ -413,7 +419,7 @@ export default function DashboardPage() {
         <KPICard
           title="Pipeline CRM"
           value={pipelineGlobal ? formatCurrency(pipelineGlobal.pipeline_value) : "—"}
-          subtitle={pipelineGlobal ? `${pipelineGlobal.total_opportunities} oportunidades` : "cargando..."}
+          subtitle={pipelineGlobal ? `${pipelineGlobal.total_opportunities} oportunidades` : "sin datos de CRM"}
           icon={TrendingUp}
           href="/companies"
           variant="info"

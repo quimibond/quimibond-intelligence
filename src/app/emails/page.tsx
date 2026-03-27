@@ -167,6 +167,11 @@ export default function EmailsPage() {
                     </Badge>
                   )}
                   {email.has_attachments && <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />}
+                  {email.thread_id && (
+                    <Link href={`/threads/${email.thread_id}`} className="text-xs text-primary hover:underline">
+                      Ver hilo
+                    </Link>
+                  )}
                 </div>
               </Link>
             </div>

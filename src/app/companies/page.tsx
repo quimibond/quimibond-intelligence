@@ -8,6 +8,7 @@ import type { Company } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -28,9 +29,13 @@ function formatCurrency(value: number | null): string {
   });
 }
 
+const PAGE_SIZE = 60;
+
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
 
   useEffect(() => {
@@ -38,7 +43,8 @@ export default function CompaniesPage() {
       const { data, error } = await supabase
         .from("companies")
         .select("*")
-        .order("name");
+        .order("name")
+        .range(0, PAGE_SIZE - 1);
 
       if (error || !data) {
         setLoading(false);
@@ -46,10 +52,26 @@ export default function CompaniesPage() {
       }
 
       setCompanies(data as Company[]);
+      setHasMore(data.length === PAGE_SIZE);
       setLoading(false);
     }
     load();
   }, []);
+
+  async function loadMore() {
+    if (loadingMore || !hasMore) return;
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from("companies")
+      .select("*")
+      .order("name")
+      .range(companies.length, companies.length + PAGE_SIZE - 1);
+    if (data) {
+      setCompanies((prev) => [...prev, ...(data as Company[])]);
+      setHasMore(data.length === PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }
 
   const filtered = companies.filter((c) =>
     c.name.toLowerCase().includes(search.toLowerCase())
@@ -159,6 +181,15 @@ export default function CompaniesPage() {
               </Card>
             </Link>
           ))}
+        </div>
+      )}
+
+      {/* Load more */}
+      {hasMore && filtered.length > 0 && !search && (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "Cargando..." : "Cargar mas empresas"}
+          </Button>
         </div>
       )}
     </div>

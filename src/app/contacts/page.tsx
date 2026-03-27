@@ -142,16 +142,14 @@ export default function ContactsPage() {
                   )}
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {contact.company_id ? (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
+                {contact.company_id && (
                   <Link href={`/companies/${contact.company_id}`} className="hover:underline hover:text-foreground">
                     {(contact as unknown as Record<string, unknown>).company as string ?? `Empresa #${contact.company_id}`}
                   </Link>
-                ) : "—"}
-                {" · "}
-                {contact.role ?? "—"}
-                {" · "}
-                {contact.contact_type ?? "—"}
+                )}
+                {contact.role && <><span className="text-border">·</span><span>{contact.role}</span></>}
+                {contact.contact_type && <><span className="text-border">·</span><span>{contact.contact_type === "internal" ? "Interno" : "Externo"}</span></>}
               </div>
               <div className="flex flex-wrap items-center gap-2 text-xs">
                 <RiskBadge level={contact.risk_level} />

@@ -387,6 +387,9 @@ export default function ThreadsPage() {
                                 {truncate(email.snippet, 200)}
                               </p>
                             )}
+                            <Link href={`/emails/${email.id}`} className="mt-1 inline-block text-xs text-primary hover:underline">
+                              Ver email completo
+                            </Link>
                           </div>
                         ))
                       )}
@@ -598,6 +601,9 @@ function ThreadRow({
                         {truncate(email.snippet, 200)}
                       </p>
                     )}
+                    <Link href={`/emails/${email.id}`} className="mt-1 inline-block text-xs text-primary hover:underline">
+                      Ver email completo
+                    </Link>
                   </div>
                 ))}
               </div>
