@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Mail, Paperclip } from "lucide-react";
+import { ArrowLeft, Mail, Paperclip, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime } from "@/lib/utils";
 import type { Email } from "@/lib/types";
@@ -27,6 +27,13 @@ const senderTypeLabel: Record<string, string> = {
   outbound: "Enviado",
 };
 
+interface RecipientContact {
+  contact_id: number;
+  recipient_email: string;
+  recipient_name: string | null;
+  contact_name: string;
+}
+
 function looksLikeHtml(text: string): boolean {
   return /<\/?[a-z][\s\S]*>/i.test(text);
 }
@@ -37,6 +44,8 @@ export default function EmailDetailPage() {
   const emailId = params.id;
 
   const [email, setEmail] = useState<Email | null>(null);
+  const [recipients, setRecipients] = useState<RecipientContact[]>([]);
+  const [senderContact, setSenderContact] = useState<{ id: number; name: string } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -46,7 +55,49 @@ export default function EmailDetailPage() {
         .select("*")
         .eq("id", emailId)
         .single();
-      setEmail((data as Email | null) ?? null);
+
+      const emailData = (data as Email | null) ?? null;
+      setEmail(emailData);
+
+      if (emailData) {
+        // Fetch resolved recipients
+        supabase
+          .from("email_recipients")
+          .select("contact_id, recipient_email, recipient_name")
+          .eq("email_id", emailData.id)
+          .then(({ data: recs }) => {
+            if (recs && recs.length > 0) {
+              // Fetch contact names
+              const contactIds = recs.map((r) => r.contact_id);
+              supabase
+                .from("contacts")
+                .select("id, name")
+                .in("id", contactIds)
+                .then(({ data: contacts }) => {
+                  const contactMap = new Map((contacts ?? []).map((c) => [c.id, c.name]));
+                  setRecipients(
+                    recs.map((r) => ({
+                      ...r,
+                      contact_name: contactMap.get(r.contact_id) ?? r.recipient_name ?? r.recipient_email,
+                    }))
+                  );
+                });
+            }
+          });
+
+        // Fetch sender contact name
+        if (emailData.sender_contact_id) {
+          supabase
+            .from("contacts")
+            .select("id, name")
+            .eq("id", emailData.sender_contact_id)
+            .single()
+            .then(({ data: contact }) => {
+              if (contact) setSenderContact(contact);
+            });
+        }
+      }
+
       setLoading(false);
     }
     fetchEmail();
@@ -98,44 +149,75 @@ export default function EmailDetailPage() {
             {email.subject ?? "Sin asunto"}
           </CardTitle>
 
-          <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm text-muted-foreground pt-1">
-            <span>
-              <span className="font-medium text-foreground">De:</span>{" "}
-              {email.sender ?? "—"}
-            </span>
-            <span>
-              <span className="font-medium text-foreground">Para:</span>{" "}
-              {email.recipient ?? "—"}
-            </span>
-            <span>{formatDateTime(email.email_date)}</span>
-            {email.sender_type && (
-              <Badge
-                variant={
-                  senderTypeBadgeVariant[email.sender_type] ?? "secondary"
-                }
-              >
-                {senderTypeLabel[email.sender_type] ?? email.sender_type}
-              </Badge>
-            )}
-            {email.has_attachments && (
-              <span className="flex items-center gap-1">
-                <Paperclip className="h-3.5 w-3.5" />
-                Adjuntos
-              </span>
-            )}
+          <div className="space-y-2 pt-2 text-sm">
+            {/* Sender */}
+            <div className="flex items-start gap-2">
+              <span className="font-medium text-foreground shrink-0 w-12">De:</span>
+              <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                {senderContact ? (
+                  <Link
+                    href={`/contacts/${senderContact.id}`}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    {senderContact.name}
+                  </Link>
+                ) : (
+                  <span className="text-muted-foreground">{email.sender ?? "—"}</span>
+                )}
+                {email.sender_type && (
+                  <Badge
+                    variant={senderTypeBadgeVariant[email.sender_type] ?? "secondary"}
+                  >
+                    {senderTypeLabel[email.sender_type] ?? email.sender_type}
+                  </Badge>
+                )}
+              </div>
+            </div>
+
+            {/* Recipients */}
+            <div className="flex items-start gap-2">
+              <span className="font-medium text-foreground shrink-0 w-12">Para:</span>
+              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                {recipients.length > 0 ? (
+                  recipients.map((r) => (
+                    <Link
+                      key={r.contact_id}
+                      href={`/contacts/${r.contact_id}`}
+                      className="inline-flex items-center gap-1 rounded-md bg-muted px-2 py-0.5 text-xs font-medium text-primary hover:bg-muted/80 hover:underline transition-colors"
+                    >
+                      <User className="h-3 w-3" />
+                      {r.contact_name}
+                    </Link>
+                  ))
+                ) : (
+                  <span className="text-muted-foreground">{email.recipient ?? "—"}</span>
+                )}
+              </div>
+            </div>
+
+            {/* Date + metadata */}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
+              <span>{formatDateTime(email.email_date)}</span>
+              {email.has_attachments && (
+                <span className="flex items-center gap-1">
+                  <Paperclip className="h-3.5 w-3.5" />
+                  Adjuntos
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Entity links */}
           <div className="flex flex-wrap gap-2 pt-2">
             {email.sender_contact_id && (
-              <EntityLink type="contact" id={email.sender_contact_id} label="Ver contacto" />
+              <EntityLink type="contact" id={email.sender_contact_id} label="Perfil del remitente" />
             )}
             {email.company_id && (
               <EntityLink type="company" id={email.company_id} label="Ver empresa" />
             )}
             {email.thread_id && (
-              <Link href={`/threads`} className="text-xs text-primary hover:underline">
-                Ver hilo
+              <Link href={`/threads/${email.thread_id}`} className="text-xs text-primary hover:underline">
+                Ver hilo completo
               </Link>
             )}
           </div>

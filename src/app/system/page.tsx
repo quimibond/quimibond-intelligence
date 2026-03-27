@@ -166,6 +166,18 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
       },
     },
     {
+      id: "resolve_recipients",
+      label: "Resolver Destinatarios",
+      desc: "Vincula emails.recipient → contactos (many-to-many)",
+      icon: Mail,
+      fn: async () => {
+        const { data, error } = await supabase.rpc("resolve_email_recipients");
+        if (error) throw error;
+        const r = data as { total_addresses_parsed: number; resolved_to_contacts: number };
+        return `${r.resolved_to_contacts} de ${r.total_addresses_parsed} destinatarios resueltos`;
+      },
+    },
+    {
       id: "enrich_contacts",
       label: "Enriquecer Contactos (Claude)",
       desc: "Genera perfiles con IA para contactos sin rol",

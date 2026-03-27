@@ -625,6 +625,15 @@ export interface PipelineLog {
   created_at: string;
 }
 
+export interface EmailRecipient {
+  id: number;
+  email_id: number;
+  contact_id: number;
+  recipient_email: string;
+  recipient_name: string | null;
+  created_at: string;
+}
+
 export interface SyncCommand {
   id: number;
   command: string;
