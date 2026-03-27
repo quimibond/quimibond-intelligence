@@ -3,10 +3,14 @@ import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { MainContent } from "@/components/layout/main-content";
 import { SearchCommand } from "@/components/shared/search-command";
+import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Quimibond Intelligence",
+  title: {
+    default: "Quimibond Intelligence",
+    template: "%s | Quimibond Intelligence",
+  },
   description: "Plataforma de inteligencia comercial",
 };
 
@@ -30,6 +34,12 @@ export default function RootLayout({
           <AppSidebar />
           <MainContent>{children}</MainContent>
           <SearchCommand />
+          <Toaster
+            position="bottom-right"
+            toastOptions={{
+              className: "!bg-card !text-card-foreground !border-border",
+            }}
+          />
         </SidebarProvider>
       </body>
     </html>

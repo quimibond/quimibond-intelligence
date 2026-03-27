@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   AlertTriangle,
   Bell,
@@ -166,16 +167,19 @@ export default function AlertsPage() {
       updates.resolved_at = new Date().toISOString();
     }
     const { error } = await supabase.from("alerts").update(updates).in("id", ids);
-    if (!error) {
-      setAlerts((prev) =>
-        prev.map((a) =>
-          selectedIds.has(a.id)
-            ? { ...a, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) }
-            : a
-        )
-      );
-      setSelectedIds(new Set());
+    if (error) {
+      toast.error("Error al actualizar alertas");
+      return;
     }
+    setAlerts((prev) =>
+      prev.map((a) =>
+        selectedIds.has(a.id)
+          ? { ...a, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) }
+          : a
+      )
+    );
+    setSelectedIds(new Set());
+    toast.success(`${ids.length} alerta${ids.length > 1 ? "s" : ""} actualizada${ids.length > 1 ? "s" : ""}`);
   }
 
   async function updateState(id: number, state: "acknowledged" | "resolved") {
@@ -184,13 +188,16 @@ export default function AlertsPage() {
       updates.resolved_at = new Date().toISOString();
     }
     const { error } = await supabase.from("alerts").update(updates).eq("id", id);
-    if (!error) {
-      setAlerts((prev) =>
-        prev.map((a) =>
-          a.id === id ? { ...a, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) } : a
-        )
-      );
+    if (error) {
+      toast.error("Error al actualizar alerta");
+      return;
     }
+    setAlerts((prev) =>
+      prev.map((a) =>
+        a.id === id ? { ...a, state, ...(state === "resolved" ? { resolved_at: new Date().toISOString() } : {}) } : a
+      )
+    );
+    toast.success("Alerta actualizada");
   }
 
   if (loading) {

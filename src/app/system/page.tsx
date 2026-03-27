@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
 import {
   Activity,
   AlertTriangle,
@@ -100,9 +101,12 @@ function SyncPanel({ onComplete }: { onComplete: () => void }) {
     try {
       const msg = await fn();
       setResult({ type: "success", msg: `${label}: ${msg}` });
+      toast.success(`${label}: ${msg}`);
       onComplete();
     } catch (e) {
-      setResult({ type: "error", msg: `${label}: ${e instanceof Error ? e.message : "Error"}` });
+      const errMsg = e instanceof Error ? e.message : "Error";
+      setResult({ type: "error", msg: `${label}: ${errMsg}` });
+      toast.error(`${label}: ${errMsg}`);
     } finally {
       setRunning(null);
     }
