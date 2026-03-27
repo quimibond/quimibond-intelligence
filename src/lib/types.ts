@@ -626,12 +626,14 @@ export interface PipelineLog {
 }
 
 export interface SyncCommand {
-  id: string;
+  id: number;
   command: string;
   status: "pending" | "running" | "completed" | "failed";
-  result: Record<string, unknown>;
+  requested_by: string | null;
+  result: Record<string, unknown> | null;
   created_at: string;
-  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 }
 
 export interface ChatMemory {
