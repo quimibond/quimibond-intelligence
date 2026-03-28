@@ -11,7 +11,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 
-export const maxDuration = 600; // 10 min for full pipeline
+export const maxDuration = 300; // 5 min (Vercel hobby plan limit)
 
 interface StepResult {
   step: string;
