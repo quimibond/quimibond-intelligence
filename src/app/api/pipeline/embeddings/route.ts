@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
 
@@ -7,6 +8,9 @@ const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 const BATCH_SIZE = 64;
 
 export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
   try {
     const voyageKey = process.env.VOYAGE_API_KEY;
     if (!voyageKey) {

@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { syncAllAccounts, type GmailAccount } from "@/lib/pipeline/gmail";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
   try {
     const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
     if (!serviceAccountJson) {

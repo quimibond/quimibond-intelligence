@@ -2,10 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { buildOdooContext, loadPersonProfiles } from "@/lib/pipeline/odoo-context";
 import { analyzeAccountFull, formatEmailsForClaude } from "@/lib/pipeline/claude-pipeline";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 300; // 5 min for full analysis
 
 export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
