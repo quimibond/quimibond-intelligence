@@ -30,20 +30,25 @@ src/lib/
   supabase.ts               # Cliente Supabase con lazy proxy
   utils.ts                  # cn(), formatCurrency(), timeAgo()
 
-supabase/migrations/        # 001_initial_schema.sql (18 tablas, 6 RPC functions, RLS, vector index)
+supabase/migrations/        # 22 migrations (006 = consolidated redesign)
 ```
 
-## Base de datos (18 tablas)
+## Base de datos (32 tablas, 7 tiers)
 
-Core: contacts, person_profiles, emails, email_threads, email_attachments
-Análisis: email_analyses, topics, email_topics, facts, contact_interactions
-Operación: alerts, alert_rules, action_items, briefings, briefing_sections
-Infraestructura: embeddings (pgvector), pipeline_runs, pipeline_logs
+Tier 1 — Core: companies, contacts
+Tier 2 — Communication: threads, emails (pgvector), email_recipients, communication_edges
+Tier 3 — Knowledge Graph: entities, facts, entity_relationships
+Tier 4 — Intelligence: alerts, action_items, briefings, topics
+Tier 5 — Metrics: health_scores, revenue_metrics, communication_metrics, odoo_snapshots
+Tier 6 — Odoo: odoo_products, odoo_order_lines, odoo_users, odoo_invoices, odoo_payments, odoo_deliveries, odoo_crm_leads, odoo_activities
+Tier 7 — System: sync_state, sync_commands, pipeline_runs, pipeline_logs, chat_memory, feedback_signals, token_usage
+
+Schema registry (source of truth): `qb19/addons/quimibond_intelligence/services/sync_schema.py`
 
 ## Relación con qb19
 
 El repo **qb19** es un addon de Odoo que ejecuta el pipeline de inteligencia:
-1. Ingesta emails via IMAP/API
+1. Ingesta emails via Gmail API
 2. Analiza con Claude (sentimiento, intención, hechos)
 3. Genera embeddings, alertas, acciones y briefings
 4. Escribe todo en la misma base Supabase
