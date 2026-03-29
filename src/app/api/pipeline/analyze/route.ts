@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 import { getServiceClient } from "@/lib/supabase-server";
 import { buildOdooContext, loadPersonProfiles } from "@/lib/pipeline/odoo-context";
 import { analyzeAccountFull, formatEmailsForClaude } from "@/lib/pipeline/claude-pipeline";
@@ -135,46 +136,59 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Save summaries
-    if (summaries.length) {
-      await supabase.from("email_analyses").upsert(
-        summaries.map(s => ({
-          account: s.account,
-          analysis_date: today,
-          summary_json: s,
-        })),
-        { onConflict: "account,analysis_date" }
-      );
-    }
-
     // Save KG entities and facts
     for (const [account, kg] of Object.entries(kgByAccount)) {
-      // Save entities
+      // Save entities and build name→id map for fact linking
+      const entityMap: Record<string, number> = {};
       for (const ent of (kg.entities as Record<string, unknown>[]) ?? []) {
         const canonical = String(ent.name ?? "").toLowerCase().trim();
         if (!canonical) continue;
-        await supabase
+        const { data } = await supabase
           .from("entities")
           .upsert({
             entity_type: ent.type ?? "person",
             name: ent.name,
             canonical_name: canonical,
             email: ent.email ?? null,
-          }, { onConflict: "entity_type,canonical_name" });
+          }, { onConflict: "entity_type,canonical_name" })
+          .select("id");
+        if (data?.[0]?.id) {
+          entityMap[String(ent.name)] = data[0].id;
+        }
       }
 
-      // Save facts (batch)
-      const facts = ((kg.facts as Record<string, unknown>[]) ?? [])
-        .filter(f => f.entity_name && f.text)
-        .map(f => ({
+      // Save facts (batch) — resolve entity_name to entity_id
+      const facts: Record<string, unknown>[] = [];
+      for (const f of (kg.facts as Record<string, unknown>[]) ?? []) {
+        if (!f.entity_name || !f.text) continue;
+        let entityId = entityMap[String(f.entity_name)];
+        if (!entityId) {
+          // Fallback: lookup by canonical_name
+          const { data } = await supabase
+            .from("entities")
+            .select("id")
+            .eq("canonical_name", String(f.entity_name).toLowerCase().trim())
+            .limit(1);
+          if (data?.[0]?.id) entityId = data[0].id;
+        }
+        if (!entityId) continue; // Skip facts without a resolved entity
+
+        const raw = `${entityId}|${f.type ?? "information"}|${f.text}`;
+        const factHash = hashMD5(raw);
+        facts.push({
+          entity_id: entityId,
           fact_type: f.type ?? "information",
           fact_text: f.text,
+          fact_hash: factHash,
           fact_date: f.date ?? null,
+          is_future: f.is_future ?? false,
           confidence: f.confidence ?? 0.5,
+          source_type: "email",
           source_account: account,
-        }));
+        });
+      }
       if (facts.length) {
-        await supabase.from("facts").insert(facts);
+        await supabase.from("facts").upsert(facts, { onConflict: "fact_hash", ignoreDuplicates: true });
       }
     }
 
@@ -235,4 +249,8 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
   const chunks: T[][] = [];
   for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
   return chunks;
+}
+
+function hashMD5(input: string): string {
+  return createHash("md5").update(input).digest("hex");
 }
