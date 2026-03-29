@@ -16,12 +16,20 @@ import {
   Percent,
   ShieldAlert,
   ShoppingCart,
+  DollarSign,
   TrendingDown,
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { timeAgo } from "@/lib/utils";
 import type { Alert } from "@/lib/types";
+
+function fmtCurrency(v: number | null): string {
+  if (v == null || v === 0) return "";
+  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
+  return `$${v.toFixed(0)}`;
+}
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -70,6 +78,7 @@ export default function AlertsPage() {
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [sortBy, setSortBy] = useState<string>("recent");
   const [alertTypeNames, setAlertTypeNames] = useState<Record<string, string>>({});
   const [alertTypeCategories, setAlertTypeCategories] = useState<Record<string, string>>({});
 
@@ -112,13 +121,20 @@ export default function AlertsPage() {
   }, [alerts]);
 
   const filtered = useMemo(() => {
-    return alerts.filter((a) => {
+    const result = alerts.filter((a) => {
       if (severityFilter !== "all" && a.severity !== severityFilter) return false;
       if (stateFilter !== "all" && a.state !== stateFilter) return false;
       if (typeFilter !== "all" && a.alert_type !== typeFilter) return false;
       return true;
     });
-  }, [alerts, severityFilter, stateFilter, typeFilter]);
+    if (sortBy === "urgency") {
+      result.sort((a, b) => (b.urgency_score ?? 0) - (a.urgency_score ?? 0));
+    } else if (sortBy === "value") {
+      result.sort((a, b) => (b.business_value_at_risk ?? 0) - (a.business_value_at_risk ?? 0));
+    }
+    // "recent" keeps default order (created_at DESC from API)
+    return result;
+  }, [alerts, severityFilter, stateFilter, typeFilter, sortBy]);
 
   const counts = useMemo(() => {
     const newCount = alerts.filter((a) => a.state === "new").length;
@@ -261,6 +277,15 @@ export default function AlertsPage() {
             <option key={t} value={t}>{alertTypeNames[t] ?? t}</option>
           ))}
         </Select>
+
+        <Select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value)}
+        >
+          <option value="recent">Mas recientes</option>
+          <option value="urgency">Mayor urgencia</option>
+          <option value="value">Mayor valor en riesgo</option>
+        </Select>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -351,6 +376,12 @@ export default function AlertsPage() {
                       </Badge>
                     );
                   })()}
+                  {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 && (
+                    <Badge variant="warning" className="gap-1">
+                      <DollarSign className="h-3 w-3" />
+                      {fmtCurrency(alert.business_value_at_risk)} en riesgo
+                    </Badge>
+                  )}
                 </div>
                 {expandedId === alert.id && (
                   <div className="space-y-3 rounded-lg bg-muted/50 p-3">
@@ -420,6 +451,7 @@ export default function AlertsPage() {
                   <TableHead>Titulo</TableHead>
                   <TableHead>Contacto</TableHead>
                   <TableHead>Tipo</TableHead>
+                  <TableHead>Valor en riesgo</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="w-[100px]">Fecha</TableHead>
                 </TableRow>
@@ -480,6 +512,15 @@ export default function AlertsPage() {
                         })()}
                       </TableCell>
                       <TableCell>
+                        {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 ? (
+                          <span className="font-medium text-amber-600 dark:text-amber-400">
+                            {fmtCurrency(alert.business_value_at_risk)}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell>
                         <StateBadge state={alert.state} />
                       </TableCell>
                       <TableCell className="text-muted-foreground">
@@ -488,7 +529,7 @@ export default function AlertsPage() {
                     </TableRow>
                     {expandedId === alert.id && (
                       <TableRow key={`${alert.id}-detail`}>
-                        <TableCell colSpan={7}>
+                        <TableCell colSpan={8}>
                           <div className="space-y-3 rounded-lg bg-muted/50 p-4">
                             {alert.description && (
                               <div>
