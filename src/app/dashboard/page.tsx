@@ -128,6 +128,7 @@ async function fetchDashboard() {
     alertsResolvedRes, criticalAlertsRes, overdueActionsRes, contactsAtRiskRes,
     stockoutRes, complianceRes, threadsStalled, totalCompanies, totalThreads,
     entitiesRes, factsRes,
+    totalValueAtRiskRes,
   ] = await Promise.all([
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new").in("severity", ["critical", "high"]),
@@ -148,6 +149,7 @@ async function fetchDashboard() {
     supabase.from("threads").select("id", { count: "exact", head: true }),
     supabase.from("entities").select("id", { count: "exact", head: true }),
     supabase.from("facts").select("id", { count: "exact", head: true }),
+    supabase.from("alerts").select("business_value_at_risk").eq("state", "new").not("business_value_at_risk", "is", null),
   ]);
 
   return {
@@ -175,6 +177,9 @@ async function fetchDashboard() {
     totalThreads: totalThreads.count ?? 0,
     totalEntities: entitiesRes.count ?? 0,
     totalFacts: factsRes.count ?? 0,
+    totalValueAtRisk: (totalValueAtRiskRes.data ?? []).reduce(
+      (sum: number, a: { business_value_at_risk: number | null }) => sum + (a.business_value_at_risk ?? 0), 0
+    ),
   };
 }
 
@@ -327,6 +332,14 @@ export default function DashboardPage() {
           icon={PackageX}
           href="/alerts?type=stockout_risk"
           variant={data.stockoutCount > 0 ? "warning" : "default"}
+        />
+        <KPICard
+          title="Valor en Riesgo"
+          value={data.totalValueAtRisk > 0 ? formatCurrency(data.totalValueAtRisk) : "—"}
+          subtitle={`${kpi.open_alerts} alertas abiertas`}
+          icon={DollarSign}
+          href="/alerts?sort=value"
+          variant={data.totalValueAtRisk > 100000 ? "danger" : data.totalValueAtRisk > 0 ? "warning" : "default"}
         />
         <KPICard
           title="Threads sin Respuesta"
