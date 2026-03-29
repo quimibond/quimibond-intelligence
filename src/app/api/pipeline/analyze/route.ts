@@ -137,13 +137,20 @@ export async function POST(request: NextRequest) {
     }
 
     // Save KG entities and facts
+    let totalEntitiesSaved = 0;
+    let totalFactsSaved = 0;
+    let totalFactsSkipped = 0;
     for (const [account, kg] of Object.entries(kgByAccount)) {
+      const kgEntities = (kg.entities as Record<string, unknown>[]) ?? [];
+      const kgFacts = (kg.facts as Record<string, unknown>[]) ?? [];
+      console.log(`[analyze] KG for ${account}: ${kgEntities.length} entities, ${kgFacts.length} facts from Claude`);
+
       // Save entities and build name→id map for fact linking
       const entityMap: Record<string, number> = {};
-      for (const ent of (kg.entities as Record<string, unknown>[]) ?? []) {
+      for (const ent of kgEntities) {
         const canonical = String(ent.name ?? "").toLowerCase().trim();
         if (!canonical) continue;
-        const { data } = await supabase
+        const { data, error } = await supabase
           .from("entities")
           .upsert({
             entity_type: ent.type ?? "person",
@@ -152,14 +159,18 @@ export async function POST(request: NextRequest) {
             email: ent.email ?? null,
           }, { onConflict: "entity_type,canonical_name" })
           .select("id");
+        if (error) {
+          console.error(`[analyze] Entity upsert error for "${ent.name}":`, error.message);
+        }
         if (data?.[0]?.id) {
           entityMap[String(ent.name)] = data[0].id;
+          totalEntitiesSaved++;
         }
       }
 
       // Save facts (batch) — resolve entity_name to entity_id
       const facts: Record<string, unknown>[] = [];
-      for (const f of (kg.facts as Record<string, unknown>[]) ?? []) {
+      for (const f of kgFacts) {
         if (!f.entity_name || !f.text) continue;
         let entityId = entityMap[String(f.entity_name)];
         if (!entityId) {
@@ -171,7 +182,11 @@ export async function POST(request: NextRequest) {
             .limit(1);
           if (data?.[0]?.id) entityId = data[0].id;
         }
-        if (!entityId) continue; // Skip facts without a resolved entity
+        if (!entityId) {
+          totalFactsSkipped++;
+          console.log(`[analyze] Fact skipped — no entity for "${f.entity_name}"`);
+          continue;
+        }
 
         const raw = `${entityId}|${f.type ?? "information"}|${f.text}`;
         const factHash = hashMD5(raw);
@@ -188,9 +203,16 @@ export async function POST(request: NextRequest) {
         });
       }
       if (facts.length) {
-        await supabase.from("facts").upsert(facts, { onConflict: "fact_hash", ignoreDuplicates: true });
+        const { error } = await supabase.from("facts").upsert(facts, { onConflict: "fact_hash", ignoreDuplicates: true });
+        if (error) {
+          console.error(`[analyze] Facts upsert error for ${account}:`, error.message);
+        } else {
+          totalFactsSaved += facts.length;
+          console.log(`[analyze] Saved ${facts.length} facts for ${account}`);
+        }
       }
     }
+    console.log(`[analyze] KG totals: ${totalEntitiesSaved} entities, ${totalFactsSaved} facts saved, ${totalFactsSkipped} facts skipped`);
 
     // Save person profiles (batch update contacts)
     for (const { profiles } of pendingProfiles) {
@@ -229,6 +251,7 @@ export async function POST(request: NextRequest) {
       summaries: summaries.length,
       accounts_ok: accountsOk,
       accounts_failed: accountsFailed,
+      kg: { entities: totalEntitiesSaved, facts: totalFactsSaved, facts_skipped: totalFactsSkipped },
       elapsed_s: Math.round((Date.now() - start) / 1000),
     });
   } catch (err) {
