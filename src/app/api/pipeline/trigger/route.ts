@@ -56,8 +56,16 @@ export async function POST(request: NextRequest) {
       const stepStart = Date.now();
       try {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
+        // Auth: prefer original Bearer token, fall back to server-side CRON_SECRET
         const authHeader = request.headers.get("authorization");
-        if (authHeader) headers["Authorization"] = authHeader;
+        if (authHeader) {
+          headers["Authorization"] = authHeader;
+        } else if (process.env.CRON_SECRET) {
+          headers["Authorization"] = `Bearer ${process.env.CRON_SECRET}`;
+        }
+        // Forward cookies as fallback for session-based auth
+        const cookieHeader = request.headers.get("cookie");
+        if (cookieHeader) headers["Cookie"] = cookieHeader;
 
         const res = await fetch(`${origin}/api/pipeline/${step}`, {
           method: "POST",
