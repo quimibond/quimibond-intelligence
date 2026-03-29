@@ -227,6 +227,9 @@ export interface Alert {
   business_impact: string | null;
   suggested_action: string | null;
   prediction_confidence: number | null;
+  // Business value
+  business_value_at_risk: number | null;
+  urgency_score: number | null;
   created_at: string;
   updated_at: string;
 }

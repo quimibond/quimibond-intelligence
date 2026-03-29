@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,7 @@ import type { Briefing } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import {
   Card,
   CardContent,
@@ -18,18 +19,30 @@ import {
 } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const SCOPE_LABELS: Record<string, string> = {
+  daily: "General",
+  director: "Direccion",
+  ventas: "Ventas",
+  logistica: "Logistica",
+  compras: "Compras",
+  account: "Por cuenta",
+  company: "Por empresa",
+  weekly: "Semanal",
+};
+
 export default function BriefingsPage() {
   const [summaries, setSummaries] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [scopeFilter, setScopeFilter] = useState<string>("daily");
 
   useEffect(() => {
     async function fetchSummaries() {
       const { data, error } = await supabase
         .from("briefings")
         .select("*")
-        .eq("scope", "daily")
+        .in("scope", ["daily", "director", "ventas", "logistica", "compras"])
         .order("briefing_date", { ascending: false })
-        .limit(50);
+        .limit(100);
 
       if (!error && data) {
         setSummaries(data as Briefing[]);
@@ -38,6 +51,16 @@ export default function BriefingsPage() {
     }
     fetchSummaries();
   }, []);
+
+  const availableScopes = useMemo(() => {
+    const scopes = new Set(summaries.map((s) => s.scope));
+    return Array.from(scopes);
+  }, [summaries]);
+
+  const filtered = useMemo(() => {
+    if (scopeFilter === "all") return summaries;
+    return summaries.filter((s) => s.scope === scopeFilter);
+  }, [summaries, scopeFilter]);
 
   if (loading) {
     return (
@@ -57,18 +80,33 @@ export default function BriefingsPage() {
     <div className="space-y-6">
       <PageHeader
         title="Briefings"
-        description="Resumenes diarios de inteligencia generados por IA"
+        description="Resumenes de inteligencia generados por IA, por rol"
       />
 
-      {summaries.length === 0 ? (
+      <div className="flex flex-wrap items-center gap-3">
+        <Select
+          value={scopeFilter}
+          onChange={(e) => setScopeFilter(e.target.value)}
+        >
+          <option value="all">Todos los roles</option>
+          {availableScopes.map((s) => (
+            <option key={s} value={s}>{SCOPE_LABELS[s] ?? s}</option>
+          ))}
+        </Select>
+        <span className="text-sm text-muted-foreground">
+          {filtered.length} briefing{filtered.length !== 1 ? "s" : ""}
+        </span>
+      </div>
+
+      {filtered.length === 0 ? (
         <EmptyState
           icon={BookOpen}
           title="Sin briefings"
-          description="Aun no se han generado resumenes diarios."
+          description="No hay briefings para el rol seleccionado."
         />
       ) : (
         <div className="grid gap-4 lg:grid-cols-2">
-          {summaries.map((summary) => (
+          {filtered.map((summary) => (
             <Link key={summary.id} href={`/briefings/${summary.id}`}>
               <Card className="h-full transition-colors hover:border-primary/30">
                 <CardHeader className="pb-3">
@@ -80,6 +118,11 @@ export default function BriefingsPage() {
                           ? formatDate(summary.briefing_date)
                           : "Sin fecha"}
                       </CardTitle>
+                      {summary.scope !== "daily" && (
+                        <Badge variant="info" className="text-xs">
+                          {SCOPE_LABELS[summary.scope] ?? summary.scope}
+                        </Badge>
+                      )}
                     </div>
                     <span className="text-xs text-muted-foreground">
                       {timeAgo(summary.created_at)}
@@ -87,6 +130,9 @@ export default function BriefingsPage() {
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-3">
+                  {summary.title && (
+                    <p className="text-sm font-medium">{summary.title}</p>
+                  )}
                   {summary.summary_text && (
                     <p className="text-sm leading-relaxed text-muted-foreground">
                       {truncate(summary.summary_text, 200)}
