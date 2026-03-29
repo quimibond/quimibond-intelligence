@@ -10,6 +10,7 @@
  * Can be called by: Vercel Cron, GitHub Actions, manual trigger from UI.
  */
 import { NextRequest, NextResponse } from "next/server";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 300; // 5 min (Vercel hobby plan limit)
 
@@ -25,6 +26,9 @@ const VALID_STEPS = ["sync-emails", "analyze", "embeddings", "briefing"] as cons
 type PipelineStep = typeof VALID_STEPS[number];
 
 export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json().catch(() => ({}));
     let steps: PipelineStep[] = body.steps ?? ["all"];
@@ -51,9 +55,13 @@ export async function POST(request: NextRequest) {
     for (const step of steps) {
       const stepStart = Date.now();
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        const authHeader = request.headers.get("authorization");
+        if (authHeader) headers["Authorization"] = authHeader;
+
         const res = await fetch(`${origin}/api/pipeline/${step}`, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
         });
 
         const data = await res.json().catch(() => ({}));

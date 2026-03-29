@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { synthesizeBriefing } from "@/lib/pipeline/claude-pipeline";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
