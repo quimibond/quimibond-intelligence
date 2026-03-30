@@ -7,9 +7,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   ChevronDown,
+  ArrowUpCircle,
   ClipboardList,
   Clock,
   Loader2,
+  PauseCircle,
   X,
   XCircle,
 } from "lucide-react";
@@ -20,6 +22,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StateBadge } from "@/components/shared/state-badge";
 import { FeedbackButtons } from "@/components/shared/feedback-buttons";
+import { AssigneeSelect } from "@/components/shared/assignee-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
@@ -203,6 +206,42 @@ export default function ActionsPage() {
     }
   }
 
+  async function reassign(id: number, email: string | null, name: string | null) {
+    const { error } = await supabase
+      .from("action_items")
+      .update({ assignee_email: email, assignee_name: name })
+      .eq("id", id);
+    if (error) {
+      toast.error("Error al reasignar");
+      return;
+    }
+    setActions((prev) =>
+      prev.map((a) =>
+        a.id === id ? { ...a, assignee_email: email, assignee_name: name } : a
+      )
+    );
+    toast.success(`Asignado a ${name ?? "nadie"}`);
+  }
+
+  async function updateState(id: number, state: string) {
+    const updates: Record<string, unknown> = { state };
+    if (state === "completed") updates.completed_at = new Date().toISOString();
+    const { error } = await supabase
+      .from("action_items")
+      .update(updates)
+      .eq("id", id);
+    if (error) {
+      toast.error("Error al actualizar estado");
+      return;
+    }
+    setActions((prev) =>
+      prev.map((a) =>
+        a.id === id ? { ...a, state, ...(state === "completed" ? { completed_at: new Date().toISOString() } : {}) } : a
+      )
+    );
+    toast.success(`Estado: ${state}`);
+  }
+
   if (loading) {
     return (
       <div className="space-y-6">
@@ -241,6 +280,8 @@ export default function ActionsPage() {
           <option value="all">Todos los estados</option>
           <option value="pending">Pendientes</option>
           <option value="in_progress">En progreso</option>
+          <option value="blocked">Bloqueadas</option>
+          <option value="escalated">Escaladas</option>
           <option value="completed">Completadas</option>
           <option value="dismissed">Descartadas</option>
         </Select>
@@ -462,8 +503,12 @@ export default function ActionsPage() {
                       <TableCell>
                         <StateBadge state={action.state} />
                       </TableCell>
-                      <TableCell className="text-sm">
-                        {action.assignee_name ?? action.assignee_email ?? "—"}
+                      <TableCell>
+                        <AssigneeSelect
+                          value={action.assignee_email}
+                          onChange={(email, name) => reassign(action.id, email, name)}
+                          className="h-8 text-xs w-[140px]"
+                        />
                       </TableCell>
                       <TableCell>
                         {action.due_date ? (
@@ -486,31 +531,28 @@ export default function ActionsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-1">
-                          {action.state === "pending" && (
+                          {(action.state === "pending" || action.state === "in_progress") && (
                             <>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Completar"
-                                onClick={() => markCompleted(action.id)}
-                              >
+                              <Button size="sm" variant="ghost" title="Completar" onClick={() => markCompleted(action.id)}>
                                 <CheckCircle2 className="h-4 w-4" />
                               </Button>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                title="Descartar"
-                                onClick={() => dismiss(action.id)}
-                              >
+                              <Button size="sm" variant="ghost" title="Bloqueada" onClick={() => updateState(action.id, "blocked")}>
+                                <PauseCircle className="h-4 w-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" title="Escalar" onClick={() => updateState(action.id, "escalated")}>
+                                <ArrowUpCircle className="h-4 w-4" />
+                              </Button>
+                              <Button size="sm" variant="ghost" title="Descartar" onClick={() => dismiss(action.id)}>
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </>
                           )}
-                          <FeedbackButtons
-                            table="action_items"
-                            id={action.id}
-                            currentFeedback={null}
-                          />
+                          {(action.state === "blocked" || action.state === "escalated") && (
+                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateState(action.id, "pending")}>
+                              Reactivar
+                            </Button>
+                          )}
+                          <FeedbackButtons table="action_items" id={action.id} currentFeedback={null} />
                         </div>
                       </TableCell>
                     </TableRow>

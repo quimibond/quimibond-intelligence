@@ -247,6 +247,7 @@ export interface ActionItem {
   contact_company: string | null;
   company_id: number | null;
   thread_id: number | null;
+  alert_id: number | null;
   // Assignment
   assignee_name: string | null;
   assignee_email: string | null;

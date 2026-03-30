@@ -29,10 +29,12 @@ import {
   X,
   ChevronsLeft,
   ChevronsRight,
+  Inbox,
   Share2,
 } from "lucide-react";
 
 const navItems = [
+  { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/contacts", label: "Contactos", icon: Users },

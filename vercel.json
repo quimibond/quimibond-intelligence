@@ -1,8 +1,20 @@
 {
   "crons": [
     {
-      "path": "/api/pipeline/trigger",
+      "path": "/api/pipeline/sync-emails",
       "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/pipeline/analyze",
+      "schedule": "15 */2 * * *"
+    },
+    {
+      "path": "/api/pipeline/embeddings",
+      "schedule": "45 */2 * * *"
+    },
+    {
+      "path": "/api/pipeline/briefing",
+      "schedule": "0 7 * * *"
     }
   ]
 }
