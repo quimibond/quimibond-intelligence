@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaudeJSON } from "@/lib/claude";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 interface ClaudeCompanyProfile {
   description: string;
@@ -17,6 +18,10 @@ interface ClaudeCompanyProfile {
 const ENRICHMENT_COOLDOWN_DAYS = 7;
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 10 enrichments per minute per client
+  const limited = rateLimitResponse(request, 10, 60_000, "enrich-company");
+  if (limited) return limited;
+
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 interface BatchEnrichRequest {
   type: "contacts" | "companies";
@@ -7,6 +8,10 @@ interface BatchEnrichRequest {
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 3 batch enrichments per 5 minutes per client
+  const limited = rateLimitResponse(request, 3, 300_000, "enrich-batch");
+  if (limited) return limited;
+
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {

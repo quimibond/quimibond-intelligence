@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaude, getVoyageEmbedding, logTokenUsage } from "@/lib/claude";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
@@ -198,6 +199,10 @@ ${ctx.contacts}`;
 }
 
 export async function POST(request: NextRequest) {
+  // Rate limit: 20 requests per minute per client
+  const limited = rateLimitResponse(request, 20, 60_000, "chat");
+  if (limited) return limited;
+
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
