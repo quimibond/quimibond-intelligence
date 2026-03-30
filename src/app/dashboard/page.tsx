@@ -87,19 +87,19 @@ function KPICard({
   return (
     <Link href={href} className={cn("block group", className)}>
       <Card className={cn("transition-all cursor-pointer", colors[variant])}>
-        <CardContent className="pt-4 pb-3">
+        <CardContent className="pt-3 pb-2 sm:pt-4 sm:pb-3">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2 text-xs text-muted-foreground">
-              <Icon className={cn("h-4 w-4", iconColors[variant])} />
-              <span>{title}</span>
+            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-muted-foreground min-w-0">
+              <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0", iconColors[variant])} />
+              <span className="truncate">{title}</span>
             </div>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all" />
+            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all shrink-0" />
           </div>
-          <p className={cn("mt-1 text-2xl font-bold tabular-nums", valueColors[variant])}>
+          <p className={cn("mt-1 text-xl sm:text-2xl font-bold tabular-nums truncate", valueColors[variant])}>
             {value}
           </p>
           {subtitle && (
-            <p className="text-xs text-muted-foreground mt-0.5">{subtitle}</p>
+            <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
           )}
         </CardContent>
       </Card>
@@ -404,7 +404,7 @@ export default function DashboardPage() {
                     <RiskBadge level={c.risk_level} />
                     <span className="text-sm font-medium truncate flex-1">{c.name}</span>
                     <div className="flex items-center gap-2 shrink-0">
-                      <Progress value={scoreToPercent(c.relationship_score)} className="h-1.5 w-16" />
+                      <Progress value={scoreToPercent(c.relationship_score)} className="h-1.5 w-12 sm:w-16" />
                       <span className="text-xs text-muted-foreground w-6 text-right">{c.relationship_score ?? 0}</span>
                     </div>
                   </Link>
@@ -565,10 +565,10 @@ export default function DashboardPage() {
                     <div className="min-w-0 flex-1">
                       <p className="text-sm font-medium truncate">{a.name}</p>
                     </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {a.overdue > 0 && <Badge variant="critical" className="text-xs">{a.overdue} vencidas</Badge>}
-                      {a.pending > 0 && <Badge variant="warning" className="text-xs">{a.pending} pend.</Badge>}
-                      <Badge variant="success" className="text-xs">{a.completed}</Badge>
+                    <div className="flex flex-wrap items-center gap-1 shrink-0">
+                      {a.overdue > 0 && <Badge variant="critical" className="text-[10px] px-1.5">{a.overdue} venc.</Badge>}
+                      {a.pending > 0 && <Badge variant="warning" className="text-[10px] px-1.5">{a.pending} pend.</Badge>}
+                      <Badge variant="success" className="text-[10px] px-1.5">{a.completed} ok</Badge>
                     </div>
                   </div>
                 ))}
@@ -623,10 +623,10 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-3">
             <Link href="/briefings" className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-blue-500" />
-                <CardTitle className="text-base">Ultimo Briefing — {latestBriefing.briefing_date}</CardTitle>
-                <span className="text-xs text-muted-foreground">{latestBriefing.total_emails ?? 0} emails</span>
+              <div className="flex items-center gap-2 min-w-0">
+                <FileText className="h-4 w-4 shrink-0 text-blue-500" />
+                <CardTitle className="text-sm sm:text-base truncate">Briefing — {latestBriefing.briefing_date}</CardTitle>
+                <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{latestBriefing.total_emails ?? 0} emails</span>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
             </Link>
