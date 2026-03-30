@@ -25,7 +25,7 @@ export default function RootLayout({
         {/* Prevent flash: apply theme before paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("qb-theme");document.documentElement.classList.toggle("dark",t?t==="dark":true)}catch(e){document.documentElement.classList.add("dark")}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("qb-theme");var p=window.matchMedia("(prefers-color-scheme:dark)").matches;document.documentElement.classList.toggle("dark",t?t==="dark":p)}catch(e){document.documentElement.classList.add("dark")}})()`,
           }}
         />
       </head>

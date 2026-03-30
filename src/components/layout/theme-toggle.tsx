@@ -9,7 +9,8 @@ export function ThemeToggle() {
 
   useEffect(() => {
     const stored = localStorage.getItem("qb-theme");
-    const dark = stored ? stored === "dark" : true;
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const dark = stored ? stored === "dark" : prefersDark;
     setIsDark(dark);
     document.documentElement.classList.toggle("dark", dark);
   }, []);
