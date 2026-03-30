@@ -19,17 +19,13 @@ import {
   DollarSign,
   TrendingDown,
   X,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, formatCurrency } from "@/lib/utils";
+import { exportCSV } from "@/lib/export-csv";
 import type { Alert } from "@/lib/types";
 
-function fmtCurrency(v: number | null): string {
-  if (v == null || v === 0) return "";
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
-}
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -286,6 +282,38 @@ export default function AlertsPage() {
           <option value="urgency">Mayor urgencia</option>
           <option value="value">Mayor valor en riesgo</option>
         </Select>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => exportCSV(
+            filtered.map((a) => ({
+              titulo: a.title,
+              severidad: a.severity,
+              estado: a.state,
+              tipo: a.alert_type,
+              contacto: a.contact_name ?? "",
+              empresa: "",
+              valor_en_riesgo: a.business_value_at_risk ?? "",
+              fecha: a.created_at,
+            })),
+            `alertas-${new Date().toISOString().split("T")[0]}`,
+            [
+              { key: "titulo", label: "Titulo" },
+              { key: "severidad", label: "Severidad" },
+              { key: "estado", label: "Estado" },
+              { key: "tipo", label: "Tipo" },
+              { key: "contacto", label: "Contacto" },
+              { key: "empresa", label: "Empresa" },
+              { key: "valor_en_riesgo", label: "Valor en Riesgo" },
+              { key: "fecha", label: "Fecha" },
+            ]
+          )}
+        >
+          <Download className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Exportar</span>
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -379,7 +407,7 @@ export default function AlertsPage() {
                   {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 && (
                     <Badge variant="warning" className="gap-1">
                       <DollarSign className="h-3 w-3" />
-                      {fmtCurrency(alert.business_value_at_risk)} en riesgo
+                      {formatCurrency(alert.business_value_at_risk)} en riesgo
                     </Badge>
                   )}
                 </div>
@@ -514,7 +542,7 @@ export default function AlertsPage() {
                       <TableCell>
                         {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 ? (
                           <span className="font-medium text-amber-600 dark:text-amber-400">
-                            {fmtCurrency(alert.business_value_at_risk)}
+                            {formatCurrency(alert.business_value_at_risk)}
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>

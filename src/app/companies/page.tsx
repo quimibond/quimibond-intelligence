@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, formatCurrency } from "@/lib/utils";
 import type { Company } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -20,14 +20,6 @@ import {
   MapPin,
   Sparkles,
 } from "lucide-react";
-
-function formatCurrency(value: number | null): string {
-  if (value == null) return "—";
-  return "$" + value.toLocaleString("es-MX", {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
-  });
-}
 
 const PAGE_SIZE = 60;
 

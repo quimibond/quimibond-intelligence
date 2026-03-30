@@ -749,3 +749,43 @@ export type ResponseMetric = CommunicationMetric;
 export type DailySummary = Briefing;
 /** @deprecated Use Briefing with scope='account' instead */
 export type AccountSummary = Briefing;
+
+// ═══════════════════════════════════════════════════════════════
+// Dashboard-specific types
+// ═══════════════════════════════════════════════════════════════
+
+export interface GlobalAging {
+  current: number;
+  "1_30": number;
+  "31_60": number;
+  "61_90": number;
+  "90_plus": number;
+  total_outstanding: number;
+}
+
+export interface LateDelivery {
+  name: string;
+  company_name: string | null;
+  company_id: number | null;
+  scheduled_date: string | null;
+  picking_type: string | null;
+  origin: string | null;
+}
+
+export interface PipelineGlobal {
+  total_opportunities: number;
+  pipeline_value: number;
+  weighted_value: number;
+}
+
+export interface RevenueRow {
+  id: number;
+  company_id: number;
+  total_invoiced: number | null;
+  pending_amount: number | null;
+  overdue_amount: number | null;
+  num_orders: number | null;
+  avg_order_value: number | null;
+  period_start: string;
+  period_type: string | null;
+}

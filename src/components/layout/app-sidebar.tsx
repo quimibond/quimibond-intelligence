@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { PipelineStatus } from "@/components/layout/pipeline-status";
+import { useSidebarCounts } from "@/components/layout/sidebar-badges";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import {
   Brain,
@@ -55,6 +57,7 @@ export function AppSidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const { collapsed, toggle: toggleCollapse } = useSidebar();
+  const counts = useSidebarCounts();
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -127,23 +130,42 @@ export function AppSidebar() {
 
           {/* Main navigation */}
           <nav className={cn("flex-1 space-y-1 overflow-y-auto px-3", collapsed && "md:px-2")}>
-            {navItems.map(({ href, label, icon: Icon }) => (
-              <Link
-                key={href}
-                href={href}
-                title={collapsed ? label : undefined}
-                className={cn(
-                  "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                  collapsed && "md:justify-center md:px-0",
-                  isActive(href)
-                    ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                    : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                )}
-              >
-                <Icon className="h-4 w-4 shrink-0" />
-                <span className={cn(collapsed && "md:hidden")}>{label}</span>
-              </Link>
-            ))}
+            {navItems.map(({ href, label, icon: Icon }) => {
+              const badge =
+                href === "/alerts" && counts.alerts > 0 ? counts.alerts :
+                href === "/actions" && counts.actions > 0 ? counts.actions :
+                null;
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  title={collapsed ? `${label}${badge ? ` (${badge})` : ""}` : undefined}
+                  className={cn(
+                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                    collapsed && "md:justify-center md:px-0",
+                    isActive(href)
+                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+                  )}
+                >
+                  <div className="relative shrink-0">
+                    <Icon className="h-4 w-4" />
+                    {badge != null && collapsed && (
+                      <span className="absolute -right-1 -top-1 hidden md:flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white" />
+                    )}
+                  </div>
+                  <span className={cn("flex-1", collapsed && "md:hidden")}>{label}</span>
+                  {badge != null && (
+                    <span className={cn(
+                      "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500/15 px-1.5 text-[11px] font-semibold text-red-500",
+                      collapsed && "md:hidden"
+                    )}>
+                      {badge}
+                    </span>
+                  )}
+                </Link>
+              );
+            })}
 
             {/* Separator */}
             <div className="my-3 h-px bg-sidebar-border" />
@@ -203,9 +225,12 @@ export function AppSidebar() {
             </button>
           </div>
 
-          {/* Footer */}
-          <div className={cn("border-t border-sidebar-border px-6 py-3", collapsed && "md:px-0 md:text-center")}>
-            <span className={cn("text-xs text-muted-foreground", collapsed && "md:hidden")}>v2.0</span>
+          {/* Pipeline status + Footer */}
+          <div className={cn("border-t border-sidebar-border", collapsed && "md:px-0 md:text-center")}>
+            <PipelineStatus collapsed={collapsed} />
+            <div className={cn("px-6 pb-3", collapsed && "md:px-0")}>
+              <span className={cn("text-xs text-muted-foreground", collapsed && "md:hidden")}>v2.0</span>
+            </div>
           </div>
         </div>
       </aside>

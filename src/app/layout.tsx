@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { MainContent } from "@/components/layout/main-content";
+import { RealtimeAlerts } from "@/components/shared/realtime-alerts";
 import { SearchCommand } from "@/components/shared/search-command";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -25,7 +26,7 @@ export default function RootLayout({
         {/* Prevent flash: apply theme before paint */}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem("qb-theme");document.documentElement.classList.toggle("dark",t?t==="dark":true)}catch(e){document.documentElement.classList.add("dark")}})()`,
+            __html: `(function(){try{var t=localStorage.getItem("qb-theme");var p=window.matchMedia("(prefers-color-scheme:dark)").matches;document.documentElement.classList.toggle("dark",t?t==="dark":p)}catch(e){document.documentElement.classList.add("dark")}})()`,
           }}
         />
       </head>
@@ -34,6 +35,7 @@ export default function RootLayout({
           <AppSidebar />
           <MainContent>{children}</MainContent>
           <SearchCommand />
+          <RealtimeAlerts />
           <Toaster
             position="bottom-right"
             toastOptions={{

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { cn, timeAgo, scoreToPercent } from "@/lib/utils";
-import type { DirectorDashboard, DashboardKPI } from "@/lib/types";
+import { cn, timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
+import type { DirectorDashboard, DashboardKPI, GlobalAging, LateDelivery, PipelineGlobal } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -20,35 +20,6 @@ import {
   ArrowRight, Activity,
 } from "lucide-react";
 
-function formatCurrency(value: number | null): string {
-  if (value == null) return "—";
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
-}
-
-// ── Types ──
-interface GlobalAging {
-  current: number;
-  "1_30": number;
-  "31_60": number;
-  "61_90": number;
-  "90_plus": number;
-  total_outstanding: number;
-}
-interface LateDelivery {
-  name: string;
-  company_name: string | null;
-  company_id: number | null;
-  scheduled_date: string | null;
-  picking_type: string | null;
-  origin: string | null;
-}
-interface PipelineGlobal {
-  total_opportunities: number;
-  pipeline_value: number;
-  weighted_value: number;
-}
 
 // ── Clickable KPI Card ──
 function KPICard({
@@ -195,6 +166,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
+      // Phase 1: Start non-blocking fetches immediately (don't wait)
+      fetchSecondaryData();
+
+      // Phase 2: KPI data (blocking, shows skeleton until complete)
       try {
         const result = await fetchDashboard();
         setData(result);
@@ -202,6 +177,10 @@ export default function DashboardPage() {
         console.error("[dashboard] Failed to load:", err);
       }
 
+      setLoading(false);
+    }
+
+    function fetchSecondaryData() {
       // Non-blocking: aging, deliveries, pipeline, briefing, accountability
       supabase
         .from("odoo_invoices")
@@ -274,9 +253,8 @@ export default function DashboardPage() {
           }
           setAccountability(Array.from(map.values()).sort((a, b) => b.overdue - a.overdue || b.pending - a.pending).slice(0, 8));
         });
-
-      setLoading(false);
     }
+
     load();
   }, []);
 
