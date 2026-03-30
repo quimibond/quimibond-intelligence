@@ -423,12 +423,17 @@ export default function SystemPage() {
   useEffect(() => {
     async function fetchData() {
       async function safeCount(table: string, filter?: { col: string; val: string }) {
-        let query = supabase.from(table).select("id", { count: "exact", head: true });
-        if (filter) query = query.eq(filter.col, filter.val);
-        const { count } = await query;
-        return count ?? 0;
+        try {
+          let query = supabase.from(table).select("id", { count: "exact", head: true });
+          if (filter) query = query.eq(filter.col, filter.val);
+          const { count } = await query;
+          return count ?? 0;
+        } catch {
+          return 0;
+        }
       }
 
+      try {
       const [
         totalCompanies, totalContacts, totalEmails, totalThreads,
         totalEntities, totalFacts, totalRelationships,
@@ -462,6 +467,9 @@ export default function SystemPage() {
       });
       setPipelineRuns((pipelineRes.data ?? []) as PipelineRun[]);
       setSyncCommands((cmdRes.data ?? []) as SyncCommand[]);
+      setLoading(false);
+    } catch (err) {
+      console.error("[system] Failed to load:", err);
       setLoading(false);
     }
     fetchData();
@@ -641,7 +649,9 @@ export default function SystemPage() {
                             {cmd.status}
                           </Badge>
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">{cmd.result ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                          {cmd.result == null ? "—" : typeof cmd.result === "object" ? JSON.stringify(cmd.result) : String(cmd.result)}
+                        </TableCell>
                         <TableCell className="text-muted-foreground whitespace-nowrap">{timeAgo(cmd.created_at)}</TableCell>
                       </TableRow>
                     );
