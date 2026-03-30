@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaude, getVoyageEmbedding, logTokenUsage } from "@/lib/claude";
 import { rateLimitResponse } from "@/lib/rate-limit";
+import { z } from "zod";
 
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
@@ -15,10 +16,13 @@ let staticCtxCache: {
   expiry: number;
 } | null = null;
 
-interface ChatRequest {
-  message: string;
-  history: Array<{ role: string; content: string }>;
-}
+const ChatRequestSchema = z.object({
+  message: z.string().min(1).max(10_000),
+  history: z.array(z.object({
+    role: z.string(),
+    content: z.string(),
+  })).default([]),
+});
 
 interface ContextData {
   contacts: string;
@@ -212,15 +216,15 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const body: ChatRequest = await request.json();
-    const { message, history } = body;
-
-    if (!message || typeof message !== "string") {
+    const rawBody = await request.json();
+    const parsed = ChatRequestSchema.safeParse(rawBody);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "El campo 'message' es requerido." },
+        { error: "Datos invalidos", details: parsed.error.flatten() },
         { status: 400 }
       );
     }
+    const { message, history } = parsed.data;
 
     const supabase = getServiceClient();
 

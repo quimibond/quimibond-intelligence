@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaudeJSON } from "@/lib/claude";
 import { rateLimitResponse } from "@/lib/rate-limit";
+import { z } from "zod";
+
+const EnrichContactSchema = z.object({
+  contact_id: z.string().min(1),
+});
 
 interface ClaudePersonProfile {
   role: string | null;
@@ -30,10 +35,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { contact_id } = (await request.json()) as { contact_id?: string };
-    if (!contact_id) {
+    const parsed = EnrichContactSchema.safeParse(await request.json());
+    if (!parsed.success) {
       return NextResponse.json({ error: "El campo 'contact_id' es requerido." }, { status: 400 });
     }
+    const { contact_id } = parsed.data;
 
     const supabase = getServiceClient();
 
