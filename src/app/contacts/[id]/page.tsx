@@ -430,7 +430,7 @@ export default function ContactDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="perfil">
-        <TabsList>
+        <TabsList className="flex-wrap h-auto gap-1 overflow-x-auto">
           <TabsTrigger value="perfil">Perfil</TabsTrigger>
           <TabsTrigger value="comercial">
             <ShoppingCart className="mr-1 h-3.5 w-3.5" />

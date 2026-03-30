@@ -615,7 +615,7 @@ export default function CompanyDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="resumen">
-        <TabsList className="flex-wrap">
+        <TabsList className="flex-wrap h-auto gap-1 overflow-x-auto">
           <TabsTrigger value="resumen">Resumen</TabsTrigger>
           <TabsTrigger value="contactos">
             Contactos ({contacts.length})
@@ -930,72 +930,93 @@ export default function CompanyDetailPage() {
               description="No se encontraron contactos asociados a esta empresa."
             />
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Rol</TableHead>
-                    <TableHead>Riesgo</TableHead>
-                    <TableHead className="text-right">Sentimiento</TableHead>
-                    <TableHead className="w-[140px]">Relacion</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {contacts.map((contact) => (
-                    <TableRow key={contact.id}>
-                      <TableCell>
-                        <Link
-                          href={`/contacts/${contact.id}`}
-                          className="font-medium text-primary hover:underline"
-                        >
-                          {contact.name ?? "Sin nombre"}
-                        </Link>
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {contact.email ?? "---"}
-                      </TableCell>
-                      <TableCell className="text-sm">
-                        {contact.role ?? contact.contact_type ?? "---"}
-                      </TableCell>
-                      <TableCell>
-                        <RiskBadge level={contact.risk_level} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span
-                          className={cn(
-                            "text-sm font-medium tabular-nums",
-                            sentimentColor(contact.sentiment_score)
-                          )}
-                        >
-                          {contact.sentiment_score != null
-                            ? contact.sentiment_score.toFixed(2)
-                            : "---"}
-                        </span>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <Progress
-                            value={scoreToPercent(
-                              contact.relationship_score
-                            )}
-                            className="h-2 flex-1"
-                          />
-                          <span className="w-8 text-right text-xs text-muted-foreground tabular-nums">
-                            {contact.relationship_score != null
-                              ? Math.round(
-                                  scoreToPercent(contact.relationship_score)
-                                )
-                              : 0}
-                          </span>
+            <>
+              {/* Mobile cards */}
+              <div className="space-y-3 md:hidden">
+                {contacts.map((contact) => (
+                  <Link key={contact.id} href={`/contacts/${contact.id}`} className="block">
+                    <div className="rounded-lg border bg-card p-3 space-y-2 hover:border-primary/30">
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{contact.name ?? "Sin nombre"}</p>
+                          <p className="text-xs text-muted-foreground truncate">{contact.email ?? "---"}</p>
                         </div>
-                      </TableCell>
+                        <RiskBadge level={contact.risk_level} />
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                        {contact.role && <span>{contact.role}</span>}
+                        <span className={cn("font-medium tabular-nums", sentimentColor(contact.sentiment_score))}>
+                          Sent: {contact.sentiment_score != null ? contact.sentiment_score.toFixed(2) : "---"}
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Rol</TableHead>
+                      <TableHead>Riesgo</TableHead>
+                      <TableHead className="text-right">Sentimiento</TableHead>
+                      <TableHead className="w-[140px]">Relacion</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {contacts.map((contact) => (
+                      <TableRow key={contact.id}>
+                        <TableCell>
+                          <Link
+                            href={`/contacts/${contact.id}`}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            {contact.name ?? "Sin nombre"}
+                          </Link>
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {contact.email ?? "---"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {contact.role ?? contact.contact_type ?? "---"}
+                        </TableCell>
+                        <TableCell>
+                          <RiskBadge level={contact.risk_level} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <span
+                            className={cn(
+                              "text-sm font-medium tabular-nums",
+                              sentimentColor(contact.sentiment_score)
+                            )}
+                          >
+                            {contact.sentiment_score != null
+                              ? contact.sentiment_score.toFixed(2)
+                              : "---"}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <Progress
+                              value={scoreToPercent(contact.relationship_score)}
+                              className="h-2 flex-1"
+                            />
+                            <span className="w-8 text-right text-xs text-muted-foreground tabular-nums">
+                              {contact.relationship_score != null
+                                ? Math.round(scoreToPercent(contact.relationship_score))
+                                : 0}
+                            </span>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </TabsContent>
 
@@ -1235,40 +1256,61 @@ export default function CompanyDetailPage() {
               description="No hay alertas asociadas a esta empresa."
             />
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Severidad</TableHead>
-                    <TableHead>Titulo</TableHead>
-                    <TableHead>Contacto</TableHead>
-                    <TableHead>Estado</TableHead>
-                    <TableHead>Fecha</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {alerts.map((alert) => (
-                    <TableRow key={alert.id}>
-                      <TableCell>
+            <>
+              {/* Mobile cards */}
+              <div className="space-y-3 md:hidden">
+                {alerts.map((alert) => (
+                  <Link key={alert.id} href={`/alerts/${alert.id}`} className="block">
+                    <div className="rounded-lg border bg-card p-3 space-y-2 hover:border-primary/30">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium line-clamp-2">{alert.title}</p>
                         <SeverityBadge severity={alert.severity} />
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {alert.title}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {alert.contact_name ?? "---"}
-                      </TableCell>
-                      <TableCell>
+                      </div>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         <StateBadge state={alert.state} />
-                      </TableCell>
-                      <TableCell className="whitespace-nowrap text-muted-foreground">
-                        {formatDate(alert.created_at)}
-                      </TableCell>
+                        {alert.contact_name && <span>{alert.contact_name}</span>}
+                        <span>{timeAgo(alert.created_at)}</span>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Severidad</TableHead>
+                      <TableHead>Titulo</TableHead>
+                      <TableHead>Contacto</TableHead>
+                      <TableHead>Estado</TableHead>
+                      <TableHead>Fecha</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {alerts.map((alert) => (
+                      <TableRow key={alert.id}>
+                        <TableCell>
+                          <SeverityBadge severity={alert.severity} />
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {alert.title}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {alert.contact_name ?? "---"}
+                        </TableCell>
+                        <TableCell>
+                          <StateBadge state={alert.state} />
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                          {formatDate(alert.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </TabsContent>
 
