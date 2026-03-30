@@ -531,14 +531,18 @@ export default function DashboardPage() {
               <p className="text-sm text-muted-foreground py-4 text-center">Sin acciones vencidas</p>
             ) : (
               <div className="space-y-2">
-                {overdue_actions.map((a: { id: number; description: string; assignee_name: string | null; assignee_email: string | null; days_overdue: number }) => (
-                  <div key={a.id} className="flex items-center gap-3 rounded-lg border p-2.5">
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate">{a.description}</p>
-                      <p className="text-xs text-muted-foreground">{a.assignee_name ?? a.assignee_email ?? "Sin asignar"}</p>
+                {overdue_actions.map((a: { id: number; description: string; assignee_name: string | null; assignee_email: string | null; days_overdue: number; contact_name?: string | null; contact_company?: string | null; priority?: string }) => (
+                  <Link key={a.id} href={`/actions`} className="block rounded-lg border p-3 hover:bg-muted/50 transition-colors">
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="text-sm font-medium line-clamp-2">{a.description}</p>
+                      <Badge variant="critical" className="shrink-0">{a.days_overdue}d</Badge>
                     </div>
-                    <Badge variant="critical" className="shrink-0">{a.days_overdue}d</Badge>
-                  </div>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 text-xs text-muted-foreground">
+                      <span>{a.assignee_name ?? a.assignee_email ?? "Sin asignar"}</span>
+                      {a.contact_name && <><span>·</span><span>{a.contact_name}</span></>}
+                      {a.contact_company && <><span>·</span><span>{a.contact_company}</span></>}
+                    </div>
+                  </Link>
                 ))}
               </div>
             )}
@@ -561,14 +565,14 @@ export default function DashboardPage() {
             ) : (
               <div className="space-y-2">
                 {accountability.map((a) => (
-                  <div key={a.email} className="flex items-center gap-3 rounded-lg border p-2.5">
-                    <div className="min-w-0 flex-1">
+                  <div key={a.email} className="rounded-lg border p-3">
+                    <div className="flex items-center justify-between gap-2">
                       <p className="text-sm font-medium truncate">{a.name}</p>
                     </div>
-                    <div className="flex flex-wrap items-center gap-1 shrink-0">
-                      {a.overdue > 0 && <Badge variant="critical" className="text-[10px] px-1.5">{a.overdue} venc.</Badge>}
-                      {a.pending > 0 && <Badge variant="warning" className="text-[10px] px-1.5">{a.pending} pend.</Badge>}
-                      <Badge variant="success" className="text-[10px] px-1.5">{a.completed} ok</Badge>
+                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                      {a.overdue > 0 && <Badge variant="critical" className="text-[10px] px-1.5">{a.overdue} vencidas</Badge>}
+                      {a.pending > 0 && <Badge variant="warning" className="text-[10px] px-1.5">{a.pending} pendientes</Badge>}
+                      <Badge variant="success" className="text-[10px] px-1.5">{a.completed} completadas</Badge>
                     </div>
                   </div>
                 ))}
