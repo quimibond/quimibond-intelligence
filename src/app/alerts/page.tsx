@@ -19,9 +19,11 @@ import {
   DollarSign,
   TrendingDown,
   X,
+  Download,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { timeAgo, formatCurrency } from "@/lib/utils";
+import { exportCSV } from "@/lib/export-csv";
 import type { Alert } from "@/lib/types";
 
 import { PageHeader } from "@/components/shared/page-header";
@@ -280,6 +282,38 @@ export default function AlertsPage() {
           <option value="urgency">Mayor urgencia</option>
           <option value="value">Mayor valor en riesgo</option>
         </Select>
+
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5"
+          onClick={() => exportCSV(
+            filtered.map((a) => ({
+              titulo: a.title,
+              severidad: a.severity,
+              estado: a.state,
+              tipo: a.alert_type,
+              contacto: a.contact_name ?? "",
+              empresa: "",
+              valor_en_riesgo: a.business_value_at_risk ?? "",
+              fecha: a.created_at,
+            })),
+            `alertas-${new Date().toISOString().split("T")[0]}`,
+            [
+              { key: "titulo", label: "Titulo" },
+              { key: "severidad", label: "Severidad" },
+              { key: "estado", label: "Estado" },
+              { key: "tipo", label: "Tipo" },
+              { key: "contacto", label: "Contacto" },
+              { key: "empresa", label: "Empresa" },
+              { key: "valor_en_riesgo", label: "Valor en Riesgo" },
+              { key: "fecha", label: "Fecha" },
+            ]
+          )}
+        >
+          <Download className="h-3.5 w-3.5" />
+          <span className="hidden sm:inline">Exportar</span>
+        </Button>
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
