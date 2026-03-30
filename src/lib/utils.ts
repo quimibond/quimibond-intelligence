@@ -61,3 +61,21 @@ export function scoreToPercent(score: number | null, max = 100): number {
   if (score == null) return 0;
   return Math.min(100, Math.max(0, (score / max) * 100));
 }
+
+export function formatCurrency(value: number | null): string {
+  if (value == null) return "—";
+  return (
+    "$" +
+    value.toLocaleString("es-MX", {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    })
+  );
+}
+
+export function sentimentColor(score: number | null): string {
+  if (score == null) return "text-muted-foreground";
+  if (score >= 0.6) return "text-emerald-600 dark:text-emerald-400";
+  if (score >= 0.3) return "text-amber-600 dark:text-amber-400";
+  return "text-red-600 dark:text-red-400";
+}
