@@ -4,7 +4,8 @@ let _supabase: SupabaseClient | null = null;
 
 export function getSupabaseClient(): SupabaseClient {
   if (!_supabase) {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL!;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      ?? (process.env.POSTGRES_HOST ? `https://${process.env.POSTGRES_HOST.replace('db.', '')}` : '');
     const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
     _supabase = createClient(url, key);
   }

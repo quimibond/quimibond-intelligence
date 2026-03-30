@@ -8,8 +8,11 @@ const CLAUDE_API_URL = "https://api.anthropic.com/v1/messages";
 /** Fire-and-forget token usage logging to Supabase */
 export function logTokenUsage(endpoint: string, model: string, input_tokens: number, output_tokens: number) {
   try {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    const key = process.env.SUPABASE_SERVICE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+      ?? (process.env.POSTGRES_HOST ? `https://${process.env.POSTGRES_HOST.replace('db.', '')}` : '');
+    const key = process.env.SUPABASE_SERVICE_KEY
+      ?? process.env.SUPABASE_SECRET_KEY
+      ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
     if (!url || !key) return;
     const supabase = createClient(url, key);
     supabase.from("token_usage").insert({ endpoint, model, input_tokens, output_tokens }).then();
