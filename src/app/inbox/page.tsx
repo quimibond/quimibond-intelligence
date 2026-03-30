@@ -213,6 +213,7 @@ export default function InboxPage() {
         company_id: item.companyId,
         contact_company: item.companyName,
         thread_id: item.threadId,
+        alert_id: item.id,
         state: "pending",
         due_date: new Date(Date.now() + 2 * 86400000).toISOString().split("T")[0],
       });
