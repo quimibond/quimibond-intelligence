@@ -20,8 +20,8 @@ export async function POST(request: NextRequest) {
     const supabase = getServiceClient();
     const start = Date.now();
 
-    // Fetch recent emails (last 36h to cover timezone gaps)
-    const cutoff = new Date(Date.now() - 36 * 3600_000).toISOString();
+    // Fetch recent emails (last 7 days — wider window for initial runs)
+    const cutoff = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
     const { data: recentEmails } = await supabase
       .from("emails")
       .select("*")
