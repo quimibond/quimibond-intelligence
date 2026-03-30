@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
-import { synthesizeBriefing } from "@/lib/pipeline/claude-pipeline";
+import { callClaude } from "@/lib/claude";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
@@ -17,19 +17,29 @@ export async function POST(request: NextRequest) {
 
     const supabase = getServiceClient();
     const today = new Date().toISOString().split("T")[0];
+    const cutoff = new Date(Date.now() - 7 * 24 * 3600_000).toISOString();
 
-    // Gather today's analysis data
-    const [summariesRes, alertsRes, metricsRes, previousBriefingRes] = await Promise.all([
+    // Gather data from what we actually have
+    const [emailsRes, factsRes, actionsRes, metricsRes, previousRes] = await Promise.all([
       supabase
-        .from("email_analyses")
-        .select("*")
-        .eq("analysis_date", today),
+        .from("emails")
+        .select("account, sender, subject, snippet, email_date, sender_type")
+        .gte("email_date", cutoff)
+        .order("email_date", { ascending: false })
+        .limit(200),
 
       supabase
-        .from("alerts")
-        .select("*")
-        .eq("state", "new")
+        .from("facts")
+        .select("fact_text, fact_type, confidence, created_at")
+        .gte("created_at", cutoff)
         .order("created_at", { ascending: false })
+        .limit(50),
+
+      supabase
+        .from("action_items")
+        .select("description, priority, state, contact_name, due_date")
+        .eq("state", "pending")
+        .order("due_date", { ascending: true })
         .limit(20),
 
       supabase
@@ -46,46 +56,63 @@ export async function POST(request: NextRequest) {
         .limit(1),
     ]);
 
-    const summaries = summariesRes.data ?? [];
-    const alerts = alertsRes.data ?? [];
+    const emails = emailsRes.data ?? [];
+    const facts = factsRes.data ?? [];
+    const actions = actionsRes.data ?? [];
     const metrics = metricsRes.data ?? [];
-    const previousSummary = previousBriefingRes.data?.[0]?.summary_text ?? "";
+    const previousSummary = previousRes.data?.[0]?.summary_text ?? "";
 
-    if (!summaries.length && !alerts.length) {
+    if (!emails.length && !facts.length) {
       return NextResponse.json({
         success: true,
         message: "Sin datos para generar briefing",
       });
     }
 
-    // Build data package for Claude
-    const dataPackage = buildDataPackage(today, summaries, alerts, metrics, previousSummary);
+    // Build data package
+    const dataPackage = buildDataPackage(today, emails, facts, actions, metrics, previousSummary);
 
-    // Call Claude to synthesize briefing
-    const briefingHtml = await synthesizeBriefing(apiKey, dataPackage);
+    // Call Claude
+    const system = (
+      "Eres el analista de inteligencia de Quimibond (textiles no tejidos, México). "
+      + "Genera un briefing ejecutivo en HTML limpio (sin <html><body>, solo contenido). "
+      + "Usa <h2>, <h3>, <ul>, <li>, <strong>, <em>. "
+      + "Estructura: 1) Resumen ejecutivo (3 líneas), 2) Decisiones urgentes, "
+      + "3) Seguimientos pendientes, 4) Oportunidades detectadas, 5) FYI. "
+      + "Sé directo y accionable. Incluye nombres de contactos y empresas."
+    );
 
-    // Extract summary text (first 500 chars stripped of HTML)
+    const briefingHtml = await callClaude(apiKey, system, dataPackage, {
+      maxTokens: 4000,
+    });
+
+    // Extract summary text
     const summaryText = briefingHtml
       .replace(/<[^>]+>/g, " ")
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 500);
 
+    // Count topics from facts
+    const topicSet = new Set(facts.map(f => (f as Record<string, unknown>).fact_type).filter(Boolean));
+
     // Save briefing
     await supabase.from("briefings").upsert({
       briefing_date: today,
       scope: "daily",
-      html_content: briefingHtml,
+      summary_html: briefingHtml,
       summary_text: summaryText,
-      total_emails: summaries.reduce((s, a) => s + ((a.summary_json as Record<string, unknown>)?.total_emails as number ?? 0), 0),
-      total_alerts: alerts.length,
+      total_emails: emails.length,
+      topics_identified: [...topicSet].map(t => ({ topic: t, status: "new" })),
+      risks_detected: [],
     }, { onConflict: "briefing_date,scope" });
 
     return NextResponse.json({
       success: true,
       briefing_date: today,
-      summaries: summaries.length,
-      alerts: alerts.length,
+      emails_analyzed: emails.length,
+      facts_used: facts.length,
+      actions_pending: actions.length,
     });
   } catch (err) {
     console.error("[briefing] Error:", err);
@@ -98,45 +125,75 @@ export async function POST(request: NextRequest) {
 
 function buildDataPackage(
   today: string,
-  summaries: Record<string, unknown>[],
-  alerts: Record<string, unknown>[],
+  emails: Record<string, unknown>[],
+  facts: Record<string, unknown>[],
+  actions: Record<string, unknown>[],
   metrics: Record<string, unknown>[],
   previousSummary: string
 ): string {
   const lines: string[] = [];
 
   lines.push(`=== BRIEFING EJECUTIVO ${today} ===\n`);
-  lines.push(`Cuentas analizadas: ${summaries.length}`);
+  lines.push(`Emails recientes: ${emails.length}`);
+  lines.push(`Hechos extraidos: ${facts.length}`);
+  lines.push(`Acciones pendientes: ${actions.length}\n`);
 
   if (previousSummary) {
-    lines.push(`\n--- CONTEXTO PREVIO ---`);
-    lines.push(previousSummary.slice(0, 1000));
+    lines.push(`--- CONTEXTO PREVIO ---`);
+    lines.push(previousSummary.slice(0, 800));
+    lines.push("");
   }
 
-  lines.push(`\n--- RESÚMENES POR CUENTA ---`);
-  for (const s of summaries) {
-    const json = s.summary_json as Record<string, unknown>;
-    lines.push(`\nCuenta: ${s.account} (${json?.department ?? "?"})`);
-    lines.push(`Emails: ${json?.total_emails ?? 0}`);
-    lines.push(`Sentimiento: ${json?.overall_sentiment ?? "?"} (${json?.sentiment_score ?? 0})`);
-    if (json?.summary_text) lines.push(`Resumen: ${json.summary_text}`);
-    if (json?.risks_detected) {
-      const risks = json.risks_detected as { risk: string; severity: string }[];
-      for (const r of risks) lines.push(`  ⚠️ ${r.severity}: ${r.risk}`);
+  // Email summary by account
+  const byAccount = new Map<string, number>();
+  const externalSenders = new Set<string>();
+  for (const e of emails) {
+    const acct = String(e.account ?? "unknown");
+    byAccount.set(acct, (byAccount.get(acct) ?? 0) + 1);
+    if (e.sender_type === "external") {
+      externalSenders.add(String(e.sender ?? ""));
     }
   }
+  lines.push(`--- VOLUMEN POR CUENTA ---`);
+  for (const [acct, count] of [...byAccount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15)) {
+    lines.push(`  ${acct}: ${count} emails`);
+  }
+  lines.push(`Remitentes externos unicos: ${externalSenders.size}\n`);
 
-  if (alerts.length) {
-    lines.push(`\n--- ALERTAS ACTIVAS (${alerts.length}) ---`);
-    for (const a of alerts.slice(0, 15)) {
-      lines.push(`[${a.severity}] ${a.title}: ${(a.description as string ?? "").slice(0, 200)}`);
+  // Recent email subjects (context)
+  lines.push(`--- EMAILS RECIENTES (asuntos) ---`);
+  for (const e of emails.slice(0, 30)) {
+    const date = String(e.email_date ?? "").split("T")[0];
+    const type = e.sender_type === "external" ? "[EXT]" : "[INT]";
+    lines.push(`  ${date} ${type} ${e.sender}: ${e.subject}`);
+  }
+  lines.push("");
+
+  // Facts
+  if (facts.length > 0) {
+    lines.push(`--- HECHOS EXTRAIDOS POR IA ---`);
+    for (const f of facts) {
+      const conf = Number(f.confidence ?? 0);
+      lines.push(`  [${f.fact_type}] (${Math.round(conf * 100)}%) ${f.fact_text}`);
     }
+    lines.push("");
   }
 
-  if (metrics.length) {
-    lines.push(`\n--- MÉTRICAS DE RESPUESTA ---`);
-    for (const m of metrics) {
-      lines.push(`${m.account}: recibidos=${m.emails_received}, enviados=${m.emails_sent}, sin responder=${m.threads_unanswered}`);
+  // Pending actions
+  if (actions.length > 0) {
+    lines.push(`--- ACCIONES PENDIENTES ---`);
+    for (const a of actions) {
+      const due = a.due_date ? ` (vence: ${a.due_date})` : "";
+      lines.push(`  [${a.priority}] ${a.description} — ${a.contact_name ?? "sin contacto"}${due}`);
+    }
+    lines.push("");
+  }
+
+  // Metrics
+  if (metrics.length > 0) {
+    lines.push(`--- METRICAS DE COMUNICACION ---`);
+    for (const m of metrics.slice(0, 5)) {
+      lines.push(`  ${JSON.stringify(m)}`);
     }
   }
 
