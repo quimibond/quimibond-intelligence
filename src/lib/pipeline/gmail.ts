@@ -99,8 +99,8 @@ async function fetchAccountEmails(
       throw err;
     }
   } else {
-    // Bootstrap: fetch last 24h
-    const after = Math.floor(Date.now() / 1000) - 86400;
+    // Bootstrap: fetch last 72h (wider window for initial runs / weekends)
+    const after = Math.floor(Date.now() / 1000) - 72 * 3600;
     const listRes = await gmail.users.messages.list({
       userId: "me",
       q: `after:${after}`,

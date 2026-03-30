@@ -51,7 +51,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         emails: 0,
-        message: "Sin emails nuevos",
+        accounts_ok: result.successCount,
+        accounts_failed: result.failedCount,
+        message: result.failedCount > 0
+          ? `Sin emails nuevos (${result.failedCount} cuentas fallaron)`
+          : `Sin emails nuevos (${result.successCount} cuentas revisadas)`,
       });
     }
 
