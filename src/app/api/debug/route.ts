@@ -26,9 +26,16 @@ export async function GET(_request: NextRequest) {
     } else if (v === "GMAIL_ACCOUNTS_JSON") {
       try {
         const parsed = JSON.parse(val);
-        status[v] = `OK (${Array.isArray(parsed) ? parsed.length + " accounts" : typeof parsed})`;
+        if (Array.isArray(parsed)) {
+          status[v] = `OK array (${parsed.length} accounts, first: ${JSON.stringify(parsed[0])})`;
+        } else if (typeof parsed === "object") {
+          const keys = Object.keys(parsed).slice(0, 5);
+          status[v] = `OBJECT not array (keys: ${keys.join(", ")}). Sample: ${JSON.stringify(parsed).substring(0, 200)}`;
+        } else {
+          status[v] = `unexpected type: ${typeof parsed}`;
+        }
       } catch {
-        status[v] = `INVALID JSON (${val.substring(0, 50)}...)`;
+        status[v] = `INVALID JSON (${val.substring(0, 80)}...)`;
       }
     } else if (v === "GOOGLE_SERVICE_ACCOUNT_JSON") {
       try {
