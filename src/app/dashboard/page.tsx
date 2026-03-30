@@ -188,6 +188,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     async function load() {
+      // Phase 1: Start non-blocking fetches immediately (don't wait)
+      fetchSecondaryData();
+
+      // Phase 2: KPI data (blocking, shows skeleton until complete)
       try {
         const result = await fetchDashboard();
         setData(result);
@@ -195,6 +199,10 @@ export default function DashboardPage() {
         console.error("[dashboard] Failed to load:", err);
       }
 
+      setLoading(false);
+    }
+
+    function fetchSecondaryData() {
       // Non-blocking: aging, deliveries, pipeline, briefing, accountability
       supabase
         .from("odoo_invoices")
@@ -267,9 +275,8 @@ export default function DashboardPage() {
           }
           setAccountability(Array.from(map.values()).sort((a, b) => b.overdue - a.overdue || b.pending - a.pending).slice(0, 8));
         });
-
-      setLoading(false);
     }
+
     load();
   }, []);
 
