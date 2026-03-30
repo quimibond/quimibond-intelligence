@@ -132,8 +132,8 @@ export default function EmailsPage() {
         </Select>
         <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)} className="w-full sm:w-auto">
           <option value="all">Todos los tipos</option>
-          <option value="internal">Internos</option>
-          <option value="external">Externos</option>
+          <option value="internal">Enviados</option>
+          <option value="external">Recibidos</option>
         </Select>
       </div>
 

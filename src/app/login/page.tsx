@@ -11,7 +11,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? "/dashboard";
+  const redirect = searchParams.get("redirect") ?? "/inbox";
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -21,7 +21,11 @@ export default function LoginPage() {
     setError("");
 
     try {
-      const res = await fetch(`/api/auth?password=${encodeURIComponent(password)}`);
+      const res = await fetch("/api/auth", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
       if (res.redirected || res.ok) {
         router.push(redirect);
         router.refresh();
