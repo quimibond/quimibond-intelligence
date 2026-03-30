@@ -467,9 +467,9 @@ export default function SystemPage() {
       });
       setPipelineRuns((pipelineRes.data ?? []) as PipelineRun[]);
       setSyncCommands((cmdRes.data ?? []) as SyncCommand[]);
-      setLoading(false);
-    } catch (err) {
-      console.error("[system] Failed to load:", err);
+      } catch (err) {
+        console.error("[system] Failed to load:", err);
+      }
       setLoading(false);
     }
     fetchData();
