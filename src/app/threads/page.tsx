@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Clock,
@@ -95,22 +95,41 @@ export default function ThreadsPage() {
   const [threadEmails, setThreadEmails] = useState<Record<number, Email[]>>({});
   const [loadingEmails, setLoadingEmails] = useState<number | null>(null);
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function buildThreadQuery(searchVal: string) {
+    let q = supabase
+      .from("threads")
+      .select("*")
+      .order("hours_without_response", { ascending: false, nullsFirst: false })
+      .limit(200);
+    if (searchVal.trim()) {
+      q = q.ilike("subject", `%${searchVal.trim()}%`);
+    }
+    return q;
+  }
+
   // Fetch threads
   useEffect(() => {
     async function fetchThreads() {
-      const { data } = await supabase
-        .from("threads")
-        .select("*")
-        .order("hours_without_response", {
-          ascending: false,
-          nullsFirst: false,
-        })
-        .limit(200);
+      const { data } = await buildThreadQuery("");
       setThreads((data as Thread[] | null) ?? []);
       setLoading(false);
     }
     fetchThreads();
   }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      const { data } = await buildThreadQuery(search);
+      setThreads((data as Thread[] | null) ?? []);
+      setLoading(false);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
 
   // Fetch emails for a thread
   const fetchThreadEmails = useCallback(
@@ -146,38 +165,24 @@ export default function ThreadsPage() {
     [expandedId, fetchThreadEmails]
   );
 
-  // Filter threads
+  // Filter threads (status only — search is server-side)
   const filtered = useMemo(() => {
-    let result = threads;
-
-    // Status filter
     if (statusFilter === "stalled") {
-      result = result.filter(
+      return threads.filter(
         (t) => t.hours_without_response != null && t.hours_without_response > 24
       );
     } else if (statusFilter === "active") {
-      result = result.filter(
+      return threads.filter(
         (t) =>
           t.hours_without_response == null || t.hours_without_response <= 24
       );
     } else if (statusFilter === "cold") {
-      result = result.filter(
+      return threads.filter(
         (t) => t.hours_without_response != null && t.hours_without_response > 72
       );
     }
-
-    // Search filter
-    const q = search.toLowerCase();
-    if (q) {
-      result = result.filter(
-        (t) =>
-          t.subject?.toLowerCase().includes(q) ||
-          t.participant_emails?.some((e) => e.toLowerCase().includes(q))
-      );
-    }
-
-    return result;
-  }, [threads, statusFilter, search]);
+    return threads;
+  }, [threads, statusFilter]);
 
   // Stats
   const totalCount = threads.length;

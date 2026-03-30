@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2, Search, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -32,6 +32,22 @@ function sentimentColor(score: number | null): string {
 
 const PAGE_SIZE = 50;
 
+function buildQuery(search: string, riskFilter: string) {
+  let q = supabase
+    .from("contacts")
+    .select("*, companies(name)")
+    .order("name", { ascending: true });
+
+  if (riskFilter !== "all") {
+    q = q.eq("risk_level", riskFilter);
+  }
+  if (search.trim()) {
+    const pattern = `%${search.trim()}%`;
+    q = q.or(`name.ilike.${pattern},email.ilike.${pattern}`);
+  }
+  return q;
+}
+
 export default function ContactsPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,28 +55,34 @@ export default function ContactsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState("all");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  useEffect(() => {
-    async function fetchContacts() {
-      const { data } = await supabase
-        .from("contacts")
-        .select("*, companies(name)")
-        .order("name", { ascending: true })
-        .limit(PAGE_SIZE);
-      setContacts(data ?? []);
-      setHasMore((data ?? []).length === PAGE_SIZE);
-      setLoading(false);
-    }
-    fetchContacts();
+  const fetchContacts = useCallback(async (searchVal: string, risk: string) => {
+    setLoading(true);
+    const { data } = await buildQuery(searchVal, risk).limit(PAGE_SIZE);
+    setContacts(data ?? []);
+    setHasMore((data ?? []).length === PAGE_SIZE);
+    setLoading(false);
   }, []);
+
+  // Initial load
+  useEffect(() => {
+    fetchContacts("", "all");
+  }, [fetchContacts]);
+
+  // Debounced search + filter
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchContacts(search, riskFilter);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search, riskFilter, fetchContacts]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await supabase
-      .from("contacts")
-      .select("*, companies(name)")
-      .order("name", { ascending: true })
+    const { data } = await buildQuery(search, riskFilter)
       .range(contacts.length, contacts.length + PAGE_SIZE - 1);
     if (data) {
       setContacts((prev) => [...prev, ...(data as Contact[])]);
@@ -68,19 +90,6 @@ export default function ContactsPage() {
     }
     setLoadingMore(false);
   }
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    return contacts.filter((c) => {
-      if (riskFilter !== "all" && c.risk_level !== riskFilter) return false;
-      if (!q) return true;
-      return (
-        c.name?.toLowerCase().includes(q) ||
-        c.email?.toLowerCase().includes(q) ||
-        ((c as unknown as Record<string, unknown>).companies as { name: string } | null)?.name?.toLowerCase().includes(q)
-      );
-    });
-  }, [contacts, search, riskFilter]);
 
   return (
     <div>
@@ -93,7 +102,7 @@ export default function ContactsPage() {
         <div className="relative flex-1 sm:max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por nombre, email o empresa..."
+            placeholder="Buscar por nombre o email..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -117,7 +126,7 @@ export default function ContactsPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : contacts.length === 0 ? (
         <EmptyState
           icon={Users}
           title="Sin contactos"
@@ -127,7 +136,7 @@ export default function ContactsPage() {
         <>
         {/* Mobile card layout */}
         <div className="space-y-3 md:hidden">
-          {filtered.map((contact) => (
+          {contacts.map((contact) => (
             <div key={contact.id} className="rounded-lg border bg-card p-4 space-y-2">
               <div className="flex items-center gap-3">
                 <Avatar className="h-10 w-10">
@@ -192,7 +201,7 @@ export default function ContactsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((contact) => (
+              {contacts.map((contact) => (
                 <TableRow key={contact.id} className="cursor-pointer hover:bg-muted/50">
                   <TableCell>
                     <Link href={`/contacts/${contact.id}`} className="contents">
@@ -259,8 +268,8 @@ export default function ContactsPage() {
         </>
       )}
 
-      {hasMore && filtered.length > 0 && (
-        <div className="flex justify-center">
+      {hasMore && contacts.length > 0 && !search && (
+        <div className="flex justify-center pt-4">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {loadingMore ? "Cargando..." : "Cargar mas"}

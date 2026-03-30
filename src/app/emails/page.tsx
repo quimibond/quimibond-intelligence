@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2, Mail, Paperclip, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -44,22 +44,30 @@ export default function EmailsPage() {
   const [accounts, setAccounts] = useState<string[]>([]);
   const [accountFilter, setAccountFilter] = useState("all");
 
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function buildEmailQuery(searchVal: string, account: string, senderType: string) {
+    let q = supabase
+      .from("emails")
+      .select("*")
+      .order("email_date", { ascending: false });
+    if (account !== "all") q = q.eq("account", account);
+    if (senderType !== "all") q = q.eq("sender_type", senderType);
+    if (searchVal.trim()) {
+      const pattern = `%${searchVal.trim()}%`;
+      q = q.or(`subject.ilike.${pattern},sender.ilike.${pattern},recipient.ilike.${pattern}`);
+    }
+    return q;
+  }
+
   useEffect(() => {
     async function fetchEmails() {
-      let query = supabase
-        .from("emails")
-        .select("*")
-        .order("email_date", { ascending: false })
-        .limit(PAGE_SIZE);
-      if (accountFilter !== "all") query = query.eq("account", accountFilter);
-      if (senderTypeFilter !== "all") query = query.eq("sender_type", senderTypeFilter);
-
-      const { data } = await query;
+      const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter).limit(PAGE_SIZE);
       const rows = (data as Email[] | null) ?? [];
       setEmails(rows);
       setHasMore(rows.length === PAGE_SIZE);
 
-      // Get unique accounts for filter
+      // Get unique accounts for filter (only once)
       if (accounts.length === 0) {
         const { data: accts } = await supabase
           .from("emails")
@@ -74,35 +82,30 @@ export default function EmailsPage() {
     fetchEmails();
   }, [accountFilter, senderTypeFilter]);
 
+  // Debounced search
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLoading(true);
+      const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter).limit(PAGE_SIZE);
+      setEmails((data ?? []) as Email[]);
+      setHasMore((data ?? []).length === PAGE_SIZE);
+      setLoading(false);
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
+
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    let query = supabase
-      .from("emails")
-      .select("*")
-      .order("email_date", { ascending: false })
+    const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter)
       .range(emails.length, emails.length + PAGE_SIZE - 1);
-    if (accountFilter !== "all") query = query.eq("account", accountFilter);
-    if (senderTypeFilter !== "all") query = query.eq("sender_type", senderTypeFilter);
-    const { data } = await query;
     if (data) {
       setEmails((prev) => [...prev, ...(data as Email[])]);
       setHasMore(data.length === PAGE_SIZE);
     }
     setLoadingMore(false);
   }
-
-  const filtered = useMemo(() => {
-    const q = search.toLowerCase();
-    if (!q) return emails;
-    return emails.filter(
-      (e) =>
-        e.sender?.toLowerCase().includes(q) ||
-        e.recipient?.toLowerCase().includes(q) ||
-        e.subject?.toLowerCase().includes(q) ||
-        e.snippet?.toLowerCase().includes(q)
-    );
-  }, [emails, search]);
 
   return (
     <div>
@@ -140,7 +143,7 @@ export default function EmailsPage() {
             <Skeleton key={i} className="h-12 w-full" />
           ))}
         </div>
-      ) : filtered.length === 0 ? (
+      ) : emails.length === 0 ? (
         <EmptyState
           icon={Mail}
           title="Sin emails"
@@ -150,7 +153,7 @@ export default function EmailsPage() {
         <>
         {/* Mobile card layout */}
         <div className="space-y-3 md:hidden">
-          {filtered.map((email) => (
+          {emails.map((email) => (
             <div key={email.id} className="rounded-lg border bg-card p-4 space-y-2">
               <Link href={`/emails/${email.id}`} className="block">
                 <p className="text-sm font-medium line-clamp-1">{email.subject || "—"}</p>
@@ -193,7 +196,7 @@ export default function EmailsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((email) => (
+                {emails.map((email) => (
                   <TableRow key={email.id} className="cursor-pointer hover:bg-muted/50">
                     <TableCell className="whitespace-nowrap text-muted-foreground">
                       <Link href={`/emails/${email.id}`} className="contents">
@@ -244,7 +247,7 @@ export default function EmailsPage() {
         </>
       )}
 
-      {hasMore && filtered.length > 0 && (
+      {hasMore && emails.length > 0 && (
         <div className="flex justify-center pt-4">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}

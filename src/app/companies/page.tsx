@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { timeAgo } from "@/lib/utils";
@@ -31,40 +31,42 @@ function formatCurrency(value: number | null): string {
 
 const PAGE_SIZE = 60;
 
+function buildCompanyQuery(search: string) {
+  let q = supabase.from("companies").select("*").order("name");
+  if (search.trim()) {
+    q = q.ilike("name", `%${search.trim()}%`);
+  }
+  return q;
+}
+
 export default function CompaniesPage() {
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const fetchCompanies = useCallback(async (searchVal: string) => {
+    setLoading(true);
+    const { data } = await buildCompanyQuery(searchVal).range(0, PAGE_SIZE - 1);
+    setCompanies((data ?? []) as Company[]);
+    setHasMore((data ?? []).length === PAGE_SIZE);
+    setLoading(false);
+  }, []);
+
+  useEffect(() => { fetchCompanies(""); }, [fetchCompanies]);
 
   useEffect(() => {
-    async function load() {
-      const { data, error } = await supabase
-        .from("companies")
-        .select("*")
-        .order("name")
-        .range(0, PAGE_SIZE - 1);
-
-      if (error || !data) {
-        setLoading(false);
-        return;
-      }
-
-      setCompanies(data as Company[]);
-      setHasMore(data.length === PAGE_SIZE);
-      setLoading(false);
-    }
-    load();
-  }, []);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => fetchCompanies(search), 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search, fetchCompanies]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await supabase
-      .from("companies")
-      .select("*")
-      .order("name")
+    const { data } = await buildCompanyQuery(search)
       .range(companies.length, companies.length + PAGE_SIZE - 1);
     if (data) {
       setCompanies((prev) => [...prev, ...(data as Company[])]);
@@ -72,10 +74,6 @@ export default function CompaniesPage() {
     }
     setLoadingMore(false);
   }
-
-  const filtered = companies.filter((c) =>
-    c.name.toLowerCase().includes(search.toLowerCase())
-  );
 
   return (
     <div className="space-y-6">
@@ -107,7 +105,7 @@ export default function CompaniesPage() {
       )}
 
       {/* Empty state */}
-      {!loading && filtered.length === 0 && (
+      {!loading && companies.length === 0 && (
         <EmptyState
           icon={Building2}
           title="Sin empresas"
@@ -120,9 +118,9 @@ export default function CompaniesPage() {
       )}
 
       {/* Grid */}
-      {!loading && filtered.length > 0 && (
+      {!loading && companies.length > 0 && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {filtered.map((company) => (
+          {companies.map((company) => (
             <Link key={company.id} href={`/companies/${company.id}`}>
               <Card className="transition-colors hover:border-primary/30 hover:shadow-md cursor-pointer h-full">
                 <CardHeader className="pb-3">
@@ -185,7 +183,7 @@ export default function CompaniesPage() {
       )}
 
       {/* Load more */}
-      {hasMore && filtered.length > 0 && !search && (
+      {hasMore && companies.length > 0 && !search && (
         <div className="flex justify-center pt-4">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? "Cargando..." : "Cargar mas empresas"}
