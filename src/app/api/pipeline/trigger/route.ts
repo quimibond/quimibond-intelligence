@@ -22,7 +22,7 @@ interface StepResult {
   error?: string;
 }
 
-const VALID_STEPS = ["sync-emails", "analyze", "embeddings", "briefing"] as const;
+const VALID_STEPS = ["sync-emails", "analyze", "embeddings", "briefing", "reconcile"] as const;
 type PipelineStep = typeof VALID_STEPS[number];
 
 export async function POST(request: NextRequest) {

@@ -123,6 +123,7 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
     { id: "analyze", label: "Analizar (Claude)", desc: "KG, alertas, acciones", icon: Brain, steps: ["analyze"] },
     { id: "embed", label: "Embeddings", desc: "Vectores pgvector", icon: Database, steps: ["embeddings"] },
     { id: "brief", label: "Briefing", desc: "Resumen diario", icon: FileText, steps: ["briefing"] },
+    { id: "reconcile", label: "Reconciliar", desc: "Auto-cierra acciones resueltas", icon: CheckCircle2, steps: ["reconcile"] },
   ];
 
   return (
