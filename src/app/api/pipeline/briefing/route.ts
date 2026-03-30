@@ -117,16 +117,35 @@ export async function POST(request: NextRequest) {
     // Count topics from facts
     const topicSet = new Set(facts.map(f => (f as Record<string, unknown>).fact_type).filter(Boolean));
 
-    // Save briefing
-    await supabase.from("briefings").upsert({
+    // Save briefing (insert, not upsert — unique key includes account)
+    const { error: insertError } = await supabase.from("briefings").insert({
       briefing_date: today,
       scope: "daily",
+      account: "all",
       summary_html: briefingHtml,
       summary_text: summaryText,
       total_emails: emails.length,
       topics_identified: [...topicSet].map(t => ({ topic: t, status: "new" })),
       risks_detected: [],
-    }, { onConflict: "briefing_date,scope" });
+    });
+
+    if (insertError) {
+      // If duplicate, try update instead
+      if (insertError.code === "23505") {
+        await supabase.from("briefings")
+          .update({
+            summary_html: briefingHtml,
+            summary_text: summaryText,
+            total_emails: emails.length,
+            topics_identified: [...topicSet].map(t => ({ topic: t, status: "new" })),
+          })
+          .eq("briefing_date", today)
+          .eq("scope", "daily")
+          .eq("account", "all");
+      } else {
+        console.error("[briefing] Insert error:", insertError);
+      }
+    }
 
     return NextResponse.json({
       success: true,
