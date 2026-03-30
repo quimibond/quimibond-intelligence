@@ -44,7 +44,7 @@ export default function ContactsPage() {
     async function fetchContacts() {
       const { data } = await supabase
         .from("contacts")
-        .select("*")
+        .select("*, companies(name)")
         .order("name", { ascending: true })
         .limit(PAGE_SIZE);
       setContacts(data ?? []);
@@ -59,7 +59,7 @@ export default function ContactsPage() {
     setLoadingMore(true);
     const { data } = await supabase
       .from("contacts")
-      .select("*")
+      .select("*, companies(name)")
       .order("name", { ascending: true })
       .range(contacts.length, contacts.length + PAGE_SIZE - 1);
     if (data) {
@@ -77,7 +77,7 @@ export default function ContactsPage() {
       return (
         c.name?.toLowerCase().includes(q) ||
         c.email?.toLowerCase().includes(q) ||
-        ((c as unknown as Record<string, unknown>).company as string)?.toLowerCase().includes(q)
+        ((c as unknown as Record<string, unknown>).companies as { name: string } | null)?.name?.toLowerCase().includes(q)
       );
     });
   }, [contacts, search, riskFilter]);
@@ -145,7 +145,7 @@ export default function ContactsPage() {
               <div className="flex flex-wrap items-center gap-1.5 text-xs text-muted-foreground">
                 {contact.company_id && (
                   <Link href={`/companies/${contact.company_id}`} className="hover:underline hover:text-foreground">
-                    {(contact as unknown as Record<string, unknown>).company as string ?? `Empresa #${contact.company_id}`}
+                    {((contact as unknown as Record<string, unknown>).companies as { name: string } | null)?.name ?? `Empresa #${contact.company_id}`}
                   </Link>
                 )}
                 {contact.role && <><span className="text-border">·</span><span>{contact.role}</span></>}
@@ -219,7 +219,7 @@ export default function ContactsPage() {
                   <TableCell className="text-muted-foreground">
                     {contact.company_id ? (
                       <Link href={`/companies/${contact.company_id}`} className="hover:underline hover:text-foreground">
-                        {(contact as unknown as Record<string, unknown>).company as string ?? `Empresa #${contact.company_id}`}
+                        {((contact as unknown as Record<string, unknown>).companies as { name: string } | null)?.name ?? `Empresa #${contact.company_id}`}
                       </Link>
                     ) : "—"}
                   </TableCell>

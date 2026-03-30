@@ -102,9 +102,9 @@ export default function TimelinePage() {
             .limit(50),
           supabase
             .from("emails")
-            .select("id, subject, sender, account, sender_type, created_at")
-            .gte("created_at", threshold)
-            .order("created_at", { ascending: false })
+            .select("id, subject, sender, account, sender_type, email_date, created_at")
+            .gte("email_date", threshold)
+            .order("email_date", { ascending: false })
             .limit(50),
           supabase
             .from("facts")
@@ -156,7 +156,7 @@ export default function TimelinePage() {
           title: e.subject ?? "(sin asunto)",
           subtitle: e.sender,
           metadata: e.account,
-          created_at: e.created_at,
+          created_at: e.email_date ?? e.created_at,
         });
       }
 
