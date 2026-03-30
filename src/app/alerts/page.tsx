@@ -21,15 +21,9 @@ import {
   X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { timeAgo } from "@/lib/utils";
+import { timeAgo, formatCurrency } from "@/lib/utils";
 import type { Alert } from "@/lib/types";
 
-function fmtCurrency(v: number | null): string {
-  if (v == null || v === 0) return "";
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
-}
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -379,7 +373,7 @@ export default function AlertsPage() {
                   {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 && (
                     <Badge variant="warning" className="gap-1">
                       <DollarSign className="h-3 w-3" />
-                      {fmtCurrency(alert.business_value_at_risk)} en riesgo
+                      {formatCurrency(alert.business_value_at_risk)} en riesgo
                     </Badge>
                   )}
                 </div>
@@ -514,7 +508,7 @@ export default function AlertsPage() {
                       <TableCell>
                         {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 ? (
                           <span className="font-medium text-amber-600 dark:text-amber-400">
-                            {fmtCurrency(alert.business_value_at_risk)}
+                            {formatCurrency(alert.business_value_at_risk)}
                           </span>
                         ) : (
                           <span className="text-muted-foreground">—</span>

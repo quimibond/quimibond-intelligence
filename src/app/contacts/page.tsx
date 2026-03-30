@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { Loader2, Search, Users } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { cn, getInitials, timeAgo } from "@/lib/utils";
+import { cn, getInitials, timeAgo, sentimentColor } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -22,13 +22,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-function sentimentColor(score: number | null): string {
-  if (score == null) return "text-muted-foreground";
-  if (score >= 0.6) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 0.3) return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
-}
 
 const PAGE_SIZE = 50;
 

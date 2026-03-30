@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { cn, timeAgo, scoreToPercent } from "@/lib/utils";
+import { cn, timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
 import type { DirectorDashboard, DashboardKPI } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
 import { PageHeader } from "@/components/shared/page-header";
@@ -19,13 +19,6 @@ import {
   UserCheck, Brain, MessageSquare, BarChart3, Target, Shield,
   ArrowRight, Activity,
 } from "lucide-react";
-
-function formatCurrency(value: number | null): string {
-  if (value == null) return "—";
-  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(1)}M`;
-  if (value >= 1_000) return `$${(value / 1_000).toFixed(0)}K`;
-  return `$${value.toFixed(0)}`;
-}
 
 // ── Types ──
 interface GlobalAging {
