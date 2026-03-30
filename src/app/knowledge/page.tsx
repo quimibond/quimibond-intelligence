@@ -266,48 +266,75 @@ export default function KnowledgePage() {
               description="No se encontraron entidades con los filtros actuales."
             />
           ) : (
-            <div className="overflow-x-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Nombre</TableHead>
-                    <TableHead>Tipo</TableHead>
-                    <TableHead>Email</TableHead>
-                    <TableHead>Ultima vez</TableHead>
-                    <TableHead>Atributos</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredEntities.map((entity) => (
-                    <TableRow key={entity.id}>
-                      <TableCell className="font-medium">
-                        {entity.name}
-                        {entity.canonical_name &&
-                          entity.canonical_name !== entity.name && (
-                            <p className="text-xs text-muted-foreground">
-                              {entity.canonical_name}
-                            </p>
-                          )}
-                      </TableCell>
-                      <TableCell>
-                        <Badge variant={entityBadgeVariant(entity.entity_type)}>
-                          {entity.entity_type}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {entity.email ?? "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {timeAgo(entity.last_seen)}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground text-xs">
-                        {attributeSummary(entity.attributes)}
-                      </TableCell>
+            <>
+              {/* Mobile cards */}
+              <div className="space-y-3 md:hidden">
+                {filteredEntities.map((entity) => (
+                  <div key={entity.id} className="rounded-lg border bg-card p-3 space-y-2">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{entity.name}</p>
+                        {entity.email && (
+                          <p className="text-xs text-muted-foreground truncate">{entity.email}</p>
+                        )}
+                      </div>
+                      <Badge variant={entityBadgeVariant(entity.entity_type)}>
+                        {entity.entity_type}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                      <span>{timeAgo(entity.last_seen)}</span>
+                      {attributeSummary(entity.attributes) && (
+                        <span className="truncate">{attributeSummary(entity.attributes)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nombre</TableHead>
+                      <TableHead>Tipo</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Ultima vez</TableHead>
+                      <TableHead>Atributos</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredEntities.map((entity) => (
+                      <TableRow key={entity.id}>
+                        <TableCell className="font-medium">
+                          {entity.name}
+                          {entity.canonical_name &&
+                            entity.canonical_name !== entity.name && (
+                              <p className="text-xs text-muted-foreground">
+                                {entity.canonical_name}
+                              </p>
+                            )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant={entityBadgeVariant(entity.entity_type)}>
+                            {entity.entity_type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {entity.email ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">
+                          {timeAgo(entity.last_seen)}
+                        </TableCell>
+                        <TableCell className="text-muted-foreground text-xs">
+                          {attributeSummary(entity.attributes)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </TabsContent>
 
@@ -323,50 +350,71 @@ export default function KnowledgePage() {
                 description="No se han encontrado relaciones entre entidades."
               />
             ) : (
-              <div className="rounded-md border">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Entidad A</TableHead>
-                      <TableHead>Tipo relacion</TableHead>
-                      <TableHead>Entidad B</TableHead>
-                      <TableHead className="w-40">Fuerza</TableHead>
-                      <TableHead>Fecha</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {relationships.map((rel) => (
-                      <TableRow key={rel.id}>
-                        <TableCell className="font-medium">
-                          {rel.entity_a_name}
-                        </TableCell>
-                        <TableCell>
-                          <Badge variant="secondary">
-                            {rel.relationship_type}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="font-medium">
-                          {rel.entity_b_name}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Progress
-                              value={(rel.strength ?? 0) * 100}
-                              className="h-2 flex-1"
-                            />
-                            <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
-                              {((rel.strength ?? 0) * 100).toFixed(0)}%
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {formatDate(rel.created_at)}
-                        </TableCell>
+              <>
+                {/* Mobile cards */}
+                <div className="space-y-3 md:hidden">
+                  {relationships.map((rel) => (
+                    <div key={rel.id} className="rounded-lg border bg-card p-3 space-y-2">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="font-medium truncate">{rel.entity_a_name}</span>
+                        <Badge variant="secondary" className="shrink-0">{rel.relationship_type}</Badge>
+                        <span className="font-medium truncate">{rel.entity_b_name}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Progress value={(rel.strength ?? 0) * 100} className="h-2 flex-1" />
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {((rel.strength ?? 0) * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                {/* Desktop table */}
+                <div className="hidden md:block rounded-md border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Entidad A</TableHead>
+                        <TableHead>Tipo relacion</TableHead>
+                        <TableHead>Entidad B</TableHead>
+                        <TableHead className="w-40">Fuerza</TableHead>
+                        <TableHead>Fecha</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
+                    </TableHeader>
+                    <TableBody>
+                      {relationships.map((rel) => (
+                        <TableRow key={rel.id}>
+                          <TableCell className="font-medium">
+                            {rel.entity_a_name}
+                          </TableCell>
+                          <TableCell>
+                            <Badge variant="secondary">
+                              {rel.relationship_type}
+                            </Badge>
+                          </TableCell>
+                          <TableCell className="font-medium">
+                            {rel.entity_b_name}
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Progress
+                                value={(rel.strength ?? 0) * 100}
+                                className="h-2 flex-1"
+                              />
+                              <span className="text-xs tabular-nums text-muted-foreground w-10 text-right">
+                                {((rel.strength ?? 0) * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">
+                            {formatDate(rel.created_at)}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              </>
             )}
           </div>
         </TabsContent>

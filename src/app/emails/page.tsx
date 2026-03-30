@@ -114,23 +114,23 @@ export default function EmailsPage() {
         description="Correos sincronizados e inteligencia extraida"
       />
 
-      <div className="flex flex-wrap items-center gap-3 pb-4">
-        <div className="relative flex-1 sm:max-w-sm">
+      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 pb-4">
+        <div className="relative flex-1 min-w-0">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por remitente, destinatario o asunto..."
+            placeholder="Buscar por remitente o asunto..."
             className="pl-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)}>
+        <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full sm:w-auto">
           <option value="all">Todas las cuentas</option>
           {accounts.map((a) => (
             <option key={a} value={a}>{a}</option>
           ))}
         </Select>
-        <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)}>
+        <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)} className="w-full sm:w-auto">
           <option value="all">Todos los tipos</option>
           <option value="internal">Internos</option>
           <option value="external">Externos</option>

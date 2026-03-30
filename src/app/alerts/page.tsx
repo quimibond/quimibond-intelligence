@@ -246,7 +246,7 @@ export default function AlertsPage() {
         description="Centro de alertas e inteligencia de riesgos"
       />
 
-      <div className="flex flex-wrap items-center gap-3">
+      <div className="grid grid-cols-2 sm:flex sm:flex-wrap sm:items-center gap-3">
         <Select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value)}

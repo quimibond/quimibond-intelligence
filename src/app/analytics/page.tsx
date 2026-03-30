@@ -595,48 +595,78 @@ export default function AnalyticsPage() {
               Sin datos de cuentas.
             </p>
           ) : (
-            <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Cuenta</TableHead>
-                  <TableHead className="text-right">Total Emails</TableHead>
-                  <TableHead className="text-right">Respuesta Prom.</TableHead>
-                  <TableHead>Sentimiento</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
+            <>
+              {/* Mobile cards */}
+              <div className="space-y-2 md:hidden">
                 {accountBreakdown.map((row) => (
-                  <TableRow key={row.account}>
-                    <TableCell className="font-medium">{row.account}</TableCell>
-                    <TableCell className="text-right">
-                      {row.total_emails.toLocaleString()}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {row.avg_response === "—" ? "—" : `${row.avg_response}h`}
-                    </TableCell>
-                    <TableCell>
-                      {row.sentiment ? (
-                        <Badge
-                          variant={
-                            row.sentiment.includes("positive")
-                              ? "success"
-                              : row.sentiment.includes("negative")
-                                ? "warning"
-                                : "secondary"
-                          }
-                        >
-                          {row.sentiment}
-                        </Badge>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                  </TableRow>
+                  <div key={row.account} className="flex items-center justify-between rounded-lg border p-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{row.account}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {row.total_emails} emails · {row.avg_response === "—" ? "—" : `${row.avg_response}h`} resp.
+                      </p>
+                    </div>
+                    {row.sentiment ? (
+                      <Badge
+                        variant={
+                          row.sentiment.includes("positive") ? "success"
+                            : row.sentiment.includes("negative") ? "warning"
+                              : "secondary"
+                        }
+                        className="shrink-0"
+                      >
+                        {row.sentiment}
+                      </Badge>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">—</span>
+                    )}
+                  </div>
                 ))}
-              </TableBody>
-            </Table>
-            </div>
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Cuenta</TableHead>
+                    <TableHead className="text-right">Total Emails</TableHead>
+                    <TableHead className="text-right">Respuesta Prom.</TableHead>
+                    <TableHead>Sentimiento</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {accountBreakdown.map((row) => (
+                    <TableRow key={row.account}>
+                      <TableCell className="font-medium">{row.account}</TableCell>
+                      <TableCell className="text-right">
+                        {row.total_emails.toLocaleString()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {row.avg_response === "—" ? "—" : `${row.avg_response}h`}
+                      </TableCell>
+                      <TableCell>
+                        {row.sentiment ? (
+                          <Badge
+                            variant={
+                              row.sentiment.includes("positive")
+                                ? "success"
+                                : row.sentiment.includes("negative")
+                                  ? "warning"
+                                  : "secondary"
+                            }
+                          >
+                            {row.sentiment}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground">—</span>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>

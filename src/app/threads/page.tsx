@@ -201,7 +201,7 @@ export default function ThreadsPage() {
       />
 
       {/* Filter bar */}
-      <div className="flex flex-wrap items-center gap-3 pb-4">
+      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 pb-4">
         <div className="w-full sm:w-48">
           <Select
             value={statusFilter}
@@ -215,7 +215,7 @@ export default function ThreadsPage() {
             <option value="cold">Fr\u00edos (&gt;72h)</option>
           </Select>
         </div>
-        <div className="relative flex-1 max-w-sm">
+        <div className="relative flex-1 min-w-0 sm:max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar por asunto o participante..."
