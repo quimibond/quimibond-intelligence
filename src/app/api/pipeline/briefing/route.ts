@@ -82,9 +82,25 @@ export async function POST(request: NextRequest) {
       + "Sé directo y accionable. Incluye nombres de contactos y empresas."
     );
 
-    const briefingHtml = await callClaude(apiKey, system, dataPackage, {
-      maxTokens: 4000,
-    });
+    const response = await callClaude(apiKey, {
+      system,
+      messages: [{ role: "user", content: dataPackage }],
+      max_tokens: 4000,
+    }, "briefing");
+
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Claude API error ${response.status}: ${errText.slice(0, 200)}`);
+    }
+
+    const claudeJson = await response.json() as {
+      content: Array<{ type: string; text?: string }>;
+      usage?: { input_tokens: number; output_tokens: number };
+    };
+    const briefingHtml = claudeJson.content
+      .filter(c => c.type === "text")
+      .map(c => c.text ?? "")
+      .join("");
 
     // Extract summary text
     const summaryText = briefingHtml
