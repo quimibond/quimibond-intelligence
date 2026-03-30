@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { MainContent } from "@/components/layout/main-content";
+import { RealtimeAlerts } from "@/components/shared/realtime-alerts";
 import { SearchCommand } from "@/components/shared/search-command";
 import { Toaster } from "sonner";
 import "./globals.css";
@@ -34,6 +35,7 @@ export default function RootLayout({
           <AppSidebar />
           <MainContent>{children}</MainContent>
           <SearchCommand />
+          <RealtimeAlerts />
           <Toaster
             position="bottom-right"
             toastOptions={{
