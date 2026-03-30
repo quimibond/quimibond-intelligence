@@ -66,6 +66,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: "Sin datos para generar briefing",
+        debug: {
+          emails_query_error: emailsRes.error?.message,
+          facts_query_error: factsRes.error?.message,
+          cutoff,
+        },
       });
     }
 
