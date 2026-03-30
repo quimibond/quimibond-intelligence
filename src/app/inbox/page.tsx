@@ -23,6 +23,7 @@ import {
 import { supabase } from "@/lib/supabase";
 import { cn, formatCurrency, timeAgo, sentimentColor } from "@/lib/utils";
 import type { Alert, ActionItem } from "@/lib/types";
+import { DataFreshness } from "@/components/shared/data-freshness";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
@@ -258,10 +259,13 @@ export default function InboxPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Inbox de Decisiones"
-        description="Lo que necesita tu atencion ahora, ordenado por impacto"
-      />
+      <div className="flex items-end justify-between gap-4">
+        <PageHeader
+          title="Inbox de Decisiones"
+          description="Lo que necesita tu atencion ahora, ordenado por impacto"
+        />
+        <DataFreshness />
+      </div>
 
       {/* Stats */}
       {stats && (
