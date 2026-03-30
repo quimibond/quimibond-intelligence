@@ -10,6 +10,13 @@ import {
   Lightbulb,
   Mail,
   Loader2,
+  LayoutDashboard,
+  FileText,
+  MessageSquare,
+  CheckSquare,
+  Settings,
+  BarChart3,
+  Activity,
 } from "lucide-react";
 import {
   Dialog,
@@ -138,6 +145,17 @@ export function SearchCommand() {
 
   const noResults = results && !hasResults && query.trim().length >= 2;
 
+  const quickActions = [
+    { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
+    { label: "Alertas criticas", icon: Bell, href: "/alerts?severity=critical&state=new" },
+    { label: "Acciones vencidas", icon: CheckSquare, href: "/actions?state=pending&overdue=true" },
+    { label: "Ultimo briefing", icon: FileText, href: "/briefings" },
+    { label: "Chat con IA", icon: MessageSquare, href: "/chat" },
+    { label: "Analitica", icon: BarChart3, href: "/analytics" },
+    { label: "Timeline", icon: Activity, href: "/timeline" },
+    { label: "Sistema", icon: Settings, href: "/system" },
+  ];
+
   return (
     <>
       <button
@@ -173,13 +191,26 @@ export function SearchCommand() {
           {/* Results */}
           <ScrollArea className="max-h-[420px]">
             <div className="p-2">
-              {/* Empty state */}
+              {/* Quick actions (when no query) */}
               {!results && !loading && (
-                <div className="flex flex-col items-center justify-center py-12 text-center">
-                  <Search className="mb-3 size-10 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">
-                    Escribe para buscar en todo el sistema
-                  </p>
+                <div>
+                  <div className="flex items-center gap-2 px-2 py-1.5">
+                    <Activity className="size-3.5 text-muted-foreground" />
+                    <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                      Acciones rapidas
+                    </span>
+                  </div>
+                  <div className="space-y-0.5">
+                    {quickActions.map((action) => (
+                      <ResultItem
+                        key={action.href}
+                        onClick={() => navigate(action.href)}
+                      >
+                        <action.icon className="size-4 shrink-0 text-muted-foreground" />
+                        <span className="text-sm">{action.label}</span>
+                      </ResultItem>
+                    ))}
+                  </div>
                 </div>
               )}
 

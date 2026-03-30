@@ -10,6 +10,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { cn } from "@/lib/utils";
+import { ChartTooltip } from "@/components/shared/chart-tooltip";
 import { EmptyState } from "@/components/shared/empty-state";
 import { TrendingUp } from "lucide-react";
 
@@ -80,14 +81,12 @@ export function HealthTrendChart({ data, className }: HealthTrendChartProps) {
             width={32}
           />
           <RechartsTooltip
-            contentStyle={{
-              backgroundColor: "hsl(var(--popover))",
-              border: "1px solid hsl(var(--border))",
-              borderRadius: 8,
-              fontSize: 12,
-              color: "hsl(var(--popover-foreground))",
-            }}
-            labelFormatter={(label) => formatShortDate(String(label))}
+            content={
+              <ChartTooltip
+                labelFormatter={(label) => formatShortDate(String(label))}
+                valueFormatter={(v) => `${Math.round(v)}/100`}
+              />
+            }
           />
           <Area
             type="monotone"
