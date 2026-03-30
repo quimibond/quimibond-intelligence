@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useSidebar } from "@/components/layout/sidebar-context";
+import { PipelineStatus } from "@/components/layout/pipeline-status";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import {
   Brain,
@@ -203,9 +204,12 @@ export function AppSidebar() {
             </button>
           </div>
 
-          {/* Footer */}
-          <div className={cn("border-t border-sidebar-border px-6 py-3", collapsed && "md:px-0 md:text-center")}>
-            <span className={cn("text-xs text-muted-foreground", collapsed && "md:hidden")}>v2.0</span>
+          {/* Pipeline status + Footer */}
+          <div className={cn("border-t border-sidebar-border", collapsed && "md:px-0 md:text-center")}>
+            <PipelineStatus collapsed={collapsed} />
+            <div className={cn("px-6 pb-3", collapsed && "md:px-0")}>
+              <span className={cn("text-xs text-muted-foreground", collapsed && "md:hidden")}>v2.0</span>
+            </div>
           </div>
         </div>
       </aside>
