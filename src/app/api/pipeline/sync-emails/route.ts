@@ -26,7 +26,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const accounts: GmailAccount[] = JSON.parse(accountsJson);
+    // Support both formats:
+    // Array: [{email, department}, ...]
+    // Object: {"email": "department", ...}  (Odoo format)
+    const parsed = JSON.parse(accountsJson);
+    const accounts: GmailAccount[] = Array.isArray(parsed)
+      ? parsed
+      : Object.entries(parsed).map(([email, department]) => ({
+          email,
+          department: String(department),
+        }));
     const supabase = getServiceClient();
 
     // Load history state from sync_state table
