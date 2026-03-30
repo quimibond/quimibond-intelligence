@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
-import type { DirectorDashboard, DashboardKPI } from "@/lib/types";
+import type { DirectorDashboard, DashboardKPI, GlobalAging, LateDelivery, PipelineGlobal } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -20,28 +20,6 @@ import {
   ArrowRight, Activity,
 } from "lucide-react";
 
-// ── Types ──
-interface GlobalAging {
-  current: number;
-  "1_30": number;
-  "31_60": number;
-  "61_90": number;
-  "90_plus": number;
-  total_outstanding: number;
-}
-interface LateDelivery {
-  name: string;
-  company_name: string | null;
-  company_id: number | null;
-  scheduled_date: string | null;
-  picking_type: string | null;
-  origin: string | null;
-}
-interface PipelineGlobal {
-  total_opportunities: number;
-  pipeline_value: number;
-  weighted_value: number;
-}
 
 // ── Clickable KPI Card ──
 function KPICard({
