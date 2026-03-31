@@ -1,15 +1,18 @@
 /**
- * Pipeline Analyze — Incremental email analysis with Claude.
+ * Pipeline Analyze v3 — DATA EXTRACTION ONLY.
  *
- * NEW ARCHITECTURE: Process ONE account per invocation.
- * - Finds the account with the most UNPROCESSED emails
- * - Analyzes only that account's emails (1 Claude call, ~30-40s)
- * - Writes KG entities, facts, alerts, actions, profiles IMMEDIATELY
- * - Marks those emails as kg_processed
- * - Returns in ~60s (well within 300s timeout)
+ * This pipeline DOES NOT create alerts or actions.
+ * It only extracts intelligence data from emails:
+ * - Knowledge Graph entities + facts
+ * - Person profiles (role, communication style)
+ * - Email summaries for agent consumption
  *
- * Vercel Cron calls this every 15 min. Over time, all accounts get processed.
- * Multiple manual triggers process accounts one by one.
+ * The AI Agents are responsible for:
+ * - Evaluating extracted data + Odoo data + history
+ * - Generating curated insights with confidence scores
+ * - Only high-confidence insights reach the CEO's inbox
+ *
+ * Architecture: Pipeline → Raw Data → Agents → Curated Insights → CEO
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
@@ -20,7 +23,6 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 300;
 
-// Vercel Crons use GET
 export async function GET(request: NextRequest) {
   return POST(request);
 }
@@ -40,7 +42,7 @@ export async function POST(request: NextRequest) {
     const start = Date.now();
 
     // ── Step 1: Find unprocessed emails ──────────────────────────────────
-    const cutoff = new Date(Date.now() - 14 * 24 * 3600_000).toISOString(); // 14 days window
+    const cutoff = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
     console.log(`[analyze] Looking for unprocessed emails since ${cutoff}`);
 
     const { data: unprocessedEmails, error: queryError } = await supabase
@@ -49,7 +51,7 @@ export async function POST(request: NextRequest) {
       .eq("kg_processed", false)
       .gte("email_date", cutoff)
       .order("email_date", { ascending: false })
-      .limit(300); // Fetch more to find best account, but only process one
+      .limit(300);
 
     if (queryError) {
       console.error("[analyze] Query error:", queryError.message);
@@ -59,48 +61,33 @@ export async function POST(request: NextRequest) {
     console.log(`[analyze] Found ${unprocessedEmails?.length ?? 0} unprocessed emails`);
 
     if (!unprocessedEmails?.length) {
-      return NextResponse.json({
-        success: true,
-        message: "Sin emails pendientes de analisis",
-        emails: 0,
-        all_processed: true,
-      });
+      return NextResponse.json({ success: true, message: "Sin emails pendientes", emails: 0, all_processed: true });
     }
 
-    // ── Step 2: Pick the account with most unprocessed emails ─────────────
+    // ── Step 2: Pick ONE account ─────────────────────────────────────────
     const accountCounts = new Map<string, number>();
     for (const e of unprocessedEmails) {
       const acct = e.account ?? "unknown";
       accountCounts.set(acct, (accountCounts.get(acct) ?? 0) + 1);
     }
-
-    // Sort by count, pick the top account
     const sortedAccounts = [...accountCounts.entries()].sort((a, b) => b[1] - a[1]);
     const targetAccount = sortedAccounts[0][0];
 
-    // Get emails for this account only (max 50 per run)
     const accountEmails = unprocessedEmails
       .filter(e => (e.account ?? "unknown") === targetAccount)
       .slice(0, 50);
 
     if (accountEmails.length < 2) {
-      // Mark single emails as processed (not enough for meaningful analysis)
       if (accountEmails.length === 1) {
         await supabase.from("emails").update({ kg_processed: true }).eq("id", accountEmails[0].id);
       }
-      return NextResponse.json({
-        success: true,
-        message: `Cuenta ${targetAccount}: solo ${accountEmails.length} email(s), saltando`,
-        emails: accountEmails.length,
-        account: targetAccount,
-        remaining_accounts: sortedAccounts.length - 1,
-      });
+      return NextResponse.json({ success: true, message: `${targetAccount}: solo ${accountEmails.length} email(s)`, emails: accountEmails.length });
     }
 
-    console.log(`[analyze] Processing account ${targetAccount}: ${accountEmails.length} emails (${sortedAccounts.length} accounts pending)`);
+    console.log(`[analyze] Processing ${targetAccount}: ${accountEmails.length} emails`);
 
     // ── Step 3: Build context ────────────────────────────────────────────
-    let odooCtx, personProfiles, teamMembers;
+    let odooCtx, personProfiles;
     try {
       const senderEmails = [...new Set(
         accountEmails
@@ -108,21 +95,20 @@ export async function POST(request: NextRequest) {
           .map(e => extractEmail(e.sender ?? ""))
           .filter(e => e.includes("@"))
       )];
+      console.log(`[analyze] Building context for ${senderEmails.length} senders`);
 
-      console.log(`[analyze] Building context for ${senderEmails.length} sender emails`);
-
-      [odooCtx, personProfiles, teamMembers] = await Promise.all([
+      [odooCtx, personProfiles] = await Promise.all([
         buildOdooContext(supabase, senderEmails),
         loadPersonProfiles(supabase, senderEmails),
-        supabase.from("odoo_users").select("name, email, department, job_title"),
       ]);
       console.log(`[analyze] Context built OK`);
     } catch (ctxErr) {
       console.error(`[analyze] Context build failed:`, ctxErr);
+      await markProcessed(supabase, accountEmails.map(e => e.id));
       return NextResponse.json({ error: "Context build failed", detail: String(ctxErr) }, { status: 500 });
     }
 
-    // ── Step 4: Call Claude (single call for this account) ───────────────
+    // ── Step 4: Call Claude ──────────────────────────────────────────────
     console.log(`[analyze] Calling Claude for ${targetAccount}`);
     const extCount = accountEmails.filter(e => e.sender_type === "external").length;
     const intCount = accountEmails.length - extCount;
@@ -143,42 +129,28 @@ export async function POST(request: NextRequest) {
     let fullResult;
     try {
       fullResult = await analyzeAccountFull(apiKey, dept, targetAccount, emailText, extCount, intCount);
+      console.log(`[analyze] Claude responded OK`);
     } catch (claudeErr) {
-      console.error(`[analyze] Claude failed for ${targetAccount}:`, claudeErr);
-      // Mark emails as processed anyway to avoid infinite retry
+      console.error(`[analyze] Claude failed:`, claudeErr);
       await markProcessed(supabase, accountEmails.map(e => e.id));
-      return NextResponse.json({
-        success: false,
-        error: `Claude analysis failed for ${targetAccount}`,
-        detail: String(claudeErr),
-        emails_marked: accountEmails.length,
-      }, { status: 500 });
+      return NextResponse.json({ error: "Claude failed", detail: String(claudeErr) }, { status: 500 });
     }
 
-    // ── Step 5: Write results IMMEDIATELY ────────────────────────────────
-    const summary = fullResult.summary ?? {};
-    const kg = fullResult.knowledge_graph ?? { entities: [], facts: [], action_items: [], relationships: [], person_profiles: [] };
+    // ── Step 5: Extract and save DATA ONLY (no alerts, no actions) ───────
+    const kg = fullResult.knowledge_graph ?? { entities: [], facts: [], relationships: [], person_profiles: [] };
 
-    // 5a. Save KG entities
+    // 5a. Save entities
     let entitiesSaved = 0;
     const entityMap: Record<string, number> = {};
-
     for (const ent of (kg.entities ?? [])) {
       const canonical = String(ent.name ?? "").toLowerCase().trim();
       if (!canonical) continue;
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("entities")
-        .upsert({
-          entity_type: ent.type ?? "person",
-          name: ent.name,
-          canonical_name: canonical,
-          email: ent.email ?? null,
-        }, { onConflict: "entity_type,canonical_name" })
+        .upsert({ entity_type: ent.type ?? "person", name: ent.name, canonical_name: canonical, email: ent.email ?? null },
+          { onConflict: "entity_type,canonical_name" })
         .select("id");
-      if (!error && data?.[0]?.id) {
-        entityMap[String(ent.name)] = data[0].id;
-        entitiesSaved++;
-      }
+      if (data?.[0]?.id) { entityMap[String(ent.name)] = data[0].id; entitiesSaved++; }
     }
 
     // 5b. Save facts
@@ -188,15 +160,11 @@ export async function POST(request: NextRequest) {
       if (!f.entity_name || !f.text) continue;
       let entityId = entityMap[String(f.entity_name)];
       if (!entityId) {
-        const { data } = await supabase
-          .from("entities")
-          .select("id")
-          .eq("canonical_name", String(f.entity_name).toLowerCase().trim())
-          .limit(1);
+        const { data } = await supabase.from("entities").select("id")
+          .eq("canonical_name", String(f.entity_name).toLowerCase().trim()).limit(1);
         if (data?.[0]?.id) entityId = data[0].id;
       }
       if (!entityId) continue;
-
       facts.push({
         entity_id: entityId,
         fact_type: f.type ?? "information",
@@ -214,125 +182,81 @@ export async function POST(request: NextRequest) {
       if (!error) factsSaved = facts.length;
     }
 
-    // 5c. Generate alerts from risks
-    let alertsGenerated = 0;
-    const risks = (summary.risks_detected as { risk: string; severity: string }[]) ?? [];
-    for (const risk of risks) {
-      if (!risk.risk) continue;
-      const { error } = await supabase.from("alerts").insert({
-        alert_type: "risk_detected",
-        severity: risk.severity ?? "medium",
-        title: risk.risk.slice(0, 200),
-        description: risk.risk,
-        state: "new",
-        account: targetAccount,
-        suggested_action: `Revisar: ${risk.risk.slice(0, 100)}`,
-      });
-      if (!error) alertsGenerated++;
-    }
-
-    // 5d. Generate alerts from waiting_response
-    const waiting = (summary.waiting_response as { contact: string; subject: string; hours_waiting: number }[]) ?? [];
-    for (const w of waiting) {
-      if (!w.contact || w.hours_waiting < 24) continue;
-      const { error } = await supabase.from("alerts").insert({
-        alert_type: "no_response",
-        severity: w.hours_waiting > 72 ? "high" : w.hours_waiting > 48 ? "medium" : "low",
-        title: `Sin respuesta de ${w.contact}: ${w.subject ?? ""}`.slice(0, 200),
-        description: `${w.contact} no ha respondido en ${Math.round(w.hours_waiting)}h sobre: ${w.subject}`,
-        state: "new",
-        account: targetAccount,
-        contact_name: w.contact,
-        suggested_action: `Dar seguimiento a ${w.contact} sobre ${w.subject}`,
-      });
-      if (!error) alertsGenerated++;
-    }
-
-    // 5e. Generate action items
-    let actionsGenerated = 0;
-    const actionItems = (kg.action_items ?? summary.action_items ?? []) as Record<string, string>[];
-    for (const item of actionItems) {
-      if (!item.description) continue;
-      let assigneeEmail: string | null = null;
-      let assigneeName: string | null = null;
-      if (item.assignee && teamMembers.data) {
-        const match = teamMembers.data.find(
-          m => m.name?.toLowerCase().includes(item.assignee.toLowerCase())
-            || m.email?.toLowerCase().includes(item.assignee.toLowerCase())
-        );
-        if (match) { assigneeEmail = match.email; assigneeName = match.name; }
+    // 5c. Save relationships
+    let relationshipsSaved = 0;
+    for (const rel of (kg.relationships ?? [])) {
+      if (!rel.entity_a || !rel.entity_b) continue;
+      const aId = entityMap[String(rel.entity_a)];
+      const bId = entityMap[String(rel.entity_b)];
+      if (aId && bId) {
+        await supabase.from("entity_relationships").upsert({
+          entity_a_id: aId, entity_b_id: bId,
+          relationship_type: rel.type ?? "mentioned_with",
+          context: rel.context ?? null,
+        }, { onConflict: "entity_a_id,entity_b_id,relationship_type" });
+        relationshipsSaved++;
       }
-      const { error } = await supabase.from("action_items").insert({
-        action_type: item.type ?? "follow_up",
-        description: item.description,
-        reason: `Detectado en analisis de ${targetAccount}`,
-        priority: item.priority ?? "medium",
-        contact_name: item.related_to ?? null,
-        assignee_email: assigneeEmail,
-        assignee_name: assigneeName,
-        due_date: item.due_date ?? null,
-        state: "pending",
-      });
-      if (!error) actionsGenerated++;
     }
 
-    // 5f. Update person profiles on contacts
+    // 5d. Update person profiles
+    let profilesUpdated = 0;
     for (const p of (kg.person_profiles ?? [])) {
       const email = String(p.email ?? "").toLowerCase();
       if (!email) continue;
-      await supabase.from("contacts").update({
-        role: p.role ?? undefined,
-        decision_power: p.decision_power ?? undefined,
-        communication_style: p.communication_style ?? undefined,
-        personality_notes: p.personality_notes ?? undefined,
-      }).eq("email", email);
+      const updates: Record<string, unknown> = {};
+      if (p.role) updates.role = p.role;
+      if (p.decision_power) updates.decision_power = p.decision_power;
+      if (p.communication_style) updates.communication_style = p.communication_style;
+      if (p.personality_notes) updates.personality_notes = p.personality_notes;
+      if (Object.keys(updates).length) {
+        await supabase.from("contacts").update(updates).eq("email", email);
+        profilesUpdated++;
+      }
     }
+
+    // 5e. Save account summary for agent consumption
+    const summary = fullResult.summary ?? {};
+    await supabase.from("pipeline_logs").insert({
+      level: "info",
+      phase: "account_analysis",
+      message: `${targetAccount}: ${accountEmails.length} emails analyzed`,
+      details: {
+        account: targetAccount,
+        emails: accountEmails.length,
+        summary_text: summary.summary_text ?? null,
+        sentiment: summary.overall_sentiment ?? null,
+        sentiment_score: summary.sentiment_score ?? null,
+        topics: summary.topics_detected ?? [],
+        risks_raw: summary.risks_detected ?? [],
+        waiting_response: summary.waiting_response ?? [],
+        external_contacts: summary.external_contacts ?? [],
+        entities: entitiesSaved,
+        facts: factsSaved,
+        relationships: relationshipsSaved,
+        profiles: profilesUpdated,
+        elapsed_s: Math.round((Date.now() - start) / 1000),
+      },
+    });
 
     // ── Step 6: Mark emails as processed ─────────────────────────────────
     await markProcessed(supabase, accountEmails.map(e => e.id));
 
-    // ── Step 7: Log ──────────────────────────────────────────────────────
     const elapsed = Math.round((Date.now() - start) / 1000);
-    await supabase.from("pipeline_logs").insert({
-      level: "info",
-      phase: "emails_analyzed",
-      message: `analyze: ${targetAccount} — ${accountEmails.length} emails`,
-      details: {
-        account: targetAccount,
-        emails: accountEmails.length,
-        entities: entitiesSaved,
-        facts: factsSaved,
-        alerts: alertsGenerated,
-        actions: actionsGenerated,
-        elapsed_s: elapsed,
-        remaining_accounts: sortedAccounts.length - 1,
-      },
-    });
-
-    console.log(`[analyze] Done: ${targetAccount} — ${accountEmails.length} emails, ${entitiesSaved} entities, ${factsSaved} facts, ${alertsGenerated} alerts, ${actionsGenerated} actions in ${elapsed}s`);
+    console.log(`[analyze] Done: ${targetAccount} — ${entitiesSaved} entities, ${factsSaved} facts, ${profilesUpdated} profiles in ${elapsed}s`);
 
     return NextResponse.json({
       success: true,
       account: targetAccount,
       emails: accountEmails.length,
-      entities: entitiesSaved,
-      facts: factsSaved,
-      alerts_generated: alertsGenerated,
-      actions_generated: actionsGenerated,
+      data_extracted: { entities: entitiesSaved, facts: factsSaved, relationships: relationshipsSaved, profiles: profilesUpdated },
       elapsed_s: elapsed,
       remaining_accounts: sortedAccounts.length - 1,
-      remaining_emails: unprocessedEmails.length - accountEmails.length,
     });
   } catch (err) {
     console.error("[analyze] Error:", err);
-    return NextResponse.json(
-      { error: "Error en analisis.", detail: String(err) },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error en analisis.", detail: String(err) }, { status: 500 });
   }
 }
-
-// ── Helpers ──────────────────────────────────────────────────────────────
 
 async function markProcessed(supabase: ReturnType<typeof getServiceClient>, ids: number[]) {
   for (let i = 0; i < ids.length; i += 100) {

@@ -103,7 +103,13 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
       let data: Record<string, unknown> = {};
       let res: Response;
 
-      if (steps.length === 1 && steps[0] !== "all") {
+      if (steps.length === 1 && steps[0] === "orchestrate") {
+        // Agent orchestrator has its own endpoint
+        res = await fetch("/api/agents/orchestrate", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+      } else if (steps.length === 1 && steps[0] !== "all") {
         // Direct call to specific pipeline endpoint
         res = await fetch(`/api/pipeline/${steps[0]}`, {
           method: "POST",
@@ -141,6 +147,7 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
     { id: "brief", label: "Briefing", desc: "Resumen diario", icon: FileText, steps: ["briefing"] },
     { id: "reconcile", label: "Reconciliar", desc: "Auto-cierra acciones resueltas", icon: CheckCircle2, steps: ["reconcile"] },
     { id: "health", label: "Health Scores", desc: "Recalcular scores de contactos", icon: TrendingUp, steps: ["health-scores"] },
+    { id: "agents", label: "Agentes IA", desc: "Orquestar todos los agentes", icon: Brain, steps: ["orchestrate"] },
   ];
 
   return (

@@ -9,12 +9,16 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/agents/orchestrate",
+      "schedule": "0 */4 * * *"
+    },
+    {
       "path": "/api/pipeline/health-scores",
       "schedule": "0 */6 * * *"
     },
     {
       "path": "/api/pipeline/embeddings",
-      "schedule": "45 */2 * * *"
+      "schedule": "30 */6 * * *"
     },
     {
       "path": "/api/pipeline/briefing",
@@ -22,7 +26,7 @@
     },
     {
       "path": "/api/pipeline/reconcile",
-      "schedule": "30 */4 * * *"
+      "schedule": "0 */8 * * *"
     }
   ]
 }
