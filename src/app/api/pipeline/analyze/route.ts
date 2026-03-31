@@ -7,6 +7,11 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 300; // 5 min for full analysis
 
+// Vercel Crons use GET
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;
@@ -27,7 +32,7 @@ export async function POST(request: NextRequest) {
       .select("*")
       .gte("email_date", cutoff)
       .order("email_date", { ascending: false })
-      .limit(500);
+      .limit(200);
 
     if (!recentEmails?.length) {
       return NextResponse.json({ success: true, message: "Sin emails recientes", emails: 0 });

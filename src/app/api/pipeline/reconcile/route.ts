@@ -13,6 +13,11 @@ export const maxDuration = 60;
  * 3. Contact actions → new email received from contact
  * 4. CRM actions → lead stage changed
  */
+// Vercel Crons use GET
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;

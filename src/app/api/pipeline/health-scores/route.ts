@@ -15,6 +15,11 @@ export const maxDuration = 120;
  * - engagement_score: interaction frequency and diversity
  * - overall_score: weighted average of all components
  */
+// Vercel Crons use GET
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;

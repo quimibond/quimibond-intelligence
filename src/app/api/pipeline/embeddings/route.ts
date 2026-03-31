@@ -7,6 +7,11 @@ export const maxDuration = 120;
 const VOYAGE_API_URL = "https://api.voyageai.com/v1/embeddings";
 const BATCH_SIZE = 64;
 
+// Vercel Crons use GET
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;

@@ -5,6 +5,11 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
 
+// Vercel Crons use GET
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;

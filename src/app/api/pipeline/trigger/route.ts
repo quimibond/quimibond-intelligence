@@ -25,6 +25,11 @@ interface StepResult {
 const VALID_STEPS = ["sync-emails", "analyze", "embeddings", "briefing", "reconcile", "health-scores"] as const;
 type PipelineStep = typeof VALID_STEPS[number];
 
+// Vercel Crons use GET
+export async function GET(request: NextRequest) {
+  return POST(request);
+}
+
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;
