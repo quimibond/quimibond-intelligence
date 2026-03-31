@@ -33,6 +33,10 @@
       "schedule": "30 */6 * * *"
     },
     {
+      "path": "/api/agents/evolve",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/pipeline/briefing",
       "schedule": "0 7 * * *"
     },
