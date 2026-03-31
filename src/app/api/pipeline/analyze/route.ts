@@ -41,10 +41,9 @@ export async function POST(request: NextRequest) {
       byAccount.get(acct)!.push(e);
     }
 
-    // Top 8 accounts by email count
+    // All accounts with >= 2 emails, sorted by volume
     const sortedAccounts = [...byAccount.entries()]
       .sort((a, b) => b[1].length - a[1].length)
-      .slice(0, 8)
       .filter(([, emails]) => emails.length >= 2);
 
     // Build Odoo context from Supabase
@@ -214,6 +213,99 @@ export async function POST(request: NextRequest) {
     }
     console.log(`[analyze] KG totals: ${totalEntitiesSaved} entities, ${totalFactsSaved} facts saved, ${totalFactsSkipped} facts skipped`);
 
+    // ── Generate alerts from risks_detected + waiting_response ──────────
+    let alertsGenerated = 0;
+    let actionsGenerated = 0;
+
+    for (const summary of summaries) {
+      const account = String(summary.account ?? "");
+      const risks = (summary.risks_detected as { risk: string; severity: string }[]) ?? [];
+      const waiting = (summary.waiting_response as { contact: string; subject: string; hours_waiting: number }[]) ?? [];
+      const actionItems = (summary.action_items as { assignee?: string; related_to?: string; description?: string; type?: string; priority?: string; due_date?: string }[]) ?? [];
+
+      // Create alerts from risks
+      for (const risk of risks) {
+        if (!risk.risk) continue;
+
+        // Look up contact by name
+        let contactId: number | null = null;
+        let contactName: string | null = null;
+        const { data: contactMatch } = await supabase
+          .from("contacts")
+          .select("id, name")
+          .ilike("name", `%${risk.risk.split(" ")[0]}%`)
+          .limit(1);
+        if (contactMatch?.[0]) {
+          contactId = contactMatch[0].id;
+          contactName = contactMatch[0].name;
+        }
+
+        const { error } = await supabase.from("alerts").insert({
+          alert_type: "risk_detected",
+          severity: risk.severity ?? "medium",
+          title: risk.risk.slice(0, 200),
+          description: risk.risk,
+          state: "new",
+          account,
+          contact_id: contactId,
+          contact_name: contactName,
+          suggested_action: `Revisar: ${risk.risk.slice(0, 100)}`,
+        });
+        if (!error) alertsGenerated++;
+      }
+
+      // Create alerts from stalled threads (waiting_response)
+      for (const w of waiting) {
+        if (!w.contact || w.hours_waiting < 24) continue;
+
+        const { error } = await supabase.from("alerts").insert({
+          alert_type: "no_response",
+          severity: w.hours_waiting > 72 ? "high" : w.hours_waiting > 48 ? "medium" : "low",
+          title: `Sin respuesta de ${w.contact}: ${w.subject ?? ""}`.slice(0, 200),
+          description: `${w.contact} no ha respondido en ${Math.round(w.hours_waiting)}h sobre: ${w.subject}`,
+          state: "new",
+          account,
+          contact_name: w.contact,
+          suggested_action: `Dar seguimiento a ${w.contact} sobre ${w.subject}`,
+        });
+        if (!error) alertsGenerated++;
+      }
+
+      // Create action items
+      for (const item of actionItems) {
+        if (!item.description) continue;
+
+        // Resolve assignee email from team members
+        let assigneeEmail: string | null = null;
+        let assigneeName: string | null = null;
+        if (item.assignee && teamMembers) {
+          const match = teamMembers.find(
+            m => m.name?.toLowerCase().includes(item.assignee!.toLowerCase())
+              || m.email?.toLowerCase().includes(item.assignee!.toLowerCase())
+          );
+          if (match) {
+            assigneeEmail = match.email;
+            assigneeName = match.name;
+          }
+        }
+
+        const { error } = await supabase.from("action_items").insert({
+          action_type: item.type ?? "follow_up",
+          description: item.description,
+          reason: `Detectado en análisis de ${account}`,
+          priority: item.priority ?? "medium",
+          contact_name: item.related_to ?? null,
+          assignee_email: assigneeEmail,
+          assignee_name: assigneeName,
+          due_date: item.due_date ?? null,
+          state: "pending",
+        });
+        if (!error) actionsGenerated++;
+      }
+    }
+
+    console.log(`[analyze] Generated ${alertsGenerated} alerts, ${actionsGenerated} actions`);
+
     // Save person profiles (batch update contacts)
     for (const { profiles } of pendingProfiles) {
       for (const p of profiles) {
@@ -251,6 +343,8 @@ export async function POST(request: NextRequest) {
       summaries: summaries.length,
       accounts_ok: accountsOk,
       accounts_failed: accountsFailed,
+      alerts_generated: alertsGenerated,
+      actions_generated: actionsGenerated,
       kg: { entities: totalEntitiesSaved, facts: totalFactsSaved, facts_skipped: totalFactsSkipped },
       elapsed_s: Math.round((Date.now() - start) / 1000),
     });
