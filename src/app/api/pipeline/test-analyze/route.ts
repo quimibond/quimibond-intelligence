@@ -12,7 +12,7 @@ export async function GET() {
     steps.push("1-query");
     const { data: unprocessedEmails, error } = await supabase
       .from("emails")
-      .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type, department")
+      .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type")
       .eq("kg_processed", false)
       .gte("email_date", new Date(Date.now() - 14 * 86400_000).toISOString())
       .order("email_date", { ascending: false })
@@ -79,7 +79,7 @@ export async function GET() {
 
     const extCount = accountEmails.filter(e => e.sender_type === "external").length;
     const intCount = accountEmails.length - extCount;
-    const dept = accountEmails[0]?.department ?? "Otro";
+    const dept = "Otro";
 
     const fullResult = await analyzeAccountFull(apiKey, dept, targetAccount, emailText, extCount, intCount);
     steps.push("6-ok");

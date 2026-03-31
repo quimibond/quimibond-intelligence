@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
 
     const { data: unprocessedEmails, error: queryError } = await supabase
       .from("emails")
-      .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type, department")
+      .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type")
       .eq("kg_processed", false)
       .gte("email_date", cutoff)
       .order("email_date", { ascending: false })
@@ -124,7 +124,7 @@ export async function POST(request: NextRequest) {
     }));
 
     const emailText = formatEmailsForClaude(formatted, odooCtx, personProfiles);
-    const dept = accountEmails[0]?.department ?? "Otro";
+    const dept = "Otro"; // department not stored on emails table
 
     let fullResult;
     try {
