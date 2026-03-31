@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
       .select("*")
       .gte("email_date", cutoff)
       .order("email_date", { ascending: false })
-      .limit(200);
+      .limit(80);
 
     if (!recentEmails?.length) {
       return NextResponse.json({ success: true, message: "Sin emails recientes", emails: 0 });
