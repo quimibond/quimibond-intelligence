@@ -32,6 +32,7 @@ export async function POST(request: NextRequest) {
   try {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
+      console.error("[analyze] ANTHROPIC_API_KEY not set");
       return NextResponse.json({ error: "ANTHROPIC_API_KEY no configurado." }, { status: 503 });
     }
 
@@ -40,14 +41,22 @@ export async function POST(request: NextRequest) {
 
     // ── Step 1: Find unprocessed emails ──────────────────────────────────
     const cutoff = new Date(Date.now() - 14 * 24 * 3600_000).toISOString(); // 14 days window
+    console.log(`[analyze] Looking for unprocessed emails since ${cutoff}`);
 
-    const { data: unprocessedEmails } = await supabase
+    const { data: unprocessedEmails, error: queryError } = await supabase
       .from("emails")
       .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type, department")
       .eq("kg_processed", false)
       .gte("email_date", cutoff)
       .order("email_date", { ascending: false })
       .limit(300); // Fetch more to find best account, but only process one
+
+    if (queryError) {
+      console.error("[analyze] Query error:", queryError.message);
+      return NextResponse.json({ error: "Query failed", detail: queryError.message }, { status: 500 });
+    }
+
+    console.log(`[analyze] Found ${unprocessedEmails?.length ?? 0} unprocessed emails`);
 
     if (!unprocessedEmails?.length) {
       return NextResponse.json({

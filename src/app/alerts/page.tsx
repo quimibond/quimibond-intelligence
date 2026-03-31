@@ -250,19 +250,55 @@ export default function AlertsPage() {
         description="Centro de alertas e inteligencia de riesgos"
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar alertas..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            className="pl-9"
-          />
+      {/* Quick stats bar */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <ShieldAlert className="h-4 w-4" />
+            <span className="text-xs font-medium">Total</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.newCount + counts.acknowledgedCount + counts.resolvedCount}</p>
         </div>
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400">
+            <Bell className="h-4 w-4" />
+            <span className="text-xs font-medium">Nuevas</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.newCount}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <Eye className="h-4 w-4" />
+            <span className="text-xs font-medium">Reconocidas</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.acknowledgedCount}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" />
+            <span className="text-xs font-medium">Resueltas</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.resolvedCount}</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Buscar alertas..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {/* Filters - horizontally scrollable on mobile */}
+      <div className="flex items-center gap-3 overflow-x-auto pb-1 -mb-1 scrollbar-none">
         <Select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value)}
+          className="min-w-[160px] shrink-0"
         >
           <option value="all">Todas las severidades</option>
           <option value="low">Baja</option>
@@ -274,6 +310,7 @@ export default function AlertsPage() {
         <Select
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
+          className="min-w-[160px] shrink-0"
         >
           <option value="all">Todos los estados</option>
           <option value="new">Nuevas</option>
@@ -284,6 +321,7 @@ export default function AlertsPage() {
         <Select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
+          className="min-w-[160px] shrink-0"
         >
           <option value="all">Todos los tipos</option>
           {alertTypes.map((t) => (
@@ -294,6 +332,7 @@ export default function AlertsPage() {
         <Select
           value={sortBy}
           onChange={(e) => setSortBy(e.target.value)}
+          className="min-w-[170px] shrink-0"
         >
           <option value="recent">Mas recientes</option>
           <option value="urgency">Mayor urgencia</option>
@@ -303,7 +342,7 @@ export default function AlertsPage() {
         <Button
           variant="outline"
           size="sm"
-          className="gap-1.5"
+          className="gap-1.5 shrink-0"
           onClick={() => exportCSV(
             filtered.map((a) => ({
               titulo: a.title,
@@ -333,21 +372,6 @@ export default function AlertsPage() {
         </Button>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge variant="info" className="gap-1.5 px-3 py-1">
-          <Bell className="h-3.5 w-3.5" />
-          {counts.newCount} nuevas
-        </Badge>
-        <Badge variant="warning" className="gap-1.5 px-3 py-1">
-          <Eye className="h-3.5 w-3.5" />
-          {counts.acknowledgedCount} reconocidas
-        </Badge>
-        <Badge variant="success" className="gap-1.5 px-3 py-1">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          {counts.resolvedCount} resueltas
-        </Badge>
-      </div>
-
       {filtered.length === 0 ? (
         <EmptyState
           icon={ShieldAlert}
@@ -358,125 +382,143 @@ export default function AlertsPage() {
         <>
           {/* Mobile card layout */}
           <div className="space-y-3 md:hidden">
-            <div className="flex items-center gap-2 px-1">
+            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2.5">
               <input
                 type="checkbox"
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}
                 onChange={toggleSelectAll}
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-5 w-5 rounded border-gray-300"
               />
-              <span className="text-xs text-muted-foreground">Seleccionar todas</span>
+              <span className="text-sm text-muted-foreground">Seleccionar todas ({filtered.length})</span>
+              {selectedIds.size > 0 && (
+                <Button size="sm" variant="outline" className="ml-auto h-8 text-xs" onClick={() => bulkUpdateState("acknowledged")}>
+                  Marcar leidas
+                </Button>
+              )}
             </div>
-            {filtered.map((alert) => (
-              <div
-                key={alert.id}
-                className="rounded-lg border bg-card p-4 space-y-3"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-start gap-2 min-w-0">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(alert.id)}
-                      onChange={() => toggleSelect(alert.id)}
-                      className="mt-1 h-4 w-4 shrink-0 rounded border-gray-300"
-                    />
-                    <div className="min-w-0">
-                      <Link href={`/alerts/${alert.id}`} className="text-sm font-medium hover:underline line-clamp-2">
-                        {alert.title}
-                      </Link>
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {alert.contact_id ? (
-                          <Link href={`/contacts/${alert.contact_id}`} className="text-primary hover:underline">
-                            {alert.contact_name ?? "—"}
+            {filtered.map((alert) => {
+              const severityColor: Record<string, string> = {
+                critical: "bg-red-500",
+                high: "bg-amber-500",
+                medium: "bg-blue-500",
+                low: "bg-gray-400",
+              };
+              return (
+                <div
+                  key={alert.id}
+                  className="relative overflow-hidden rounded-lg border bg-card"
+                >
+                  {/* Severity color bar on left */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${severityColor[alert.severity] ?? "bg-gray-400"}`} />
+                  <div className="p-4 pl-5 space-y-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.has(alert.id)}
+                          onChange={() => toggleSelect(alert.id)}
+                          className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300"
+                        />
+                        <div className="min-w-0">
+                          <Link href={`/alerts/${alert.id}`} className="text-sm font-medium hover:underline line-clamp-2">
+                            {alert.title}
                           </Link>
-                        ) : (
-                          alert.contact_name ?? "—"
-                        )}
-                        {" · "}{timeAgo(alert.created_at)}
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            {alert.contact_id ? (
+                              <Link href={`/contacts/${alert.contact_id}`} className="text-primary hover:underline">
+                                {alert.contact_name ?? "—"}
+                              </Link>
+                            ) : (
+                              alert.contact_name ?? "—"
+                            )}
+                            {" · "}{timeAgo(alert.created_at)}
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setExpandedId(expandedId === alert.id ? null : alert.id)}
+                        className="shrink-0 min-h-[44px] min-w-[44px] flex items-center justify-center"
+                      >
+                        <ChevronDown
+                          className={`h-5 w-5 text-muted-foreground transition-transform ${
+                            expandedId === alert.id ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <SeverityBadge severity={alert.severity} />
+                      <StateBadge state={alert.state} />
+                      {(() => {
+                        const TypeIcon = alertTypeIcon[alert.alert_type];
+                        const cat = alertTypeCategories[alert.alert_type];
+                        const variant = (cat ? categoryVariant[cat] : undefined) ?? "secondary";
+                        return (
+                          <Badge variant={variant} className="gap-1">
+                            {TypeIcon && <TypeIcon className="h-3 w-3" />}
+                            {alertTypeNames[alert.alert_type] ?? alert.alert_type}
+                          </Badge>
+                        );
+                      })()}
+                      {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 && (
+                        <Badge variant="warning" className="gap-1">
+                          <DollarSign className="h-3 w-3" />
+                          {formatCurrency(alert.business_value_at_risk)} en riesgo
+                        </Badge>
+                      )}
+                    </div>
+                    {/* Inline quick actions - always visible */}
+                    <div className="flex items-center gap-1 pt-1">
+                      {alert.state === "new" && (
+                        <Button size="sm" variant="ghost" className="h-10 min-w-[44px] gap-1.5 text-xs" onClick={() => updateState(alert.id, "acknowledged")}>
+                          <Eye className="h-4 w-4" />
+                          Reconocer
+                        </Button>
+                      )}
+                      {alert.state !== "resolved" && (
+                        <Button size="sm" variant="ghost" className="h-10 min-w-[44px] gap-1.5 text-xs" onClick={() => updateState(alert.id, "resolved")}>
+                          <CheckCircle2 className="h-4 w-4" />
+                          Resolver
+                        </Button>
+                      )}
+                      <div className="ml-auto">
+                        <FeedbackButtons table="alerts" id={alert.id} currentFeedback={null} />
                       </div>
                     </div>
-                  </div>
-                  <button
-                    onClick={() => setExpandedId(expandedId === alert.id ? null : alert.id)}
-                    className="shrink-0 p-1"
-                  >
-                    <ChevronDown
-                      className={`h-4 w-4 text-muted-foreground transition-transform ${
-                        expandedId === alert.id ? "rotate-180" : ""
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <SeverityBadge severity={alert.severity} />
-                  <StateBadge state={alert.state} />
-                  {(() => {
-                    const TypeIcon = alertTypeIcon[alert.alert_type];
-                    const cat = alertTypeCategories[alert.alert_type];
-                    const variant = (cat ? categoryVariant[cat] : undefined) ?? "secondary";
-                    return (
-                      <Badge variant={variant} className="gap-1">
-                        {TypeIcon && <TypeIcon className="h-3 w-3" />}
-                        {alertTypeNames[alert.alert_type] ?? alert.alert_type}
-                      </Badge>
-                    );
-                  })()}
-                  {alert.business_value_at_risk != null && alert.business_value_at_risk > 0 && (
-                    <Badge variant="warning" className="gap-1">
-                      <DollarSign className="h-3 w-3" />
-                      {formatCurrency(alert.business_value_at_risk)} en riesgo
-                    </Badge>
-                  )}
-                </div>
-                {expandedId === alert.id && (
-                  <div className="space-y-3 rounded-lg bg-muted/50 p-3">
-                    {alert.description && (
-                      <div>
-                        <p className="text-xs font-medium text-muted-foreground">Descripcion</p>
-                        <p className="mt-0.5 text-sm">{alert.description}</p>
+                    {expandedId === alert.id && (
+                      <div className="space-y-3 rounded-lg bg-muted/50 p-3">
+                        {alert.description && (
+                          <div>
+                            <p className="text-xs font-medium text-muted-foreground">Descripcion</p>
+                            <p className="mt-0.5 text-sm">{alert.description}</p>
+                          </div>
+                        )}
+                        {(() => {
+                          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                          const a = alert as any;
+                          return (
+                            <>
+                              {a.business_impact && (
+                                <div>
+                                  <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Impacto de Negocio</p>
+                                  <p className="mt-0.5 text-sm">{String(a.business_impact)}</p>
+                                </div>
+                              )}
+                              {a.suggested_action && (
+                                <div>
+                                  <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Accion Sugerida</p>
+                                  <p className="mt-0.5 text-sm">{String(a.suggested_action)}</p>
+                                </div>
+                              )}
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
-                    {(() => {
-                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                      const a = alert as any;
-                      return (
-                        <>
-                          {a.business_impact && (
-                            <div>
-                              <p className="text-xs font-medium text-amber-600 dark:text-amber-400">Impacto de Negocio</p>
-                              <p className="mt-0.5 text-sm">{String(a.business_impact)}</p>
-                            </div>
-                          )}
-                          {a.suggested_action && (
-                            <div>
-                              <p className="text-xs font-medium text-blue-600 dark:text-blue-400">Accion Sugerida</p>
-                              <p className="mt-0.5 text-sm">{String(a.suggested_action)}</p>
-                            </div>
-                          )}
-                        </>
-                      );
-                    })()}
-                    <div className="flex items-center justify-between pt-1">
-                      <div className="flex items-center gap-2">
-                        {alert.state === "new" && (
-                          <Button size="sm" variant="outline" onClick={() => updateState(alert.id, "acknowledged")}>
-                            <Eye className="h-3.5 w-3.5" />
-                            Reconocer
-                          </Button>
-                        )}
-                        {alert.state !== "resolved" && (
-                          <Button size="sm" variant="outline" onClick={() => updateState(alert.id, "resolved")}>
-                            <CheckCircle2 className="h-3.5 w-3.5" />
-                            Resolver
-                          </Button>
-                        )}
-                      </div>
-                      <FeedbackButtons table="alerts" id={alert.id} currentFeedback={null} />
-                    </div>
                   </div>
-                )}
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
 
           {/* Desktop table layout */}
@@ -499,14 +541,22 @@ export default function AlertsPage() {
                   <TableHead>Valor en riesgo</TableHead>
                   <TableHead>Estado</TableHead>
                   <TableHead className="w-[100px]">Fecha</TableHead>
+                  <TableHead className="w-[100px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((alert) => (
+                {filtered.map((alert) => {
+                  const severityDot: Record<string, string> = {
+                    critical: "bg-red-500",
+                    high: "bg-amber-500",
+                    medium: "bg-blue-500",
+                    low: "bg-gray-400",
+                  };
+                  return (
                   <>
                     <TableRow
                       key={alert.id}
-                      className="cursor-pointer"
+                      className="cursor-pointer group transition-colors hover:bg-muted/50"
                       onClick={() =>
                         setExpandedId(expandedId === alert.id ? null : alert.id)
                       }
@@ -520,7 +570,10 @@ export default function AlertsPage() {
                         />
                       </TableCell>
                       <TableCell>
-                        <SeverityBadge severity={alert.severity} />
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${severityDot[alert.severity] ?? "bg-gray-400"}`} />
+                          <SeverityBadge severity={alert.severity} />
+                        </div>
                       </TableCell>
                       <TableCell className="font-medium">
                         <div className="flex items-center gap-1.5">
@@ -571,10 +624,24 @@ export default function AlertsPage() {
                       <TableCell className="text-muted-foreground">
                         {timeAgo(alert.created_at)}
                       </TableCell>
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {alert.state === "new" && (
+                            <Button size="sm" variant="ghost" title="Reconocer" className="h-8 w-8 p-0" onClick={() => updateState(alert.id, "acknowledged")}>
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          )}
+                          {alert.state !== "resolved" && (
+                            <Button size="sm" variant="ghost" title="Resolver" className="h-8 w-8 p-0" onClick={() => updateState(alert.id, "resolved")}>
+                              <CheckCircle2 className="h-4 w-4" />
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
                     </TableRow>
                     {expandedId === alert.id && (
                       <TableRow key={`${alert.id}-detail`}>
-                        <TableCell colSpan={8}>
+                        <TableCell colSpan={9}>
                           <div className="space-y-3 rounded-lg bg-muted/50 p-4">
                             {alert.description && (
                               <div>
@@ -646,7 +713,8 @@ export default function AlertsPage() {
                       </TableRow>
                     )}
                   </>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>

@@ -279,19 +279,55 @@ export default function ActionsPage() {
         description="Seguimiento de acciones y tareas pendientes"
       />
 
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar acciones..."
-            value={searchText}
-            onChange={(e) => setSearchText(e.target.value)}
-            className="pl-9"
-          />
+      {/* Quick stats bar */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-muted-foreground">
+            <ClipboardList className="h-4 w-4" />
+            <span className="text-xs font-medium">Total</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.pending + counts.overdue + counts.completed}</p>
         </div>
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+            <Clock className="h-4 w-4" />
+            <span className="text-xs font-medium">Pendientes</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.pending}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+            <AlertTriangle className="h-4 w-4" />
+            <span className="text-xs font-medium">Vencidas</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.overdue}</p>
+        </div>
+        <div className="rounded-lg border bg-card p-3 sm:p-4">
+          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+            <CheckCircle2 className="h-4 w-4" />
+            <span className="text-xs font-medium">Completadas</span>
+          </div>
+          <p className="mt-1 text-2xl font-bold">{counts.completed}</p>
+        </div>
+      </div>
+
+      {/* Search */}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Buscar acciones..."
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          className="pl-9"
+        />
+      </div>
+
+      {/* Filters - horizontally scrollable on mobile */}
+      <div className="flex items-center gap-3 overflow-x-auto pb-1 -mb-1 scrollbar-none">
         <Select
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
+          className="min-w-[160px] shrink-0"
         >
           <option value="all">Todos los estados</option>
           <option value="pending">Pendientes</option>
@@ -305,6 +341,7 @@ export default function ActionsPage() {
         <Select
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value)}
+          className="min-w-[160px] shrink-0"
         >
           <option value="all">Todas las prioridades</option>
           <option value="low">Baja</option>
@@ -316,6 +353,7 @@ export default function ActionsPage() {
           <Select
             value={assigneeFilter}
             onChange={(e) => setAssigneeFilter(e.target.value)}
+            className="min-w-[170px] shrink-0"
           >
             <option value="all">Todos los responsables</option>
             {assignees.map(([email, name]) => (
@@ -323,21 +361,6 @@ export default function ActionsPage() {
             ))}
           </Select>
         )}
-      </div>
-
-      <div className="flex flex-wrap items-center gap-3">
-        <Badge variant="warning" className="gap-1.5 px-3 py-1">
-          <Clock className="h-3.5 w-3.5" />
-          {counts.pending} pendientes
-        </Badge>
-        <Badge variant="critical" className="gap-1.5 px-3 py-1">
-          <AlertTriangle className="h-3.5 w-3.5" />
-          {counts.overdue} vencidas
-        </Badge>
-        <Badge variant="success" className="gap-1.5 px-3 py-1">
-          <CheckCircle2 className="h-3.5 w-3.5" />
-          {counts.completed} completadas
-        </Badge>
       </div>
 
       {filtered.length === 0 ? (
@@ -351,99 +374,123 @@ export default function ActionsPage() {
           {/* Mobile card layout */}
           <div className="space-y-3 md:hidden">
             {/* Select all row for mobile */}
-            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2">
+            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2.5">
               <input
                 type="checkbox"
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}
                 onChange={toggleSelectAll}
-                className="h-4 w-4 rounded border-gray-300"
+                className="h-5 w-5 rounded border-gray-300"
               />
               <span className="text-sm text-muted-foreground">
                 Seleccionar todas ({filtered.length})
               </span>
+              {selectedIds.size > 0 && (
+                <Button size="sm" variant="outline" className="ml-auto h-8 text-xs" onClick={() => bulkUpdateState("completed")}>
+                  Completar sel.
+                </Button>
+              )}
             </div>
 
             {filtered.map((action) => {
               const overdue = isOverdue(action);
               const reason = (action as unknown as Record<string, unknown>).reason;
+              const priorityColor: Record<string, string> = {
+                high: "bg-red-500",
+                medium: "bg-amber-500",
+                low: "bg-gray-400",
+              };
               return (
-                <div key={action.id} className="rounded-lg border bg-card p-4 space-y-3">
-                  <div className="flex items-start gap-2">
-                    <input
-                      type="checkbox"
-                      checked={selectedIds.has(action.id)}
-                      onChange={() => toggleSelect(action.id)}
-                      className="mt-0.5 h-4 w-4 rounded border-gray-300"
-                    />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium">{action.description}</p>
-                      {typeof reason === "string" && (
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {reason}
-                        </p>
-                      )}
-                      <div className="mt-1 text-xs text-muted-foreground">
-                        {action.contact_id ? (
-                          <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
-                            {action.contact_name ?? "—"}
-                          </Link>
-                        ) : (action.contact_name ?? "—")}
-                        {" · "}
-                        {action.company_id ? (
-                          <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
-                            {action.contact_company ?? "—"}
-                          </Link>
-                        ) : (action.contact_company ?? "—")}
-                        {" · "}
-                        {timeAgo(action.created_at)}
+                <div key={action.id} className="relative overflow-hidden rounded-lg border bg-card">
+                  {/* Priority color bar on left */}
+                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${priorityColor[action.priority] ?? "bg-gray-400"}`} />
+                  <div className="p-4 pl-5 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.has(action.id)}
+                        onChange={() => toggleSelect(action.id)}
+                        className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300"
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">{action.description}</p>
+                        {typeof reason === "string" && (
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            {reason}
+                          </p>
+                        )}
+                        <div className="mt-1 text-xs text-muted-foreground">
+                          {action.contact_id ? (
+                            <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
+                              {action.contact_name ?? "—"}
+                            </Link>
+                          ) : (action.contact_name ?? "—")}
+                          {" · "}
+                          {action.company_id ? (
+                            <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
+                              {action.contact_company ?? "—"}
+                            </Link>
+                          ) : (action.contact_company ?? "—")}
+                          {" · "}
+                          {timeAgo(action.created_at)}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge variant={priorityVariantMap[action.priority] ?? "secondary"}>
-                      {priorityLabelMap[action.priority] ?? action.priority}
-                    </Badge>
-                    <StateBadge state={action.state} />
-                    {overdue && action.due_date && (
-                      <Badge variant="critical">Vencida {formatDate(action.due_date)}</Badge>
-                    )}
-                    {!overdue && action.due_date && (
-                      <span className="text-xs text-muted-foreground">
-                        Vence {formatDate(action.due_date)}
-                      </span>
-                    )}
-                    {(action.assignee_name || action.assignee_email) && (
-                      <span className="text-xs text-muted-foreground">{action.assignee_name ?? action.assignee_email}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      {action.state === "pending" && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={priorityVariantMap[action.priority] ?? "secondary"}>
+                        {priorityLabelMap[action.priority] ?? action.priority}
+                      </Badge>
+                      <StateBadge state={action.state} />
+                      {overdue && action.due_date && (
+                        <Badge variant="critical">Vencida {formatDate(action.due_date)}</Badge>
+                      )}
+                      {!overdue && action.due_date && (
+                        <span className="text-xs text-muted-foreground">
+                          Vence {formatDate(action.due_date)}
+                        </span>
+                      )}
+                      {(action.assignee_name || action.assignee_email) && (
+                        <span className="text-xs text-muted-foreground">{action.assignee_name ?? action.assignee_email}</span>
+                      )}
+                    </div>
+                    {/* Inline quick actions - always visible with proper touch targets */}
+                    <div className="flex items-center gap-1 pt-1">
+                      {(action.state === "pending" || action.state === "in_progress") && (
                         <>
                           <Button
                             size="sm"
                             variant="ghost"
                             title="Completar"
+                            className="h-10 min-w-[44px] gap-1.5 text-xs"
                             onClick={() => markCompleted(action.id)}
                           >
                             <CheckCircle2 className="h-4 w-4" />
+                            Completar
                           </Button>
                           <Button
                             size="sm"
                             variant="ghost"
                             title="Descartar"
+                            className="h-10 min-w-[44px] gap-1.5 text-xs"
                             onClick={() => dismiss(action.id)}
                           >
                             <XCircle className="h-4 w-4" />
+                            Descartar
                           </Button>
                         </>
                       )}
+                      {(action.state === "blocked" || action.state === "escalated") && (
+                        <Button size="sm" variant="outline" className="h-10 text-xs" onClick={() => updateState(action.id, "pending")}>
+                          Reactivar
+                        </Button>
+                      )}
+                      <div className="ml-auto">
+                        <FeedbackButtons
+                          table="action_items"
+                          id={action.id}
+                          currentFeedback={null}
+                        />
+                      </div>
                     </div>
-                    <FeedbackButtons
-                      table="action_items"
-                      id={action.id}
-                      currentFeedback={null}
-                    />
                   </div>
                 </div>
               );
@@ -471,14 +518,19 @@ export default function ActionsPage() {
                   <TableHead>Responsable</TableHead>
                   <TableHead>Vencimiento</TableHead>
                   <TableHead className="w-[100px]">Creada</TableHead>
-                  <TableHead className="w-[120px]" />
+                  <TableHead className="w-[140px]" />
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {filtered.map((action) => {
                   const overdue = isOverdue(action);
+                  const priorityDot: Record<string, string> = {
+                    high: "bg-red-500",
+                    medium: "bg-amber-500",
+                    low: "bg-gray-400",
+                  };
                   return (
-                    <TableRow key={action.id}>
+                    <TableRow key={action.id} className="group transition-colors hover:bg-muted/50">
                       <TableCell>
                         <input
                           type="checkbox"
@@ -510,11 +562,14 @@ export default function ActionsPage() {
                         ) : (action.contact_company ?? "—")}
                       </TableCell>
                       <TableCell>
-                        <Badge
-                          variant={priorityVariantMap[action.priority] ?? "secondary"}
-                        >
-                          {priorityLabelMap[action.priority] ?? action.priority}
-                        </Badge>
+                        <div className="flex items-center gap-2">
+                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${priorityDot[action.priority] ?? "bg-gray-400"}`} />
+                          <Badge
+                            variant={priorityVariantMap[action.priority] ?? "secondary"}
+                          >
+                            {priorityLabelMap[action.priority] ?? action.priority}
+                          </Badge>
+                        </div>
                       </TableCell>
                       <TableCell>
                         <StateBadge state={action.state} />
@@ -546,19 +601,19 @@ export default function ActionsPage() {
                         {timeAgo(action.created_at)}
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                           {(action.state === "pending" || action.state === "in_progress") && (
                             <>
-                              <Button size="sm" variant="ghost" title="Completar" onClick={() => markCompleted(action.id)}>
+                              <Button size="sm" variant="ghost" title="Completar" className="h-8 w-8 p-0" onClick={() => markCompleted(action.id)}>
                                 <CheckCircle2 className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="ghost" title="Bloqueada" onClick={() => updateState(action.id, "blocked")}>
+                              <Button size="sm" variant="ghost" title="Bloqueada" className="h-8 w-8 p-0" onClick={() => updateState(action.id, "blocked")}>
                                 <PauseCircle className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="ghost" title="Escalar" onClick={() => updateState(action.id, "escalated")}>
+                              <Button size="sm" variant="ghost" title="Escalar" className="h-8 w-8 p-0" onClick={() => updateState(action.id, "escalated")}>
                                 <ArrowUpCircle className="h-4 w-4" />
                               </Button>
-                              <Button size="sm" variant="ghost" title="Descartar" onClick={() => dismiss(action.id)}>
+                              <Button size="sm" variant="ghost" title="Descartar" className="h-8 w-8 p-0" onClick={() => dismiss(action.id)}>
                                 <XCircle className="h-4 w-4" />
                               </Button>
                             </>
@@ -568,8 +623,10 @@ export default function ActionsPage() {
                               Reactivar
                             </Button>
                           )}
-                          <FeedbackButtons table="action_items" id={action.id} currentFeedback={null} />
                         </div>
+                        {action.state !== "pending" && action.state !== "in_progress" && action.state !== "blocked" && action.state !== "escalated" && (
+                          <FeedbackButtons table="action_items" id={action.id} currentFeedback={null} />
+                        )}
                       </TableCell>
                     </TableRow>
                   );
