@@ -323,6 +323,20 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Mark emails as processed
+    const emailIds = recentEmails.map(e => e.id);
+    if (emailIds.length) {
+      // Process in chunks to avoid query size limits
+      for (let i = 0; i < emailIds.length; i += 200) {
+        const chunk = emailIds.slice(i, i + 200);
+        await supabase
+          .from("emails")
+          .update({ kg_processed: true })
+          .in("id", chunk);
+      }
+      console.log(`[analyze] Marked ${emailIds.length} emails as kg_processed`);
+    }
+
     // Log pipeline run
     await supabase.from("pipeline_logs").insert({
       level: "info",
