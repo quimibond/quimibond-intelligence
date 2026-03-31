@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { runAgent, runAllAgents } from "@/lib/agents/base-agent";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
@@ -9,14 +8,20 @@ export async function POST(request: NextRequest) {
     const { agent_slug, run_all } = body as { agent_slug?: string; run_all?: boolean };
 
     if (run_all) {
-      const results = await runAllAgents("manual");
-      return NextResponse.json({ ok: true, results });
+      // Use orchestrator for run_all
+      const origin = request.nextUrl.origin;
+      const res = await fetch(`${origin}/api/agents/orchestrate`, { method: "POST" });
+      const data = await res.json();
+      return NextResponse.json(data);
     }
 
     if (!agent_slug) {
       return NextResponse.json({ error: "agent_slug required" }, { status: 400 });
     }
 
+    // For single agent, also use orchestrator's runSingleAgent logic
+    // Import dynamically to avoid circular deps
+    const { runAgent } = await import("@/lib/agents/base-agent");
     const result = await runAgent(agent_slug, "manual");
     return NextResponse.json({ ok: true, result });
   } catch (err) {

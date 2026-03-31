@@ -419,6 +419,82 @@ async function getDomainData(supabase: SB, domain: string): Promise<string> {
       ]);
       return `## Corridas de agentes\n${JSON.stringify(runs.data)}\n\n## Insights generados\n${JSON.stringify(insights.data)}`;
     }
+    case "odoo": {
+      // Analyze what Odoo data we have and what's missing
+      const [
+        users, products, orders, invoices, payments, deliveries, leads, activities,
+        manufacturing, contacts, companies,
+        // Check what data is empty or sparse
+        usersNoDept, productsNoStock, ordersNoCompany, invoicesNoCompany,
+      ] = await Promise.all([
+        supabase.from("odoo_users").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_products").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_invoices").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_payments").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_deliveries").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_crm_leads").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_activities").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_manufacturing").select("id", { count: "exact", head: true }),
+        supabase.from("contacts").select("id", { count: "exact", head: true }),
+        supabase.from("companies").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_users").select("id", { count: "exact", head: true }).is("department", null),
+        supabase.from("odoo_products").select("id", { count: "exact", head: true }).eq("stock_qty", 0),
+        supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }).is("company_id", null),
+        supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null),
+      ]);
+
+      // Sample data to understand what we have
+      const [sampleUsers, sampleProducts, sampleLeads] = await Promise.all([
+        supabase.from("odoo_users").select("name, email, department, job_title, pending_activities_count").limit(5),
+        supabase.from("odoo_products").select("name, category, stock_qty, available_qty, reorder_min").order("stock_qty", { ascending: false }).limit(5),
+        supabase.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").limit(10),
+      ]);
+
+      return `## Datos sincronizados de Odoo (que YA tenemos)
+
+| Tabla | Filas | Problemas |
+|-------|-------|-----------|
+| odoo_users | ${users.count} | ${usersNoDept.count} sin departamento |
+| odoo_products | ${products.count} | ${productsNoStock.count} con stock=0 |
+| odoo_order_lines | ${orders.count} | ${ordersNoCompany.count} sin company_id |
+| odoo_invoices | ${invoices.count} | ${invoicesNoCompany.count} sin company_id |
+| odoo_payments | ${payments.count} | - |
+| odoo_deliveries | ${deliveries.count} | - |
+| odoo_crm_leads | ${leads.count} | - |
+| odoo_activities | ${activities.count} | - |
+| odoo_manufacturing | ${manufacturing.count} | - |
+| contacts | ${contacts.count} | - |
+| companies | ${companies.count} | - |
+
+## Modelos de Odoo que NO se sincronizan (oportunidades)
+- hr.employee / hr.department: para departamentos reales, managers, jerarquia
+- account.payment.term: condiciones de pago por cliente
+- res.partner.category: tags/categorias de clientes
+- mail.message: comunicaciones internas de Odoo
+- mrp.bom: listas de materiales
+- stock.warehouse.orderpoint: reglas de reabastecimiento
+- purchase.order (headers): totales, comprador, status
+- sale.order (headers): totales, vendedor, margen
+- product.pricelist: precios por cliente
+- quality.check: controles de calidad
+
+## Muestra de datos actuales
+### Users
+${JSON.stringify(sampleUsers.data)}
+
+### Products (top stock)
+${JSON.stringify(sampleProducts.data)}
+
+### CRM Leads
+${JSON.stringify(sampleLeads.data)}
+
+## Addon actual: qb19/addons/quimibond_intelligence
+El sync_push.py sincroniza: contacts, products, order_lines, users, invoices, payments, deliveries, crm_leads, activities, manufacturing.
+El sync corre cada 1 hora via cron de Odoo.
+
+Analiza que datos FALTAN y serian mas valiosos para la inteligencia comercial del CEO. Genera recomendaciones concretas de que modelos agregar y que campos sincronizar. Prioriza por impacto en las decisiones del CEO.`;
+    }
     case "data_quality": {
       // Run diagnostic queries to assess data health
       const checks = await Promise.all([
