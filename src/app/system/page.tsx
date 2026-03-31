@@ -99,15 +99,31 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
   async function trigger(steps: string[], label: string) {
     setRunning(label);
     try {
-      const res = await fetch("/api/pipeline/trigger", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ steps }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // Call endpoints directly instead of via trigger (avoids double timeout)
+      let data: Record<string, unknown> = {};
+      let res: Response;
 
-      const elapsed = data.total_elapsed_ms ? ` (${(data.total_elapsed_ms / 1000).toFixed(1)}s)` : "";
+      if (steps.length === 1 && steps[0] !== "all") {
+        // Direct call to specific pipeline endpoint
+        res = await fetch(`/api/pipeline/${steps[0]}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+        data = await res.json();
+      } else {
+        // For "all" or multi-step, use trigger
+        res = await fetch("/api/pipeline/trigger", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ steps }),
+        });
+        data = await res.json();
+      }
+
+      if (!res.ok) throw new Error((data.error as string) ?? `HTTP ${res.status}`);
+
+      const elapsed = data.total_elapsed_ms ? ` (${(Number(data.total_elapsed_ms) / 1000).toFixed(1)}s)` :
+                      data.elapsed_s ? ` (${data.elapsed_s}s)` : "";
       toast.success(`${label} completado${elapsed}`);
       onComplete();
     } catch (e) {
@@ -124,6 +140,7 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
     { id: "embed", label: "Embeddings", desc: "Vectores pgvector", icon: Database, steps: ["embeddings"] },
     { id: "brief", label: "Briefing", desc: "Resumen diario", icon: FileText, steps: ["briefing"] },
     { id: "reconcile", label: "Reconciliar", desc: "Auto-cierra acciones resueltas", icon: CheckCircle2, steps: ["reconcile"] },
+    { id: "health", label: "Health Scores", desc: "Recalcular scores de contactos", icon: TrendingUp, steps: ["health-scores"] },
   ];
 
   return (
