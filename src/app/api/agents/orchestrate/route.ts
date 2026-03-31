@@ -419,6 +419,91 @@ async function getDomainData(supabase: SB, domain: string): Promise<string> {
       ]);
       return `## Corridas de agentes\n${JSON.stringify(runs.data)}\n\n## Insights generados\n${JSON.stringify(insights.data)}`;
     }
+    case "data_quality": {
+      // Run diagnostic queries to assess data health
+      const checks = await Promise.all([
+        supabase.from("emails").select("id", { count: "exact", head: true }).is("sender_contact_id", null),
+        supabase.from("emails").select("id", { count: "exact", head: true }).is("company_id", null),
+        supabase.from("emails").select("id", { count: "exact", head: true }).is("thread_id", null),
+        supabase.from("emails").select("id", { count: "exact", head: true }).eq("kg_processed", false),
+        supabase.from("emails").select("id", { count: "exact", head: true }),
+        supabase.from("contacts").select("id", { count: "exact", head: true }).is("name", null),
+        supabase.from("contacts").select("id", { count: "exact", head: true }).is("current_health_score", null),
+        supabase.from("contacts").select("id", { count: "exact", head: true }),
+        supabase.from("companies").select("id", { count: "exact", head: true }).is("entity_id", null),
+        supabase.from("companies").select("id", { count: "exact", head: true }).or("lifetime_value.is.null,lifetime_value.eq.0"),
+        supabase.from("companies").select("id", { count: "exact", head: true }),
+        supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null),
+        supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }).is("company_id", null),
+        supabase.from("entities").select("id", { count: "exact", head: true }),
+        supabase.from("facts").select("id", { count: "exact", head: true }),
+        supabase.from("agent_insights").select("id", { count: "exact", head: true }).is("company_id", null).in("state", ["new", "seen"]),
+        supabase.from("health_scores").select("id", { count: "exact", head: true }),
+        // Check for recent pipeline activity
+        supabase.from("pipeline_logs").select("phase, created_at").order("created_at", { ascending: false }).limit(5),
+        // Check for stale data
+        supabase.from("emails").select("email_date").order("email_date", { ascending: false }).limit(1),
+      ]);
+
+      const metrics = {
+        emails_no_contact: checks[0].count ?? 0,
+        emails_no_company: checks[1].count ?? 0,
+        emails_no_thread: checks[2].count ?? 0,
+        emails_unprocessed: checks[3].count ?? 0,
+        emails_total: checks[4].count ?? 0,
+        contacts_no_name: checks[5].count ?? 0,
+        contacts_no_health: checks[6].count ?? 0,
+        contacts_total: checks[7].count ?? 0,
+        companies_no_entity: checks[8].count ?? 0,
+        companies_no_ltv: checks[9].count ?? 0,
+        companies_total: checks[10].count ?? 0,
+        invoices_no_company: checks[11].count ?? 0,
+        orders_no_company: checks[12].count ?? 0,
+        entities_total: checks[13].count ?? 0,
+        facts_total: checks[14].count ?? 0,
+        insights_no_company: checks[15].count ?? 0,
+        health_scores_total: checks[16].count ?? 0,
+        recent_pipeline: checks[17].data,
+        latest_email_date: checks[18].data?.[0]?.email_date,
+      };
+
+      // Calculate percentages
+      const emailLinkRate = metrics.emails_total > 0 ? Math.round((1 - metrics.emails_no_contact / metrics.emails_total) * 100) : 0;
+      const companyEntityRate = metrics.companies_total > 0 ? Math.round((1 - metrics.companies_no_entity / metrics.companies_total) * 100) : 0;
+      const processedRate = metrics.emails_total > 0 ? Math.round((1 - metrics.emails_unprocessed / metrics.emails_total) * 100) : 0;
+
+      return `## Metricas de Calidad de Datos
+
+### Emails (${metrics.emails_total} total)
+- Sin contacto vinculado: ${metrics.emails_no_contact} (${100 - emailLinkRate}%)
+- Sin empresa vinculada: ${metrics.emails_no_company}
+- Sin thread: ${metrics.emails_no_thread}
+- Sin procesar por IA: ${metrics.emails_unprocessed} (${100 - processedRate}% pendientes)
+- Email mas reciente: ${metrics.latest_email_date ?? "desconocido"}
+
+### Contactos (${metrics.contacts_total} total)
+- Sin nombre: ${metrics.contacts_no_name}
+- Sin health score: ${metrics.contacts_no_health}
+
+### Empresas (${metrics.companies_total} total)
+- Sin entity_id (desconectadas del KG): ${metrics.companies_no_entity} (${100 - companyEntityRate}%)
+- Sin lifetime_value: ${metrics.companies_no_ltv}
+
+### Odoo Data
+- Facturas sin empresa: ${metrics.invoices_no_company}
+- Ordenes sin empresa: ${metrics.orders_no_company}
+
+### Knowledge Graph
+- Entidades: ${metrics.entities_total}
+- Facts: ${metrics.facts_total}
+- Insights sin empresa vinculada: ${metrics.insights_no_company}
+- Health scores: ${metrics.health_scores_total}
+
+### Pipeline Reciente
+${JSON.stringify(metrics.recent_pipeline)}
+
+Analiza estos datos y genera insights sobre problemas CRITICOS que necesitan correccion. Prioriza: datos que impiden que otros agentes funcionen bien > datos faltantes > datos inconsistentes.`;
+    }
     default:
       return "";
   }
