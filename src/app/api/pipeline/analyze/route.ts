@@ -253,8 +253,18 @@ export async function POST(request: NextRequest) {
       remaining_accounts: sortedAccounts.length - 1,
     });
   } catch (err) {
-    console.error("[analyze] Error:", err);
-    return NextResponse.json({ error: "Error en analisis.", detail: String(err) }, { status: 500 });
+    const errMsg = err instanceof Error ? `${err.message}\n${err.stack}` : String(err);
+    console.error("[analyze] FATAL:", errMsg);
+    // Write error to DB so we can see it
+    try {
+      const supabase = getServiceClient();
+      await supabase.from("pipeline_logs").insert({
+        level: "error", phase: "analyze_error",
+        message: errMsg.slice(0, 500),
+        details: { full_error: errMsg, timestamp: new Date().toISOString() },
+      });
+    } catch { /* ignore logging errors */ }
+    return NextResponse.json({ error: "Error en analisis.", detail: errMsg.slice(0, 300) }, { status: 500 });
   }
 }
 
