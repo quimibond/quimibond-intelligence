@@ -31,6 +31,9 @@ import {
   ChevronsRight,
   Inbox,
   Share2,
+  Bot,
+  UserCheck,
+  Layers,
 } from "lucide-react";
 
 const navItems = [
@@ -49,6 +52,9 @@ const navItems = [
   { href: "/analytics", label: "Analitica", icon: BarChart3 },
   { href: "/knowledge", label: "Knowledge", icon: Network },
   { href: "/chat", label: "Chat", icon: MessageSquare },
+  { href: "/agents", label: "Agentes IA", icon: Bot },
+  { href: "/employees", label: "Empleados", icon: UserCheck },
+  { href: "/departments", label: "Areas", icon: Layers },
 ];
 
 const bottomItems = [
