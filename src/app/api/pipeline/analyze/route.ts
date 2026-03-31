@@ -100,20 +100,30 @@ export async function POST(request: NextRequest) {
     console.log(`[analyze] Processing account ${targetAccount}: ${accountEmails.length} emails (${sortedAccounts.length} accounts pending)`);
 
     // ── Step 3: Build context ────────────────────────────────────────────
-    const senderEmails = [...new Set(
-      accountEmails
-        .filter(e => e.sender_type === "external")
-        .map(e => extractEmail(e.sender ?? ""))
-        .filter(e => e.includes("@"))
-    )];
+    let odooCtx, personProfiles, teamMembers;
+    try {
+      const senderEmails = [...new Set(
+        accountEmails
+          .filter(e => e.sender_type === "external")
+          .map(e => extractEmail(e.sender ?? ""))
+          .filter(e => e.includes("@"))
+      )];
 
-    const [odooCtx, personProfiles, teamMembers] = await Promise.all([
-      buildOdooContext(supabase, senderEmails),
-      loadPersonProfiles(supabase, senderEmails),
-      supabase.from("odoo_users").select("name, email, department, job_title"),
-    ]);
+      console.log(`[analyze] Building context for ${senderEmails.length} sender emails`);
+
+      [odooCtx, personProfiles, teamMembers] = await Promise.all([
+        buildOdooContext(supabase, senderEmails),
+        loadPersonProfiles(supabase, senderEmails),
+        supabase.from("odoo_users").select("name, email, department, job_title"),
+      ]);
+      console.log(`[analyze] Context built OK`);
+    } catch (ctxErr) {
+      console.error(`[analyze] Context build failed:`, ctxErr);
+      return NextResponse.json({ error: "Context build failed", detail: String(ctxErr) }, { status: 500 });
+    }
 
     // ── Step 4: Call Claude (single call for this account) ───────────────
+    console.log(`[analyze] Calling Claude for ${targetAccount}`);
     const extCount = accountEmails.filter(e => e.sender_type === "external").length;
     const intCount = accountEmails.length - extCount;
 
