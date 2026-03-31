@@ -180,7 +180,14 @@ export async function POST() {
       }
     }
 
-    // ── 7. Link orphan insights to companies (fuzzy match) ────────────
+    // ── 7. Deduplicate companies and entities ─────────────────────────
+    let deduped = { companies: 0, entities: 0 };
+    try {
+      const { data: dedupeResult } = await supabase.rpc("deduplicate_all");
+      if (dedupeResult?.[0]) deduped = dedupeResult[0];
+    } catch { /* RPC may not exist */ }
+
+    // ── 8. Link orphan insights to companies (fuzzy match) ────────────
     let linked = 0;
     try {
       const { data: linkResult } = await supabase.rpc("link_orphan_insights");
@@ -193,7 +200,7 @@ export async function POST() {
         level: "info",
         phase: "insight_validation",
         message: `Validated: ${resolved} auto-resolved, ${expired} auto-expired of ${activeInsights.length} active`,
-        details: { resolved, expired, linked, total_active: activeInsights.length },
+        details: { resolved, expired, linked, deduped, total_active: activeInsights.length },
       });
     }
 
