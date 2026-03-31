@@ -235,33 +235,36 @@ export default function ThreadsPage() {
       />
 
       {/* Filter bar */}
-      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 pb-4">
-        <div className="w-full sm:w-48">
-          <Select
-            value={statusFilter}
-            onChange={(e) =>
-              setStatusFilter(e.target.value as StatusFilter)
-            }
-          >
-            <option value="all">Todos</option>
-            <option value="stalled">Sin respuesta &gt;24h</option>
-            <option value="active">Activos</option>
-            <option value="cold">Fr\u00edos (&gt;72h)</option>
-          </Select>
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pb-4">
+        <div className="flex gap-2 overflow-x-auto pb-1 sm:pb-0">
+          {(["all", "stalled", "active", "cold"] as StatusFilter[]).map(s => (
+            <button
+              key={s}
+              onClick={() => setStatusFilter(s)}
+              className={cn(
+                "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors",
+                statusFilter === s ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
+              )}
+            >
+              {s === "all" ? `Todos (${totalCounts.total})` :
+               s === "stalled" ? `>24h (${totalCounts.stalled24})` :
+               s === "active" ? "Activos" : `>72h (${totalCounts.stalled72})`}
+            </button>
+          ))}
         </div>
         <div className="relative flex-1 min-w-0 sm:max-w-sm">
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
-            placeholder="Buscar por asunto o participante..."
-            className="pl-9"
+            placeholder="Buscar por asunto..."
+            className="pl-9 h-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
       </div>
 
-      {/* Stats row */}
-      <div className="grid grid-cols-1 gap-4 pb-6 sm:grid-cols-3">
+      {/* Stats row — compact on mobile */}
+      <div className="grid grid-cols-3 gap-3 pb-4 sm:gap-4 sm:pb-6">
         <StatCard
           title="Total hilos"
           value={loading ? "\u2014" : totalCount}

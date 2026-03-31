@@ -201,11 +201,13 @@ export default function ChatPage() {
   const showSuggestions = messages.length <= 1 && !loading;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
-      <PageHeader
-        title="Chat"
-        description="Asistente de inteligencia comercial con IA"
-      />
+    <div className="flex flex-col h-[calc(100vh-4rem)] md:h-[calc(100vh-8rem)]">
+      <div className="hidden md:block">
+        <PageHeader
+          title="Chat"
+          description="Asistente de inteligencia comercial con IA"
+        />
+      </div>
 
       <Card className="flex-1 flex flex-col overflow-hidden">
         <ScrollArea className="flex-1 p-4">
@@ -332,16 +334,16 @@ export default function ChatPage() {
         </ScrollArea>
 
         {/* Input area */}
-        <div className="border-t p-4">
+        <div className="border-t p-3 md:p-4 safe-area-bottom">
           <div className="flex items-center gap-2">
             <Input
               ref={inputRef}
-              placeholder="Escribe tu pregunta..."
+              placeholder="Pregunta algo..."
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
               disabled={loading}
-              className="flex-1"
+              className="flex-1 h-11 md:h-10 text-base md:text-sm"
             />
             <Button
               onClick={() => sendMessage()}
