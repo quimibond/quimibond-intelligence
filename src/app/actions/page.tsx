@@ -67,20 +67,27 @@ export default function ActionsPage() {
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [totalCounts, setTotalCounts] = useState({ pending: 0, overdue: 0, completed: 0 });
 
   useEffect(() => {
     async function fetchActions() {
-      const { data, error } = await supabase
-        .from("action_items")
-        .select("*")
-        .order("due_date", { ascending: true, nullsFirst: false })
-        .order("created_at", { ascending: false })
-        .limit(PAGE_SIZE);
+      const today = new Date().toISOString().split("T")[0];
+      const [dataRes, pendingRes, overdueRes, completedRes] = await Promise.all([
+        supabase.from("action_items").select("*").order("due_date", { ascending: true, nullsFirst: false }).order("created_at", { ascending: false }).limit(PAGE_SIZE),
+        supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
+        supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending").lt("due_date", today),
+        supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "completed"),
+      ]);
 
-      if (!error && data) {
-        setActions(data as ActionItem[]);
-        setHasMore(data.length === PAGE_SIZE);
+      if (!dataRes.error && dataRes.data) {
+        setActions(dataRes.data as ActionItem[]);
+        setHasMore(dataRes.data.length === PAGE_SIZE);
       }
+      setTotalCounts({
+        pending: pendingRes.count ?? 0,
+        overdue: overdueRes.count ?? 0,
+        completed: completedRes.count ?? 0,
+      });
       setLoading(false);
     }
     fetchActions();
@@ -125,12 +132,7 @@ export default function ActionsPage() {
     });
   }, [actions, stateFilter, priorityFilter, assigneeFilter, searchText]);
 
-  const counts = useMemo(() => {
-    const pending = actions.filter((a) => a.state === "pending").length;
-    const overdue = actions.filter((a) => isOverdue(a)).length;
-    const completed = actions.filter((a) => a.state === "completed").length;
-    return { pending, overdue, completed };
-  }, [actions]);
+  const counts = totalCounts;
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {

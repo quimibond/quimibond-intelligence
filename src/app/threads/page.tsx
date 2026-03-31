@@ -99,6 +99,7 @@ export default function ThreadsPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [threadEmails, setThreadEmails] = useState<Record<number, Email[]>>({});
   const [loadingEmails, setLoadingEmails] = useState<number | null>(null);
+  const [totalCounts, setTotalCounts] = useState({ total: 0, stalled24: 0, stalled72: 0 });
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -117,10 +118,20 @@ export default function ThreadsPage() {
   // Fetch threads
   useEffect(() => {
     async function fetchThreads() {
-      const { data } = await buildThreadQuery("");
-      const rows = (data as Thread[] | null) ?? [];
+      const [dataRes, totalRes, s24Res, s72Res] = await Promise.all([
+        buildThreadQuery(""),
+        supabase.from("threads").select("id", { count: "exact", head: true }),
+        supabase.from("threads").select("id", { count: "exact", head: true }).gt("hours_without_response", 24),
+        supabase.from("threads").select("id", { count: "exact", head: true }).gt("hours_without_response", 72),
+      ]);
+      const rows = (dataRes.data as Thread[] | null) ?? [];
       setThreads(rows);
       setHasMore(rows.length >= PAGE_SIZE);
+      setTotalCounts({
+        total: totalRes.count ?? 0,
+        stalled24: s24Res.count ?? 0,
+        stalled72: s72Res.count ?? 0,
+      });
       setLoading(false);
     }
     fetchThreads();
@@ -212,13 +223,9 @@ export default function ThreadsPage() {
   }, [threads, statusFilter]);
 
   // Stats
-  const totalCount = threads.length;
-  const stalled24 = threads.filter(
-    (t) => t.hours_without_response != null && t.hours_without_response > 24
-  ).length;
-  const stalled72 = threads.filter(
-    (t) => t.hours_without_response != null && t.hours_without_response > 72
-  ).length;
+  const totalCount = totalCounts.total;
+  const stalled24 = totalCounts.stalled24;
+  const stalled72 = totalCounts.stalled72;
 
   return (
     <div>

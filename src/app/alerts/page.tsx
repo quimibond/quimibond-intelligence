@@ -80,14 +80,17 @@ export default function AlertsPage() {
   const [searchText, setSearchText] = useState("");
   const [alertTypeNames, setAlertTypeNames] = useState<Record<string, string>>({});
   const [alertTypeCategories, setAlertTypeCategories] = useState<Record<string, string>>({});
+  const [totalCounts, setTotalCounts] = useState({ newCount: 0, acknowledgedCount: 0, resolvedCount: 0 });
 
   useEffect(() => {
     async function fetchAlerts() {
-      const alertsRes = await supabase
-        .from("alerts")
-        .select("*")
-        .order("created_at", { ascending: false })
-        .limit(PAGE_SIZE);
+      // Fetch page + total counts in parallel
+      const [alertsRes, newRes, ackRes, resRes] = await Promise.all([
+        supabase.from("alerts").select("*").order("created_at", { ascending: false }).limit(PAGE_SIZE),
+        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
+        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "acknowledged"),
+        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "resolved"),
+      ]);
 
       if (!alertsRes.error && alertsRes.data) {
         setAlerts(alertsRes.data as Alert[]);
@@ -109,6 +112,11 @@ export default function AlertsPage() {
       };
       setAlertTypeNames(nameMap);
       setAlertTypeCategories({});
+      setTotalCounts({
+        newCount: newRes.count ?? 0,
+        acknowledgedCount: ackRes.count ?? 0,
+        resolvedCount: resRes.count ?? 0,
+      });
       setLoading(false);
     }
     fetchAlerts();
@@ -137,12 +145,7 @@ export default function AlertsPage() {
     return result;
   }, [alerts, severityFilter, stateFilter, typeFilter, sortBy, searchText]);
 
-  const counts = useMemo(() => {
-    const newCount = alerts.filter((a) => a.state === "new").length;
-    const acknowledgedCount = alerts.filter((a) => a.state === "acknowledged").length;
-    const resolvedCount = alerts.filter((a) => a.state === "resolved").length;
-    return { newCount, acknowledgedCount, resolvedCount };
-  }, [alerts]);
+  const counts = totalCounts;
 
   const toggleSelect = useCallback((id: number) => {
     setSelectedIds((prev) => {
