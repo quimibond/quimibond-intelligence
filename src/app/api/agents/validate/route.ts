@@ -180,13 +180,20 @@ export async function POST() {
       }
     }
 
-    // ── 7. Log results ──────────────────────────────────────────────────
+    // ── 7. Link orphan insights to companies (fuzzy match) ────────────
+    let linked = 0;
+    try {
+      const { data: linkResult } = await supabase.rpc("link_orphan_insights");
+      linked = typeof linkResult === "number" ? linkResult : 0;
+    } catch { /* RPC may not exist yet */ }
+
+    // ── 8. Log results ──────────────────────────────────────────────────
     if (resolved > 0 || expired > 0) {
       await supabase.from("pipeline_logs").insert({
         level: "info",
         phase: "insight_validation",
         message: `Validated: ${resolved} auto-resolved, ${expired} auto-expired of ${activeInsights.length} active`,
-        details: { resolved, expired, total_active: activeInsights.length },
+        details: { resolved, expired, linked, total_active: activeInsights.length },
       });
     }
 
@@ -195,6 +202,7 @@ export async function POST() {
       active_insights: activeInsights.length,
       resolved,
       expired,
+      linked_to_companies: linked,
       still_valid: activeInsights.length - resolved - expired,
     });
   } catch (err) {

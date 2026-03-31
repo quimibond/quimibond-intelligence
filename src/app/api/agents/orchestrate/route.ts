@@ -218,7 +218,7 @@ async function runSingleAgent(
         system: agent.system_prompt + `\n\nIMPORTANTE: Eres un agente que reporta al CEO. Solo genera insights que realmente importen para tomar decisiones de negocio. No reportes cosas obvias ni basura. Cada insight debe tener una accion concreta. Si no hay nada importante que reportar, devuelve un array vacio [].`,
         messages: [{
           role: "user",
-          content: `Analiza estos datos y genera SOLO insights accionables para el CEO.\nSi no hay nada importante, devuelve []\n\n${context}${memoryText}\n\nResponde con JSON array. Cada insight:\n- title (corto, directo)\n- description (contexto necesario)\n- insight_type: opportunity|risk|anomaly|recommendation|prediction\n- category (string)\n- severity: info|low|medium|high|critical\n- confidence (0-1, se honesto)\n- recommendation (accion concreta para el CEO)\n- business_impact_estimate (MXN estimado, null si no aplica)\n- evidence (array de datos que soportan el insight)`,
+          content: `Analiza estos datos y genera SOLO insights accionables para el CEO.\nSi no hay nada importante, devuelve []\n\n${context}${memoryText}\n\nResponde con JSON array. Cada insight:\n- title (corto, directo)\n- description (contexto necesario)\n- insight_type: opportunity|risk|anomaly|recommendation|prediction\n- category (string)\n- severity: info|low|medium|high|critical\n- confidence (0-1, se honesto)\n- recommendation (accion concreta para el CEO)\n- business_impact_estimate (MXN estimado, null si no aplica)\n- evidence (array de datos que soportan el insight)\n- company_name (nombre EXACTO de la empresa involucrada, null si es general)\n- contact_email (email del contacto involucrado, null si no aplica)\n\nIMPORTANTE: company_name debe coincidir EXACTAMENTE con los nombres de empresa en los datos. contact_email debe ser un email real de los datos.`,
         }],
       },
       `agent-${agent.slug}`
@@ -226,22 +226,89 @@ async function runSingleAgent(
 
     const insights = Array.isArray(result) ? result : [];
 
-    // Write insights
+    // Resolve company_name → company_id and contact_email → contact_id
     if (insights.length > 0) {
-      const rows = insights.map(i => ({
-        agent_id: agent.id,
-        run_id: runId,
-        insight_type: String(i.insight_type || "recommendation"),
-        category: String(i.category || agent.domain),
-        severity: String(i.severity || "info"),
-        title: String(i.title || ""),
-        description: String(i.description || ""),
-        evidence: i.evidence || [],
-        recommendation: i.recommendation ? String(i.recommendation) : null,
-        confidence: Math.min(1, Math.max(0, Number(i.confidence) || 0.5)),
-        business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
-        state: "new",
-      }));
+      // Batch lookup: get all unique company names and contact emails
+      const companyNames = [...new Set(insights.map(i => i.company_name).filter(Boolean))] as string[];
+      const contactEmails = [...new Set(insights.map(i => i.contact_email).filter(Boolean))] as string[];
+
+      const companyMap = new Map<string, number>();
+      const contactMap = new Map<string, { id: number; company_id: number | null }>();
+
+      // Resolve companies by name (exact match first, then fuzzy)
+      if (companyNames.length) {
+        for (const name of companyNames) {
+          // Exact match
+          const { data: exact } = await supabase
+            .from("companies")
+            .select("id, canonical_name")
+            .ilike("canonical_name", name.trim())
+            .limit(1);
+          if (exact?.[0]) {
+            companyMap.set(name, exact[0].id);
+          } else {
+            // Partial match
+            const { data: partial } = await supabase
+              .from("companies")
+              .select("id, canonical_name")
+              .ilike("canonical_name", `%${name.trim().split(" ")[0]}%`)
+              .limit(1);
+            if (partial?.[0]) {
+              companyMap.set(name, partial[0].id);
+            }
+          }
+        }
+      }
+
+      // Resolve contacts by email
+      if (contactEmails.length) {
+        const { data: contacts } = await supabase
+          .from("contacts")
+          .select("id, email, company_id")
+          .in("email", contactEmails.map(e => e.toLowerCase()));
+        for (const c of contacts ?? []) {
+          contactMap.set(c.email.toLowerCase(), { id: c.id, company_id: c.company_id });
+        }
+      }
+
+      // Write insights with resolved IDs
+      const rows = insights.map(i => {
+        let companyId: number | null = null;
+        let contactId: number | null = null;
+
+        // Resolve company
+        if (i.company_name) companyId = companyMap.get(String(i.company_name)) ?? null;
+
+        // Resolve contact
+        if (i.contact_email) {
+          const contact = contactMap.get(String(i.contact_email).toLowerCase());
+          if (contact) {
+            contactId = contact.id;
+            if (!companyId && contact.company_id) companyId = contact.company_id;
+          }
+        }
+
+        // Fallback: try to find company from company_id in the data
+        if (!companyId && i.company_id) companyId = Number(i.company_id);
+
+        return {
+          agent_id: agent.id,
+          run_id: runId,
+          insight_type: String(i.insight_type || "recommendation"),
+          category: String(i.category || agent.domain),
+          severity: String(i.severity || "info"),
+          title: String(i.title || ""),
+          description: String(i.description || ""),
+          evidence: i.evidence || [],
+          recommendation: i.recommendation ? String(i.recommendation) : null,
+          confidence: Math.min(1, Math.max(0, Number(i.confidence) || 0.5)),
+          business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
+          company_id: companyId,
+          contact_id: contactId,
+          state: "new",
+        };
+      });
+
       await supabase.from("agent_insights").insert(rows);
     }
 
