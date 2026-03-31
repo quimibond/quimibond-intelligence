@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2,
   Eye,
@@ -17,6 +17,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Separator } from "@/components/ui/separator";
@@ -31,10 +32,14 @@ interface CompetitorGroup {
 
 // ── Component ──
 
+const PAGE_SIZE = 50;
+
 export default function CompetitorsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
 
   useEffect(() => {
     async function fetchData() {
@@ -44,7 +49,7 @@ export default function CompetitorsPage() {
           .select("*")
           .eq("alert_type", "competitor")
           .order("created_at", { ascending: false })
-          .limit(200),
+          .limit(PAGE_SIZE),
         supabase
           .from("facts")
           .select("*")
@@ -53,13 +58,29 @@ export default function CompetitorsPage() {
           .limit(100),
       ]);
 
-      if (alertsRes.data) setAlerts(alertsRes.data as Alert[]);
+      const rows = (alertsRes.data ?? []) as Alert[];
+      setAlerts(rows);
+      setHasMore(rows.length >= PAGE_SIZE);
       if (factsRes.data) setFacts(factsRes.data as Fact[]);
       setLoading(false);
     }
 
     fetchData();
   }, []);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    const { data } = await supabase
+      .from("alerts")
+      .select("*")
+      .eq("alert_type", "competitor")
+      .order("created_at", { ascending: false })
+      .range(alerts.length, alerts.length + PAGE_SIZE - 1);
+    const rows = (data ?? []) as Alert[];
+    setAlerts((prev) => [...prev, ...rows]);
+    setHasMore(rows.length >= PAGE_SIZE);
+    setLoadingMore(false);
+  }, [alerts.length]);
 
   // ── Computed ──
 
@@ -209,6 +230,14 @@ export default function CompetitorsPage() {
               </Card>
             ))}
           </div>
+
+          {hasMore && alerts.length > 0 && (
+            <div className="flex justify-center pt-4">
+              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Cargando..." : "Cargar mas"}
+              </Button>
+            </div>
+          )}
         </>
       )}
 

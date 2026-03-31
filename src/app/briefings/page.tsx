@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -9,6 +9,7 @@ import type { Briefing } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import {
   Card,
@@ -30,9 +31,13 @@ const SCOPE_LABELS: Record<string, string> = {
   weekly: "Semanal",
 };
 
+const PAGE_SIZE = 30;
+
 export default function BriefingsPage() {
   const [summaries, setSummaries] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [scopeFilter, setScopeFilter] = useState<string>("daily");
 
   useEffect(() => {
@@ -42,15 +47,32 @@ export default function BriefingsPage() {
         .select("*")
         .in("scope", ["daily", "director", "ventas", "logistica", "compras"])
         .order("briefing_date", { ascending: false })
-        .limit(100);
+        .limit(PAGE_SIZE);
 
       if (!error && data) {
         setSummaries(data as Briefing[]);
+        setHasMore(data.length >= PAGE_SIZE);
       }
       setLoading(false);
     }
     fetchSummaries();
   }, []);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    const { data, error } = await supabase
+      .from("briefings")
+      .select("*")
+      .in("scope", ["daily", "director", "ventas", "logistica", "compras"])
+      .order("briefing_date", { ascending: false })
+      .range(summaries.length, summaries.length + PAGE_SIZE - 1);
+
+    if (!error && data) {
+      setSummaries((prev) => [...prev, ...data as Briefing[]]);
+      setHasMore(data.length >= PAGE_SIZE);
+    }
+    setLoadingMore(false);
+  }, [summaries.length]);
 
   const availableScopes = useMemo(() => {
     const scopes = new Set(summaries.map((s) => s.scope));
@@ -167,6 +189,14 @@ export default function BriefingsPage() {
               </Card>
             </Link>
           ))}
+        </div>
+      )}
+
+      {hasMore && filtered.length > 0 && (
+        <div className="flex justify-center pt-4">
+          <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+            {loadingMore ? "Cargando..." : "Cargar mas"}
+          </Button>
         </div>
       )}
     </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Brain,
   Link2,
@@ -15,6 +15,7 @@ import type { Entity, EntityRelationship, Fact, Topic } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,10 +59,14 @@ interface RelationshipRow extends EntityRelationship {
   entity_b_name: string;
 }
 
+const ENTITIES_PAGE_SIZE = 50;
+
 export default function KnowledgePage() {
   // Entities
   const [entities, setEntities] = useState<Entity[]>([]);
   const [entitiesLoading, setEntitiesLoading] = useState(true);
+  const [entitiesLoadingMore, setEntitiesLoadingMore] = useState(false);
+  const [entitiesHasMore, setEntitiesHasMore] = useState(true);
   const [entityTypes, setEntityTypes] = useState<string[]>([]);
   const [typeFilter, setTypeFilter] = useState("all");
   const [entitySearch, setEntitySearch] = useState("");
@@ -85,9 +90,10 @@ export default function KnowledgePage() {
         .from("entities")
         .select("*")
         .order("last_seen", { ascending: false })
-        .limit(200);
+        .limit(ENTITIES_PAGE_SIZE);
       const rows = (data ?? []) as Entity[];
       setEntities(rows);
+      setEntitiesHasMore(rows.length >= ENTITIES_PAGE_SIZE);
 
       // Extract distinct entity types
       const types = Array.from(new Set(rows.map((e) => e.entity_type))).sort();
@@ -96,6 +102,25 @@ export default function KnowledgePage() {
     }
     fetchEntities();
   }, []);
+
+  // ── Load more entities ──
+  const loadMoreEntities = useCallback(async () => {
+    setEntitiesLoadingMore(true);
+    const { data } = await supabase
+      .from("entities")
+      .select("*")
+      .order("last_seen", { ascending: false })
+      .range(entities.length, entities.length + ENTITIES_PAGE_SIZE - 1);
+    const rows = (data ?? []) as Entity[];
+    setEntities((prev) => [...prev, ...rows]);
+    setEntitiesHasMore(rows.length >= ENTITIES_PAGE_SIZE);
+    // Update entity types with any new types
+    setEntityTypes((prev) => {
+      const allTypes = new Set([...prev, ...rows.map((e) => e.entity_type)]);
+      return Array.from(allTypes).sort();
+    });
+    setEntitiesLoadingMore(false);
+  }, [entities.length]);
 
   // ── Fetch relationships + resolve entity names ──
   useEffect(() => {
@@ -334,6 +359,14 @@ export default function KnowledgePage() {
                   </TableBody>
                 </Table>
               </div>
+
+              {entitiesHasMore && filteredEntities.length > 0 && (
+                <div className="flex justify-center pt-4">
+                  <Button variant="outline" onClick={loadMoreEntities} disabled={entitiesLoadingMore}>
+                    {entitiesLoadingMore ? "Cargando..." : "Cargar mas"}
+                  </Button>
+                </div>
+              )}
             </>
           )}
         </TabsContent>

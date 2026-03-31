@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import {
   Activity,
@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -75,15 +76,21 @@ function summarizePayload(payload: Record<string, unknown> | null): string {
 
 // ── Component ──
 
+const PAGE_SIZE = 30;
+
 export default function TimelinePage() {
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [dateRange, setDateRange] = useState<DateRange>("7d");
+  const [page, setPage] = useState(0);
 
   useEffect(() => {
     async function fetchAll() {
       setLoading(true);
+      setPage(0);
       const threshold = getDateThreshold(dateRange);
 
       const [alertsRes, actionsRes, emailsRes, factsRes, eventsRes] =
@@ -93,31 +100,31 @@ export default function TimelinePage() {
             .select("id, title, severity, contact_name, account, alert_type, created_at")
             .gte("created_at", threshold)
             .order("created_at", { ascending: false })
-            .limit(50),
+            .limit(PAGE_SIZE),
           supabase
             .from("action_items")
             .select("id, description, priority, contact_name, contact_company, action_type, created_at")
             .gte("created_at", threshold)
             .order("created_at", { ascending: false })
-            .limit(50),
+            .limit(PAGE_SIZE),
           supabase
             .from("emails")
             .select("id, subject, sender, account, sender_type, email_date, created_at")
             .gte("email_date", threshold)
             .order("email_date", { ascending: false })
-            .limit(50),
+            .limit(PAGE_SIZE),
           supabase
             .from("facts")
             .select("id, fact_text, fact_type, confidence, source_account, created_at")
             .gte("created_at", threshold)
             .order("created_at", { ascending: false })
-            .limit(30),
+            .limit(PAGE_SIZE),
           supabase
             .from("pipeline_logs")
             .select("id, phase, level, message, details, created_at")
             .gte("created_at", threshold)
             .order("created_at", { ascending: false })
-            .limit(30),
+            .limit(PAGE_SIZE),
         ]);
 
       const merged: TimelineItem[] = [];
@@ -200,12 +207,145 @@ export default function TimelinePage() {
           new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
       );
 
+      const anySourceFull = [alertsRes, actionsRes, emailsRes, factsRes, eventsRes]
+        .some((res) => (res.data ?? []).length >= PAGE_SIZE);
+
       setItems(merged);
+      setHasMore(anySourceFull);
       setLoading(false);
     }
 
     fetchAll();
   }, [dateRange]);
+
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    const nextPage = page + 1;
+    const offset = nextPage * PAGE_SIZE;
+    const threshold = getDateThreshold(dateRange);
+
+    const [alertsRes, actionsRes, emailsRes, factsRes, eventsRes] =
+      await Promise.all([
+        supabase
+          .from("alerts")
+          .select("id, title, severity, contact_name, account, alert_type, created_at")
+          .gte("created_at", threshold)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1),
+        supabase
+          .from("action_items")
+          .select("id, description, priority, contact_name, contact_company, action_type, created_at")
+          .gte("created_at", threshold)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1),
+        supabase
+          .from("emails")
+          .select("id, subject, sender, account, sender_type, email_date, created_at")
+          .gte("email_date", threshold)
+          .order("email_date", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1),
+        supabase
+          .from("facts")
+          .select("id, fact_text, fact_type, confidence, source_account, created_at")
+          .gte("created_at", threshold)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1),
+        supabase
+          .from("pipeline_logs")
+          .select("id, phase, level, message, details, created_at")
+          .gte("created_at", threshold)
+          .order("created_at", { ascending: false })
+          .range(offset, offset + PAGE_SIZE - 1),
+      ]);
+
+    const merged: TimelineItem[] = [];
+
+    for (const a of (alertsRes.data ?? []) as Alert[]) {
+      merged.push({
+        id: `alert-${a.id}`,
+        rawId: a.id,
+        type: "alert",
+        title: a.title,
+        subtitle: a.contact_name,
+        metadata: a.account ?? a.alert_type,
+        created_at: a.created_at,
+        severity: a.severity,
+      });
+    }
+
+    for (const a of (actionsRes.data ?? []) as ActionItem[]) {
+      merged.push({
+        id: `action-${a.id}`,
+        rawId: a.id,
+        type: "action",
+        title: a.description,
+        subtitle: a.contact_name,
+        metadata: a.contact_company,
+        created_at: a.created_at,
+        priority: a.priority,
+      });
+    }
+
+    for (const e of (emailsRes.data ?? []) as Email[]) {
+      merged.push({
+        id: `email-${e.id}`,
+        rawId: e.id,
+        type: "email",
+        title: e.subject ?? "(sin asunto)",
+        subtitle: e.sender,
+        metadata: e.account,
+        created_at: e.email_date ?? e.created_at,
+      });
+    }
+
+    for (const f of (factsRes.data ?? []) as Fact[]) {
+      merged.push({
+        id: `fact-${f.id}`,
+        rawId: f.id,
+        type: "fact",
+        title: f.fact_text,
+        subtitle: f.fact_type,
+        metadata: f.source_account,
+        created_at: f.created_at,
+        confidence: f.confidence,
+      });
+    }
+
+    type LogRow = {
+      id: string;
+      phase: string | null;
+      level: string;
+      message: string | null;
+      details: Record<string, unknown> | null;
+      created_at: string;
+    };
+
+    for (const ev of (eventsRes.data ?? []) as unknown as LogRow[]) {
+      const summary = summarizePayload(ev.details);
+      merged.push({
+        id: `event-${ev.id}`,
+        rawId: ev.id as unknown as number,
+        type: "event",
+        title: ev.phase ?? ev.level,
+        subtitle: ev.message ?? summary,
+        metadata: ev.level !== "info" ? ev.level : null,
+        created_at: ev.created_at,
+      });
+    }
+
+    merged.sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    const anySourceFull = [alertsRes, actionsRes, emailsRes, factsRes, eventsRes]
+      .some((res) => (res.data ?? []).length >= PAGE_SIZE);
+
+    setItems((prev) => [...prev, ...merged]);
+    setHasMore(anySourceFull);
+    setPage(nextPage);
+    setLoadingMore(false);
+  }, [page, dateRange]);
 
   const filtered = useMemo(() => {
     if (typeFilter === "all") return items;
@@ -283,80 +423,90 @@ export default function TimelinePage() {
           description="No hay eventos en el periodo seleccionado."
         />
       ) : (
-        <div className="relative ml-2 border-l-2 border-border pl-4 sm:ml-4 sm:pl-6">
-          {filtered.map((item) => {
-            const cfg = typeConfig[item.type];
-            const Icon = cfg.icon;
+        <>
+          <div className="relative ml-2 border-l-2 border-border pl-4 sm:ml-4 sm:pl-6">
+            {filtered.map((item) => {
+              const cfg = typeConfig[item.type];
+              const Icon = cfg.icon;
 
-            return (
-              <div key={item.id} className="relative pb-8 last:pb-0">
-                {/* Dot on the timeline */}
-                <div className="absolute -left-[calc(1.5rem+5px)] flex h-4 w-4 items-center justify-center rounded-full border-2 border-background bg-muted">
-                  <div className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />
-                </div>
+              return (
+                <div key={item.id} className="relative pb-8 last:pb-0">
+                  {/* Dot on the timeline */}
+                  <div className="absolute -left-[calc(1.5rem+5px)] flex h-4 w-4 items-center justify-center rounded-full border-2 border-background bg-muted">
+                    <div className={`h-2 w-2 rounded-full ${cfg.dotColor}`} />
+                  </div>
 
-                {/* Content card */}
-                {(() => {
-                  const linkMap: Record<string, string> = {
-                    alert: `/alerts/${item.rawId}`,
-                    email: `/emails/${item.rawId}`,
-                    action: `/actions`,
-                    fact: `/knowledge`,
-                  };
-                  const href = linkMap[item.type];
-                  const Wrapper = href ? Link : "div";
-                  const wrapperProps = href ? { href } : {};
-                  return (
-                    // @ts-expect-error dynamic component
-                    <Wrapper {...wrapperProps} className="block rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="flex items-start gap-3 min-w-0">
-                      <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${cfg.color}`} />
-                      <div className="min-w-0 space-y-1">
-                        <p className="text-sm font-medium leading-snug">
-                          {item.title}
-                        </p>
-                        {item.subtitle && (
-                          <p className="text-xs text-muted-foreground truncate">
-                            {item.subtitle}
+                  {/* Content card */}
+                  {(() => {
+                    const linkMap: Record<string, string> = {
+                      alert: `/alerts/${item.rawId}`,
+                      email: `/emails/${item.rawId}`,
+                      action: `/actions`,
+                      fact: `/knowledge`,
+                    };
+                    const href = linkMap[item.type];
+                    const Wrapper = href ? Link : "div";
+                    const wrapperProps = href ? { href } : {};
+                    return (
+                      // @ts-expect-error dynamic component
+                      <Wrapper {...wrapperProps} className="block rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <Icon className={`mt-0.5 h-4 w-4 shrink-0 ${cfg.color}`} />
+                        <div className="min-w-0 space-y-1">
+                          <p className="text-sm font-medium leading-snug">
+                            {item.title}
                           </p>
-                        )}
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant={cfg.badgeVariant} className="text-[10px]">
-                            {cfg.label}
-                          </Badge>
-                          {item.severity && (
-                            <SeverityBadge severity={item.severity} />
+                          {item.subtitle && (
+                            <p className="text-xs text-muted-foreground truncate">
+                              {item.subtitle}
+                            </p>
                           )}
-                          {item.priority && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {item.priority}
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge variant={cfg.badgeVariant} className="text-[10px]">
+                              {cfg.label}
                             </Badge>
-                          )}
-                          {item.confidence != null && (
-                            <Badge variant="outline" className="text-[10px]">
-                              {Math.round(item.confidence * 100)}%
-                            </Badge>
-                          )}
-                          {item.metadata && (
-                            <span className="text-[10px] text-muted-foreground">
-                              {item.metadata}
-                            </span>
-                          )}
+                            {item.severity && (
+                              <SeverityBadge severity={item.severity} />
+                            )}
+                            {item.priority && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {item.priority}
+                              </Badge>
+                            )}
+                            {item.confidence != null && (
+                              <Badge variant="outline" className="text-[10px]">
+                                {Math.round(item.confidence * 100)}%
+                              </Badge>
+                            )}
+                            {item.metadata && (
+                              <span className="text-[10px] text-muted-foreground">
+                                {item.metadata}
+                              </span>
+                            )}
+                          </div>
                         </div>
                       </div>
+                      <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
+                        {timeAgo(item.created_at)}
+                      </span>
                     </div>
-                    <span className="shrink-0 text-[11px] text-muted-foreground whitespace-nowrap">
-                      {timeAgo(item.created_at)}
-                    </span>
-                  </div>
-                    </Wrapper>
-                  );
-                })()}
-              </div>
-            );
-          })}
-        </div>
+                      </Wrapper>
+                    );
+                  })()}
+                </div>
+              );
+            })}
+          </div>
+
+          {hasMore && filtered.length > 0 && (
+            <div className="flex justify-center pt-4">
+              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Cargando..." : "Cargar mas"}
+              </Button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

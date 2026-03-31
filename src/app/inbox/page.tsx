@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   AlertTriangle,
-  ArrowRight,
   Bell,
   CheckCircle2,
   CheckSquare,
@@ -88,9 +87,13 @@ function computeImpactScore(item: {
 
 // ── Page ──
 
+const PAGE_SIZE = 30;
+
 export default function InboxPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [items, setItems] = useState<DecisionItem[]>([]);
   const [stats, setStats] = useState<InboxStats | null>(null);
   const [creatingAction, setCreatingAction] = useState<number | null>(null);
@@ -105,13 +108,13 @@ export default function InboxPage() {
           .select("*")
           .in("state", ["new", "acknowledged"])
           .order("created_at", { ascending: false })
-          .limit(50),
+          .limit(PAGE_SIZE),
         supabase
           .from("action_items")
           .select("*")
           .eq("state", "pending")
           .order("due_date", { ascending: true })
-          .limit(50),
+          .limit(PAGE_SIZE),
         supabase
           .from("threads")
           .select("id", { count: "exact", head: true })
@@ -187,6 +190,7 @@ export default function InboxPage() {
       );
 
       setItems(decisionItems);
+      setHasMore(alerts.length >= PAGE_SIZE || actions.length >= PAGE_SIZE);
       setStats({
         criticalAlerts: alerts.filter(a => a.severity === "critical" || a.severity === "high").length,
         overdueActions: actions.filter(a => a.due_date && a.due_date < today).length,
@@ -197,6 +201,96 @@ export default function InboxPage() {
     }
     load();
   }, []);
+
+  // ── Load more ──
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    const today = new Date().toISOString().split("T")[0];
+    const now = Date.now();
+
+    // Count existing alerts and actions to know offsets
+    const alertCount = items.filter((i) => i.type === "alert").length;
+    const actionCount = items.filter((i) => i.type === "action").length;
+
+    const [alertsRes, actionsRes] = await Promise.all([
+      supabase
+        .from("alerts")
+        .select("*")
+        .in("state", ["new", "acknowledged"])
+        .order("created_at", { ascending: false })
+        .range(alertCount, alertCount + PAGE_SIZE - 1),
+      supabase
+        .from("action_items")
+        .select("*")
+        .eq("state", "pending")
+        .order("due_date", { ascending: true })
+        .range(actionCount, actionCount + PAGE_SIZE - 1),
+    ]);
+
+    const alerts = (alertsRes.data ?? []) as Alert[];
+    const actions = (actionsRes.data ?? []) as ActionItem[];
+    const newItems: DecisionItem[] = [];
+
+    for (const a of alerts) {
+      const daysOld = Math.floor((now - new Date(a.created_at).getTime()) / 86400000);
+      const item: DecisionItem = {
+        type: "alert",
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        severity: a.severity,
+        priority: a.severity === "critical" ? "high" : a.severity === "high" ? "high" : "medium",
+        state: a.state,
+        impactScore: 0,
+        valueAtRisk: a.business_value_at_risk,
+        contactName: a.contact_name,
+        contactId: a.contact_id,
+        companyId: a.company_id,
+        companyName: null,
+        suggestedAction: a.suggested_action,
+        threadId: a.thread_id,
+        dueDate: null,
+        assignee: null,
+        createdAt: a.created_at,
+        daysOld,
+      };
+      item.impactScore = computeImpactScore(item);
+      newItems.push(item);
+    }
+
+    for (const a of actions) {
+      const daysOld = Math.floor((now - new Date(a.created_at).getTime()) / 86400000);
+      const isOverdue = a.due_date && a.due_date < today;
+      const item: DecisionItem = {
+        type: "action",
+        id: a.id,
+        title: a.description,
+        description: a.reason,
+        severity: isOverdue ? "high" : "medium",
+        priority: a.priority,
+        state: a.state,
+        impactScore: 0,
+        valueAtRisk: null,
+        contactName: a.contact_name,
+        contactId: a.contact_id,
+        companyId: a.company_id,
+        companyName: a.contact_company,
+        suggestedAction: null,
+        threadId: a.thread_id,
+        dueDate: a.due_date,
+        assignee: a.assignee_name ?? a.assignee_email,
+        createdAt: a.created_at,
+        daysOld,
+      };
+      item.impactScore = computeImpactScore(item);
+      newItems.push(item);
+    }
+
+    newItems.sort((a, b) => b.impactScore - a.impactScore);
+    setItems((prev) => [...prev, ...newItems]);
+    setHasMore(alerts.length >= PAGE_SIZE || actions.length >= PAGE_SIZE);
+    setLoadingMore(false);
+  }, [items]);
 
   // ── Create action from alert ──
   const createActionFromAlert = useCallback(async (item: DecisionItem) => {
@@ -255,8 +349,6 @@ export default function InboxPage() {
       </div>
     );
   }
-
-  const topItems = items.slice(0, 20);
 
   return (
     <div className="space-y-6">
@@ -319,7 +411,7 @@ export default function InboxPage() {
       )}
 
       {/* Decision Items */}
-      {topItems.length === 0 ? (
+      {items.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
             <CheckCircle2 className="h-12 w-12 text-emerald-500 mb-4" />
@@ -329,7 +421,7 @@ export default function InboxPage() {
         </Card>
       ) : (
         <div className="space-y-3">
-          {topItems.map((item) => (
+          {items.map((item) => (
             <Card
               key={`${item.type}-${item.id}`}
               className={cn(
@@ -470,11 +562,10 @@ export default function InboxPage() {
             </Card>
           ))}
 
-          {items.length > 20 && (
-            <div className="text-center">
-              <Button variant="outline" onClick={() => router.push("/alerts")}>
-                Ver todas las alertas ({items.filter(i => i.type === "alert").length})
-                <ArrowRight className="ml-2 h-4 w-4" />
+          {hasMore && items.length > 0 && (
+            <div className="flex justify-center pt-4">
+              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Cargando..." : "Cargar mas"}
               </Button>
             </div>
           )}

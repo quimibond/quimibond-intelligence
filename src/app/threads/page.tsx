@@ -17,6 +17,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { StatCard } from "@/components/shared/stat-card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -86,9 +87,13 @@ function senderTypeLabel(type: string | null): string {
 // Component
 // ---------------------------------------------------------------------------
 
+const PAGE_SIZE = 50;
+
 export default function ThreadsPage() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -102,7 +107,7 @@ export default function ThreadsPage() {
       .from("threads")
       .select("*")
       .order("hours_without_response", { ascending: false, nullsFirst: false })
-      .limit(200);
+      .limit(PAGE_SIZE);
     if (searchVal.trim()) {
       q = q.ilike("subject", `%${searchVal.trim()}%`);
     }
@@ -113,7 +118,9 @@ export default function ThreadsPage() {
   useEffect(() => {
     async function fetchThreads() {
       const { data } = await buildThreadQuery("");
-      setThreads((data as Thread[] | null) ?? []);
+      const rows = (data as Thread[] | null) ?? [];
+      setThreads(rows);
+      setHasMore(rows.length >= PAGE_SIZE);
       setLoading(false);
     }
     fetchThreads();
@@ -125,11 +132,31 @@ export default function ThreadsPage() {
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
       const { data } = await buildThreadQuery(search);
-      setThreads((data as Thread[] | null) ?? []);
+      const rows = (data as Thread[] | null) ?? [];
+      setThreads(rows);
+      setHasMore(rows.length >= PAGE_SIZE);
       setLoading(false);
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
+
+  // Load more
+  const loadMore = useCallback(async () => {
+    setLoadingMore(true);
+    let q = supabase
+      .from("threads")
+      .select("*")
+      .order("hours_without_response", { ascending: false, nullsFirst: false })
+      .range(threads.length, threads.length + PAGE_SIZE - 1);
+    if (search.trim()) {
+      q = q.ilike("subject", `%${search.trim()}%`);
+    }
+    const { data } = await q;
+    const rows = (data as Thread[] | null) ?? [];
+    setThreads((prev) => [...prev, ...rows]);
+    setHasMore(rows.length >= PAGE_SIZE);
+    setLoadingMore(false);
+  }, [threads.length, search]);
 
   // Fetch emails for a thread
   const fetchThreadEmails = useCallback(
@@ -442,6 +469,14 @@ export default function ThreadsPage() {
               </Table>
             </div>
           </div>
+
+          {hasMore && filtered.length > 0 && (
+            <div className="flex justify-center pt-4">
+              <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
+                {loadingMore ? "Cargando..." : "Cargar mas"}
+              </Button>
+            </div>
+          )}
         </>
       )}
     </div>
