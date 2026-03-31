@@ -13,6 +13,10 @@
       "schedule": "0 */4 * * *"
     },
     {
+      "path": "/api/agents/validate",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/agents/learn",
       "schedule": "30 */4 * * *"
     },

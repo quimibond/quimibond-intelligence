@@ -53,12 +53,17 @@ const TIER_LABELS: Record<string, { label: string; color: string }> = {
   fyi: { label: "FYI", color: "bg-blue-500/20 text-blue-600" },
 };
 
+function isRecent(dateStr: string, hoursThreshold: number): boolean {
+  return (Date.now() - new Date(dateStr).getTime()) < hoursThreshold * 3600_000;
+}
+
 export default function InboxPage() {
   const router = useRouter();
   const [insights, setInsights] = useState<Insight[]>([]);
   const [agents, setAgents] = useState<Record<number, { slug: string; name: string; domain: string }>>({});
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<number | null>(null);
+  const [freshness, setFreshness] = useState<{ lastSync: string | null; lastAnalyze: string | null; lastAgents: string | null }>({ lastSync: null, lastAnalyze: null, lastAgents: null });
 
   // Mobile swipe state
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -68,7 +73,10 @@ export default function InboxPage() {
   const isHorizontalRef = useRef(false);
 
   const load = useCallback(async () => {
-    const [insightsRes, agentsRes] = await Promise.all([
+    // Validate insights against current data before loading
+    await fetch("/api/agents/validate", { method: "POST" }).catch(() => {});
+
+    const [insightsRes, agentsRes, freshnessRes] = await Promise.all([
       supabase
         .from("agent_insights")
         .select("*")
@@ -77,7 +85,20 @@ export default function InboxPage() {
         .order("created_at", { ascending: false })
         .limit(50),
       supabase.from("ai_agents").select("id, slug, name, domain"),
+      supabase.from("pipeline_logs")
+        .select("phase, created_at")
+        .in("phase", ["account_analysis", "emails_synced", "agent_orchestration"])
+        .order("created_at", { ascending: false })
+        .limit(10),
     ]);
+
+    // Extract freshness data
+    const logs = freshnessRes.data ?? [];
+    setFreshness({
+      lastSync: logs.find((l: { phase: string }) => l.phase === "emails_synced")?.created_at ?? null,
+      lastAnalyze: logs.find((l: { phase: string }) => l.phase === "account_analysis")?.created_at ?? null,
+      lastAgents: logs.find((l: { phase: string }) => l.phase === "agent_orchestration")?.created_at ?? null,
+    });
 
     // Build agent map
     const agentMap: Record<number, { slug: string; name: string; domain: string }> = {};
@@ -194,14 +215,37 @@ export default function InboxPage() {
   return (
     <div className="min-h-[calc(100vh-4rem)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 md:px-0 md:py-0 md:mb-6">
-        <div>
-          <h1 className="text-lg md:text-2xl font-bold">Inbox</h1>
-          <p className="text-xs md:text-sm text-muted-foreground">{insights.length} insights pendientes de tus agentes</p>
+      <div className="px-4 py-3 md:px-0 md:py-0 md:mb-6 space-y-2">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg md:text-2xl font-bold">Inbox</h1>
+            <p className="text-xs md:text-sm text-muted-foreground">{insights.length} insights pendientes de tus agentes</p>
+          </div>
+          <Button variant="ghost" size="sm" onClick={load}>
+            <RefreshCw className="h-4 w-4" />
+          </Button>
         </div>
-        <Button variant="ghost" size="sm" onClick={load}>
-          <RefreshCw className="h-4 w-4" />
-        </Button>
+        {/* Freshness bar */}
+        <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+          {freshness.lastSync && (
+            <span className="flex items-center gap-1">
+              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastSync, 2) ? "bg-emerald-500" : isRecent(freshness.lastSync, 6) ? "bg-amber-500" : "bg-red-500")} />
+              Odoo: {timeAgo(freshness.lastSync)}
+            </span>
+          )}
+          {freshness.lastAnalyze && (
+            <span className="flex items-center gap-1">
+              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAnalyze, 1) ? "bg-emerald-500" : isRecent(freshness.lastAnalyze, 4) ? "bg-amber-500" : "bg-red-500")} />
+              Emails: {timeAgo(freshness.lastAnalyze)}
+            </span>
+          )}
+          {freshness.lastAgents && (
+            <span className="flex items-center gap-1">
+              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAgents, 6) ? "bg-emerald-500" : isRecent(freshness.lastAgents, 12) ? "bg-amber-500" : "bg-red-500")} />
+              Agentes: {timeAgo(freshness.lastAgents)}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════ */}
