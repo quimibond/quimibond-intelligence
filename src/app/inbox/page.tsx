@@ -412,15 +412,7 @@ export default function InboxPage() {
 
   // ── Navigate to detail ──
   const goToDetail = useCallback((item: DecisionItem) => {
-    if (item.type === "alert") {
-      router.push(`/alerts/${item.id}`);
-    } else if (item.type === "action") {
-      router.push(`/actions`);
-    } else if (item.contactId) {
-      router.push(`/contacts/${item.contactId}`);
-    } else if (item.companyId) {
-      router.push(`/companies/${item.companyId}`);
-    }
+    router.push(`/inbox/${item.type}/${item.id}`);
   }, [router]);
 
   // ── Touch handlers ──
