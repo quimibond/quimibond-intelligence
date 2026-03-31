@@ -6,7 +6,11 @@
     },
     {
       "path": "/api/pipeline/analyze",
-      "schedule": "15 */2 * * *"
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/pipeline/health-scores",
+      "schedule": "0 */6 * * *"
     },
     {
       "path": "/api/pipeline/embeddings",
@@ -18,7 +22,7 @@
     },
     {
       "path": "/api/pipeline/reconcile",
-      "schedule": "30 */2 * * *"
+      "schedule": "30 */4 * * *"
     }
   ]
 }
