@@ -212,6 +212,59 @@ export async function POST() {
       if (linked > 0) fixes.push({ action: "insights_linked_to_companies", count: linked });
     } catch { /* RPC may not exist */ }
 
+    // ── 9. Act on data_quality agent insights ─────────────────────────
+    // Read what the data agent detected, resolve what we can, mark as acted_on
+    const { data: dataInsights } = await supabase
+      .from("agent_insights")
+      .select("id, title, recommendation, severity")
+      .eq("category", "data_quality")
+      .in("state", ["new", "seen"])
+      .order("severity", { ascending: true }) // critical first
+      .limit(10);
+
+    let insightsResolved = 0;
+    if (dataInsights?.length) {
+      for (const insight of dataInsights) {
+        const title = (insight.title ?? "").toLowerCase();
+        let resolved = false;
+
+        // Check if the issue this insight reported has improved
+        if (title.includes("email") && title.includes("contacto")) {
+          // "emails sin contacto" — check current count
+          const { count } = await supabase.from("emails").select("id", { count: "exact", head: true }).is("sender_contact_id", null);
+          const { count: total } = await supabase.from("emails").select("id", { count: "exact", head: true });
+          // If <30% orphaned, consider resolved
+          if (count && total && count / total < 0.3) resolved = true;
+        } else if (title.includes("factura") && title.includes("empresa")) {
+          const { count } = await supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null);
+          if (count !== null && count < 50) resolved = true;
+        } else if (title.includes("orden") && title.includes("empresa")) {
+          const { count } = await supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }).is("company_id", null);
+          if (count !== null && count < 100) resolved = true;
+        } else if (title.includes("entity") || title.includes("entity_id")) {
+          const { count } = await supabase.from("companies").select("id", { count: "exact", head: true }).is("entity_id", null);
+          const { count: total } = await supabase.from("companies").select("id", { count: "exact", head: true });
+          if (count && total && count / total < 0.15) resolved = true;
+        } else if (title.includes("nombre") && title.includes("contacto")) {
+          const { count } = await supabase.from("contacts").select("id", { count: "exact", head: true }).is("name", null);
+          if (count !== null && count < 50) resolved = true;
+        } else if (title.includes("procesar") || title.includes("procesado")) {
+          const { count } = await supabase.from("emails").select("id", { count: "exact", head: true }).eq("kg_processed", false);
+          const { count: total } = await supabase.from("emails").select("id", { count: "exact", head: true });
+          if (count && total && count / total < 0.3) resolved = true;
+        }
+
+        if (resolved) {
+          await supabase.from("agent_insights").update({
+            state: "expired",
+            user_feedback: "Auto-resuelto por auto-fix: los datos mejoraron suficiente",
+          }).eq("id", insight.id);
+          insightsResolved++;
+        }
+      }
+      if (insightsResolved > 0) fixes.push({ action: "data_insights_resolved", count: insightsResolved });
+    }
+
     // ── Log results ─────────────────────────────────────────────────────
     const totalFixes = fixes.reduce((s, f) => s + f.count, 0);
 
