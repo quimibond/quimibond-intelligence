@@ -17,8 +17,9 @@ import {
   Bell, CheckSquare, CreditCard, DollarSign, PackageX, Truck,
   TrendingUp, Users, Mail, AlertTriangle, ClipboardList, FileText,
   UserCheck, Brain, MessageSquare, BarChart3, Target, Shield,
-  ArrowRight, Activity,
+  ArrowRight, Activity, Bot, Layers, Zap, Play, Loader2,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 
 // ── Clickable KPI Card ──
@@ -89,6 +90,113 @@ function SectionHeader({ title, icon: Icon, color }: { title: string; icon: Reac
   );
 }
 
+// ── Agents Summary Widget ──
+function AgentsSummary() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [agents, setAgents] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [insights, setInsights] = useState<any[]>([]);
+  const [runningAll, setRunningAll] = useState(false);
+
+  useEffect(() => {
+    async function load() {
+      const [agentsRes, insightsRes] = await Promise.all([
+        supabase.rpc("get_agents_overview"),
+        supabase.from("agent_insights").select("id, agent_id, title, severity, confidence, insight_type, created_at")
+          .eq("state", "new").order("created_at", { ascending: false }).limit(3),
+      ]);
+      setAgents(agentsRes.data ?? []);
+      setInsights(insightsRes.data ?? []);
+    }
+    load();
+  }, []);
+
+  const DOMAIN_ICONS: Record<string, React.ElementType> = {
+    sales: TrendingUp, finance: DollarSign, operations: Truck,
+    relationships: Users, risk: Shield, growth: Zap, meta: Brain,
+  };
+  const DOMAIN_COLORS: Record<string, string> = {
+    sales: "text-emerald-500", finance: "text-amber-500", operations: "text-blue-500",
+    relationships: "text-purple-500", risk: "text-red-500", growth: "text-cyan-500", meta: "text-indigo-500",
+  };
+
+  async function runAll() {
+    setRunningAll(true);
+    try {
+      await fetch("/api/agents/run", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ run_all: true }),
+      });
+      // Reload
+      const [a, i] = await Promise.all([
+        supabase.rpc("get_agents_overview"),
+        supabase.from("agent_insights").select("id, agent_id, title, severity, confidence, insight_type, created_at")
+          .eq("state", "new").order("created_at", { ascending: false }).limit(3),
+      ]);
+      setAgents(a.data ?? []);
+      setInsights(i.data ?? []);
+    } finally { setRunningAll(false); }
+  }
+
+  const totalNewInsights = agents.reduce((s: number, a: { new_insights: number }) => s + (a.new_insights ?? 0), 0);
+
+  return (
+    <div className="space-y-3">
+      {/* Agent cards row */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-4 overflow-x-auto pb-1">
+          {agents.slice(0, 7).map((a) => {
+            const Icon = DOMAIN_ICONS[a.domain] ?? Bot;
+            const color = DOMAIN_COLORS[a.domain] ?? "text-muted-foreground";
+            return (
+              <Link key={a.slug} href="/agents" className="flex items-center gap-2 shrink-0 rounded-lg border px-3 py-2 hover:bg-muted/50 transition-colors">
+                <Icon className={cn("h-4 w-4", color)} />
+                <div className="text-xs">
+                  <p className="font-medium">{a.name?.replace("Agente de ", "")}</p>
+                  <p className="text-muted-foreground">
+                    {a.new_insights > 0 ? <span className="text-emerald-500 font-medium">{a.new_insights} nuevos</span> : a.last_run_at ? timeAgo(a.last_run_at) : "nunca"}
+                  </p>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+        <Button size="sm" variant="outline" onClick={runAll} disabled={runningAll} className="shrink-0 ml-2">
+          {runningAll ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
+          {runningAll ? "..." : "Ejecutar"}
+        </Button>
+      </div>
+
+      {/* Latest insights */}
+      {insights.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <Link href="/agents" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-purple-500" />
+                <CardTitle className="text-base">Insights IA ({totalNewInsights} nuevos)</CardTitle>
+              </div>
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {insights.map((ins) => {
+              const agent = agents.find((a: { agent_id: number }) => a.agent_id === ins.agent_id);
+              return (
+                <Link key={ins.id} href="/agents" className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
+                  <SeverityBadge severity={ins.severity} />
+                  <span className="text-sm font-medium truncate flex-1">{ins.title}</span>
+                  <span className="text-xs text-muted-foreground shrink-0">{agent?.name?.replace("Agente de ", "") ?? ""}</span>
+                </Link>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
 // ── Main data fetch ──
 async function fetchDashboard() {
   const today = new Date().toISOString().split("T")[0];
@@ -100,6 +208,9 @@ async function fetchDashboard() {
     stockoutRes, complianceRes, threadsStalled, totalCompanies, totalThreads,
     entitiesRes, factsRes,
     totalValueAtRiskRes,
+    emailsProcessedRes,
+    totalUsersRes,
+    deptRes,
   ] = await Promise.all([
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
     supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new").in("severity", ["critical", "high"]),
@@ -121,6 +232,9 @@ async function fetchDashboard() {
     supabase.from("entities").select("id", { count: "exact", head: true }),
     supabase.from("facts").select("id", { count: "exact", head: true }),
     supabase.from("alerts").select("business_value_at_risk").eq("state", "new").not("business_value_at_risk", "is", null),
+    supabase.from("emails").select("id", { count: "exact", head: true }).eq("kg_processed", true),
+    supabase.from("odoo_users").select("id", { count: "exact", head: true }),
+    supabase.from("odoo_users").select("department").not("department", "is", null),
   ]);
 
   return {
@@ -151,6 +265,9 @@ async function fetchDashboard() {
     totalValueAtRisk: (totalValueAtRiskRes.data ?? []).reduce(
       (sum: number, a: { business_value_at_risk: number | null }) => sum + (a.business_value_at_risk ?? 0), 0
     ),
+    emailsProcessed: emailsProcessedRes.count ?? 0,
+    totalUsers: totalUsersRes.count ?? 0,
+    totalDepartments: new Set((deptRes.data ?? []).map((d: { department: string }) => d.department)).size,
   };
 }
 
@@ -583,12 +700,12 @@ export default function DashboardPage() {
           variant={data.totalEntities > 0 ? "info" : "default"}
         />
         <KPICard
-          title="Chat IA"
-          value="Preguntar"
-          subtitle="Claude + RAG"
-          icon={MessageSquare}
-          href="/chat"
-          variant="info"
+          title="Emails Procesados"
+          value={data.emailsProcessed ?? 0}
+          subtitle={`de ${kpi.total_emails} total`}
+          icon={Mail}
+          href="/system"
+          variant={data.emailsProcessed > 0 ? "info" : "warning"}
         />
         <KPICard
           title="Sistema"
@@ -622,6 +739,37 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  PERSPECTIVA 5: AGENTES DE IA                               */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Agentes de IA" icon={Bot} color="text-purple-500" />
+
+      <AgentsSummary />
+
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/*  PERSPECTIVA 6: EQUIPO                                      */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      <SectionHeader title="Equipo" icon={Users} color="text-cyan-500" />
+
+      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <KPICard
+          title="Empleados"
+          value={data.totalUsers ?? 0}
+          subtitle="usuarios internos"
+          icon={UserCheck}
+          href="/employees"
+          variant="info"
+        />
+        <KPICard
+          title="Departamentos"
+          value={data.totalDepartments ?? 0}
+          subtitle="areas activas"
+          icon={Layers}
+          href="/departments"
+          variant="info"
+        />
+      </div>
     </div>
   );
 }
