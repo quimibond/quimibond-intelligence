@@ -431,7 +431,31 @@ export default function KnowledgePage() {
                 description="No se han extraido hechos del sistema."
               />
             ) : (
-              <div className="rounded-md border">
+              <>
+              {/* Mobile cards */}
+              <div className="space-y-3 md:hidden">
+                {facts.map((fact) => (
+                  <div key={fact.id} className="rounded-lg border bg-card p-3 space-y-2">
+                    <p className="text-sm">{truncate(fact.fact_text, 150)}</p>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant={factTypeBadgeVariant(fact.fact_type)}>
+                        {fact.fact_type ?? "—"}
+                      </Badge>
+                      <span className="text-xs tabular-nums text-muted-foreground">
+                        {(fact.confidence * 100).toFixed(0)}%
+                      </span>
+                      {fact.verified && <Badge variant="success" className="text-[10px]">Verificado</Badge>}
+                      {fact.is_future && <Badge variant="info" className="text-[10px]">Futuro</Badge>}
+                      {fact.expired && <Badge variant="critical" className="text-[10px]">Expirado</Badge>}
+                      {fact.fact_date && (
+                        <span className="text-xs text-muted-foreground">{formatDate(fact.fact_date)}</span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {/* Desktop table */}
+              <div className="hidden md:block rounded-md border">
                 <Table>
                   <TableHeader>
                     <TableRow>
@@ -489,6 +513,7 @@ export default function KnowledgePage() {
                   </TableBody>
                 </Table>
               </div>
+              </>
             )}
           </div>
         </TabsContent>

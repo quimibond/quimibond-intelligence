@@ -493,8 +493,36 @@ export default function NetworkPage() {
         </div>
       </div>
 
-      {/* Graph + Detail panel */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      {/* Mobile: list view of top connections */}
+      <div className="md:hidden space-y-3">
+        {data && nodesRef.current
+          .sort((a, b) => (b.total_sent + b.total_received) - (a.total_sent + a.total_received))
+          .slice(0, 20)
+          .map((node) => (
+            <Link key={node.id} href={`/contacts/${node.id}`} className="block">
+              <Card className="hover:border-primary/30 transition-colors">
+                <CardContent className="py-3 flex items-center gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-bold">
+                    {node.total_sent + node.total_received}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium truncate">{node.name}</p>
+                    <p className="text-xs text-muted-foreground truncate">{node.email}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-xs text-muted-foreground">{node.total_sent}↑ {node.total_received}↓</p>
+                    {node.company_name && (
+                      <Badge variant="outline" className="text-[10px] mt-0.5">{node.company_name}</Badge>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+      </div>
+
+      {/* Desktop: Graph + Detail panel */}
+      <div className="hidden md:grid gap-6 lg:grid-cols-3">
         {/* Canvas */}
         <div className="lg:col-span-2">
           <Card>

@@ -403,7 +403,7 @@ export default function AnalyticsPage() {
                 Sin datos de volumen.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={emailVolumeData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis
@@ -455,7 +455,7 @@ export default function AnalyticsPage() {
                 Sin datos de tiempo de respuesta.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={responseTimeData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis
@@ -499,7 +499,7 @@ export default function AnalyticsPage() {
                 Sin datos de hilos.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={threadActivityData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis
@@ -552,7 +552,7 @@ export default function AnalyticsPage() {
                 Sin datos de sentimiento.
               </p>
             ) : (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={sentimentData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis
