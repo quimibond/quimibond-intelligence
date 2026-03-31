@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import {
   AlertTriangle,
   Bell,
+  Search,
   CheckCircle2,
   ChevronDown,
   CreditCard,
@@ -34,6 +35,7 @@ import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -75,6 +77,7 @@ export default function AlertsPage() {
   const [typeFilter, setTypeFilter] = useState<string>("all");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [sortBy, setSortBy] = useState<string>("recent");
+  const [searchText, setSearchText] = useState("");
   const [alertTypeNames, setAlertTypeNames] = useState<Record<string, string>>({});
   const [alertTypeCategories, setAlertTypeCategories] = useState<Record<string, string>>({});
 
@@ -117,10 +120,12 @@ export default function AlertsPage() {
   }, [alerts]);
 
   const filtered = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
     const result = alerts.filter((a) => {
       if (severityFilter !== "all" && a.severity !== severityFilter) return false;
       if (stateFilter !== "all" && a.state !== stateFilter) return false;
       if (typeFilter !== "all" && a.alert_type !== typeFilter) return false;
+      if (q && !a.title.toLowerCase().includes(q) && !(a.contact_name ?? "").toLowerCase().includes(q) && !(a.description ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
     if (sortBy === "urgency") {
@@ -130,7 +135,7 @@ export default function AlertsPage() {
     }
     // "recent" keeps default order (created_at DESC from API)
     return result;
-  }, [alerts, severityFilter, stateFilter, typeFilter, sortBy]);
+  }, [alerts, severityFilter, stateFilter, typeFilter, sortBy, searchText]);
 
   const counts = useMemo(() => {
     const newCount = alerts.filter((a) => a.state === "new").length;
@@ -243,6 +248,15 @@ export default function AlertsPage() {
       />
 
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar alertas..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <Select
           value={severityFilter}
           onChange={(e) => setSeverityFilter(e.target.value)}

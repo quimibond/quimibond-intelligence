@@ -11,6 +11,7 @@ import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -23,11 +24,13 @@ import {
 
 const PAGE_SIZE = 60;
 
-function buildCompanyQuery(search: string) {
+function buildCompanyQuery(search: string, typeFilter: string) {
   let q = supabase.from("companies").select("*").order("name");
   if (search.trim()) {
     q = q.ilike("name", `%${search.trim()}%`);
   }
+  if (typeFilter === "customer") q = q.eq("is_customer", true);
+  if (typeFilter === "supplier") q = q.eq("is_supplier", true);
   return q;
 }
 
@@ -37,28 +40,29 @@ export default function CompaniesPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState("all");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchCompanies = useCallback(async (searchVal: string) => {
+  const fetchCompanies = useCallback(async (searchVal: string, type: string) => {
     setLoading(true);
-    const { data } = await buildCompanyQuery(searchVal).range(0, PAGE_SIZE - 1);
+    const { data } = await buildCompanyQuery(searchVal, type).range(0, PAGE_SIZE - 1);
     setCompanies((data ?? []) as Company[]);
     setHasMore((data ?? []).length === PAGE_SIZE);
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchCompanies(""); }, [fetchCompanies]);
+  useEffect(() => { fetchCompanies("", "all"); }, [fetchCompanies]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchCompanies(search), 300);
+    debounceRef.current = setTimeout(() => fetchCompanies(search, typeFilter), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search, fetchCompanies]);
+  }, [search, typeFilter, fetchCompanies]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await buildCompanyQuery(search)
+    const { data } = await buildCompanyQuery(search, typeFilter)
       .range(companies.length, companies.length + PAGE_SIZE - 1);
     if (data) {
       setCompanies((prev) => [...prev, ...(data as Company[])]);
@@ -76,15 +80,22 @@ export default function CompaniesPage() {
         <BatchEnrichButton type="companies" />
       </PageHeader>
 
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          placeholder="Buscar empresa..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-9"
-        />
+      {/* Search + Filters */}
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar empresa..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}>
+          <option value="all">Todas</option>
+          <option value="customer">Clientes</option>
+          <option value="supplier">Proveedores</option>
+        </Select>
       </div>
 
       {/* Loading */}
@@ -175,7 +186,7 @@ export default function CompaniesPage() {
       )}
 
       {/* Load more */}
-      {hasMore && companies.length > 0 && !search && (
+      {hasMore && companies.length > 0 && (
         <div className="flex justify-center pt-4">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? "Cargando..." : "Cargar mas empresas"}

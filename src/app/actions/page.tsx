@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   ChevronDown,
   ArrowUpCircle,
+  Search,
   ClipboardList,
   Clock,
   Loader2,
@@ -26,6 +27,7 @@ import { AssigneeSelect } from "@/components/shared/assignee-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -63,6 +65,7 @@ export default function ActionsPage() {
   const [stateFilter, setStateFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
+  const [searchText, setSearchText] = useState("");
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
   useEffect(() => {
@@ -112,13 +115,15 @@ export default function ActionsPage() {
   }, [actions]);
 
   const filtered = useMemo(() => {
+    const q = searchText.trim().toLowerCase();
     return actions.filter((a) => {
       if (stateFilter !== "all" && a.state !== stateFilter) return false;
       if (priorityFilter !== "all" && a.priority !== priorityFilter) return false;
       if (assigneeFilter !== "all" && a.assignee_email !== assigneeFilter) return false;
+      if (q && !a.description.toLowerCase().includes(q) && !(a.contact_name ?? "").toLowerCase().includes(q) && !(a.contact_company ?? "").toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [actions, stateFilter, priorityFilter, assigneeFilter]);
+  }, [actions, stateFilter, priorityFilter, assigneeFilter, searchText]);
 
   const counts = useMemo(() => {
     const pending = actions.filter((a) => a.state === "pending").length;
@@ -273,6 +278,15 @@ export default function ActionsPage() {
       />
 
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            placeholder="Buscar acciones..."
+            value={searchText}
+            onChange={(e) => setSearchText(e.target.value)}
+            className="pl-9"
+          />
+        </div>
         <Select
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}

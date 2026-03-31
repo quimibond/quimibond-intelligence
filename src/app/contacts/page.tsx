@@ -25,15 +25,15 @@ import {
 
 const PAGE_SIZE = 50;
 
-function buildQuery(search: string, riskFilter: string) {
+function buildQuery(search: string, riskFilter: string, typeFilter: string) {
   let q = supabase
     .from("contacts")
     .select("*, companies(name)")
     .order("name", { ascending: true });
 
-  if (riskFilter !== "all") {
-    q = q.eq("risk_level", riskFilter);
-  }
+  if (riskFilter !== "all") q = q.eq("risk_level", riskFilter);
+  if (typeFilter === "customer") q = q.eq("is_customer", true);
+  if (typeFilter === "supplier") q = q.eq("is_supplier", true);
   if (search.trim()) {
     const pattern = `%${search.trim()}%`;
     q = q.or(`name.ilike.${pattern},email.ilike.${pattern}`);
@@ -48,34 +48,33 @@ export default function ContactsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [riskFilter, setRiskFilter] = useState("all");
+  const [typeFilter, setTypeFilter] = useState("all");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchContacts = useCallback(async (searchVal: string, risk: string) => {
+  const fetchContacts = useCallback(async (searchVal: string, risk: string, type: string) => {
     setLoading(true);
-    const { data } = await buildQuery(searchVal, risk).limit(PAGE_SIZE);
+    const { data } = await buildQuery(searchVal, risk, type).limit(PAGE_SIZE);
     setContacts(data ?? []);
     setHasMore((data ?? []).length === PAGE_SIZE);
     setLoading(false);
   }, []);
 
-  // Initial load
   useEffect(() => {
-    fetchContacts("", "all");
+    fetchContacts("", "all", "all");
   }, [fetchContacts]);
 
-  // Debounced search + filter
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      fetchContacts(search, riskFilter);
+      fetchContacts(search, riskFilter, typeFilter);
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search, riskFilter, fetchContacts]);
+  }, [search, riskFilter, typeFilter, fetchContacts]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await buildQuery(search, riskFilter)
+    const { data } = await buildQuery(search, riskFilter, typeFilter)
       .range(contacts.length, contacts.length + PAGE_SIZE - 1);
     if (data) {
       setContacts((prev) => [...prev, ...(data as Contact[])]);
@@ -106,10 +105,19 @@ export default function ContactsPage() {
           onChange={(e) => setRiskFilter(e.target.value)}
           className="w-full sm:w-36"
         >
-          <option value="all">Todos</option>
+          <option value="all">Riesgo: Todos</option>
           <option value="low">Bajo</option>
           <option value="medium">Medio</option>
           <option value="high">Alto</option>
+        </Select>
+        <Select
+          value={typeFilter}
+          onChange={(e) => setTypeFilter(e.target.value)}
+          className="w-full sm:w-36"
+        >
+          <option value="all">Tipo: Todos</option>
+          <option value="customer">Clientes</option>
+          <option value="supplier">Proveedores</option>
         </Select>
       </div>
 
@@ -261,7 +269,7 @@ export default function ContactsPage() {
         </>
       )}
 
-      {hasMore && contacts.length > 0 && !search && (
+      {hasMore && contacts.length > 0 && (
         <div className="flex justify-center pt-4">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
