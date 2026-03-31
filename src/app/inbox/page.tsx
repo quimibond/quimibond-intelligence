@@ -85,19 +85,20 @@ export default function InboxPage() {
         .order("created_at", { ascending: false })
         .limit(50),
       supabase.from("ai_agents").select("id, slug, name, domain"),
-      supabase.from("pipeline_logs")
-        .select("phase, created_at")
-        .in("phase", ["account_analysis", "emails_synced", "agent_orchestration"])
-        .order("created_at", { ascending: false })
-        .limit(10),
+      // Freshness: check actual data timestamps, not pipeline_logs
+      Promise.all([
+        supabase.from("odoo_users").select("updated_at").order("updated_at", { ascending: false }).limit(1),
+        supabase.from("emails").select("created_at").order("created_at", { ascending: false }).limit(1),
+        supabase.from("agent_runs").select("completed_at").eq("status", "completed").order("completed_at", { ascending: false }).limit(1),
+      ]),
     ]);
 
-    // Extract freshness data
-    const logs = freshnessRes.data ?? [];
+    // Extract freshness from actual table data
+    const [odooFresh, emailFresh, agentFresh] = freshnessRes;
     setFreshness({
-      lastSync: logs.find((l: { phase: string }) => l.phase === "emails_synced")?.created_at ?? null,
-      lastAnalyze: logs.find((l: { phase: string }) => l.phase === "account_analysis")?.created_at ?? null,
-      lastAgents: logs.find((l: { phase: string }) => l.phase === "agent_orchestration")?.created_at ?? null,
+      lastSync: odooFresh.data?.[0]?.updated_at ?? null,
+      lastAnalyze: emailFresh.data?.[0]?.created_at ?? null,
+      lastAgents: agentFresh.data?.[0]?.completed_at ?? null,
     });
 
     // Build agent map
