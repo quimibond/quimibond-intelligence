@@ -1,0 +1,236 @@
+/**
+ * Data Auto-Fix — Self-healing data quality agent.
+ *
+ * Runs automatically. Fixes safe, non-destructive data issues:
+ * - Links emails to contacts/companies
+ * - Links invoices/orders to companies
+ * - Resolves entity_ids on contacts/companies
+ * - Fills contact names from Odoo data
+ * - Deduplicates
+ * - Recalculates broken links
+ *
+ * NEVER deletes data. NEVER modifies schema. NEVER touches code.
+ * Only fills in missing links and connections.
+ */
+import { NextResponse } from "next/server";
+import { createClient } from "@supabase/supabase-js";
+
+export const maxDuration = 120;
+
+export async function GET() {
+  return POST();
+}
+
+export async function POST() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
+  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
+  const supabase = createClient(url, key);
+
+  const fixes: { action: string; count: number }[] = [];
+
+  try {
+    // ── 1. Link emails to contacts (by sender email) ────────────────────
+    const { data: orphanEmails } = await supabase
+      .from("emails")
+      .select("id, sender")
+      .is("sender_contact_id", null)
+      .not("sender", "is", null)
+      .limit(200);
+
+    if (orphanEmails?.length) {
+      let linked = 0;
+      for (const email of orphanEmails) {
+        const match = (email.sender ?? "").match(/<([^>]+)>/);
+        const senderEmail = (match ? match[1] : email.sender ?? "").trim().toLowerCase();
+        if (!senderEmail.includes("@")) continue;
+
+        const { data: contact } = await supabase
+          .from("contacts")
+          .select("id, company_id")
+          .eq("email", senderEmail)
+          .limit(1)
+          .single();
+
+        if (contact) {
+          const updates: Record<string, unknown> = { sender_contact_id: contact.id };
+          if (contact.company_id) {
+            updates.company_id = contact.company_id;
+          }
+          await supabase.from("emails").update(updates).eq("id", email.id);
+          linked++;
+        }
+      }
+      if (linked > 0) fixes.push({ action: "emails_linked_to_contacts", count: linked });
+    }
+
+    // ── 2. Link emails to companies (via contact) ───────────────────────
+    const { count: emailsNoCompany } = await supabase
+      .from("emails")
+      .select("id", { count: "exact", head: true })
+      .is("company_id", null)
+      .not("sender_contact_id", "is", null);
+
+    if (emailsNoCompany && emailsNoCompany > 0) {
+      const { data: fixable } = await supabase
+        .from("emails")
+        .select("id, sender_contact_id")
+        .is("company_id", null)
+        .not("sender_contact_id", "is", null)
+        .limit(200);
+
+      let linked = 0;
+      for (const email of fixable ?? []) {
+        const { data: contact } = await supabase
+          .from("contacts")
+          .select("company_id")
+          .eq("id", email.sender_contact_id)
+          .single();
+
+        if (contact?.company_id) {
+          await supabase.from("emails").update({ company_id: contact.company_id }).eq("id", email.id);
+          linked++;
+        }
+      }
+      if (linked > 0) fixes.push({ action: "emails_linked_to_companies", count: linked });
+    }
+
+    // ── 3. Link invoices to companies ───────────────────────────────────
+    try {
+      const { data: result } = await supabase.rpc("fix_all_company_links");
+      const r = result?.[0] ?? result ?? {};
+      const total = (r.invoices_fixed ?? 0) + (r.orders_fixed ?? 0) + (r.deliveries_fixed ?? 0);
+      if (total > 0) {
+        fixes.push({ action: "invoices_linked", count: r.invoices_fixed ?? 0 });
+        fixes.push({ action: "orders_linked", count: r.orders_fixed ?? 0 });
+        fixes.push({ action: "deliveries_linked", count: r.deliveries_fixed ?? 0 });
+      }
+    } catch { /* RPC may not exist */ }
+
+    // ── 4. Resolve entity_ids on companies ──────────────────────────────
+    const { data: companiesNoEntity } = await supabase
+      .from("companies")
+      .select("id, canonical_name, odoo_partner_id")
+      .is("entity_id", null)
+      .limit(100);
+
+    if (companiesNoEntity?.length) {
+      let linked = 0;
+      for (const co of companiesNoEntity) {
+        // Try by odoo_id
+        let entityId: number | null = null;
+        if (co.odoo_partner_id) {
+          const { data: ent } = await supabase
+            .from("entities")
+            .select("id")
+            .eq("entity_type", "company")
+            .eq("odoo_id", co.odoo_partner_id)
+            .limit(1)
+            .single();
+          if (ent) entityId = ent.id;
+        }
+        // Try by name
+        if (!entityId && co.canonical_name) {
+          const { data: ent } = await supabase
+            .from("entities")
+            .select("id")
+            .eq("entity_type", "company")
+            .eq("canonical_name", co.canonical_name.toLowerCase().trim())
+            .limit(1)
+            .single();
+          if (ent) entityId = ent.id;
+        }
+        if (entityId) {
+          await supabase.from("companies").update({ entity_id: entityId }).eq("id", co.id);
+          linked++;
+        }
+      }
+      if (linked > 0) fixes.push({ action: "companies_linked_to_entities", count: linked });
+    }
+
+    // ── 5. Resolve entity_ids on contacts ───────────────────────────────
+    const { data: contactsNoEntity } = await supabase
+      .from("contacts")
+      .select("id, email")
+      .is("entity_id", null)
+      .not("email", "is", null)
+      .limit(100);
+
+    if (contactsNoEntity?.length) {
+      let linked = 0;
+      for (const c of contactsNoEntity) {
+        const { data: ent } = await supabase
+          .from("entities")
+          .select("id")
+          .eq("entity_type", "person")
+          .eq("email", c.email)
+          .limit(1)
+          .single();
+        if (ent) {
+          await supabase.from("contacts").update({ entity_id: ent.id }).eq("id", c.id);
+          linked++;
+        }
+      }
+      if (linked > 0) fixes.push({ action: "contacts_linked_to_entities", count: linked });
+    }
+
+    // ── 6. Fill contact names from companies (contacts with NULL name) ──
+    const { data: noNameContacts } = await supabase
+      .from("contacts")
+      .select("id, company_id")
+      .is("name", null)
+      .not("company_id", "is", null)
+      .limit(100);
+
+    if (noNameContacts?.length) {
+      let filled = 0;
+      for (const c of noNameContacts) {
+        const { data: co } = await supabase
+          .from("companies")
+          .select("name")
+          .eq("id", c.company_id)
+          .single();
+        if (co?.name) {
+          await supabase.from("contacts").update({ name: co.name }).eq("id", c.id);
+          filled++;
+        }
+      }
+      if (filled > 0) fixes.push({ action: "contacts_names_filled", count: filled });
+    }
+
+    // ── 7. Deduplicate ──────────────────────────────────────────────────
+    try {
+      const { data: dedupeResult } = await supabase.rpc("deduplicate_all");
+      const d = dedupeResult?.[0] ?? dedupeResult ?? {};
+      if ((d.companies_merged ?? 0) > 0) fixes.push({ action: "companies_deduped", count: d.companies_merged });
+      if ((d.entities_merged ?? 0) > 0) fixes.push({ action: "entities_deduped", count: d.entities_merged });
+    } catch { /* RPC may not exist */ }
+
+    // ── 8. Link orphan insights ─────────────────────────────────────────
+    try {
+      const { data: linkResult } = await supabase.rpc("link_orphan_insights");
+      const linked = typeof linkResult === "number" ? linkResult : 0;
+      if (linked > 0) fixes.push({ action: "insights_linked_to_companies", count: linked });
+    } catch { /* RPC may not exist */ }
+
+    // ── Log results ─────────────────────────────────────────────────────
+    const totalFixes = fixes.reduce((s, f) => s + f.count, 0);
+
+    if (totalFixes > 0) {
+      await supabase.from("pipeline_logs").insert({
+        level: "info",
+        phase: "auto_fix",
+        message: `Auto-fix: ${totalFixes} corrections across ${fixes.length} categories`,
+        details: { fixes, total: totalFixes },
+      });
+    }
+
+    return NextResponse.json({
+      success: true,
+      total_fixes: totalFixes,
+      fixes,
+    });
+  } catch (err) {
+    console.error("[auto-fix] Error:", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
