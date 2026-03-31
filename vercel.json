@@ -5,12 +5,24 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/cycle/run?type=full",
-      "schedule": "0 */4 * * *"
+      "path": "/api/agents/orchestrate",
+      "schedule": "15 */4 * * *"
     },
     {
-      "path": "/api/cycle/run?type=daily",
+      "path": "/api/agents/learn",
+      "schedule": "45 */4 * * *"
+    },
+    {
+      "path": "/api/pipeline/health-scores",
+      "schedule": "0 */6 * * *"
+    },
+    {
+      "path": "/api/agents/evolve",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/pipeline/briefing",
+      "schedule": "30 6 * * *"
     }
   ]
 }

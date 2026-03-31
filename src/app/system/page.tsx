@@ -110,10 +110,11 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
       } else if (steps.length === 1 && steps[0] === "cycle-daily") {
         res = await fetch("/api/cycle/run?type=daily");
       } else if (steps.length === 1 && steps[0] === "orchestrate") {
-        res = await fetch("/api/agents/orchestrate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
+        res = await fetch("/api/agents/orchestrate", { method: "POST" });
+      } else if (steps.length === 1 && steps[0] === "learn") {
+        res = await fetch("/api/agents/learn", { method: "POST" });
+      } else if (steps.length === 1 && steps[0] === "evolve") {
+        res = await fetch("/api/agents/evolve", { method: "POST" });
       } else if (steps.length === 1 && steps[0] !== "all") {
         // Direct call to specific pipeline endpoint
         res = await fetch(`/api/pipeline/${steps[0]}`, {
@@ -145,12 +146,12 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
   }
 
   const pipelines = [
-    { id: "quick", label: "Ciclo Rapido", desc: "Extract → Heal → Validate (30 min)", icon: Zap, steps: ["cycle-quick"] },
-    { id: "full", label: "Ciclo Completo", desc: "Quick + Agentes + Learn + Health (4h)", icon: Brain, steps: ["cycle-full"] },
-    { id: "daily", label: "Ciclo Diario", desc: "Full + Evolve + Briefing (6am)", icon: TrendingUp, steps: ["cycle-daily"] },
+    { id: "quick", label: "Ciclo Rapido", desc: "Extract → Heal → Validate", icon: Zap, steps: ["cycle-quick"] },
     { id: "analyze", label: "Analizar Emails", desc: "Procesar 1 cuenta", icon: Mail, steps: ["analyze"] },
-    { id: "agents", label: "Agentes IA", desc: "Orquestar todos los agentes", icon: Brain, steps: ["orchestrate"] },
+    { id: "agents", label: "Agentes IA", desc: "Generar insights", icon: Brain, steps: ["orchestrate"] },
+    { id: "learn", label: "Aprender", desc: "Feedback → memorias", icon: TrendingUp, steps: ["learn"] },
     { id: "health", label: "Health Scores", desc: "Recalcular scores", icon: CheckCircle2, steps: ["health-scores"] },
+    { id: "evolve", label: "Evolucionar", desc: "Mejoras de schema", icon: Database, steps: ["evolve"] },
   ];
 
   return (
