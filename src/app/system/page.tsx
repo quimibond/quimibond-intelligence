@@ -103,8 +103,13 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
       let data: Record<string, unknown> = {};
       let res: Response;
 
-      if (steps.length === 1 && steps[0] === "orchestrate") {
-        // Agent orchestrator has its own endpoint
+      if (steps.length === 1 && steps[0] === "cycle-quick") {
+        res = await fetch("/api/cycle/run?type=quick");
+      } else if (steps.length === 1 && steps[0] === "cycle-full") {
+        res = await fetch("/api/cycle/run?type=full");
+      } else if (steps.length === 1 && steps[0] === "cycle-daily") {
+        res = await fetch("/api/cycle/run?type=daily");
+      } else if (steps.length === 1 && steps[0] === "orchestrate") {
         res = await fetch("/api/agents/orchestrate", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -140,14 +145,12 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
   }
 
   const pipelines = [
-    { id: "all", label: "Pipeline Completo", desc: "sync → analyze → embeddings → briefing", icon: Zap, steps: ["all"] },
-    { id: "sync", label: "Sync Emails", desc: "Gmail → Supabase", icon: Mail, steps: ["sync-emails"] },
-    { id: "analyze", label: "Analizar (Claude)", desc: "KG, alertas, acciones", icon: Brain, steps: ["analyze"] },
-    { id: "embed", label: "Embeddings", desc: "Vectores pgvector", icon: Database, steps: ["embeddings"] },
-    { id: "brief", label: "Briefing", desc: "Resumen diario", icon: FileText, steps: ["briefing"] },
-    { id: "reconcile", label: "Reconciliar", desc: "Auto-cierra acciones resueltas", icon: CheckCircle2, steps: ["reconcile"] },
-    { id: "health", label: "Health Scores", desc: "Recalcular scores de contactos", icon: TrendingUp, steps: ["health-scores"] },
+    { id: "quick", label: "Ciclo Rapido", desc: "Extract → Heal → Validate (30 min)", icon: Zap, steps: ["cycle-quick"] },
+    { id: "full", label: "Ciclo Completo", desc: "Quick + Agentes + Learn + Health (4h)", icon: Brain, steps: ["cycle-full"] },
+    { id: "daily", label: "Ciclo Diario", desc: "Full + Evolve + Briefing (6am)", icon: TrendingUp, steps: ["cycle-daily"] },
+    { id: "analyze", label: "Analizar Emails", desc: "Procesar 1 cuenta", icon: Mail, steps: ["analyze"] },
     { id: "agents", label: "Agentes IA", desc: "Orquestar todos los agentes", icon: Brain, steps: ["orchestrate"] },
+    { id: "health", label: "Health Scores", desc: "Recalcular scores", icon: CheckCircle2, steps: ["health-scores"] },
   ];
 
   return (

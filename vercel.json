@@ -1,48 +1,16 @@
 {
   "crons": [
     {
-      "path": "/api/pipeline/sync-emails",
+      "path": "/api/cycle/run?type=quick",
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/pipeline/analyze",
-      "schedule": "*/5 * * * *"
-    },
-    {
-      "path": "/api/agents/orchestrate",
+      "path": "/api/cycle/run?type=full",
       "schedule": "0 */4 * * *"
     },
     {
-      "path": "/api/agents/auto-fix",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/agents/validate",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/agents/learn",
-      "schedule": "30 */4 * * *"
-    },
-    {
-      "path": "/api/pipeline/health-scores",
-      "schedule": "0 */6 * * *"
-    },
-    {
-      "path": "/api/pipeline/embeddings",
-      "schedule": "30 */6 * * *"
-    },
-    {
-      "path": "/api/agents/evolve",
+      "path": "/api/cycle/run?type=daily",
       "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/pipeline/briefing",
-      "schedule": "0 7 * * *"
-    },
-    {
-      "path": "/api/pipeline/reconcile",
-      "schedule": "0 */8 * * *"
     }
   ]
 }
