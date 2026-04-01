@@ -17,7 +17,7 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import { Select } from "@/components/ui/select-native";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,

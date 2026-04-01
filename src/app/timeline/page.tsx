@@ -18,7 +18,7 @@ import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import { Select } from "@/components/ui/select-native";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // ── Types ──

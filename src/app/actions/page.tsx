@@ -26,7 +26,7 @@ import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { AssigneeSelect } from "@/components/shared/assignee-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import { Select } from "@/components/ui/select-native";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import {

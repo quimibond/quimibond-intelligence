@@ -17,7 +17,7 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import { Select } from "@/components/ui/select-native";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Card, CardContent } from "@/components/ui/card";

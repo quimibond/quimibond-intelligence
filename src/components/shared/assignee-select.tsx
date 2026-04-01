@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Select } from "@/components/ui/select";
+import { Select } from "@/components/ui/select-native";
 
 interface AssigneeOption {
   email: string;

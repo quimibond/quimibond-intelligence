@@ -13,7 +13,7 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import { Select } from "@/components/ui/select-native";
 import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
