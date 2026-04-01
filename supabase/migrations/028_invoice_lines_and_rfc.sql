@@ -50,14 +50,14 @@ END $$;
 
 -- ═══════════════════════════════════════════════════════════════
 -- 2. AUTO-LINK company_id ON INVOICE LINES
---    Reuses auto_link_order_company() from migration 027
+--    Reuses auto_link_order_to_company() (existing function)
 -- ═══════════════════════════════════════════════════════════════
 
 DROP TRIGGER IF EXISTS trg_auto_link_invoice_line_company ON odoo_invoice_lines;
 CREATE TRIGGER trg_auto_link_invoice_line_company
   BEFORE INSERT OR UPDATE ON odoo_invoice_lines
   FOR EACH ROW
-  EXECUTE FUNCTION auto_link_order_company();
+  EXECUTE FUNCTION auto_link_order_to_company();
 
 
 -- ═══════════════════════════════════════════════════════════════
