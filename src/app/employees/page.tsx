@@ -23,6 +23,9 @@ interface Employee {
   pending_activities: number;
   overdue_activities: number;
   insights_count: number;
+  execution_score: number | null;
+  actions_overdue: number;
+  contacts_managed: number;
 }
 
 export default function EmployeesPage() {
@@ -32,7 +35,7 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     async function load() {
-      const [employeesRes, usersRes, activitiesRes, insightsRes] = await Promise.all([
+      const [employeesRes, usersRes, activitiesRes, insightsRes, metricsRes] = await Promise.all([
         supabase
           .from("odoo_employees")
           .select("odoo_employee_id, odoo_user_id, name, work_email, department_name, job_title, job_name, manager_name, is_active")
@@ -51,6 +54,11 @@ export default function EmployeesPage() {
           .select("assignee_email")
           .in("state", ["new", "seen"])
           .not("assignee_email", "is", null),
+        supabase
+          .from("employee_metrics")
+          .select("name, email, execution_score, actions_overdue, contacts_managed")
+          .eq("period_type", "weekly")
+          .order("overall_score", { ascending: false }),
       ]);
 
       // User lookup
@@ -80,6 +88,23 @@ export default function EmployeesPage() {
         insightsByEmail.set(i.assignee_email, (insightsByEmail.get(i.assignee_email) ?? 0) + 1);
       }
 
+      // Employee metrics lookup by name (fuzzy — first name match)
+      const metricsByName = new Map<string, { execution_score: number; actions_overdue: number; contacts_managed: number }>();
+      for (const m of metricsRes.data ?? []) {
+        if (m.name) metricsByName.set(m.name.toLowerCase(), m);
+      }
+
+      function findMetrics(name: string) {
+        // Try exact match first, then first name
+        const lower = name.toLowerCase();
+        if (metricsByName.has(lower)) return metricsByName.get(lower)!;
+        const firstName = lower.split(" ")[0];
+        for (const [key, val] of metricsByName) {
+          if (key.startsWith(firstName)) return val;
+        }
+        return null;
+      }
+
       const useEmployees = (employeesRes.data ?? []).length > 0;
 
       let result: Employee[];
@@ -89,6 +114,7 @@ export default function EmployeesPage() {
           const userInfo = e.odoo_user_id ? userById.get(e.odoo_user_id) : undefined;
           const email = e.work_email ?? userInfo?.email ?? null;
           const activityInfo = activityByName.get(e.name);
+          const metrics = findMetrics(e.name);
           return {
             id: e.odoo_employee_id,
             name: e.name,
@@ -99,11 +125,15 @@ export default function EmployeesPage() {
             pending_activities: activityInfo?.pending ?? userInfo?.pending ?? 0,
             overdue_activities: activityInfo?.overdue ?? userInfo?.overdue ?? 0,
             insights_count: email ? (insightsByEmail.get(email) ?? 0) : 0,
+            execution_score: metrics?.execution_score ?? null,
+            actions_overdue: metrics?.actions_overdue ?? 0,
+            contacts_managed: metrics?.contacts_managed ?? 0,
           };
         });
       } else {
         result = (usersRes.data ?? []).map((u) => {
           const activityInfo = activityByName.get(u.name);
+          const metrics = findMetrics(u.name);
           return {
             id: u.odoo_user_id,
             name: u.name,
@@ -114,6 +144,9 @@ export default function EmployeesPage() {
             pending_activities: activityInfo?.pending ?? u.pending_activities_count ?? 0,
             overdue_activities: activityInfo?.overdue ?? u.overdue_activities_count ?? 0,
             insights_count: u.email ? (insightsByEmail.get(u.email) ?? 0) : 0,
+            execution_score: metrics?.execution_score ?? null,
+            actions_overdue: metrics?.actions_overdue ?? 0,
+            contacts_managed: metrics?.contacts_managed ?? 0,
           };
         });
       }
@@ -133,7 +166,9 @@ export default function EmployeesPage() {
       : employees.filter(e => e.department === filter);
 
   const sorted = [...filtered].sort((a, b) => {
+    // Sort by: overdue first, then low execution score, then pending
     if (b.overdue_activities !== a.overdue_activities) return b.overdue_activities - a.overdue_activities;
+    if ((a.execution_score ?? 100) !== (b.execution_score ?? 100)) return (a.execution_score ?? 100) - (b.execution_score ?? 100);
     return b.pending_activities - a.pending_activities;
   });
 
@@ -240,6 +275,29 @@ export default function EmployeesPage() {
                         {emp.overdue_activities}
                       </p>
                     </div>
+                    {emp.execution_score != null && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Ejecucion</p>
+                        <p className={cn(
+                          "font-semibold text-sm tabular-nums",
+                          emp.execution_score >= 50 ? "text-success" : emp.execution_score >= 20 ? "text-warning" : "text-danger-foreground"
+                        )}>
+                          {emp.execution_score}%
+                        </p>
+                      </div>
+                    )}
+                    {emp.actions_overdue > 0 && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Acc. vencidas</p>
+                        <p className="font-semibold text-sm tabular-nums text-danger-foreground">{emp.actions_overdue}</p>
+                      </div>
+                    )}
+                    {emp.contacts_managed > 0 && (
+                      <div>
+                        <p className="text-[10px] text-muted-foreground">Clientes</p>
+                        <p className="font-semibold text-sm tabular-nums">{emp.contacts_managed}</p>
+                      </div>
+                    )}
                     {emp.insights_count > 0 && (
                       <div>
                         <p className="text-[10px] text-muted-foreground">Insights</p>
