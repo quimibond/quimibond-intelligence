@@ -1,7 +1,11 @@
 {
   "crons": [
     {
-      "path": "/api/cycle/run?type=quick",
+      "path": "/api/pipeline/analyze",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/agents/auto-fix",
       "schedule": "*/30 * * * *"
     },
     {

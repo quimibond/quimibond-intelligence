@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
       console.log(`[analyze] Context built OK`);
     } catch (ctxErr) {
       console.error(`[analyze] Context build failed:`, ctxErr);
-      await markProcessed(supabase, accountEmails.map(e => e.id));
+      // DON'T mark as processed — they need to be retried
       return NextResponse.json({ error: "Context build failed", detail: String(ctxErr) }, { status: 500 });
     }
 
@@ -132,7 +132,7 @@ export async function POST(request: NextRequest) {
       console.log(`[analyze] Claude responded OK`);
     } catch (claudeErr) {
       console.error(`[analyze] Claude failed:`, claudeErr);
-      await markProcessed(supabase, accountEmails.map(e => e.id));
+      // DON'T mark as processed — they need to be retried
       return NextResponse.json({ error: "Claude failed", detail: String(claudeErr) }, { status: 500 });
     }
 
@@ -269,9 +269,18 @@ export async function POST(request: NextRequest) {
 }
 
 async function markProcessed(supabase: ReturnType<typeof getServiceClient>, ids: number[]) {
+  let marked = 0;
   for (let i = 0; i < ids.length; i += 100) {
-    await supabase.from("emails").update({ kg_processed: true }).in("id", ids.slice(i, i + 100));
+    const batch = ids.slice(i, i + 100);
+    const { error } = await supabase.from("emails").update({ kg_processed: true }).in("id", batch);
+    if (error) {
+      console.error(`[analyze] markProcessed failed for batch ${i}:`, error.message);
+    } else {
+      marked += batch.length;
+    }
   }
+  console.log(`[analyze] Marked ${marked}/${ids.length} emails as processed`);
+  return marked;
 }
 
 function extractEmail(raw: string): string {
