@@ -233,7 +233,8 @@ interface CFDIData {
 function parseCFDI(xml: string): CFDIData | null {
   try {
     // Extract Comprobante attributes
-    const comprobante = xml.match(/<(?:cfdi:)?Comprobante\s([^>]+)>/s);
+    const comprobante = xml.match(/<(?:cfdi:)?Comprobante\s([\s\S]+?)>/);
+
     if (!comprobante) return null;
 
     const attrs = comprobante[1];
