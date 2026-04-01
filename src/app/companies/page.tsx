@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -72,6 +72,7 @@ export default function CompaniesPage() {
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [extras, setExtras] = useState<Record<number, CompanyExtras>>({});
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [globalStats, setGlobalStats] = useState<{ customers: number; suppliers: number; ltv: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchCompanies = useCallback(async (searchVal: string, type: string, sf: SortField, sd: SortDirection) => {
@@ -83,10 +84,19 @@ export default function CompaniesPage() {
     if (type === "customer") countQuery.eq("is_customer", true);
     if (type === "supplier") countQuery.eq("is_supplier", true);
 
-    const [{ data }, { count }] = await Promise.all([
+    const [{ data }, { count }, customersCount, suppliersCount, ltvRes] = await Promise.all([
       buildCompanyQuery(searchVal, type, sf, sd).range(0, PAGE_SIZE - 1),
       countQuery,
+      supabase.from("companies").select("id", { count: "exact", head: true }).eq("is_customer", true),
+      supabase.from("companies").select("id", { count: "exact", head: true }).eq("is_supplier", true),
+      supabase.from("companies").select("lifetime_value").not("lifetime_value", "is", null).gt("lifetime_value", 0),
     ]);
+
+    setGlobalStats({
+      customers: customersCount.count ?? 0,
+      suppliers: suppliersCount.count ?? 0,
+      ltv: (ltvRes.data ?? []).reduce((sum: number, c: { lifetime_value: number }) => sum + (c.lifetime_value ?? 0), 0),
+    });
 
     const results = (data ?? []) as Company[];
     setCompanies(results);
@@ -167,12 +177,12 @@ export default function CompaniesPage() {
     }
   }
 
-  const stats = useMemo(() => ({
+  const stats = {
     total: totalCount ?? companies.length,
-    customers: companies.filter((c) => c.is_customer).length,
-    suppliers: companies.filter((c) => c.is_supplier).length,
-    ltv: companies.reduce((sum, c) => sum + (c.lifetime_value ?? 0), 0),
-  }), [companies, totalCount]);
+    customers: globalStats?.customers ?? companies.filter((c) => c.is_customer).length,
+    suppliers: globalStats?.suppliers ?? companies.filter((c) => c.is_supplier).length,
+    ltv: globalStats?.ltv ?? companies.reduce((sum, c) => sum + (c.lifetime_value ?? 0), 0),
+  };
 
   return (
     <div className="space-y-5">

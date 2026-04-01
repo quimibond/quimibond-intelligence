@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -86,6 +86,7 @@ export default function ContactsPage() {
   const [riskFilter, setRiskFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
   const [totalCount, setTotalCount] = useState<number | null>(null);
+  const [globalStats, setGlobalStats] = useState<{ atRisk: number; avgHealth: number | null } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchContacts = useCallback(async (searchVal: string, risk: string, type: string) => {
@@ -97,10 +98,20 @@ export default function ContactsPage() {
     if (type === "supplier") countQuery.eq("is_supplier", true);
     if (searchVal.trim()) countQuery.or(`name.ilike.%${searchVal.trim()}%,email.ilike.%${searchVal.trim()}%`);
 
-    const [{ data }, { count }] = await Promise.all([
+    const [{ data }, { count }, atRiskCount, healthRes] = await Promise.all([
       buildQuery(searchVal, risk, type).limit(PAGE_SIZE),
       countQuery,
+      supabase.from("contacts").select("id", { count: "exact", head: true }).in("risk_level", ["high", "critical"]),
+      supabase.from("contacts").select("current_health_score").not("current_health_score", "is", null),
     ]);
+
+    // Compute avg health from ALL contacts (not just the page)
+    const healthScores = (healthRes.data ?? []).map((c: { current_health_score: number }) => c.current_health_score);
+    const avgHealth = healthScores.length > 0
+      ? Math.round(healthScores.reduce((sum: number, s: number) => sum + s, 0) / healthScores.length)
+      : null;
+    setGlobalStats({ atRisk: atRiskCount.count ?? 0, avgHealth });
+
     setContacts(data ?? []);
     setTotalCount(count);
     setHasMore((data ?? []).length === PAGE_SIZE);
@@ -131,14 +142,11 @@ export default function ContactsPage() {
     return ((contact as unknown as Record<string, unknown>).companies as { name: string } | null)?.name ?? null;
   }
 
-  const stats = useMemo(() => {
-    const atRisk = contacts.filter(c => c.risk_level === "high" || c.risk_level === "critical").length;
-    const withHealth = contacts.filter(c => c.current_health_score != null);
-    const avgHealth = withHealth.length > 0
-      ? Math.round(withHealth.reduce((sum, c) => sum + (c.current_health_score ?? 0), 0) / withHealth.length)
-      : null;
-    return { total: totalCount ?? contacts.length, atRisk, avgHealth };
-  }, [contacts, totalCount]);
+  const stats = {
+    total: totalCount ?? contacts.length,
+    atRisk: globalStats?.atRisk ?? contacts.filter(c => c.risk_level === "high" || c.risk_level === "critical").length,
+    avgHealth: globalStats?.avgHealth ?? null,
+  };
 
   return (
     <div className="space-y-5">
