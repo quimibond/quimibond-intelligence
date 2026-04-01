@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
   Clock,
@@ -241,6 +241,8 @@ export default function ThreadsPage() {
             <button
               key={s}
               onClick={() => setStatusFilter(s)}
+              aria-pressed={statusFilter === s}
+              aria-label={`Filtrar: ${s === "all" ? "todos" : s === "stalled" ? "sin respuesta 24h" : s === "active" ? "activos" : "sin respuesta 72h"}`}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium border transition-colors",
                 statusFilter === s ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted"
@@ -256,6 +258,7 @@ export default function ThreadsPage() {
           <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             placeholder="Buscar por asunto..."
+            aria-label="Buscar hilos"
             className="pl-9 h-9"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -336,6 +339,8 @@ export default function ThreadsPage() {
                     <button
                       onClick={() => toggleRow(thread)}
                       className="shrink-0 p-1"
+                      aria-expanded={isExpanded}
+                      aria-label={`${isExpanded ? "Colapsar" : "Expandir"} emails del hilo`}
                     >
                       <ChevronDown
                         className={`h-4 w-4 transition-transform ${
@@ -505,7 +510,7 @@ interface ThreadRowProps {
   onToggle: () => void;
 }
 
-function ThreadRow({
+const ThreadRow = React.memo(function ThreadRow({
   thread,
   isExpanded,
   emails,
@@ -525,6 +530,9 @@ function ThreadRow({
           rowBgClass(hours)
         )}
         onClick={onToggle}
+        role="button"
+        aria-expanded={isExpanded}
+        aria-label={`${isExpanded ? "Colapsar" : "Expandir"} hilo: ${thread.subject}`}
       >
         {/* Chevron */}
         <TableCell className="w-8 px-2">
@@ -663,4 +671,4 @@ function ThreadRow({
       )}
     </>
   );
-}
+});

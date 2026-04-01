@@ -392,6 +392,7 @@ export default function TimelinePage() {
         <Select
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
+          aria-label="Filtrar por tipo"
         >
           <option value="all">Todos</option>
           <option value="alert">Alertas</option>
@@ -404,6 +405,7 @@ export default function TimelinePage() {
         <Select
           value={dateRange}
           onChange={(e) => setDateRange(e.target.value as DateRange)}
+          aria-label="Rango de fechas"
         >
           <option value="today">Hoy</option>
           <option value="7d">Ultimos 7 dias</option>

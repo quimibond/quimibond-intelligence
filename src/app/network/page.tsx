@@ -168,6 +168,7 @@ export default function NetworkPage() {
 
     // ── Draw function ──
     function draw() {
+      const isDark = document.documentElement.classList.contains("dark");
       const { x: tx, y: ty, k } = transformRef.current;
       ctx!.save();
       ctx!.clearRect(0, 0, W, H);
@@ -234,11 +235,11 @@ export default function NetworkPage() {
         ctx!.fill();
 
         if (isSelected) {
-          ctx!.strokeStyle = "#fff";
+          ctx!.strokeStyle = isDark ? "rgba(255,255,255,0.95)" : "rgba(0,0,0,0.8)";
           ctx!.lineWidth = 2.5;
           ctx!.stroke();
         } else if (isHovered) {
-          ctx!.strokeStyle = "rgba(255,255,255,0.7)";
+          ctx!.strokeStyle = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.5)";
           ctx!.lineWidth = 1.5;
           ctx!.stroke();
         }
@@ -255,9 +256,9 @@ export default function NetworkPage() {
           // Background for label
           const label = node.name ?? node.email;
           const tw = ctx!.measureText(label).width;
-          ctx!.fillStyle = "rgba(0,0,0,0.7)";
+          ctx!.fillStyle = isDark ? "rgba(0,0,0,0.8)" : "rgba(255,255,255,0.9)";
           ctx!.fillRect(node.x - tw / 2 - 3, node.y! - r - 18, tw + 6, 14);
-          ctx!.fillStyle = "#fff";
+          ctx!.fillStyle = isDark ? "#fff" : "#111";
           ctx!.fillText(label, node.x, node.y! - r - 7);
         }
 
@@ -423,6 +424,85 @@ export default function NetworkPage() {
       }
     }
 
+    // ── Touch events (mobile) ──
+    let lastTouchDist = 0;
+
+    function onTouchStart(e: TouchEvent) {
+      e.preventDefault();
+      if (e.touches.length === 1) {
+        const touch = e.touches[0];
+        const cr = canvas.getBoundingClientRect();
+        const mx = touch.clientX - cr.left;
+        const my = touch.clientY - cr.top;
+        const node = getNodeAt(mx, my);
+        if (node) {
+          dragRef.current = { node, offsetX: mx, offsetY: my };
+          node.fx = node.x;
+          node.fy = node.y;
+        } else {
+          panRef.current = { startX: mx, startY: my, ox: transformRef.current.x, oy: transformRef.current.y };
+        }
+      } else if (e.touches.length === 2) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        lastTouchDist = Math.sqrt(dx * dx + dy * dy);
+      }
+    }
+
+    function onTouchMove(e: TouchEvent) {
+      e.preventDefault();
+      const cr = canvas.getBoundingClientRect();
+      if (e.touches.length === 1) {
+        const mx = e.touches[0].clientX - cr.left;
+        const my = e.touches[0].clientY - cr.top;
+        if (dragRef.current) {
+          const [wx, wy] = canvasToWorld(mx, my);
+          dragRef.current.node.fx = wx;
+          dragRef.current.node.fy = wy;
+          sim.alpha(0.1).restart();
+        } else if (panRef.current) {
+          transformRef.current.x = panRef.current.ox + (mx - panRef.current.startX);
+          transformRef.current.y = panRef.current.oy + (my - panRef.current.startY);
+        }
+        draw();
+      } else if (e.touches.length === 2 && lastTouchDist > 0) {
+        const dx = e.touches[0].clientX - e.touches[1].clientX;
+        const dy = e.touches[0].clientY - e.touches[1].clientY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const midX = (e.touches[0].clientX + e.touches[1].clientX) / 2 - cr.left;
+        const midY = (e.touches[0].clientY + e.touches[1].clientY) / 2 - cr.top;
+        const scaleFactor = dist / lastTouchDist;
+        const t = transformRef.current;
+        const newK = Math.max(0.2, Math.min(5, t.k * scaleFactor));
+        t.x = midX - (midX - t.x) * (newK / t.k);
+        t.y = midY - (midY - t.y) * (newK / t.k);
+        t.k = newK;
+        lastTouchDist = dist;
+        draw();
+      }
+    }
+
+    function onTouchEnd(e: TouchEvent) {
+      if (e.touches.length === 0) {
+        if (dragRef.current) {
+          const node = dragRef.current.node;
+          dragRef.current = null;
+          selectedRef.current = node;
+          setSelectedNode(node);
+          setSelectedEdges(edges.filter((ed) => {
+            const s = (ed.source as NetNode).id;
+            const t = (ed.target as NetNode).id;
+            return s === node.id || t === node.id;
+          }));
+          draw();
+        }
+        if (panRef.current) {
+          panRef.current = null;
+        }
+        lastTouchDist = 0;
+      }
+    }
+
     canvas.addEventListener("mousemove", onMouseMove);
     canvas.addEventListener("mousedown", onMouseDown);
     canvas.addEventListener("mouseup", onMouseUp);
@@ -432,6 +512,9 @@ export default function NetworkPage() {
     });
     canvas.addEventListener("wheel", onWheel, { passive: false });
     canvas.addEventListener("dblclick", onDblClick);
+    canvas.addEventListener("touchstart", onTouchStart, { passive: false });
+    canvas.addEventListener("touchmove", onTouchMove, { passive: false });
+    canvas.addEventListener("touchend", onTouchEnd);
 
     return () => {
       sim.stop();
@@ -440,6 +523,9 @@ export default function NetworkPage() {
       canvas.removeEventListener("mouseup", onMouseUp);
       canvas.removeEventListener("wheel", onWheel);
       canvas.removeEventListener("dblclick", onDblClick);
+      canvas.removeEventListener("touchstart", onTouchStart);
+      canvas.removeEventListener("touchmove", onTouchMove);
+      canvas.removeEventListener("touchend", onTouchEnd);
     };
   }, [data]); // Only re-run when data changes, NOT on hover/select
 

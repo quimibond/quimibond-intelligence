@@ -206,7 +206,7 @@ export default function CompaniesPage() {
 
       {/* Search + Filters */}
       <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar empresa...">
-        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-32 shrink-0">
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-32 shrink-0" aria-label="Filtrar por tipo">
           <option value="all">Todas</option>
           <option value="customer">Clientes</option>
           <option value="supplier">Proveedores</option>
@@ -219,6 +219,7 @@ export default function CompaniesPage() {
             setSortDir(d);
           }}
           className="w-44 shrink-0"
+          aria-label="Ordenar por"
         >
           <option value="name-asc">Nombre A-Z</option>
           <option value="name-desc">Nombre Z-A</option>

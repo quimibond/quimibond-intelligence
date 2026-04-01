@@ -117,13 +117,13 @@ export default function EmailsPage() {
       />
 
       <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por remitente o asunto...">
-        <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full sm:w-auto">
+        <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full sm:w-auto" aria-label="Filtrar por cuenta">
           <option value="all">Todas las cuentas</option>
           {accounts.map((a) => (
             <option key={a} value={a}>{a}</option>
           ))}
         </Select>
-        <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)} className="w-full sm:w-auto">
+        <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)} className="w-full sm:w-auto" aria-label="Filtrar por tipo">
           <option value="all">Todos los tipos</option>
           <option value="internal">Enviados</option>
           <option value="external">Recibidos</option>

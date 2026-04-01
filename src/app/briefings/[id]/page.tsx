@@ -6,6 +6,7 @@ import { ArrowLeft, BookOpen, Calendar, Mail, AlertTriangle } from "lucide-react
 import { supabase } from "@/lib/supabase";
 import { formatDate, timeAgo } from "@/lib/utils";
 import type { Briefing } from "@/lib/types";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -68,10 +69,10 @@ export default function BriefingDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" onClick={() => router.push("/briefings")}>
-        <ArrowLeft className="h-4 w-4" />
-        Volver a briefings
-      </Button>
+      <Breadcrumbs items={[
+        { label: "Briefings", href: "/briefings" },
+        { label: summary.briefing_date ? formatDate(summary.briefing_date) : "Detalle" },
+      ]} />
 
       <Card>
         <CardHeader className="space-y-4">

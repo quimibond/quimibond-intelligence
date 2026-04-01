@@ -164,14 +164,14 @@ export default function ContactsPage() {
 
       {/* Filters */}
       <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por nombre o email...">
-        <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="w-36 shrink-0">
+        <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="w-36 shrink-0" aria-label="Filtrar por riesgo">
           <option value="all">Riesgo: Todos</option>
           <option value="low">Bajo</option>
           <option value="medium">Medio</option>
           <option value="high">Alto</option>
           <option value="critical">Critico</option>
         </Select>
-        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-36 shrink-0">
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-36 shrink-0" aria-label="Filtrar por tipo">
           <option value="all">Tipo: Todos</option>
           <option value="customer">Clientes</option>
           <option value="supplier">Proveedores</option>

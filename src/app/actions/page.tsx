@@ -328,6 +328,7 @@ export default function ActionsPage() {
           value={stateFilter}
           onChange={(e) => setStateFilter(e.target.value)}
           className="min-w-[160px] shrink-0"
+          aria-label="Filtrar por estado"
         >
           <option value="all">Todos los estados</option>
           <option value="pending">Pendientes</option>
@@ -342,6 +343,7 @@ export default function ActionsPage() {
           value={priorityFilter}
           onChange={(e) => setPriorityFilter(e.target.value)}
           className="min-w-[160px] shrink-0"
+          aria-label="Filtrar por prioridad"
         >
           <option value="all">Todas las prioridades</option>
           <option value="low">Baja</option>
@@ -354,6 +356,7 @@ export default function ActionsPage() {
             value={assigneeFilter}
             onChange={(e) => setAssigneeFilter(e.target.value)}
             className="min-w-[170px] shrink-0"
+            aria-label="Filtrar por responsable"
           >
             <option value="all">Todos los responsables</option>
             {assignees.map(([email, name]) => (
