@@ -1,15 +1,11 @@
 /**
- * Insight Validator — Auto-cleans stale insights.
+ * Insight Validator v2 — Auto-cleans stale insights with adaptive TTL.
  *
- * Runs before the inbox loads and on a cron. Checks each "new" insight
- * against CURRENT Odoo/Supabase data to see if the issue still exists.
- *
- * Examples:
- * - Insight says "$237K overdue" → check odoo_invoices → if paid, auto-resolve
- * - Insight says "no response from X" → check emails → if they responded, auto-resolve
- * - Insight says "delivery late" → check odoo_deliveries → if delivered, auto-resolve
- * - Insight says "CRM lead stale" → check odoo_crm_leads → if stage changed, auto-resolve
- * - Any insight >7 days old → auto-expire (data too stale to be useful)
+ * Improvements over v1:
+ * - Adaptive TTL: risk/critical insights last 14 days, info/low last 5 days
+ * - Better deduplication: detects near-duplicate active insights
+ * - Payment validation: checks for partial payments too
+ * - Validates per-insight (not just per-company)
  *
  * Each resolved insight gets a resolution note explaining WHY it was auto-closed.
  */
@@ -43,19 +39,26 @@ export async function POST() {
       return NextResponse.json({ success: true, resolved: 0, expired: 0, message: "No active insights to validate" });
     }
 
-    // ── 2. Auto-expire old insights (>7 days) ──────────────────────────
-    const sevenDaysAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
-    const old = activeInsights.filter(i => i.created_at < sevenDaysAgo);
-    if (old.length) {
+    // ── 2. Auto-expire old insights (adaptive TTL by severity/type) ────
+    const expiredIds: number[] = [];
+    for (const insight of activeInsights) {
+      const ageMs = Date.now() - new Date(insight.created_at).getTime();
+      const ageDays = ageMs / 86400_000;
+      const ttl = getInsightTTL(insight.severity, insight.insight_type);
+      if (ageDays > ttl) {
+        expiredIds.push(insight.id);
+      }
+    }
+    if (expiredIds.length) {
       await supabase
         .from("agent_insights")
         .update({
           state: "expired",
           was_useful: false,
-          user_feedback: "Auto-expirado: datos de >7 dias ya no son confiables",
+          user_feedback: "Auto-expirado: datos ya no son confiables segun TTL adaptivo",
         })
-        .in("id", old.map(i => i.id));
-      expired += old.length;
+        .in("id", expiredIds);
+      expired += expiredIds.length;
     }
 
     // ── 3. Validate payment-related insights ────────────────────────────
@@ -180,27 +183,52 @@ export async function POST() {
       }
     }
 
-    // ── 7. Deduplicate companies and entities ─────────────────────────
+    // ── 7. Deduplicate active insights ─────────────────────────────────
+    let insightDeduped = 0;
+    {
+      // Find near-duplicate active insights (same agent, same normalized title, both active)
+      const remaining = activeInsights.filter(i => !expiredIds.includes(i.id));
+      const seen = new Map<string, number>(); // normalized title → first insight id
+      const dupeIds: number[] = [];
+
+      for (const insight of remaining) {
+        const key = `${insight.category}:${normalizeTitle(insight.title)}`;
+        if (seen.has(key)) {
+          dupeIds.push(insight.id);
+        } else {
+          seen.set(key, insight.id);
+        }
+      }
+
+      if (dupeIds.length) {
+        await supabase.from("agent_insights")
+          .update({ state: "expired", user_feedback: "Auto-deduplicado: insight similar ya existe" })
+          .in("id", dupeIds);
+        insightDeduped = dupeIds.length;
+      }
+    }
+
+    // ── 8. Deduplicate companies and entities (RPC) ─────────────────────
     let deduped = { companies: 0, entities: 0 };
     try {
       const { data: dedupeResult } = await supabase.rpc("deduplicate_all");
       if (dedupeResult?.[0]) deduped = dedupeResult[0];
     } catch { /* RPC may not exist */ }
 
-    // ── 8. Link orphan insights to companies (fuzzy match) ────────────
+    // ── 9. Link orphan insights to companies (fuzzy match) ────────────
     let linked = 0;
     try {
       const { data: linkResult } = await supabase.rpc("link_orphan_insights");
       linked = typeof linkResult === "number" ? linkResult : 0;
     } catch { /* RPC may not exist yet */ }
 
-    // ── 8. Log results ──────────────────────────────────────────────────
+    // ── 10. Log results ─────────────────────────────────────────────────
     if (resolved > 0 || expired > 0) {
       await supabase.from("pipeline_logs").insert({
         level: "info",
         phase: "insight_validation",
         message: `Validated: ${resolved} auto-resolved, ${expired} auto-expired of ${activeInsights.length} active`,
-        details: { resolved, expired, linked, deduped, total_active: activeInsights.length },
+        details: { resolved, expired, linked, deduped, insight_deduped: insightDeduped, total_active: activeInsights.length },
       });
     }
 
@@ -209,11 +237,34 @@ export async function POST() {
       active_insights: activeInsights.length,
       resolved,
       expired,
+      insight_deduped: insightDeduped,
       linked_to_companies: linked,
-      still_valid: activeInsights.length - resolved - expired,
+      still_valid: activeInsights.length - resolved - expired - insightDeduped,
     });
   } catch (err) {
     console.error("[validate] Error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+}
+
+// ── Adaptive TTL: different lifetimes based on severity and type ─────
+function getInsightTTL(severity: string, insightType: string): number {
+  // Risk and critical insights stay longer — they need more time to be addressed
+  if (severity === "critical") return 14;
+  if (severity === "high") return 10;
+  if (insightType === "risk" || insightType === "prediction") return 12;
+  if (severity === "medium") return 7;
+  if (severity === "low") return 5;
+  // Info insights expire fastest — least actionable
+  return 4;
+}
+
+// ── Normalize titles for deduplication ───────────────────────────────
+function normalizeTitle(title: string): string {
+  return (title || "")
+    .toLowerCase()
+    .replace(/\$[\d,.]+[km]?/g, "$X")
+    .replace(/\d+/g, "N")
+    .replace(/\s+/g, " ")
+    .trim();
 }

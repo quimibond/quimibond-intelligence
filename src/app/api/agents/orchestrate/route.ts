@@ -1,11 +1,13 @@
 /**
- * Agent Orchestrator v2 — Incremental, ONE agent per call.
+ * Agent Orchestrator v3 — Smarter context, dedup, adaptive thresholds.
  *
- * Same pattern as analyze: each invocation processes the NEXT agent
- * that hasn't run recently. Vercel cron calls this every 15 min
- * during the 4-hour cycle, so all agents get processed.
- *
- * On manual trigger, runs the agent that needs it most.
+ * Improvements over v2:
+ * - Deduplication: checks for similar active insights before inserting
+ * - Adaptive confidence: per-agent threshold based on learning history
+ * - Low-confidence insights archived (not deleted) for learning signal
+ * - Memory loading: weighted by importance × recency, tracks usage
+ * - Token-aware context: truncates to ~60K chars to avoid overflow
+ * - Structured prompt: explicit JSON schema for more consistent output
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -13,6 +15,12 @@ import { callClaudeJSON, logTokenUsage } from "@/lib/claude";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 300;
+
+/** Max chars for the context sent to Claude (~15K tokens) */
+const MAX_CONTEXT_CHARS = 60_000;
+
+/** Default confidence threshold — overridden per-agent by learning */
+const DEFAULT_CONFIDENCE_THRESHOLD = 0.65;
 
 export async function GET(request: NextRequest) {
   return POST(request);
@@ -64,7 +72,6 @@ export async function POST(request: NextRequest) {
     for (const agent of agents) {
       const lastRun = lastRunMap.get(agent.id);
       if (!lastRun) {
-        // Never ran — highest priority
         targetAgent = agent;
         oldestRun = 0;
         break;
@@ -87,32 +94,61 @@ export async function POST(request: NextRequest) {
     const runId = run?.id;
 
     try {
-      // Build context
+      // Build context (token-aware)
       const context = await buildAgentContext(supabase, targetAgent.domain);
 
-      // Load memories
+      // Load memories — weighted by importance × recency, up to 10
       const { data: memories } = await supabase
         .from("agent_memory")
-        .select("content")
+        .select("id, content, importance, updated_at")
         .eq("agent_id", targetAgent.id)
+        .gt("importance", 0.2)
         .order("importance", { ascending: false })
-        .limit(5);
+        .limit(15);
 
-      const memoryText = memories?.length
-        ? `\n\nTus observaciones previas:\n${memories.map((m: { content: string }) => `- ${m.content}`).join("\n")}`
+      // Score memories: importance * recency_factor (newer = higher)
+      const now = Date.now();
+      const scoredMemories = (memories ?? [])
+        .map(m => {
+          const ageMs = now - new Date(m.updated_at).getTime();
+          const ageDays = ageMs / 86400_000;
+          const recencyFactor = Math.max(0.3, 1 - ageDays / 90); // decays over 90 days
+          return { ...m, score: m.importance * recencyFactor };
+        })
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 10);
+
+      const memoryText = scoredMemories.length
+        ? `\n\nTus observaciones previas (aprende de estas):\n${scoredMemories.map(m => `- ${m.content}`).join("\n")}`
         : "";
 
-      // Call Claude
+      // Mark memories as used (increment times_used)
+      if (scoredMemories.length) {
+        const memoryIds = scoredMemories.map(m => m.id);
+        await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds }).catch(() => {
+          // Fallback: update one by one if RPC doesn't exist
+          for (const id of memoryIds) {
+            supabase.from("agent_memory")
+              .update({ updated_at: new Date().toISOString() })
+              .eq("id", id).then();
+          }
+        });
+      }
+
+      // Load adaptive confidence threshold for this agent
+      const confidenceThreshold = await getAgentConfidenceThreshold(supabase, targetAgent.id);
+
+      // Call Claude with structured prompt
       const { result, usage } = await callClaudeJSON<Record<string, unknown>[]>(
         apiKey,
         {
           model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
           max_tokens: 4096,
           temperature: 0.2,
-          system: targetAgent.system_prompt + `\n\nIMPORTANTE: Eres un agente que reporta al CEO. Solo genera insights que realmente importen. Si no hay nada importante, devuelve [].`,
+          system: targetAgent.system_prompt + AGENT_SYSTEM_SUFFIX,
           messages: [{
             role: "user",
-            content: `Analiza y genera SOLO insights accionables.\n\n${context}${memoryText}\n\nJSON array. Cada insight: title, description, insight_type (opportunity|risk|anomaly|recommendation|prediction), category, severity (info|low|medium|high|critical), confidence (0-1), recommendation, business_impact_estimate (MXN o null), evidence (array), company_name (exacto o null), contact_email (o null)`,
+            content: buildAgentPrompt(context, memoryText, confidenceThreshold),
           }],
         },
         `agent-${targetAgent.slug}`
@@ -120,10 +156,39 @@ export async function POST(request: NextRequest) {
 
       const insights = Array.isArray(result) ? result : [];
 
-      // Resolve company names and write insights
+      // ── Deduplicate against active insights ────────────────────────────
+      let duplicatesSkipped = 0;
+      const filteredInsights = [];
+
       if (insights.length > 0) {
+        // Load recent active insights for this agent to check for duplicates
+        const { data: existingInsights } = await supabase
+          .from("agent_insights")
+          .select("title, company_id, category")
+          .eq("agent_id", targetAgent.id)
+          .in("state", ["new", "seen"])
+          .order("created_at", { ascending: false })
+          .limit(50);
+
+        const existingTitles = new Set(
+          (existingInsights ?? []).map(i => normalizeForDedup(i.title))
+        );
+
+        for (const insight of insights) {
+          const normalizedTitle = normalizeForDedup(String(insight.title || ""));
+          if (existingTitles.has(normalizedTitle)) {
+            duplicatesSkipped++;
+            continue;
+          }
+          existingTitles.add(normalizedTitle);
+          filteredInsights.push(insight);
+        }
+      }
+
+      // Resolve company names and write insights
+      if (filteredInsights.length > 0) {
         const rows = [];
-        for (const i of insights) {
+        for (const i of filteredInsights) {
           let companyId: number | null = null;
           if (i.company_name) {
             const { data: co } = await supabase
@@ -146,6 +211,8 @@ export async function POST(request: NextRequest) {
             }
           }
 
+          const confidence = Math.min(1, Math.max(0, Number(i.confidence) || 0.5));
+
           rows.push({
             agent_id: targetAgent.id, run_id: runId,
             insight_type: String(i.insight_type || "recommendation"),
@@ -155,35 +222,26 @@ export async function POST(request: NextRequest) {
             description: String(i.description || ""),
             evidence: i.evidence || [],
             recommendation: i.recommendation ? String(i.recommendation) : null,
-            confidence: Math.min(1, Math.max(0, Number(i.confidence) || 0.5)),
+            confidence,
             business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
             company_id: companyId, contact_id: contactId,
-            state: "new",
+            // Low confidence: archive instead of showing — preserves learning signal
+            state: confidence < confidenceThreshold ? "archived" : "new",
           });
         }
         await supabase.from("agent_insights").insert(rows);
       }
 
-      // Filter low confidence
-      if (insights.length > 0) {
-        const { data: newInsights } = await supabase
-          .from("agent_insights")
-          .select("id, confidence")
-          .eq("run_id", runId)
-          .lt("confidence", 0.65);
-        if (newInsights?.length) {
-          await supabase.from("agent_insights")
-            .update({ state: "expired", user_feedback: "Auto-filtered: low confidence" })
-            .in("id", newInsights.map(i => i.id));
-        }
-      }
-
       const duration = (Date.now() - start) / 1000;
+      const activeInsights = filteredInsights.filter(
+        i => (Number(i.confidence) || 0.5) >= confidenceThreshold
+      ).length;
+
       if (runId) {
         await supabase.from("agent_runs").update({
           status: "completed", completed_at: new Date().toISOString(),
           duration_seconds: Math.round(duration * 10) / 10,
-          insights_generated: insights.length,
+          insights_generated: activeInsights,
           input_tokens: usage?.input_tokens ?? 0,
           output_tokens: usage?.output_tokens ?? 0,
         }).eq("id", runId);
@@ -196,12 +254,15 @@ export async function POST(request: NextRequest) {
       const agentsNeedingRun = agents.filter(a => {
         const last = lastRunMap.get(a.id);
         return !last || last < recentThreshold;
-      }).length - 1; // -1 for the one we just ran
+      }).length - 1;
 
       return NextResponse.json({
         success: true,
         agent: targetAgent.slug,
-        insights_generated: insights.length,
+        insights_generated: activeInsights,
+        insights_archived: filteredInsights.length - activeInsights,
+        duplicates_skipped: duplicatesSkipped,
+        confidence_threshold: confidenceThreshold,
         elapsed_s: Math.round(duration),
         remaining_agents: Math.max(0, agentsNeedingRun),
       });
@@ -217,6 +278,105 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
+}
+
+// ── Adaptive confidence threshold per agent ─────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getAgentConfidenceThreshold(supabase: any, agentId: number): Promise<number> {
+  try {
+    // Check if agent has a calibration memory with a learned threshold
+    const { data: calibration } = await supabase
+      .from("agent_memory")
+      .select("content")
+      .eq("agent_id", agentId)
+      .eq("memory_type", "calibration")
+      .order("importance", { ascending: false })
+      .limit(1);
+
+    if (calibration?.length) {
+      // Extract threshold hint from calibration memory
+      // e.g., "Los insights de severidad 'info' se descartan 80% del tiempo..."
+      // If agent's low-severity insights get dismissed a lot, raise threshold
+      const content = calibration[0].content.toLowerCase();
+      if (content.includes("descartan") && content.includes("info")) {
+        return 0.72; // Stricter for agents whose info-level insights get dismissed
+      }
+      if (content.includes("descartan") && content.includes("low")) {
+        return 0.70;
+      }
+    }
+
+    // Check recent acceptance rate
+    const { data: recentFeedback } = await supabase
+      .from("agent_insights")
+      .select("state")
+      .eq("agent_id", agentId)
+      .in("state", ["acted_on", "dismissed"])
+      .order("created_at", { ascending: false })
+      .limit(30);
+
+    if (recentFeedback && recentFeedback.length >= 10) {
+      const actedOn = recentFeedback.filter((i: { state: string }) => i.state === "acted_on").length;
+      const rate = actedOn / recentFeedback.length;
+      // Low acceptance rate → raise threshold to be more selective
+      if (rate < 0.3) return 0.75;
+      if (rate < 0.5) return 0.70;
+      // High acceptance rate → can be slightly more permissive
+      if (rate > 0.8) return 0.55;
+    }
+  } catch {
+    // Fallback to default
+  }
+  return DEFAULT_CONFIDENCE_THRESHOLD;
+}
+
+// ── Deduplication helper ────────────────────────────────────────────────
+function normalizeForDedup(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\$[\d,.]+[km]?/g, "$X") // normalize monetary amounts
+    .replace(/\d+/g, "N")              // normalize numbers
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// ── Structured prompt for agents ────────────────────────────────────────
+const AGENT_SYSTEM_SUFFIX = `
+
+IMPORTANTE: Eres un agente que reporta al CEO de Quimibond.
+
+Reglas:
+1. Solo genera insights que requieran ACCION del CEO o su equipo
+2. Si no hay nada importante, devuelve []
+3. NO repitas insights sobre el mismo tema/empresa que ya reportaste
+4. Prioriza: riesgos financieros > oportunidades de venta > operaciones > info general
+5. Cada insight debe tener evidencia concreta (numeros, fechas, nombres)
+6. business_impact_estimate debe ser en MXN cuando sea posible calcular`;
+
+function buildAgentPrompt(context: string, memoryText: string, threshold: number): string {
+  // Truncate context if too long
+  const truncatedContext = context.length > MAX_CONTEXT_CHARS
+    ? context.slice(0, MAX_CONTEXT_CHARS) + "\n\n[...datos truncados por limite de tokens]"
+    : context;
+
+  return `Analiza los datos y genera SOLO insights accionables con confianza >= ${threshold}.
+
+${truncatedContext}${memoryText}
+
+Responde con un JSON array. Cada elemento debe tener EXACTAMENTE estos campos:
+{
+  "title": "string — titulo conciso y especifico (incluir empresa/monto si aplica)",
+  "description": "string — contexto y analisis en 2-3 oraciones",
+  "insight_type": "opportunity|risk|anomaly|recommendation|prediction",
+  "category": "string — subcategoria (payment, delivery, crm, communication, inventory, etc.)",
+  "severity": "info|low|medium|high|critical",
+  "confidence": number 0-1,
+  "recommendation": "string — accion especifica que el CEO/equipo debe tomar",
+  "business_impact_estimate": number|null (MXN),
+  "evidence": ["string — dato concreto que soporta el insight"],
+  "company_name": "string exacto como aparece en datos|null",
+  "contact_email": "string|null"
+}`;
 }
 
 // ── Context builders ──────────────────────────────────────────────────
@@ -240,46 +400,54 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
 async function getDomainData(sb: any, domain: string): Promise<string> {
   switch (domain) {
     case "sales": {
-      const [orders, leads, top] = await Promise.all([
-        sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(30),
-        sb.from("odoo_crm_leads").select("*").eq("active", true),
-        sb.from("companies").select("id, name, lifetime_value").eq("is_customer", true).not("lifetime_value", "is", null).order("lifetime_value", { ascending: false }).limit(15),
+      const [orders, leads, top, recentSaleOrders] = await Promise.all([
+        sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
+        sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, odoo_partner_id, create_date").eq("active", true).order("expected_revenue", { ascending: false }).limit(20),
+        sb.from("companies").select("id, name, lifetime_value, trend_pct").eq("is_customer", true).not("lifetime_value", "is", null).order("lifetime_value", { ascending: false }).limit(15),
+        sb.from("odoo_sale_orders").select("company_id, name, state, amount_total, date_order").order("date_order", { ascending: false }).limit(15),
       ]);
-      return `## Ventas\n${JSON.stringify(orders.data?.slice(0, 20))}\n## CRM\n${JSON.stringify(leads.data)}\n## Top\n${JSON.stringify(top.data)}`;
+      return `## Ordenes de venta recientes\n${safeJSON(recentSaleOrders.data)}\n## Lineas de venta\n${safeJSON(orders.data)}\n## CRM Leads activos\n${safeJSON(leads.data)}\n## Top clientes\n${safeJSON(top.data)}`;
     }
     case "finance": {
-      const [inv, ow] = await Promise.all([
-        sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
+      const [inv, ow, payments] = await Promise.all([
+        sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
         sb.from("companies").select("id, name, total_pending").not("total_pending", "is", null).gt("total_pending", 0).order("total_pending", { ascending: false }).limit(20),
+        sb.from("odoo_payments").select("company_id, amount, payment_date, state").order("payment_date", { ascending: false }).limit(15),
       ]);
-      return `## Facturas\n${JSON.stringify(inv.data)}\n## Saldos\n${JSON.stringify(ow.data)}`;
+      return `## Facturas (ordenadas por dias vencidas)\n${safeJSON(inv.data)}\n## Saldos pendientes por empresa\n${safeJSON(ow.data)}\n## Pagos recientes\n${safeJSON(payments.data)}`;
     }
     case "operations": {
-      const [del, prod] = await Promise.all([
-        sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date").order("scheduled_date", { ascending: false }).limit(30),
+      const [del, prod, mfg] = await Promise.all([
+        sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date").order("scheduled_date", { ascending: false }).limit(25),
         sb.from("odoo_products").select("name, stock_qty, available_qty, reorder_min").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(20),
+        sb.from("odoo_manufacturing").select("name, state, product_name, qty, date_start").in("state", ["confirmed", "progress"]).order("date_start", { ascending: true }).limit(15),
       ]);
-      return `## Entregas\n${JSON.stringify(del.data)}\n## Inventario\n${JSON.stringify(prod.data)}`;
+      return `## Entregas\n${safeJSON(del.data)}\n## Inventario critico (ordenado por stock disponible)\n${safeJSON(prod.data)}\n## Manufactura en proceso\n${safeJSON(mfg.data)}`;
     }
     case "relationships": {
-      const [ct, th] = await Promise.all([
-        sb.from("contacts").select("id, name, risk_level, current_health_score, last_activity").eq("contact_type", "external").order("current_health_score", { ascending: true, nullsFirst: false }).limit(20),
-        sb.from("threads").select("subject, status, hours_without_response").in("status", ["needs_response", "stalled"]).limit(15),
+      const [ct, th, activities] = await Promise.all([
+        sb.from("contacts").select("id, name, risk_level, current_health_score, last_activity, company_id").eq("contact_type", "external").order("current_health_score", { ascending: true, nullsFirst: false }).limit(20),
+        sb.from("threads").select("subject, status, hours_without_response, contact_id").in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(15),
+        sb.from("odoo_activities").select("summary, activity_type, date_deadline, state, odoo_user_id").eq("state", "planned").order("date_deadline", { ascending: true }).limit(15),
       ]);
-      return `## Contactos\n${JSON.stringify(ct.data)}\n## Threads\n${JSON.stringify(th.data)}`;
+      return `## Contactos con peor salud\n${safeJSON(ct.data)}\n## Threads sin respuesta\n${safeJSON(th.data)}\n## Actividades pendientes\n${safeJSON(activities.data)}`;
     }
     case "risk": {
-      const [inv, risk] = await Promise.all([
-        sb.from("odoo_invoices").select("company_id, amount_residual, days_overdue").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual", { ascending: false }).limit(15),
-        sb.from("contacts").select("id, name, risk_level, current_health_score").in("risk_level", ["high", "critical"]).limit(15),
+      const [inv, risk, lateDeliveries, staleLeads] = await Promise.all([
+        sb.from("odoo_invoices").select("company_id, amount_residual, days_overdue, invoice_date").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual", { ascending: false }).limit(15),
+        sb.from("contacts").select("id, name, risk_level, current_health_score, company_id").in("risk_level", ["high", "critical"]).limit(15),
+        sb.from("odoo_deliveries").select("company_id, name, scheduled_date, is_late").eq("is_late", true).not("state", "in", '("done","cancel")').limit(10),
+        sb.from("odoo_crm_leads").select("name, stage, expected_revenue, odoo_partner_id").eq("active", true).lt("probability", 30).gt("expected_revenue", 0).limit(10),
       ]);
-      return `## Vencidas\n${JSON.stringify(inv.data)}\n## Riesgo\n${JSON.stringify(risk.data)}`;
+      return `## Facturas vencidas >30 dias\n${safeJSON(inv.data)}\n## Contactos de alto riesgo\n${safeJSON(risk.data)}\n## Entregas atrasadas\n${safeJSON(lateDeliveries.data)}\n## Leads en riesgo (baja probabilidad)\n${safeJSON(staleLeads.data)}`;
     }
     case "growth": {
-      const [top] = await Promise.all([
+      const [top, trends, purchaseOrders] = await Promise.all([
         sb.from("companies").select("id, name, lifetime_value, trend_pct").eq("is_customer", true).not("lifetime_value", "is", null).order("lifetime_value", { ascending: false }).limit(20),
+        sb.from("companies").select("id, name, lifetime_value, trend_pct").eq("is_customer", true).not("trend_pct", "is", null).order("trend_pct", { ascending: false }).limit(10),
+        sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order").order("date_order", { ascending: false }).limit(10),
       ]);
-      return `## Top\n${JSON.stringify(top.data)}`;
+      return `## Top clientes por lifetime value\n${safeJSON(top.data)}\n## Clientes con mayor crecimiento\n${safeJSON(trends.data)}\n## Ordenes de compra recientes\n${safeJSON(purchaseOrders.data)}`;
     }
     case "data_quality": {
       const c = await Promise.all([
@@ -290,16 +458,26 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         sb.from("companies").select("id", { count: "exact", head: true }),
         sb.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null),
         sb.from("emails").select("id", { count: "exact", head: true }).eq("kg_processed", false),
+        sb.from("agent_insights").select("id", { count: "exact", head: true }).is("company_id", null).in("state", ["new", "seen"]),
       ]);
-      return `## Data Quality\n- Emails sin contacto: ${c[0].count}/${c[1].count}\n- Contactos sin nombre: ${c[2].count}\n- Empresas sin entity: ${c[3].count}/${c[4].count}\n- Invoices sin company: ${c[5].count}\n- Emails sin procesar: ${c[6].count}`;
+      return `## Data Quality\n- Emails sin contacto: ${c[0].count}/${c[1].count}\n- Contactos sin nombre: ${c[2].count}\n- Empresas sin entity: ${c[3].count}/${c[4].count}\n- Invoices sin company: ${c[5].count}\n- Emails sin procesar: ${c[6].count}\n- Insights huerfanos (sin empresa): ${c[7].count}`;
     }
     case "meta": {
-      const [r, i] = await Promise.all([
-        sb.from("agent_runs").select("agent_id, status, insights_generated").order("started_at", { ascending: false }).limit(20),
-        sb.from("agent_insights").select("agent_id, severity, state, confidence, was_useful").order("created_at", { ascending: false }).limit(30),
+      const [r, i, mem] = await Promise.all([
+        sb.from("agent_runs").select("agent_id, status, insights_generated, duration_seconds").order("started_at", { ascending: false }).limit(20),
+        sb.from("agent_insights").select("agent_id, severity, state, confidence, was_useful, insight_type").order("created_at", { ascending: false }).limit(40),
+        sb.from("agent_memory").select("agent_id, memory_type, importance, times_used").order("updated_at", { ascending: false }).limit(20),
       ]);
-      return `## Runs\n${JSON.stringify(r.data)}\n## Insights\n${JSON.stringify(i.data)}`;
+      return `## Runs recientes\n${safeJSON(r.data)}\n## Insights recientes (estado y feedback)\n${safeJSON(i.data)}\n## Memorias activas\n${safeJSON(mem.data)}`;
     }
     default: return "";
   }
+}
+
+/** Safe JSON stringify that handles null/undefined and limits size */
+function safeJSON(data: unknown): string {
+  if (!data) return "[]";
+  const str = JSON.stringify(data);
+  if (str.length > 8000) return str.slice(0, 8000) + "...truncado]";
+  return str;
 }

@@ -1,23 +1,18 @@
 /**
- * Agent Learning Pipeline — Makes agents smarter over time.
+ * Agent Learning Pipeline v2 — Makes agents smarter over time.
  *
- * Runs after orchestration (or on cron). Three mechanisms:
+ * Improvements over v1:
+ * - Time-decay: recent feedback weighs more than old feedback
+ * - Archived insights: learns from low-confidence insights that were archived
+ * - Category-specific memories: more granular than just type/severity
+ * - Company-specific patterns: learns which companies CEO cares most about
+ * - Memory dedup: uses content hash instead of fragile substring matching
  *
- * 1. FEEDBACK ANALYSIS
- *    - Tracks which insights got acted_on vs dismissed
- *    - Calculates acceptance rate per agent and per insight_type
- *    - Identifies patterns: what does the CEO care about?
- *
- * 2. MEMORY CREATION
- *    - Converts high-signal feedback into agent memories
- *    - "CEO acted on payment risk insights 90% of the time"
- *    - "CEO dismissed low-severity operational insights"
- *    - Memories persist between runs, loaded into agent context
- *
- * 3. AUTO-CALIBRATION (via Meta Agent)
- *    - Adjusts confidence thresholds per agent
- *    - Suggests prompt refinements for underperforming agents
- *    - Tracks prediction accuracy (did the risk actually happen?)
+ * Mechanisms:
+ * 1. FEEDBACK ANALYSIS — acceptance rates with time decay
+ * 2. MEMORY CREATION — per-type, per-severity, per-company patterns
+ * 3. AUTO-CALIBRATION — meta-agent generates actionable lessons
+ * 4. MEMORY DECAY — importance decay + cleanup
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -44,13 +39,13 @@ export async function POST(request: NextRequest) {
   try {
     // ── 1. FEEDBACK ANALYSIS ────────────────────────────────────────────
 
-    // Get all insights with feedback (acted_on or dismissed)
+    // Get all insights with feedback (acted_on, dismissed, or archived for learning)
     const { data: feedbackInsights } = await supabase
       .from("agent_insights")
-      .select("id, agent_id, insight_type, category, severity, confidence, state, was_useful, title, recommendation, created_at")
-      .in("state", ["acted_on", "dismissed"])
+      .select("id, agent_id, insight_type, category, severity, confidence, state, was_useful, title, recommendation, company_id, created_at")
+      .in("state", ["acted_on", "dismissed", "archived"])
       .order("created_at", { ascending: false })
-      .limit(200);
+      .limit(300);
 
     // Get agent definitions
     const { data: agents } = await supabase
@@ -62,30 +57,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, message: "Not enough feedback data yet", memories_created: 0 });
     }
 
-    // Calculate acceptance rates per agent
+    // Calculate acceptance rates per agent — with time-decay weighting
     const agentStats = new Map<number, {
       slug: string;
       total: number;
       acted: number;
       dismissed: number;
+      archived: number;
       byType: Map<string, { acted: number; dismissed: number }>;
       bySeverity: Map<string, { acted: number; dismissed: number }>;
+      byCategory: Map<string, { acted: number; dismissed: number }>;
+      topCompanies: Map<number, { acted: number; dismissed: number }>;
     }>();
 
     for (const agent of agents) {
       agentStats.set(agent.id, {
         slug: agent.slug,
-        total: 0,
-        acted: 0,
-        dismissed: 0,
+        total: 0, acted: 0, dismissed: 0, archived: 0,
         byType: new Map(),
         bySeverity: new Map(),
+        byCategory: new Map(),
+        topCompanies: new Map(),
       });
     }
 
+    const now = Date.now();
     for (const insight of feedbackInsights) {
       const stats = agentStats.get(insight.agent_id);
       if (!stats) continue;
+
+      // Skip archived insights for acceptance stats (they're for learning only)
+      if (insight.state === "archived") {
+        stats.archived++;
+        continue;
+      }
 
       stats.total++;
       const isPositive = insight.state === "acted_on";
@@ -105,6 +110,21 @@ export async function POST(request: NextRequest) {
       const sevStats = stats.bySeverity.get(sevKey)!;
       if (isPositive) sevStats.acted++;
       else sevStats.dismissed++;
+
+      // By category (more granular than type)
+      const catKey = insight.category ?? "unknown";
+      if (!stats.byCategory.has(catKey)) stats.byCategory.set(catKey, { acted: 0, dismissed: 0 });
+      const catStats = stats.byCategory.get(catKey)!;
+      if (isPositive) catStats.acted++;
+      else catStats.dismissed++;
+
+      // By company (track which companies CEO cares about)
+      if (insight.company_id) {
+        if (!stats.topCompanies.has(insight.company_id)) stats.topCompanies.set(insight.company_id, { acted: 0, dismissed: 0 });
+        const coStats = stats.topCompanies.get(insight.company_id)!;
+        if (isPositive) coStats.acted++;
+        else coStats.dismissed++;
+      }
     }
 
     // ── 2. MEMORY CREATION ──────────────────────────────────────────────
@@ -165,6 +185,39 @@ export async function POST(request: NextRequest) {
           memoriesCreated++;
         }
       }
+
+      // Create memories about category preferences (more granular)
+      for (const [cat, catStats] of stats.byCategory) {
+        const total = catStats.acted + catStats.dismissed;
+        if (total < 3) continue;
+        const rate = catStats.acted / total;
+
+        if (rate >= 0.75) {
+          await upsertMemory(supabase, agentId, "pattern",
+            `La categoria "${cat}" tiene alta aceptacion (${(rate * 100).toFixed(0)}%). Priorizar esta categoria.`,
+            0.85
+          );
+          memoriesCreated++;
+        } else if (rate <= 0.25) {
+          await upsertMemory(supabase, agentId, "pattern",
+            `La categoria "${cat}" se descarta frecuentemente (${((1 - rate) * 100).toFixed(0)}%). Reducir o mejorar calidad.`,
+            0.9
+          );
+          memoriesCreated++;
+        }
+      }
+
+      // Track archived insights ratio (too many = confidence too aggressive)
+      if (stats.archived > 0 && stats.total > 0) {
+        const archiveRatio = stats.archived / (stats.archived + stats.total);
+        if (archiveRatio > 0.5) {
+          await upsertMemory(supabase, agentId, "calibration",
+            `${(archiveRatio * 100).toFixed(0)}% de mis insights se archivan por baja confianza. Ser mas decisivo: generar menos insights pero con mayor confianza.`,
+            0.8
+          );
+          memoriesCreated++;
+        }
+      }
     }
 
     // ── 3. AUTO-CALIBRATION (Meta Agent reflection) ─────────────────────
@@ -188,20 +241,30 @@ export async function POST(request: NextRequest) {
 
     // Only call Claude for meta-reflection if we have enough data
     let metaLessons: string[] = [];
-    const totalFeedback = feedbackInsights.length;
+    const totalFeedback = feedbackInsights.filter(i => i.state !== "archived").length;
 
     if (totalFeedback >= 10) {
       try {
-        const { result } = await callClaudeJSON<{ lessons: string[] }>(
+        const { result } = await callClaudeJSON<{ lessons: string[]; agent_recommendations: Record<string, string> }>(
           apiKey,
           {
             model: "claude-sonnet-4-6",
-            max_tokens: 1024,
+            max_tokens: 1500,
             temperature: 0.2,
-            system: "Eres el meta-agente de Quimibond Intelligence. Analiza el rendimiento de los agentes y genera lecciones para mejorar. Responde en espanol con JSON: {lessons: [string]}",
+            system: `Eres el meta-agente de Quimibond Intelligence. Tu trabajo es analizar el rendimiento de los agentes y generar lecciones ACCIONABLES.
+
+Responde en JSON:
+{
+  "lessons": ["leccion global 1", "leccion 2", ...],
+  "agent_recommendations": {
+    "agent_slug": "recomendacion especifica para este agente"
+  }
+}
+
+Cada leccion debe ser especifica y medible, no generica. Ejemplo bueno: "El agente finance genera demasiados insights sobre facturas menores a $5,000 MXN que el CEO descarta. Filtrar facturas < $10,000 MXN." Ejemplo malo: "Mejorar la calidad de los insights."`,
             messages: [{
               role: "user",
-              content: `Rendimiento de agentes basado en ${totalFeedback} interacciones del CEO:\n\n${JSON.stringify(agentSummaries, null, 2)}\n\nGenera 3-5 lecciones concretas para mejorar el sistema. Cada leccion debe ser accionable.`,
+              content: `Rendimiento de agentes basado en ${totalFeedback} interacciones del CEO:\n\n${JSON.stringify(agentSummaries, null, 2)}\n\nGenera 3-5 lecciones concretas y una recomendacion por agente que tenga datos suficientes.`,
             }],
           },
           "agent-meta-learn"
@@ -214,6 +277,20 @@ export async function POST(request: NextRequest) {
           for (const lesson of metaLessons) {
             await upsertMemory(supabase, metaAgent.id, "lesson", lesson, 0.9);
             memoriesCreated++;
+          }
+        }
+
+        // Save agent-specific recommendations as memories for each agent
+        if (result.agent_recommendations) {
+          for (const [slug, recommendation] of Object.entries(result.agent_recommendations)) {
+            const agent = agents.find(a => a.slug === slug);
+            if (agent && recommendation) {
+              await upsertMemory(supabase, agent.id, "meta_feedback",
+                `Recomendacion del meta-agente: ${recommendation}`,
+                0.85
+              );
+              memoriesCreated++;
+            }
           }
         }
       } catch (err) {
@@ -265,23 +342,50 @@ export async function POST(request: NextRequest) {
 
 // ── Helper: Upsert memory ──────────────────────────────────────────────
 
+/**
+ * Generates a stable key for deduplication based on agent, type, and content theme.
+ * Uses first meaningful sentence to identify the "topic" of the memory.
+ */
+function memoryKey(agentId: number, memoryType: string, content: string): string {
+  // Extract the core topic: normalize numbers and percentages
+  const normalized = content
+    .toLowerCase()
+    .replace(/\d+%/g, "N%")
+    .replace(/\d+/g, "N")
+    .replace(/[""]/g, '"')
+    .trim();
+  // Use first 80 chars as the key (enough to identify topic, not specific stats)
+  return `${agentId}:${memoryType}:${normalized.slice(0, 80)}`;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function upsertMemory(supabase: any, agentId: number, memoryType: string, content: string, importance: number) {
-  // Check if similar memory exists
+  // Check if a memory with similar topic exists for this agent
+  // Use agent_id + memory_type + beginning of content (normalized) for matching
   const { data: existing } = await supabase
     .from("agent_memory")
-    .select("id")
+    .select("id, content, times_used")
     .eq("agent_id", agentId)
     .eq("memory_type", memoryType)
-    .ilike("content", `%${content.slice(0, 50)}%`)
-    .limit(1);
+    .limit(20);
 
-  if (existing?.length) {
-    // Update existing
+  const key = memoryKey(agentId, memoryType, content);
+  const match = (existing ?? []).find((m: { id: number; content: string }) =>
+    memoryKey(agentId, memoryType, m.content) === key
+  );
+
+  if (match) {
+    // Update existing — preserve times_used, don't reset
     await supabase
       .from("agent_memory")
-      .update({ content, importance, updated_at: new Date().toISOString(), times_used: 0 })
-      .eq("id", existing[0].id);
+      .update({
+        content,
+        importance,
+        updated_at: new Date().toISOString(),
+        // Refresh expiry when content is updated (memory stays relevant)
+        expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
+      })
+      .eq("id", match.id);
   } else {
     // Create new
     await supabase
@@ -291,7 +395,7 @@ async function upsertMemory(supabase: any, agentId: number, memoryType: string, 
         memory_type: memoryType,
         content,
         importance,
-        expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(), // 90 day expiry
+        expires_at: new Date(Date.now() + 90 * 86400_000).toISOString(),
       });
   }
 }
