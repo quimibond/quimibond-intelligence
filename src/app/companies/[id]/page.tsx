@@ -78,6 +78,12 @@ export default function CompanyDetailPage() {
   const [recentEmails, setRecentEmails] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [companyProducts, setCompanyProducts] = useState<any[]>([]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [profile, setProfile] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [handler, setHandler] = useState<any>(null);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [reorderPrediction, setReorderPrediction] = useState<any>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -155,6 +161,19 @@ export default function CompanyDetailPage() {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function fetchSecondaryData(cid: number, ctx: any | null, comp: Company) {
+      // Company profile (tier, risk, trend, revenue)
+      supabase.from("company_profile").select("*").eq("company_id", cid).single().then(({ data }) => {
+        if (data) setProfile(data);
+      });
+      // Company handler (who manages this account)
+      supabase.from("company_handlers").select("*").eq("company_id", cid).single().then(({ data }) => {
+        if (data) setHandler(data);
+      });
+      // Reorder prediction
+      supabase.from("client_reorder_predictions").select("*").eq("company_id", cid).single().then(({ data }) => {
+        if (data) setReorderPrediction(data);
+      });
+
       // Products
       Promise.resolve(supabase.rpc("get_company_products", { p_company_id: cid })).then(({ data }) => {
         if (Array.isArray(data)) setCompanyProducts(data);
@@ -283,6 +302,18 @@ export default function CompanyDetailPage() {
         <div className="flex flex-wrap items-center gap-2">
           {company.is_customer && <Badge variant="success">Cliente</Badge>}
           {company.is_supplier && <Badge variant="info">Proveedor</Badge>}
+          {profile?.tier && (
+            <Badge className={cn(
+              "text-[10px] font-semibold",
+              profile.tier === "strategic" && "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+              profile.tier === "important" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+              profile.tier === "key_supplier" && "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+              profile.tier === "regular" && "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+            )}>{profile.tier}</Badge>
+          )}
+          {profile?.risk_level && profile.risk_level !== "low" && (
+            <Badge variant="danger" className="text-[10px]">riesgo {profile.risk_level}</Badge>
+          )}
           {company.industry && <Badge variant="secondary">{company.industry}</Badge>}
           {company.enriched_at && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground" title={`Enriquecido ${timeAgo(company.enriched_at)}`}>
@@ -292,6 +323,14 @@ export default function CompanyDetailPage() {
           )}
           <EnrichButton type="company" id={String(company.id)} name={company.name} />
         </div>
+        {handler?.sales_handler_name && (
+          <p className="text-xs text-muted-foreground mt-1">
+            Vendedor: <strong>{handler.sales_handler_name}</strong>
+            {handler.ops_handler_name && handler.ops_handler_name !== handler.sales_handler_name && (
+              <> | Operaciones: <strong>{handler.ops_handler_name}</strong></>
+            )}
+          </p>
+        )}
       </PageHeader>
 
       {/* KPI cards */}
@@ -346,13 +385,27 @@ export default function CompanyDetailPage() {
           <CardContent className="pt-4">
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" />
-              Pipeline
+              Tendencia
             </div>
-            <p className="mt-1 text-lg font-bold tabular-nums text-info-foreground">
-              {pipeline?.pipeline_summary?.pipeline_value != null
-                ? formatCurrency(pipeline.pipeline_summary.pipeline_value)
-                : "—"}
+            <p className={cn(
+              "mt-1 text-lg font-bold tabular-nums",
+              profile?.trend_pct > 0 ? "text-success-foreground" : profile?.trend_pct < 0 ? "text-danger-foreground" : "text-muted-foreground"
+            )}>
+              {profile?.trend_pct != null ? `${profile.trend_pct > 0 ? "+" : ""}${Number(profile.trend_pct).toFixed(0)}%` : "—"}
             </p>
+            {reorderPrediction && (
+              <p className={cn(
+                "text-[10px] mt-0.5",
+                reorderPrediction.reorder_status === "on_track" ? "text-success" :
+                reorderPrediction.reorder_status === "overdue" ? "text-warning" :
+                "text-danger"
+              )}>
+                {reorderPrediction.reorder_status === "on_track" ? "Reorden al dia" :
+                 reorderPrediction.reorder_status === "overdue" ? `Reorden vencido ${reorderPrediction.days_overdue_reorder}d` :
+                 reorderPrediction.reorder_status === "lost" ? "Posible churn" :
+                 `Riesgo: ${reorderPrediction.days_overdue_reorder}d sin comprar`}
+              </p>
+            )}
           </CardContent>
         </Card>
       </div>

@@ -115,6 +115,8 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
         res = await fetch("/api/agents/learn", { method: "POST" });
       } else if (steps.length === 1 && steps[0] === "evolve") {
         res = await fetch("/api/agents/evolve", { method: "POST" });
+      } else if (steps.length === 1 && steps[0] === "cleanup") {
+        res = await fetch("/api/agents/cleanup", { method: "POST" });
       } else if (steps.length === 1 && steps[0] !== "all") {
         // Direct call to specific pipeline endpoint
         res = await fetch(`/api/pipeline/${steps[0]}`, {
@@ -152,6 +154,10 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
     { id: "learn", label: "Aprender", desc: "Feedback → memorias", icon: TrendingUp, steps: ["learn"] },
     { id: "health", label: "Health Scores", desc: "Recalcular scores", icon: CheckCircle2, steps: ["health-scores"] },
     { id: "evolve", label: "Evolucionar", desc: "Mejoras de schema", icon: Database, steps: ["evolve"] },
+    { id: "cleanup", label: "Cleanup Agent", desc: "Enriquecer + dedup + linkear", icon: CheckCircle2, steps: ["cleanup"] },
+    { id: "cfdi", label: "Parsear CFDI", desc: "XMLs de facturas sin IA", icon: Database, steps: ["parse-cfdi"] },
+    { id: "snapshot", label: "Snapshot Diario", desc: "Foto financiera por empresa", icon: TrendingUp, steps: ["snapshot"] },
+    { id: "emp-metrics", label: "Metricas Equipo", desc: "Scores de ejecucion", icon: Users, steps: ["employee-metrics"] },
   ];
 
   return (
