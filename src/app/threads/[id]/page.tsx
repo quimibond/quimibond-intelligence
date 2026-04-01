@@ -8,6 +8,7 @@ import { supabase } from "@/lib/supabase";
 import { cn, formatDateTime, timeAgo, truncate } from "@/lib/utils";
 import type { Thread, Email } from "@/lib/types";
 import { EmptyState } from "@/components/shared/empty-state";
+import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -85,13 +86,14 @@ export default function ThreadDetailPage() {
 
   return (
     <div className="space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => router.push("/threads")}>
-        <ArrowLeft className="mr-1 h-4 w-4" /> Hilos
-      </Button>
+      <Breadcrumbs items={[
+        { label: "Hilos", href: "/threads" },
+        { label: thread.subject ?? "(sin asunto)" },
+      ]} />
 
       {/* Thread header */}
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold">{thread.subject ?? "(sin asunto)"}</h1>
+        <h1 className="text-xl sm:text-2xl font-bold">{thread.subject ?? "(sin asunto)"}</h1>
         <div className="flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
           <Badge variant={statusVariant[thread.status ?? ""] ?? "secondary"}>
             {thread.status ?? "desconocido"}

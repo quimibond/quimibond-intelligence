@@ -202,12 +202,10 @@ export default function ChatPage() {
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-[calc(100vh-8rem)]">
-      <div className="hidden md:block">
-        <PageHeader
-          title="Chat"
-          description="Asistente de inteligencia comercial con IA"
-        />
-      </div>
+      <PageHeader
+        title="Chat IA"
+        description="Asistente de inteligencia comercial"
+      />
 
       <Card className="flex-1 flex flex-col overflow-hidden">
         <ScrollArea className="flex-1 p-4">
@@ -339,6 +337,7 @@ export default function ChatPage() {
             <Input
               ref={inputRef}
               placeholder="Pregunta algo..."
+              aria-label="Mensaje para el asistente"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -349,6 +348,7 @@ export default function ChatPage() {
               onClick={() => sendMessage()}
               disabled={loading || !input.trim()}
               size="icon"
+              aria-label="Enviar mensaje"
             >
               <Send className="h-4 w-4" />
             </Button>

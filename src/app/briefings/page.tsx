@@ -104,6 +104,7 @@ export default function BriefingsPage() {
         <Select
           value={scopeFilter}
           onChange={(e) => setScopeFilter(e.target.value)}
+          aria-label="Filtrar por alcance"
         >
           <option value="all">Todos los roles</option>
           {availableScopes.map((s) => (

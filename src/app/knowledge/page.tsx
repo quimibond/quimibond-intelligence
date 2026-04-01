@@ -258,6 +258,7 @@ export default function KnowledgePage() {
                 value={typeFilter}
                 onChange={(e) => setTypeFilter(e.target.value)}
                 className="w-full sm:w-40"
+                aria-label="Filtrar por tipo de entidad"
               >
                 <option value="all">Todas</option>
                 {entityTypes.map((t) => (
