@@ -173,8 +173,10 @@
   }
 }
 
-/* Scrollbar */
+/* Scrollbar — Webkit (Chrome, Safari, Edge) */
 ::-webkit-scrollbar { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--muted-foreground); }
+/* Scrollbar — Firefox */
+* { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }

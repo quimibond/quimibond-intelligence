@@ -99,6 +99,9 @@ export function AppSidebar() {
         <div
           className="fixed inset-0 z-40 bg-black/50 md:hidden"
           onClick={() => setOpen(false)}
+          role="button"
+          aria-label="Cerrar menu"
+          tabIndex={-1}
         />
       )}
 
@@ -111,8 +114,6 @@ export function AppSidebar() {
           // Desktop: always visible, width depends on collapsed state
           collapsed ? "md:w-16 md:translate-x-0" : "md:w-64 md:translate-x-0"
         )}
-        // Force w-64 on mobile (override collapsed state)
-        style={{ width: undefined }}
       >
         {/* Mobile always gets full width */}
         <div className={cn("flex h-full w-64 flex-col", collapsed && "md:w-16")}>
@@ -131,7 +132,7 @@ export function AppSidebar() {
           </div>
 
           {/* Main navigation */}
-          <nav className={cn("flex-1 space-y-1 overflow-y-auto px-3", collapsed && "md:px-2")}>
+          <nav aria-label="Navegacion principal" className={cn("flex-1 space-y-1 overflow-y-auto px-3", collapsed && "md:px-2")}>
             {navItems.map(({ href, label, icon: Icon }) => {
               const badge =
                 href === "/alerts" && counts.alerts > 0 ? counts.alerts :
@@ -153,13 +154,13 @@ export function AppSidebar() {
                   <div className="relative shrink-0">
                     <Icon className="h-4 w-4" />
                     {badge != null && collapsed && (
-                      <span className="absolute -right-1 -top-1 hidden md:flex h-3 w-3 items-center justify-center rounded-full bg-red-500 text-[8px] font-bold text-white" />
+                      <span className="absolute -right-1 -top-1 hidden md:flex h-3 w-3 items-center justify-center rounded-full bg-danger text-[8px] font-bold text-destructive-foreground" />
                     )}
                   </div>
                   <span className={cn("flex-1", collapsed && "md:hidden")}>{label}</span>
                   {badge != null && (
                     <span className={cn(
-                      "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500/15 px-1.5 text-[11px] font-semibold text-red-500",
+                      "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-danger/15 px-1.5 text-[11px] font-semibold text-danger-foreground",
                       collapsed && "md:hidden"
                     )}>
                       {badge}

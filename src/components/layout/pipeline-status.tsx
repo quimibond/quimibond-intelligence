@@ -38,9 +38,9 @@ export function PipelineStatus({ collapsed }: { collapsed: boolean }) {
   }, []);
 
   const statusConfig = {
-    success: { icon: CheckCircle2, color: "text-emerald-500", label: "OK" },
-    running: { icon: Loader2, color: "text-blue-500 animate-spin", label: "Ejecutando" },
-    error: { icon: AlertCircle, color: "text-red-500", label: "Error" },
+    success: { icon: CheckCircle2, color: "text-success", label: "OK" },
+    running: { icon: Loader2, color: "text-info animate-spin", label: "Ejecutando" },
+    error: { icon: AlertCircle, color: "text-danger", label: "Error" },
     unknown: { icon: Activity, color: "text-muted-foreground", label: "—" },
   };
 
