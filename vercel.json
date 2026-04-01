@@ -9,6 +9,14 @@
       "schedule": "*/15 * * * *"
     },
     {
+      "path": "/api/agents/cleanup",
+      "schedule": "*/30 * * * *"
+    },
+    {
+      "path": "/api/agents/validate",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/agents/learn",
       "schedule": "45 */4 * * *"
     },
