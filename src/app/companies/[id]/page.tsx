@@ -312,7 +312,7 @@ export default function CompanyDetailPage() {
             )}>{profile.tier}</Badge>
           )}
           {profile?.risk_level && profile.risk_level !== "low" && (
-            <Badge variant="danger" className="text-[10px]">riesgo {profile.risk_level}</Badge>
+            <Badge variant="critical" className="text-[10px]">riesgo {profile.risk_level}</Badge>
           )}
           {company.industry && <Badge variant="secondary">{company.industry}</Badge>}
           {company.enriched_at && (
