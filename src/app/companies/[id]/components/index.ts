@@ -10,4 +10,6 @@ export { TabOperaciones } from "./tab-operaciones";
 export { TabSalud } from "./tab-salud";
 export { TabVentas } from "./tab-ventas";
 export { TabCompras } from "./tab-compras";
+export { TabPagos } from "./tab-pagos";
+export { TabManufactura } from "./tab-manufactura";
 export type { ResolvedRelationship, RevenueRow } from "./types";

@@ -16,6 +16,8 @@ import {
   TrendingUp,
   ShoppingCart,
   Receipt,
+  Banknote,
+  Factory,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, formatCurrency, timeAgo } from "@/lib/utils";
@@ -56,6 +58,8 @@ import {
   TabSalud,
   TabVentas,
   TabCompras,
+  TabPagos,
+  TabManufactura,
 } from "./components";
 import type { ResolvedRelationship, RevenueRow } from "./components";
 
@@ -446,6 +450,14 @@ export default function CompanyDetailPage() {
             <Receipt className="mr-1 h-3.5 w-3.5" />
             Compras
           </TabsTrigger>
+          <TabsTrigger value="pagos">
+            <Banknote className="mr-1 h-3.5 w-3.5" />
+            Pagos
+          </TabsTrigger>
+          <TabsTrigger value="manufactura">
+            <Factory className="mr-1 h-3.5 w-3.5" />
+            Manufactura
+          </TabsTrigger>
           <TabsTrigger value="salud">
             <Heart className="mr-1 h-3.5 w-3.5" />
             Salud
@@ -484,6 +496,12 @@ export default function CompanyDetailPage() {
         </TabsContent>
         <TabsContent value="compras" className="space-y-6">
           <TabCompras companyId={company.id} />
+        </TabsContent>
+        <TabsContent value="pagos" className="space-y-6">
+          <TabPagos companyId={company.id} />
+        </TabsContent>
+        <TabsContent value="manufactura" className="space-y-6">
+          <TabManufactura companyId={company.id} />
         </TabsContent>
         <TabsContent value="salud" className="space-y-6">
           <TabSalud healthScores={healthScores} />

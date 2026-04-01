@@ -10,7 +10,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import {
-  Users, Mail, CheckSquare, AlertTriangle, Clock, User,
+  Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
+} from "@/components/ui/table";
+import { formatDate } from "@/lib/utils";
+import {
+  Users, Mail, CheckSquare, AlertTriangle, Clock, User, BarChart3,
 } from "lucide-react";
 
 interface Employee {
@@ -30,6 +34,7 @@ interface Employee {
 
 export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
+  const [employeeMetrics, setEmployeeMetrics] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<string>("all");
 
@@ -152,6 +157,17 @@ export default function EmployeesPage() {
       }
 
       setEmployees(result);
+
+      // Fetch detailed employee metrics for table
+      const empMetricsRes = await supabase
+        .from("employee_metrics")
+        .select("*")
+        .order("period_end", { ascending: false })
+        .limit(20);
+      if (empMetricsRes.data && empMetricsRes.data.length > 0) {
+        setEmployeeMetrics(empMetricsRes.data);
+      }
+
       setLoading(false);
     }
     load();
@@ -330,6 +346,69 @@ export default function EmployeesPage() {
           </div>
         )}
       </div>
+
+      {/* Employee Metrics Table */}
+      {employeeMetrics.length > 0 && (
+        <Card>
+          <CardContent className="py-4">
+            <div className="flex items-center gap-2 mb-4">
+              <BarChart3 className="h-4 w-4 text-muted-foreground" />
+              <h3 className="font-semibold text-sm">Metricas de Rendimiento</h3>
+            </div>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Empleado</TableHead>
+                  <TableHead>Periodo</TableHead>
+                  <TableHead className="text-right">Completadas</TableHead>
+                  <TableHead className="text-right">Vencidas</TableHead>
+                  <TableHead className="text-right">Resp. (hrs)</TableHead>
+                  <TableHead className="text-right">Insights</TableHead>
+                  <TableHead>Inicio</TableHead>
+                  <TableHead>Fin</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {employeeMetrics.map((m, i) => (
+                  <TableRow key={i}>
+                    <TableCell className="font-medium text-xs">
+                      {(m.name as string) ?? (m.email as string) ?? "-"}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-[10px]">
+                        {(m.period_type as string) ?? "-"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-xs">
+                      {(m.actions_completed as number) ?? 0}
+                    </TableCell>
+                    <TableCell className={cn(
+                      "text-right tabular-nums text-xs",
+                      ((m.actions_overdue as number) ?? 0) > 0 && "text-danger-foreground font-semibold"
+                    )}>
+                      {(m.actions_overdue as number) ?? 0}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-xs">
+                      {(m.avg_response_hours as number) != null
+                        ? (m.avg_response_hours as number).toFixed(1)
+                        : "-"}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-xs">
+                      {(m.insights_acted as number) ?? 0}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(m.period_start as string)}
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {formatDate(m.period_end as string)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
