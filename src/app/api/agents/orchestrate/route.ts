@@ -416,6 +416,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
     operations: ["commitment", "change", "complaint"],
     relationships: ["request", "complaint", "commitment"],
     growth: ["request", "price"],
+    suppliers: ["price", "complaint", "change", "commitment"],
   };
 
   const actionFilters: Record<string, string[]> = {
@@ -425,6 +426,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
     operations: ["deliver", "review"],
     relationships: ["email", "call", "follow_up", "meeting"],
     growth: ["follow_up", "send_quote"],
+    suppliers: ["review", "approve", "investigate"],
   };
 
   const relevantFactTypes = factFilters[domain];
@@ -505,7 +507,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getDomainData(sb: any, domain: string): Promise<string> {
   // Load company profiles for domains that need company context
-  const needsProfiles = ["sales", "finance", "risk", "growth", "relationships", "cleanup"];
+  const needsProfiles = ["sales", "finance", "risk", "growth", "relationships", "cleanup", "suppliers"];
   let profileSection = "";
   if (needsProfiles.includes(domain)) {
     const { data: profiles } = await sb
@@ -611,6 +613,17 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         sb.from("employee_metrics").select("name, department, emails_sent, emails_received, actions_assigned, actions_completed, actions_overdue, activities_overdue, contacts_managed, execution_score, overall_score").eq("period_type", "weekly").order("overall_score", { ascending: true }).limit(20),
       ]);
       return `## Rendimiento del equipo (esta semana)\n${safeJSON(emp.data)}\n## Runs recientes\n${safeJSON(r.data)}\n## Insights recientes (estado y feedback)\n${safeJSON(i.data)}\n## Memorias activas\n${safeJSON(mem.data)}`;
+    }
+    case "suppliers": {
+      const [topSuppliers, recentPOs, priceChanges, singleSource] = await Promise.all([
+        sb.from("company_profile").select("name, total_purchases, total_revenue, email_count, contact_count, tier").gt("total_purchases", 50000).order("total_purchases", { ascending: false }).limit(20),
+        sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order").order("date_order", { ascending: false }).limit(20),
+        // Price comparison: recent vs older purchase lines for same products
+        sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
+        // Single-source products: bought from only 1 supplier
+        sb.rpc("execute_safe_ddl", { ddl_command: "SELECT 1" }).then(() => null).catch(() => null), // placeholder
+      ]);
+      return `${profileSection}## Top proveedores (por monto de compra)\n${safeJSON(topSuppliers.data)}\n## Ordenes de compra recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra recientes (para detectar cambios de precio)\n${safeJSON(priceChanges.data)}`;
     }
     default: return "";
   }
