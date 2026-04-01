@@ -8,11 +8,12 @@ import {
   ArrowLeft, ArrowRight, Bot, Brain, Building2, Calendar,
   CheckCircle2, ChevronLeft, ChevronRight, Clock, DollarSign,
   FileText, Lightbulb, Loader2, Mail, MessageSquare, Package,
-  Shield, ThumbsDown, ThumbsUp, Timer, TrendingUp, Truck,
-  UserCheck, Users, XCircle, Zap,
+  ThumbsDown, ThumbsUp, Timer, TrendingUp, Truck,
+  UserCheck, XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, formatCurrency, formatDate, timeAgo } from "@/lib/utils";
+import { getDomainConfig } from "@/lib/domains";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
@@ -23,19 +24,6 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type R = Record<string, any>;
-
-const DOMAIN_ICONS: Record<string, React.ElementType> = {
-  sales: TrendingUp, finance: DollarSign, operations: Truck,
-  relationships: Users, risk: Shield, growth: Zap, meta: Brain,
-};
-const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
-  relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth", meta: "text-domain-meta",
-};
-const DOMAIN_BG: Record<string, string> = {
-  sales: "bg-domain-sales/10", finance: "bg-domain-finance/10", operations: "bg-domain-operations/10",
-  relationships: "bg-domain-relationships/10", risk: "bg-domain-risk/10", growth: "bg-domain-growth/10", meta: "bg-domain-meta/10",
-};
 
 export default function InsightDetailPage() {
   const params = useParams<{ id: string }>();
@@ -285,7 +273,8 @@ export default function InsightDetailPage() {
   }
 
   const isDone = ["acted_on", "dismissed", "expired"].includes(insight.state);
-  const AgentIcon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+  const agentDc = getDomainConfig(agent?.domain ?? "");
+  const AgentIcon = agentDc.icon;
   const hasOdooData = odooData.invoices.length > 0 || odooData.deliveries.length > 0 || odooData.orders.length > 0 || odooData.leads.length > 0;
 
   return (
@@ -330,8 +319,8 @@ export default function InsightDetailPage() {
           {/* Agent header */}
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 min-w-0">
-              <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", DOMAIN_BG[agent?.domain ?? ""] ?? "bg-muted")}>
-                <AgentIcon className={cn("h-4 w-4", DOMAIN_COLORS[agent?.domain ?? ""])} />
+              <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-full", agentDc.bg)}>
+                <AgentIcon className={cn("h-4 w-4", agentDc.color)} />
               </div>
               <div className="min-w-0">
                 <p className="text-sm font-medium truncate">{agent?.name ?? "Agente"}</p>

@@ -8,18 +8,19 @@ import { cn, timeAgo, formatCurrency } from "@/lib/utils";
 import type { Company } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { MiniStatCard } from "@/components/shared/mini-stat-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Building2, Search, Sparkles, Users, DollarSign, ShieldAlert,
-  TrendingUp, ChevronDown, ChevronRight, Mail,
+  Building2, Sparkles, Users, DollarSign,
+  TrendingUp, ChevronDown, ChevronRight,
 } from "lucide-react";
 
 const PAGE_SIZE = 60;
@@ -196,87 +197,40 @@ export default function CompaniesPage() {
       {/* Quick Stats */}
       {!loading && companies.length > 0 && (
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Building2 className="h-3.5 w-3.5" />
-              <span className="text-[11px] sm:text-xs font-medium">Total</span>
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums">{stats.total}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <Users className="h-3.5 w-3.5" />
-              <span className="text-[11px] sm:text-xs font-medium">Clientes</span>
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-success-foreground">{stats.customers}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5" />
-              <span className="text-[11px] sm:text-xs font-medium">Proveedores</span>
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-info-foreground">{stats.suppliers}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-2 text-muted-foreground">
-              <DollarSign className="h-3.5 w-3.5" />
-              <span className="text-[11px] sm:text-xs font-medium">Valor total</span>
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-success-foreground">{formatCurrency(stats.ltv)}</p>
-          </div>
+          <MiniStatCard icon={Building2} label="Total" value={stats.total} />
+          <MiniStatCard icon={Users} label="Clientes" value={stats.customers} valueClassName="text-success-foreground" />
+          <MiniStatCard icon={TrendingUp} label="Proveedores" value={stats.suppliers} valueClassName="text-info-foreground" />
+          <MiniStatCard icon={DollarSign} label="Valor total" value={formatCurrency(stats.ltv)} valueClassName="text-success-foreground" />
         </div>
       )}
 
       {/* Search + Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar empresa..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-9"
-          />
-        </div>
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
-          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-32 shrink-0">
-            <option value="all">Todas</option>
-            <option value="customer">Clientes</option>
-            <option value="supplier">Proveedores</option>
-          </Select>
-          <Select
-            value={`${sortField}-${sortDir}`}
-            onChange={(e) => {
-              const [f, d] = e.target.value.split("-") as [SortField, SortDirection];
-              setSortField(f);
-              setSortDir(d);
-            }}
-            className="w-44 shrink-0"
-          >
-            <option value="name-asc">Nombre A-Z</option>
-            <option value="name-desc">Nombre Z-A</option>
-            <option value="lifetime_value-desc">Mayor valor</option>
-            <option value="lifetime_value-asc">Menor valor</option>
-            <option value="total_pending-desc">Mayor pendiente</option>
-            <option value="total_pending-asc">Menor pendiente</option>
-          </Select>
-        </div>
-      </div>
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar empresa...">
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-32 shrink-0">
+          <option value="all">Todas</option>
+          <option value="customer">Clientes</option>
+          <option value="supplier">Proveedores</option>
+        </Select>
+        <Select
+          value={`${sortField}-${sortDir}`}
+          onChange={(e) => {
+            const [f, d] = e.target.value.split("-") as [SortField, SortDirection];
+            setSortField(f);
+            setSortDir(d);
+          }}
+          className="w-44 shrink-0"
+        >
+          <option value="name-asc">Nombre A-Z</option>
+          <option value="name-desc">Nombre Z-A</option>
+          <option value="lifetime_value-desc">Mayor valor</option>
+          <option value="lifetime_value-asc">Menor valor</option>
+          <option value="total_pending-desc">Mayor pendiente</option>
+          <option value="total_pending-asc">Menor pendiente</option>
+        </Select>
+      </FilterBar>
 
       {/* Loading */}
-      {loading && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[76px]" />)}
-          </div>
-          <div className="space-y-2 md:hidden">
-            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[120px]" />)}
-          </div>
-          <div className="hidden md:block">
-            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[48px]" />)}
-          </div>
-        </div>
-      )}
+      {loading && <LoadingGrid stats={4} rows={6} />}
 
       {/* Empty state */}
       {!loading && companies.length === 0 && (

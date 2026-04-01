@@ -18,7 +18,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 
 const SCOPE_LABELS: Record<string, string> = {
   daily: "General",
@@ -87,13 +87,8 @@ export default function BriefingsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <Skeleton className="h-10 w-48" />
-        <Skeleton className="h-5 w-80" />
-        <div className="grid gap-4 lg:grid-cols-2">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-48 w-full rounded-xl" />
-          ))}
-        </div>
+        <PageHeader title="Briefings" description="Cargando..." />
+        <LoadingGrid rows={4} rowHeight="h-48" />
       </div>
     );
   }

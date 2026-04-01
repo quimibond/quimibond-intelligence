@@ -6,19 +6,20 @@ interface PageHeaderProps {
   title: string;
   description?: string;
   children?: React.ReactNode;
+  className?: string;
 }
 
-export function PageHeader({ title, description, children }: PageHeaderProps) {
+export function PageHeader({ title, description, children, className }: PageHeaderProps) {
   return (
-    <div className="flex flex-col sm:flex-row items-start justify-between gap-4 pb-6">
-      <div className="space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight">{title}</h1>
+    <div className={cn("flex flex-col sm:flex-row items-start justify-between gap-3 sm:gap-4 pb-4 sm:pb-6", className)}>
+      <div className="space-y-0.5 sm:space-y-1 min-w-0">
+        <h1 className="text-xl sm:text-2xl font-bold tracking-tight truncate">{title}</h1>
         {description && (
-          <p className="text-sm text-muted-foreground">{description}</p>
+          <p className="text-xs sm:text-sm text-muted-foreground line-clamp-2">{description}</p>
         )}
       </div>
       {children && (
-        <div className="flex items-center gap-2 shrink-0">{children}</div>
+        <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">{children}</div>
       )}
     </div>
   );
