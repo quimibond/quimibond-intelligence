@@ -123,11 +123,9 @@ export async function POST(request: NextRequest) {
 
 // ── Model routing: Opus for strategic, Sonnet for business, Haiku for routine ──
 const AGENT_MODEL_MAP: Record<string, string> = {
-  risk: "claude-opus-4-6",        // Strategic reasoning about threats — highest stakes
-  predictive: "claude-opus-4-6",   // Complex pattern recognition + forecasting
   meta: "claude-haiku-4-5-20251001",      // Evaluation, not deep reasoning
   cleanup: "claude-haiku-4-5-20251001",   // Classification/enrichment
-  // Everything else: Sonnet (default)
+  // Everything else: Sonnet (reliable JSON output)
 };
 
 function getModelForAgent(slug: string): string {
@@ -172,28 +170,46 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
 
     if (scoredMemories.length) {
       const memoryIds = scoredMemories.map((m: { id: number }) => m.id);
-      await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds }).catch(() => {});
+      const { error: rpcErr } = await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds });
+      if (rpcErr) console.warn(`[orchestrate] increment_memory_usage failed:`, rpcErr.message);
     }
 
     const confidenceThreshold = await getAgentConfidenceThreshold(supabase, agent.id);
     const model = getModelForAgent(agent.slug);
 
-    const { result, usage } = await callClaudeJSON<Record<string, unknown>[]>(
-      apiKey,
-      {
-        model,
-        max_tokens: 4096,
-        temperature: 0.2,
-        system: agent.system_prompt + AGENT_SYSTEM_SUFFIX,
-        messages: [{
-          role: "user",
-          content: buildAgentPrompt(context, memoryText, confidenceThreshold),
-        }],
-      },
-      `agent-${agent.slug}`
-    );
+    let insights: Record<string, unknown>[] = [];
+    let usage: { input_tokens: number; output_tokens: number } | undefined;
 
-    const insights = Array.isArray(result) ? result : [];
+    try {
+      const response = await callClaudeJSON<Record<string, unknown>[] | Record<string, unknown>>(
+        apiKey,
+        {
+          model,
+          max_tokens: 4096,
+          temperature: 0.2,
+          system: agent.system_prompt + AGENT_SYSTEM_SUFFIX,
+          messages: [{
+            role: "user",
+            content: buildAgentPrompt(context, memoryText, confidenceThreshold),
+          }],
+        },
+        `agent-${agent.slug}`
+      );
+      usage = response.usage;
+      // Handle both array and object-with-array responses
+      const raw = response.result;
+      if (Array.isArray(raw)) {
+        insights = raw;
+      } else if (raw && typeof raw === "object" && "insights" in raw && Array.isArray(raw.insights)) {
+        insights = raw.insights as Record<string, unknown>[];
+      } else {
+        insights = [];
+      }
+    } catch (claudeErr) {
+      console.error(`[orchestrate] ${agent.slug} Claude/JSON error:`, claudeErr);
+      // Return empty instead of crashing — agent will retry next cycle
+      insights = [];
+    }
 
     // Deduplicate
     let duplicatesSkipped = 0;
@@ -512,21 +528,23 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
 
   switch (domain) {
     case "sales": {
-      const [orders, top, recentSaleOrders] = await Promise.all([
+      const [orders, top, recentSaleOrders, margins] = await Promise.all([
         sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(20),
         sb.from("odoo_sale_orders").select("company_id, name, state, amount_total, date_order").order("date_order", { ascending: false }).limit(15),
+        sb.from("margin_analysis").select("company_name, product_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
       ]);
-      return `${profileSection}## Ordenes de venta recientes\n${safeJSON(recentSaleOrders.data)}\n## Lineas de venta\n${safeJSON(orders.data)}\n## Top clientes (con tendencia)\n${safeJSON(top.data)}`;
+      return `${profileSection}## Ordenes de venta recientes\n${safeJSON(recentSaleOrders.data)}\n## Lineas de venta\n${safeJSON(orders.data)}\n## Top clientes (con tendencia)\n${safeJSON(top.data)}\n## Analisis de margenes: precio orden vs precio factura\n${safeJSON(margins.data)}`;
     }
     case "finance": {
-      const [inv, ow, payments, changes] = await Promise.all([
+      const [inv, ow, payments, changes, margins] = await Promise.all([
         sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
         sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, overdue_30d_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(20),
         sb.from("odoo_payments").select("company_id, amount, payment_date, state").order("payment_date", { ascending: false }).limit(15),
         sb.from("snapshot_changes").select("company_name, pending_now, pending_before, pending_change, overdue_now, overdue_before, overdue_change, late_now, late_before").limit(15),
+        sb.from("margin_analysis").select("company_name, product_name, avg_order_price, avg_invoice_price, price_delta_pct").not("price_delta_pct", "is", null).gt("price_delta_pct", 10).order("price_delta_pct", { ascending: false }).limit(10),
       ]);
-      return `${profileSection}## Cambios vs semana pasada (snapshot)\n${safeJSON(changes.data)}\n## Facturas (ordenadas por dias vencidas)\n${safeJSON(inv.data)}\n## Empresas con cartera vencida (con contexto de revenue)\n${safeJSON(ow.data)}\n## Pagos recientes\n${safeJSON(payments.data)}`;
+      return `${profileSection}## Cambios vs semana pasada (snapshot)\n${safeJSON(changes.data)}\n## Facturas (ordenadas por dias vencidas)\n${safeJSON(inv.data)}\n## Empresas con cartera vencida (con contexto de revenue)\n${safeJSON(ow.data)}\n## Pagos recientes\n${safeJSON(payments.data)}\n## ALERTA: Productos facturados >10% arriba del precio de orden\n${safeJSON(margins.data)}`;
     }
     case "operations": {
       const [del, prod] = await Promise.all([
@@ -613,13 +631,10 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## Clientes con reorden VENCIDO o en riesgo\n${safeJSON(reorder.data)}\n## Cash flow aging (cartera por antigüedad)\n${safeJSON(cashFlow.data)}\n## Tendencia mensual de revenue\n${safeJSON(trend.data)}\n## Clientes estrategicos on-track (para prediccion de reorden)\n${safeJSON(topAtRisk.data)}`;
     }
     case "suppliers": {
-      const [topSuppliers, recentPOs, priceChanges, singleSource] = await Promise.all([
+      const [topSuppliers, recentPOs, priceChanges] = await Promise.all([
         sb.from("company_profile").select("name, total_purchases, total_revenue, email_count, contact_count, tier").gt("total_purchases", 50000).order("total_purchases", { ascending: false }).limit(20),
         sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order").order("date_order", { ascending: false }).limit(20),
-        // Price comparison: recent vs older purchase lines for same products
         sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
-        // Single-source products: bought from only 1 supplier
-        sb.rpc("execute_safe_ddl", { p_sql: "SELECT 1", p_description: "placeholder", p_change_type: "auto" }).then(() => null).catch(() => null), // placeholder
       ]);
       return `${profileSection}## Top proveedores (por monto de compra)\n${safeJSON(topSuppliers.data)}\n## Ordenes de compra recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra recientes (para detectar cambios de precio)\n${safeJSON(priceChanges.data)}`;
     }
