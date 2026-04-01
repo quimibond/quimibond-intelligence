@@ -128,21 +128,31 @@ export default function InboxPage() {
     });
   }, []);
 
+  // All assignees (fetched once, not limited by page)
+  const [allAssignees, setAllAssignees] = useState<string[]>([]);
+
   const load = useCallback(async () => {
-    const [insightsRes, agentsRes, freshnessRes] = await Promise.all([
+    const [insightsRes, agentsRes, freshnessRes, assigneesRes] = await Promise.all([
       supabase
         .from("agent_insights")
         .select("*")
         .in("state", ["new", "seen"])
         .gte("confidence", 0.65)
         .order("created_at", { ascending: false })
-        .limit(50),
+        .limit(100),
       supabase.from("ai_agents").select("id, slug, name, domain"),
       Promise.all([
         supabase.from("odoo_users").select("updated_at").order("updated_at", { ascending: false }).limit(1),
         supabase.from("emails").select("created_at").order("created_at", { ascending: false }).limit(1),
         supabase.from("agent_runs").select("completed_at").eq("status", "completed").order("completed_at", { ascending: false }).limit(1),
       ]),
+      // Get ALL unique assignees (not limited by page size)
+      supabase
+        .from("agent_insights")
+        .select("assignee_name")
+        .in("state", ["new", "seen"])
+        .gte("confidence", 0.65)
+        .not("assignee_name", "is", null),
     ]);
 
     const [odooFresh, emailFresh, agentFresh] = freshnessRes;
@@ -157,6 +167,12 @@ export default function InboxPage() {
       agentMap[a.id] = { slug: a.slug, name: a.name, domain: a.domain };
     }
     setAgents(agentMap);
+
+    // Extract all unique assignees from full dataset (not limited by page)
+    const assigneeNames = Array.from(new Set(
+      (assigneesRes.data ?? []).map((r: { assignee_name: string }) => r.assignee_name).filter(Boolean)
+    )) as string[];
+    setAllAssignees(assigneeNames.sort());
 
     // Sort by severity priority
     const sorted = (insightsRes.data ?? []).sort((a, b) => {
@@ -211,8 +227,7 @@ export default function InboxPage() {
     return true;
   });
 
-  // Get unique assignees for filter
-  const uniqueAssignees = Array.from(new Set(insights.map(i => i.assignee_name).filter(Boolean))) as string[];
+  // Assignees from allAssignees (full dataset, not limited by page)
 
   // Count by tier
   const tierCounts = { urgent: 0, important: 0, fyi: 0 };
@@ -437,7 +452,7 @@ export default function InboxPage() {
           )}
 
           {/* Assignee filter */}
-          {uniqueAssignees.length > 1 && (
+          {allAssignees.length > 1 && (
             <>
               <div className="h-4 w-px bg-border shrink-0 mx-1" />
               <select
@@ -446,7 +461,7 @@ export default function InboxPage() {
                 className="shrink-0 rounded-full border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
               >
                 <option value="all">Todos los responsables</option>
-                {uniqueAssignees.sort().map(name => (
+                {allAssignees.sort().map(name => (
                   <option key={name} value={name}>{name}</option>
                 ))}
               </select>
