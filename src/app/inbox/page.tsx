@@ -16,6 +16,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from "@/components/ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 // ── Types ──
 
@@ -646,106 +650,136 @@ export default function InboxPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* DESKTOP: Professional list view (hidden on mobile)               */}
+      {/* DESKTOP: Table view (hidden on mobile)                           */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       {filteredInsights.length > 0 && (
-        <div className="hidden md:block space-y-2">
-          {filteredInsights.map((insight) => {
-            const agent = agents[insight.agent_id];
-            const Icon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
-            const tier = computeTier(insight);
-            const tierCfg = TIER_LABELS[tier] ?? TIER_LABELS.fyi;
-            const isSeen = seenIds.has(insight.id);
+        <div className="hidden md:block rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow className="hover:bg-transparent">
+                <TableHead className="w-[3px] p-0" />
+                <TableHead className="pl-3">Insight</TableHead>
+                <TableHead className="hidden lg:table-cell">Responsable</TableHead>
+                <TableHead className="hidden lg:table-cell w-20 text-right">Impacto</TableHead>
+                <TableHead className="w-16 text-right">Conf.</TableHead>
+                <TableHead className="w-20 text-right">Tiempo</TableHead>
+                <TableHead className="w-20" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {filteredInsights.map((insight) => {
+                const agent = agents[insight.agent_id];
+                const Icon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+                const tier = computeTier(insight);
+                const isSeen = seenIds.has(insight.id);
 
-            return (
-              <Card
-                key={insight.id}
-                className={cn(
-                  "group cursor-pointer transition-all hover:border-primary/20 hover:shadow-sm",
-                  tier === "urgent" && "border-l-4 border-l-red-500",
-                  tier === "important" && "border-l-4 border-l-amber-500",
-                  !isSeen && "bg-primary/[0.02]",
-                )}
-                onClick={() => goToDetail(insight.id)}
-              >
-                <CardContent className="py-3 px-4">
-                  <div className="flex items-center gap-4">
-                    {/* Agent icon */}
-                    <div className={cn("flex h-10 w-10 items-center justify-center rounded-full shrink-0", DOMAIN_BG[agent?.domain ?? ""] ?? "bg-muted")}>
-                      <Icon className={cn("h-5 w-5", DOMAIN_COLORS[agent?.domain ?? ""])} />
-                    </div>
+                return (
+                  <TableRow
+                    key={insight.id}
+                    className={cn(
+                      "group cursor-pointer",
+                      !isSeen && "bg-accent/50",
+                    )}
+                    onClick={() => goToDetail(insight.id)}
+                  >
+                    {/* Tier indicator stripe */}
+                    <TableCell className="p-0 w-[3px]">
+                      <div className={cn(
+                        "w-[3px] h-full",
+                        tier === "urgent" && "bg-danger",
+                        tier === "important" && "bg-warning",
+                      )} />
+                    </TableCell>
 
-                    {/* Content */}
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 mb-0.5">
-                        {!isSeen && <span className="h-2 w-2 rounded-full bg-primary shrink-0" />}
-                        <Badge className={cn("text-[10px] px-1.5", tierCfg.color)}>{tierCfg.label}</Badge>
-                        <SeverityBadge severity={insight.severity} />
-                        <span className="text-[10px] text-muted-foreground">{agent?.name?.replace("Agente de ", "")}</span>
-                        {insight.assignee_name && (
-                          <span className="text-[10px] text-muted-foreground">→ {insight.assignee_name}</span>
-                        )}
-                      </div>
-                      <h3 className={cn("text-sm truncate", !isSeen ? "font-bold" : "font-medium")}>{insight.title}</h3>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{insight.recommendation ?? insight.description}</p>
-                    </div>
-
-                    {/* Right side: metrics + actions */}
-                    <div className="flex items-center gap-4 shrink-0">
-                      {/* Impact */}
-                      {insight.business_impact_estimate != null && insight.business_impact_estimate > 0 && (
-                        <div className="text-center hidden lg:block">
-                          <p className="text-sm font-bold">${(insight.business_impact_estimate / 1000).toFixed(0)}K</p>
-                          <p className="text-[10px] text-muted-foreground">impacto</p>
+                    {/* Main content: icon + title + meta */}
+                    <TableCell className="pl-3">
+                      <div className="flex items-center gap-3">
+                        <div className={cn("flex h-8 w-8 items-center justify-center rounded-md shrink-0", DOMAIN_BG[agent?.domain ?? ""] ?? "bg-muted")}>
+                          <Icon className={cn("h-4 w-4", DOMAIN_COLORS[agent?.domain ?? ""])} />
                         </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            {!isSeen && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                            <h3 className={cn("text-sm truncate", !isSeen ? "font-semibold" : "font-normal")}>{insight.title}</h3>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <SeverityBadge severity={insight.severity} />
+                            <span className="text-[11px] text-muted-foreground">{agent?.name?.replace("Agente de ", "")}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    {/* Assignee */}
+                    <TableCell className="hidden lg:table-cell">
+                      {insight.assignee_name ? (
+                        <span className="text-sm text-muted-foreground">{insight.assignee_name}</span>
+                      ) : (
+                        <span className="text-sm text-muted-foreground/40">—</span>
                       )}
+                    </TableCell>
 
-                      {/* Confidence */}
-                      <div className="text-center hidden lg:block">
-                        <p className={cn(
-                          "text-sm font-bold tabular-nums",
-                          insight.confidence >= 0.85 ? "text-success" : insight.confidence >= 0.7 ? "text-warning" : "text-muted-foreground"
-                        )}>
-                          {(insight.confidence * 100).toFixed(0)}%
-                        </p>
+                    {/* Impact */}
+                    <TableCell className="hidden lg:table-cell text-right">
+                      {insight.business_impact_estimate != null && insight.business_impact_estimate > 0 ? (
+                        <span className="text-sm font-medium tabular-nums">${(insight.business_impact_estimate / 1000).toFixed(0)}K</span>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
+
+                    {/* Confidence */}
+                    <TableCell className="text-right">
+                      <span className={cn(
+                        "text-sm tabular-nums font-medium",
+                        insight.confidence >= 0.85 ? "text-success" : insight.confidence >= 0.7 ? "text-warning" : "text-muted-foreground"
+                      )}>
+                        {(insight.confidence * 100).toFixed(0)}%
+                      </span>
+                    </TableCell>
+
+                    {/* Time */}
+                    <TableCell className="text-right">
+                      <span className="text-[13px] text-muted-foreground whitespace-nowrap">{timeAgo(insight.created_at)}</span>
+                    </TableCell>
+
+                    {/* Actions */}
+                    <TableCell>
+                      <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7"
+                              onClick={() => actOnInsight(insight.id)}
+                              disabled={acting === insight.id}
+                            >
+                              {acting === insight.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ThumbsUp className="h-3.5 w-3.5" />}
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">Util</TooltipContent>
+                        </Tooltip>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-7 w-7 text-muted-foreground"
+                              onClick={() => dismissInsight(insight.id)}
+                            >
+                              <ThumbsDown className="h-3.5 w-3.5" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent side="bottom">Descartar</TooltipContent>
+                        </Tooltip>
                       </div>
-
-                      {/* Time */}
-                      <div className="text-center">
-                        <p className="text-xs text-muted-foreground whitespace-nowrap">{timeAgo(insight.created_at)}</p>
-                      </div>
-
-                      {/* Quick actions — always visible on the right */}
-                      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-success-foreground hover:bg-success/10"
-                          onClick={() => actOnInsight(insight.id)}
-                          disabled={acting === insight.id}
-                          title="Marcar como util"
-                        >
-                          {acting === insight.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ThumbsUp className="h-4 w-4" />}
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-danger hover:bg-danger/10"
-                          onClick={() => dismissInsight(insight.id)}
-                          title="Descartar"
-                        >
-                          <ThumbsDown className="h-4 w-4" />
-                        </Button>
-                      </div>
-
-                      {/* Arrow */}
-                      <ChevronRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>

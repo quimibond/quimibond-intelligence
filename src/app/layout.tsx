@@ -4,6 +4,7 @@ import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { MainContent } from "@/components/layout/main-content";
 import { RealtimeAlerts } from "@/components/shared/realtime-alerts";
 import { SearchCommand } from "@/components/shared/search-command";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Toaster } from "sonner";
 import "./globals.css";
 
@@ -31,6 +32,7 @@ export default function RootLayout({
         />
       </head>
       <body>
+        <TooltipProvider>
         <SidebarProvider>
           <AppSidebar />
           <MainContent>{children}</MainContent>
@@ -43,6 +45,7 @@ export default function RootLayout({
             }}
           />
         </SidebarProvider>
+        </TooltipProvider>
       </body>
     </html>
   );
