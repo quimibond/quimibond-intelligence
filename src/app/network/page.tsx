@@ -68,17 +68,62 @@ interface NetworkData {
   };
 }
 
-// ── Colors ──
+// ── Canvas colors ──
+// Canvas 2D context cannot read CSS variables directly, so we resolve them at
+// runtime via getComputedStyle. The palette below maps to the design-system
+// tokens defined in globals.css (info, success, warning, destructive, etc.)
+// with additional hues for company differentiation.
 
-const COMPANY_COLORS = [
-  "#3b82f6", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6",
-  "#ec4899", "#06b6d4", "#84cc16", "#f97316", "#6366f1",
-];
+function getCSSColor(varName: string, fallback: string): string {
+  if (typeof window === "undefined") return fallback;
+  return getComputedStyle(document.documentElement).getPropertyValue(varName).trim() || fallback;
+}
+
+/** Resolved at render-time so they respect light/dark theme. */
+function getCanvasCompanyColors(): string[] {
+  return [
+    getCSSColor("--info", "#3b82f6"),
+    getCSSColor("--success", "#10b981"),
+    getCSSColor("--warning", "#f59e0b"),
+    getCSSColor("--destructive", "#ef4444"),
+    getCSSColor("--color-violet-500", "#8b5cf6"),
+    getCSSColor("--color-pink-500", "#ec4899"),
+    getCSSColor("--color-cyan-500", "#06b6d4"),
+    getCSSColor("--color-lime-500", "#84cc16"),
+    getCSSColor("--danger", "#f97316"),
+    getCSSColor("--color-indigo-500", "#6366f1"),
+  ];
+}
 
 function getCompanyColor(companyId: number | null, companyMap: Map<number, number>): string {
-  if (companyId == null) return "#6b7280";
+  if (companyId == null) return getCSSColor("--muted-foreground", "#6b7280");
   if (!companyMap.has(companyId)) companyMap.set(companyId, companyMap.size);
-  return COMPANY_COLORS[companyMap.get(companyId)! % COMPANY_COLORS.length];
+  const colors = getCanvasCompanyColors();
+  return colors[companyMap.get(companyId)! % colors.length];
+}
+
+/** Convert a CSS color string + alpha to an rgba() canvas can use. */
+function withAlpha(color: string, alpha: number): string {
+  // If already rgb/rgba, inject alpha
+  const rgbMatch = color.match(/^rgb\((\d+),\s*(\d+),\s*(\d+)\)$/);
+  if (rgbMatch) return `rgba(${rgbMatch[1]}, ${rgbMatch[2]}, ${rgbMatch[3]}, ${alpha})`;
+  // For hex colors
+  const hexMatch = color.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+  if (hexMatch) {
+    const [, r, g, b] = hexMatch;
+    return `rgba(${parseInt(r, 16)}, ${parseInt(g, 16)}, ${parseInt(b, 16)}, ${alpha})`;
+  }
+  // For oklch or other formats, use a temp canvas to resolve
+  if (typeof document !== "undefined") {
+    const tmp = document.createElement("canvas").getContext("2d");
+    if (tmp) {
+      tmp.fillStyle = color;
+      const resolved = tmp.fillStyle; // browser normalizes to #rrggbb
+      const m = resolved.match(/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
+      if (m) return `rgba(${parseInt(m[1], 16)}, ${parseInt(m[2], 16)}, ${parseInt(m[3], 16)}, ${alpha})`;
+    }
+  }
+  return `rgba(136, 136, 136, ${alpha})`;
 }
 
 function nodeRadius(n: NetNode): number {
@@ -181,6 +226,10 @@ export default function NetworkPage() {
       // Highlight edges for selected/hovered node
       const activeNodeId = selected?.id ?? hovered?.id;
 
+      // Resolve edge colors from design tokens (info = internal, warning = external)
+      const edgeInternalColor = getCSSColor("--info", "#3b82f6");
+      const edgeExternalColor = getCSSColor("--warning", "#f59e0b");
+
       // Draw edges
       for (const edge of edges) {
         const s = edge.source as NetNode;
@@ -201,8 +250,8 @@ export default function NetworkPage() {
         ctx!.moveTo(s.x, s.y!);
         ctx!.lineTo(t.x, t.y!);
         ctx!.strokeStyle = edge.is_internal
-          ? `rgba(59, 130, 246, ${alpha})`
-          : `rgba(249, 115, 22, ${alpha})`;
+          ? withAlpha(edgeInternalColor, alpha)
+          : withAlpha(edgeExternalColor, alpha);
         ctx!.lineWidth = width;
         ctx!.stroke();
       }
@@ -258,7 +307,7 @@ export default function NetworkPage() {
           const tw = ctx!.measureText(label).width;
           ctx!.fillStyle = isDark ? "rgba(0,0,0,0.8)" : "rgba(255,255,255,0.9)";
           ctx!.fillRect(node.x - tw / 2 - 3, node.y! - r - 18, tw + 6, 14);
-          ctx!.fillStyle = isDark ? "#fff" : "#111";
+          ctx!.fillStyle = getCSSColor("--foreground", isDark ? "#fff" : "#111");
           ctx!.fillText(label, node.x, node.y! - r - 7);
         }
 
@@ -621,7 +670,7 @@ export default function NetworkPage() {
               <span className="inline-block h-2 w-4 rounded bg-info" /> Interno
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-4 rounded bg-orange-500" /> Externo
+              <span className="inline-block h-2 w-4 rounded bg-warning" /> Externo
             </span>
             <span><GripHorizontal className="inline h-3 w-3" /> Arrastra nodos</span>
             <span>Scroll = zoom</span>

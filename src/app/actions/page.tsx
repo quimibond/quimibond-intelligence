@@ -1,30 +1,21 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 import {
   AlertTriangle,
   CheckCircle2,
-  ChevronDown,
-  ArrowUpCircle,
-  Search,
   ClipboardList,
   Clock,
   Loader2,
-  PauseCircle,
+  Search,
   X,
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { formatDate, timeAgo } from "@/lib/utils";
 import type { ActionItem } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { StateBadge } from "@/components/shared/state-badge";
-import { FeedbackButtons } from "@/components/shared/feedback-buttons";
-import { AssigneeSelect } from "@/components/shared/assignee-select";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select-native";
 import { Input } from "@/components/ui/input";
@@ -32,28 +23,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
-  TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-
-const priorityVariantMap: Record<string, "critical" | "warning" | "info" | "secondary"> = {
-  low: "secondary",
-  medium: "warning",
-  high: "critical",
-};
-
-const priorityLabelMap: Record<string, string> = {
-  low: "Baja",
-  medium: "Media",
-  high: "Alta",
-};
-
-function isOverdue(item: ActionItem): boolean {
-  if (item.state !== "pending" || !item.due_date) return false;
-  return new Date(item.due_date) < new Date();
-}
+import { ActionMobileCard } from "./components/action-mobile-card";
+import { ActionDesktopRow } from "./components/action-desktop-row";
 
 const PAGE_SIZE = 50;
 
@@ -382,7 +357,7 @@ export default function ActionsPage() {
                 type="checkbox"
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}
                 onChange={toggleSelectAll}
-                className="h-5 w-5 rounded border-gray-300"
+                className="h-5 w-5 rounded border-input"
               />
               <span className="text-sm text-muted-foreground">
                 Seleccionar todas ({filtered.length})
@@ -394,110 +369,17 @@ export default function ActionsPage() {
               )}
             </div>
 
-            {filtered.map((action) => {
-              const overdue = isOverdue(action);
-              const reason = (action as unknown as Record<string, unknown>).reason;
-              const priorityColor: Record<string, string> = {
-                high: "bg-danger",
-                medium: "bg-warning",
-                low: "bg-gray-400",
-              };
-              return (
-                <div key={action.id} className="relative overflow-hidden rounded-lg border bg-card">
-                  {/* Priority color bar on left */}
-                  <div className={`absolute left-0 top-0 bottom-0 w-1 ${priorityColor[action.priority] ?? "bg-gray-400"}`} />
-                  <div className="p-4 pl-5 space-y-3">
-                    <div className="flex items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedIds.has(action.id)}
-                        onChange={() => toggleSelect(action.id)}
-                        className="mt-0.5 h-5 w-5 shrink-0 rounded border-gray-300"
-                      />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">{action.description}</p>
-                        {typeof reason === "string" && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {reason}
-                          </p>
-                        )}
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          {action.contact_id ? (
-                            <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
-                              {action.contact_name ?? "—"}
-                            </Link>
-                          ) : (action.contact_name ?? "—")}
-                          {" · "}
-                          {action.company_id ? (
-                            <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
-                              {action.contact_company ?? "—"}
-                            </Link>
-                          ) : (action.contact_company ?? "—")}
-                          {" · "}
-                          {timeAgo(action.created_at)}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Badge variant={priorityVariantMap[action.priority] ?? "secondary"}>
-                        {priorityLabelMap[action.priority] ?? action.priority}
-                      </Badge>
-                      <StateBadge state={action.state} />
-                      {overdue && action.due_date && (
-                        <Badge variant="critical">Vencida {formatDate(action.due_date)}</Badge>
-                      )}
-                      {!overdue && action.due_date && (
-                        <span className="text-xs text-muted-foreground">
-                          Vence {formatDate(action.due_date)}
-                        </span>
-                      )}
-                      {(action.assignee_name || action.assignee_email) && (
-                        <span className="text-xs text-muted-foreground">{action.assignee_name ?? action.assignee_email}</span>
-                      )}
-                    </div>
-                    {/* Inline quick actions - always visible with proper touch targets */}
-                    <div className="flex items-center gap-1 pt-1">
-                      {(action.state === "pending" || action.state === "in_progress") && (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="Completar"
-                            className="h-10 min-w-[44px] gap-1.5 text-xs"
-                            onClick={() => markCompleted(action.id)}
-                          >
-                            <CheckCircle2 className="h-4 w-4" />
-                            Completar
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            title="Descartar"
-                            className="h-10 min-w-[44px] gap-1.5 text-xs"
-                            onClick={() => dismiss(action.id)}
-                          >
-                            <XCircle className="h-4 w-4" />
-                            Descartar
-                          </Button>
-                        </>
-                      )}
-                      {(action.state === "blocked" || action.state === "escalated") && (
-                        <Button size="sm" variant="outline" className="h-10 text-xs" onClick={() => updateState(action.id, "pending")}>
-                          Reactivar
-                        </Button>
-                      )}
-                      <div className="ml-auto">
-                        <FeedbackButtons
-                          table="action_items"
-                          id={action.id}
-                          currentFeedback={null}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            {filtered.map((action) => (
+              <ActionMobileCard
+                key={action.id}
+                action={action}
+                selected={selectedIds.has(action.id)}
+                onToggleSelect={toggleSelect}
+                onComplete={markCompleted}
+                onDismiss={dismiss}
+                onUpdateState={updateState}
+              />
+            ))}
           </div>
 
           {/* Desktop table layout */}
@@ -510,7 +392,7 @@ export default function ActionsPage() {
                       type="checkbox"
                       checked={filtered.length > 0 && selectedIds.size === filtered.length}
                       onChange={toggleSelectAll}
-                      className="h-4 w-4 rounded border-gray-300"
+                      className="h-4 w-4 rounded border-input"
                     />
                   </TableHead>
                   <TableHead>Descripcion</TableHead>
@@ -525,115 +407,18 @@ export default function ActionsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((action) => {
-                  const overdue = isOverdue(action);
-                  const priorityDot: Record<string, string> = {
-                    high: "bg-danger",
-                    medium: "bg-warning",
-                    low: "bg-gray-400",
-                  };
-                  return (
-                    <TableRow key={action.id} className="group transition-colors hover:bg-muted/50">
-                      <TableCell>
-                        <input
-                          type="checkbox"
-                          checked={selectedIds.has(action.id)}
-                          onChange={() => toggleSelect(action.id)}
-                          className="h-4 w-4 rounded border-gray-300"
-                        />
-                      </TableCell>
-                      <TableCell className="max-w-[300px]">
-                        <p className="font-medium">{action.description}</p>
-                        {typeof (action as unknown as Record<string, unknown>).reason === "string" && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
-                            {(action as unknown as Record<string, unknown>).reason as string}
-                          </p>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {action.contact_id ? (
-                          <Link href={`/contacts/${action.contact_id}`} className="text-primary hover:underline">
-                            {action.contact_name ?? "—"}
-                          </Link>
-                        ) : (action.contact_name ?? "—")}
-                      </TableCell>
-                      <TableCell>
-                        {action.company_id ? (
-                          <Link href={`/companies/${action.company_id}`} className="text-primary hover:underline">
-                            {action.contact_company ?? "—"}
-                          </Link>
-                        ) : (action.contact_company ?? "—")}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <span className={`inline-block h-2.5 w-2.5 rounded-full ${priorityDot[action.priority] ?? "bg-gray-400"}`} />
-                          <Badge
-                            variant={priorityVariantMap[action.priority] ?? "secondary"}
-                          >
-                            {priorityLabelMap[action.priority] ?? action.priority}
-                          </Badge>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <StateBadge state={action.state} />
-                      </TableCell>
-                      <TableCell>
-                        <AssigneeSelect
-                          value={action.assignee_email}
-                          onChange={(email, name) => reassign(action.id, email, name)}
-                          className="h-8 text-xs w-[140px]"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        {action.due_date ? (
-                          <span
-                            className={
-                              overdue
-                                ? "font-medium text-danger-foreground"
-                                : "text-muted-foreground"
-                            }
-                          >
-                            {formatDate(action.due_date)}
-                            {overdue && " (vencida)"}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {timeAgo(action.created_at)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {(action.state === "pending" || action.state === "in_progress") && (
-                            <>
-                              <Button size="sm" variant="ghost" title="Completar" className="h-8 w-8 p-0" onClick={() => markCompleted(action.id)}>
-                                <CheckCircle2 className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" title="Bloqueada" className="h-8 w-8 p-0" onClick={() => updateState(action.id, "blocked")}>
-                                <PauseCircle className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" title="Escalar" className="h-8 w-8 p-0" onClick={() => updateState(action.id, "escalated")}>
-                                <ArrowUpCircle className="h-4 w-4" />
-                              </Button>
-                              <Button size="sm" variant="ghost" title="Descartar" className="h-8 w-8 p-0" onClick={() => dismiss(action.id)}>
-                                <XCircle className="h-4 w-4" />
-                              </Button>
-                            </>
-                          )}
-                          {(action.state === "blocked" || action.state === "escalated") && (
-                            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => updateState(action.id, "pending")}>
-                              Reactivar
-                            </Button>
-                          )}
-                        </div>
-                        {action.state !== "pending" && action.state !== "in_progress" && action.state !== "blocked" && action.state !== "escalated" && (
-                          <FeedbackButtons table="action_items" id={action.id} currentFeedback={null} />
-                        )}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
+                {filtered.map((action) => (
+                  <ActionDesktopRow
+                    key={action.id}
+                    action={action}
+                    selected={selectedIds.has(action.id)}
+                    onToggleSelect={toggleSelect}
+                    onComplete={markCompleted}
+                    onDismiss={dismiss}
+                    onUpdateState={updateState}
+                    onReassign={reassign}
+                  />
+                ))}
               </TableBody>
             </Table>
           </div>

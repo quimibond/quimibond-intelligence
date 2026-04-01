@@ -827,6 +827,28 @@ export interface SyncCommand {
   completed_at: string | null;
 }
 
+export interface SystemStats {
+  totalCompanies: number;
+  totalContacts: number;
+  totalEmails: number;
+  totalThreads: number;
+  totalEntities: number;
+  totalFacts: number;
+  totalRelationships: number;
+  activeAlerts: number;
+  pendingActions: number;
+  totalBriefings: number;
+  totalHealthScores: number;
+  totalOdooInvoices: number;
+  totalOdooDeliveries: number;
+  totalOdooPayments: number;
+  totalOdooProducts: number;
+  totalOdooOrderLines: number;
+  totalOdooCrmLeads: number;
+  totalOdooActivities: number;
+  totalOdooUsers: number;
+}
+
 export interface ChatMemory {
   id: number;
   question: string;

@@ -3,187 +3,24 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { cn, timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
+import { timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
 import type { GlobalAging, PipelineGlobal } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
-import { getDomainConfig } from "@/lib/domains";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Button } from "@/components/ui/button";
 import {
-  ArrowRight, Activity, Bot, Brain, CheckSquare, CreditCard,
-  DollarSign, FileText, Loader2, Mail, MessageSquare,
-  Play, Shield, Target, TrendingUp, Truck, Users, Zap,
+  Activity, ArrowRight, Bot, Brain, CheckSquare, CreditCard,
+  DollarSign, FileText, Mail, MessageSquare,
+  Shield, Target, TrendingUp, Truck, Users,
 } from "lucide-react";
 
-// ── Clickable KPI Card ──
-function KPICard({
-  title, value, subtitle, icon: Icon, href, variant = "default", className,
-}: {
-  title: string;
-  value: string | number;
-  subtitle?: string;
-  icon: React.ElementType;
-  href: string;
-  variant?: "default" | "danger" | "warning" | "success" | "info";
-  className?: string;
-}) {
-  const colors = {
-    default: "hover:border-foreground/20",
-    danger: "border-danger/30 bg-danger/5 hover:bg-danger/10",
-    warning: "border-warning/30 bg-warning/5 hover:bg-warning/10",
-    success: "border-success/30 bg-success/5 hover:bg-success/10",
-    info: "border-info/30 bg-info/5 hover:bg-info/10",
-  };
-  const iconColors = {
-    default: "text-muted-foreground",
-    danger: "text-danger",
-    warning: "text-warning",
-    success: "text-success",
-    info: "text-info",
-  };
-  const valueColors = {
-    default: "",
-    danger: "text-danger",
-    warning: "text-warning",
-    success: "text-success",
-    info: "text-info",
-  };
-
-  return (
-    <Link href={href} className={cn("block group", className)}>
-      <Card className={cn("transition-all cursor-pointer h-full", colors[variant])}>
-        <CardContent className="pt-3 pb-2 sm:pt-4 sm:pb-3">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-muted-foreground min-w-0">
-              <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0", iconColors[variant])} />
-              <span className="truncate">{title}</span>
-            </div>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all shrink-0" />
-          </div>
-          <p className={cn("mt-1 text-xl sm:text-2xl font-bold tabular-nums truncate", valueColors[variant])}>
-            {value}
-          </p>
-          {subtitle && (
-            <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
-          )}
-        </CardContent>
-      </Card>
-    </Link>
-  );
-}
-
-// ── Section Header ──
-function SectionHeader({ title, icon: Icon, color }: { title: string; icon: React.ElementType; color: string }) {
-  return (
-    <div className="flex items-center gap-2 pt-2">
-      <Icon className={cn("h-4 w-4", color)} />
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
-      <div className="flex-1 border-b" />
-    </div>
-  );
-}
-
-// ── Agents Summary Widget ──
-function AgentsSummary() {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [agents, setAgents] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [insights, setInsights] = useState<any[]>([]);
-  const [runningAll, setRunningAll] = useState(false);
-
-  useEffect(() => {
-    async function load() {
-      const [agentsRes, insightsRes] = await Promise.all([
-        supabase.rpc("get_agents_overview"),
-        supabase.from("agent_insights").select("id, agent_id, title, severity, confidence, insight_type, created_at")
-          .in("state", ["new", "seen"]).gte("confidence", 0.65).order("created_at", { ascending: false }).limit(3),
-      ]);
-      setAgents(agentsRes.data ?? []);
-      setInsights(insightsRes.data ?? []);
-    }
-    load();
-  }, []);
-
-  // Domain config is now centralized in @/lib/domains
-
-  async function runAll() {
-    setRunningAll(true);
-    try {
-      await fetch("/api/agents/run", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_all: true }),
-      });
-      const [a, i] = await Promise.all([
-        supabase.rpc("get_agents_overview"),
-        supabase.from("agent_insights").select("id, agent_id, title, severity, confidence, insight_type, created_at")
-          .in("state", ["new", "seen"]).gte("confidence", 0.65).order("created_at", { ascending: false }).limit(3),
-      ]);
-      setAgents(a.data ?? []);
-      setInsights(i.data ?? []);
-    } finally { setRunningAll(false); }
-  }
-
-  const totalNewInsights = agents.reduce((s: number, a: { new_insights: number }) => s + (a.new_insights ?? 0), 0);
-
-  return (
-    <div className="space-y-3">
-      {/* Agent cards - horizontal scroll on mobile */}
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 min-w-0">
-          {agents.map((a) => {
-            const dc = getDomainConfig(a.domain);
-            const Icon = dc.icon;
-            return (
-              <Link key={a.slug} href="/agents" className="flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1.5 sm:px-3 sm:py-2 hover:bg-muted/50 transition-colors">
-                <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", dc.color)} />
-                <div className="text-[11px] sm:text-xs">
-                  <p className="font-medium">{a.name?.replace("Agente de ", "")}</p>
-                  <p className="text-muted-foreground">
-                    {a.new_insights > 0 ? <span className="text-success font-medium">{a.new_insights} nuevos</span> : a.last_run_at ? timeAgo(a.last_run_at) : "nunca"}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-        <Button size="sm" variant="outline" onClick={runAll} disabled={runningAll} className="shrink-0">
-          {runningAll ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
-          <span className="hidden sm:inline">{runningAll ? "..." : "Ejecutar"}</span>
-        </Button>
-      </div>
-
-      {/* Latest insights preview */}
-      {insights.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <Link href="/inbox" className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-domain-relationships" />
-                <CardTitle className="text-sm sm:text-base">Insights Recientes ({totalNewInsights} nuevos)</CardTitle>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {insights.map((ins) => (
-              <Link key={ins.id} href={`/inbox/insight/${ins.id}`} className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors">
-                <SeverityBadge severity={ins.severity} />
-                <span className="text-sm font-medium truncate flex-1 min-w-0">{ins.title}</span>
-                <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{timeAgo(ins.created_at)}</span>
-              </Link>
-            ))}
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
+import { KPICard } from "./components/kpi-card";
+import { SectionHeader } from "./components/section-header";
+import { AgentsSummary } from "./components/agents-summary";
 
 // ── Main data fetch (optimized: fewer queries, focused on agent_insights) ──
 async function fetchDashboard() {

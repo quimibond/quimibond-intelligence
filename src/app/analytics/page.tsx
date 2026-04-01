@@ -23,7 +23,7 @@ import {
   Legend,
 } from "recharts";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/utils";
+import type { CommunicationMetric, Briefing } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -38,48 +38,20 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { ChartTooltip } from "./components/chart-tooltip";
 
-// ── Types ──
-
-interface ResponseMetric {
-  id: number;
-  metric_date: string;
-  account: string | null;
-  emails_received: number;
-  emails_sent: number;
-  threads_started: number;
-  threads_replied: number;
-  threads_unanswered: number;
-  avg_response_hours: number | null;
-  fastest_response_hours: number | null;
-  slowest_response_hours: number | null;
-}
-
-interface AccountSummary {
-  id: number;
-  summary_date: string;
-  account: string | null;
-  department: string | null;
-  total_emails: number;
-  external_emails: number;
-  internal_emails: number;
-  key_items: number | null;
-  waiting_response: number | null;
-  urgent_items: number | null;
-  overall_sentiment: string | null;
-  risks_detected: number | null;
-}
-
-// ── Chart colors that work in light and dark themes ──
-
-const COLORS = {
-  received: "#3b82f6", // blue-500
-  sent: "#10b981", // emerald-500
-  avgResponse: "#f59e0b", // amber-500
-  started: "#6366f1", // indigo-500
-  replied: "#10b981", // emerald-500
-  unanswered: "#ef4444", // red-500
-  sentiment: "#8b5cf6", // violet-500
+// ── Chart colors ──
+// Recharts requires raw hex/rgb values — CSS custom properties (oklch) don't work.
+// These map conceptually to the theme's --chart-1 through --chart-5 palette
+// but are hardcoded hex so Recharts can render them in SVG.
+const CHART_COLORS = {
+  received: "#3b82f6", // ~chart-1 (blue)
+  sent: "#10b981", // ~chart-2 (emerald)
+  avgResponse: "#f59e0b", // ~chart-4 (amber)
+  started: "#6366f1", // ~chart-3 (indigo)
+  replied: "#10b981", // ~chart-2 (emerald)
+  unanswered: "#ef4444", // ~chart-5 (red)
+  sentiment: "#8b5cf6", // violet
 };
 
 // ── Helpers ──
@@ -101,42 +73,11 @@ function sentimentToNumber(sentiment: string | null): number | null {
   return map[sentiment.toLowerCase()] ?? null;
 }
 
-// ── Custom Tooltip ──
-
-function ChartTooltip({
-  active,
-  payload,
-  label,
-}: {
-  active?: boolean;
-  payload?: Array<{ name: string; value: number; color: string }>;
-  label?: string;
-}) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="rounded-lg border bg-background px-3 py-2 shadow-md">
-      <p className="mb-1 text-xs font-medium text-muted-foreground">{label}</p>
-      {payload.map((entry, i) => (
-        <div key={i} className="flex items-center gap-2 text-xs">
-          <div
-            className="h-2 w-2 rounded-full"
-            style={{ backgroundColor: entry.color }}
-          />
-          <span className="text-muted-foreground">{entry.name}:</span>
-          <span className="font-medium">
-            {typeof entry.value === "number" ? entry.value.toFixed(1) : entry.value}
-          </span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Component ──
 
 export default function AnalyticsPage() {
-  const [metrics, setMetrics] = useState<ResponseMetric[]>([]);
-  const [summaries, setSummaries] = useState<AccountSummary[]>([]);
+  const [metrics, setMetrics] = useState<CommunicationMetric[]>([]);
+  const [summaries, setSummaries] = useState<Briefing[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -155,8 +96,8 @@ export default function AnalyticsPage() {
           .limit(60),
       ]);
 
-      if (metricsRes.data) setMetrics(metricsRes.data as ResponseMetric[]);
-      if (summariesRes.data) setSummaries(summariesRes.data as AccountSummary[]);
+      if (metricsRes.data) setMetrics(metricsRes.data as CommunicationMetric[]);
+      if (summariesRes.data) setSummaries(summariesRes.data as Briefing[]);
       setLoading(false);
     }
 
@@ -222,7 +163,7 @@ export default function AnalyticsPage() {
     for (const s of summaries) {
       const val = sentimentToNumber(s.overall_sentiment);
       if (val == null) continue;
-      const date = (s as unknown as Record<string, unknown>).briefing_date as string ?? (s as unknown as Record<string, unknown>).summary_date as string;
+      const date = s.briefing_date;
       const existing = byDate.get(date) ?? { total: 0, count: 0 };
       existing.total += val;
       existing.count += 1;
@@ -423,8 +364,8 @@ export default function AnalyticsPage() {
                     type="monotone"
                     dataKey="received"
                     name="Recibidos"
-                    stroke={COLORS.received}
-                    fill={COLORS.received}
+                    stroke={CHART_COLORS.received}
+                    fill={CHART_COLORS.received}
                     fillOpacity={0.15}
                     strokeWidth={2}
                   />
@@ -432,8 +373,8 @@ export default function AnalyticsPage() {
                     type="monotone"
                     dataKey="sent"
                     name="Enviados"
-                    stroke={COLORS.sent}
-                    fill={COLORS.sent}
+                    stroke={CHART_COLORS.sent}
+                    fill={CHART_COLORS.sent}
                     fillOpacity={0.15}
                     strokeWidth={2}
                   />
@@ -473,7 +414,7 @@ export default function AnalyticsPage() {
                     type="monotone"
                     dataKey="avg_hours"
                     name="Promedio (horas)"
-                    stroke={COLORS.avgResponse}
+                    stroke={CHART_COLORS.avgResponse}
                     strokeWidth={2}
                     dot={{ r: 2 }}
                     activeDot={{ r: 4 }}
@@ -516,21 +457,21 @@ export default function AnalyticsPage() {
                   <Bar
                     dataKey="started"
                     name="Iniciados"
-                    fill={COLORS.started}
+                    fill={CHART_COLORS.started}
                     stackId="threads"
                     radius={[0, 0, 0, 0]}
                   />
                   <Bar
                     dataKey="replied"
                     name="Respondidos"
-                    fill={COLORS.replied}
+                    fill={CHART_COLORS.replied}
                     stackId="threads"
                     radius={[0, 0, 0, 0]}
                   />
                   <Bar
                     dataKey="unanswered"
                     name="Sin respuesta"
-                    fill={COLORS.unanswered}
+                    fill={CHART_COLORS.unanswered}
                     stackId="threads"
                     radius={[2, 2, 0, 0]}
                   />
@@ -571,8 +512,8 @@ export default function AnalyticsPage() {
                     type="monotone"
                     dataKey="sentiment"
                     name="Sentimiento"
-                    stroke={COLORS.sentiment}
-                    fill={COLORS.sentiment}
+                    stroke={CHART_COLORS.sentiment}
+                    fill={CHART_COLORS.sentiment}
                     fillOpacity={0.15}
                     strokeWidth={2}
                   />
