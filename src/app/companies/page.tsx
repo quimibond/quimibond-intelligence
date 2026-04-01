@@ -2,8 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { timeAgo, formatCurrency } from "@/lib/utils";
+import { cn, timeAgo, formatCurrency } from "@/lib/utils";
 import type { Company } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -14,36 +15,21 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Building2,
-  Search,
-  MapPin,
-  Sparkles,
-  Users,
-  AlertTriangle,
-  Mail,
-  DollarSign,
-  ShieldAlert,
-  TrendingUp,
-  ChevronDown,
+  Building2, Search, Sparkles, Users, DollarSign, ShieldAlert,
+  TrendingUp, ChevronDown, ChevronRight, Mail,
 } from "lucide-react";
 
 const PAGE_SIZE = 60;
 
-type SortField = "name" | "lifetime_value" | "risk_signals";
+type SortField = "name" | "lifetime_value" | "total_pending";
 type SortDirection = "asc" | "desc";
 
-// Extra data fetched per company via separate queries
 interface CompanyExtras {
   contactCount: number;
-  openAlertCount: number;
+  insightCount: number;
   lastEmailAt: string | null;
 }
 
@@ -56,39 +42,26 @@ function buildCompanyQuery(search: string, typeFilter: string, sortField: SortFi
   if (typeFilter === "customer") q = q.eq("is_customer", true);
   if (typeFilter === "supplier") q = q.eq("is_supplier", true);
 
-  // Apply sorting
-  if (sortField === "name") {
-    q = q.order("name", { ascending: sortDir === "asc" });
-  } else if (sortField === "lifetime_value") {
-    q = q.order("lifetime_value", { ascending: sortDir === "asc", nullsFirst: false });
-  } else if (sortField === "risk_signals") {
-    // Sort by name as fallback since risk_signals is JSON; client-side sort applied after
-    q = q.order("name", { ascending: true });
-  }
-
+  q = q.order(sortField, { ascending: sortDir === "asc", nullsFirst: false });
   return q;
 }
 
-function getRiskSignalCount(company: Company): number {
-  if (!company.risk_signals) return 0;
-  if (Array.isArray(company.risk_signals)) return company.risk_signals.length;
-  return 0;
-}
-
-function getHealthIndicator(company: Company): { label: string; color: string; variant: "success" | "warning" | "critical" | "secondary" } {
-  const riskCount = getRiskSignalCount(company);
+function getHealthIndicator(company: Company): { label: string; variant: "success" | "warning" | "critical" | "secondary" } {
+  const riskCount = Array.isArray(company.risk_signals) ? company.risk_signals.length : 0;
   const trend = company.trend_pct;
+  const pending = company.total_pending ?? 0;
 
-  if (riskCount >= 3 || (trend != null && trend < -20)) {
-    return { label: "Critico", color: "text-red-600 dark:text-red-400", variant: "critical" };
+  if (riskCount >= 3 || (trend != null && trend < -20) || pending > 500000) {
+    return { label: "Critico", variant: "critical" };
   }
-  if (riskCount >= 1 || (trend != null && trend < -5)) {
-    return { label: "Atencion", color: "text-amber-600 dark:text-amber-400", variant: "warning" };
+  if (riskCount >= 1 || (trend != null && trend < -5) || pending > 100000) {
+    return { label: "Atencion", variant: "warning" };
   }
-  return { label: "Sano", color: "text-emerald-600 dark:text-emerald-400", variant: "success" };
+  return { label: "Sano", variant: "success" };
 }
 
 export default function CompaniesPage() {
+  const router = useRouter();
   const [companies, setCompanies] = useState<Company[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -98,75 +71,60 @@ export default function CompaniesPage() {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [extras, setExtras] = useState<Record<number, CompanyExtras>>({});
+  const [totalCount, setTotalCount] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchCompanies = useCallback(async (searchVal: string, type: string, sf: SortField, sd: SortDirection) => {
     setLoading(true);
-    const { data } = await buildCompanyQuery(searchVal, type, sf, sd).range(0, PAGE_SIZE - 1);
-    let results = (data ?? []) as Company[];
 
-    // Client-side sort for risk_signals
-    if (sf === "risk_signals") {
-      results = [...results].sort((a, b) => {
-        const diff = getRiskSignalCount(a) - getRiskSignalCount(b);
-        return sd === "asc" ? diff : -diff;
-      });
-    }
+    // Get total count and first page in parallel
+    const countQuery = supabase.from("companies").select("id", { count: "exact", head: true });
+    if (searchVal.trim()) countQuery.ilike("name", `%${searchVal.trim()}%`);
+    if (type === "customer") countQuery.eq("is_customer", true);
+    if (type === "supplier") countQuery.eq("is_supplier", true);
 
+    const [{ data }, { count }] = await Promise.all([
+      buildCompanyQuery(searchVal, type, sf, sd).range(0, PAGE_SIZE - 1),
+      countQuery,
+    ]);
+
+    const results = (data ?? []) as Company[];
     setCompanies(results);
+    setTotalCount(count);
     setHasMore(results.length === PAGE_SIZE);
     setLoading(false);
   }, []);
 
-  // Fetch extra info (contacts count, open alerts, last email) for loaded companies
   const fetchExtras = useCallback(async (companyIds: number[]) => {
     if (companyIds.length === 0) return;
 
-    const [contactsRes, alertsRes, emailsRes] = await Promise.all([
-      supabase
-        .from("contacts")
-        .select("company_id")
-        .in("company_id", companyIds),
-      supabase
-        .from("alerts")
-        .select("company_id")
-        .in("company_id", companyIds)
-        .in("state", ["new", "acknowledged"]),
-      supabase
-        .from("emails")
-        .select("company_id, date")
-        .in("company_id", companyIds)
-        .order("date", { ascending: false }),
+    const [contactsRes, insightsRes, emailsRes] = await Promise.all([
+      supabase.from("contacts").select("company_id").in("company_id", companyIds),
+      supabase.from("agent_insights").select("company_id")
+        .in("company_id", companyIds).in("state", ["new", "seen"]),
+      supabase.from("emails").select("company_id, email_date")
+        .in("company_id", companyIds).order("email_date", { ascending: false }),
     ]);
 
     const newExtras: Record<number, CompanyExtras> = {};
     for (const id of companyIds) {
-      newExtras[id] = { contactCount: 0, openAlertCount: 0, lastEmailAt: null };
+      newExtras[id] = { contactCount: 0, insightCount: 0, lastEmailAt: null };
     }
 
-    // Count contacts per company
     if (contactsRes.data) {
       for (const row of contactsRes.data) {
-        if (row.company_id && newExtras[row.company_id]) {
-          newExtras[row.company_id].contactCount++;
-        }
+        if (row.company_id && newExtras[row.company_id]) newExtras[row.company_id].contactCount++;
       }
     }
-
-    // Count open alerts per company
-    if (alertsRes.data) {
-      for (const row of alertsRes.data) {
-        if (row.company_id && newExtras[row.company_id]) {
-          newExtras[row.company_id].openAlertCount++;
-        }
+    if (insightsRes.data) {
+      for (const row of insightsRes.data) {
+        if (row.company_id && newExtras[row.company_id]) newExtras[row.company_id].insightCount++;
       }
     }
-
-    // Last email per company (take the first occurrence since sorted desc)
     if (emailsRes.data) {
       for (const row of emailsRes.data) {
         if (row.company_id && newExtras[row.company_id] && !newExtras[row.company_id].lastEmailAt) {
-          newExtras[row.company_id].lastEmailAt = row.date;
+          newExtras[row.company_id].lastEmailAt = row.email_date;
         }
       }
     }
@@ -177,9 +135,7 @@ export default function CompaniesPage() {
   useEffect(() => { fetchCompanies("", "all", "name", "asc"); }, [fetchCompanies]);
 
   useEffect(() => {
-    if (companies.length > 0) {
-      fetchExtras(companies.map((c) => c.id));
-    }
+    if (companies.length > 0) fetchExtras(companies.map((c) => c.id));
   }, [companies, fetchExtras]);
 
   useEffect(() => {
@@ -211,21 +167,15 @@ export default function CompaniesPage() {
     }
   }
 
-  // Quick stats computed from loaded companies
-  const stats = useMemo(() => {
-    const totalCustomers = companies.filter((c) => c.is_customer).length;
-    const totalSuppliers = companies.filter((c) => c.is_supplier).length;
-    const totalLtv = companies.reduce((sum, c) => sum + (c.lifetime_value ?? 0), 0);
-    return {
-      total: companies.length,
-      customers: totalCustomers,
-      suppliers: totalSuppliers,
-      ltv: totalLtv,
-    };
-  }, [companies]);
+  const stats = useMemo(() => ({
+    total: totalCount ?? companies.length,
+    customers: companies.filter((c) => c.is_customer).length,
+    suppliers: companies.filter((c) => c.is_supplier).length,
+    ltv: companies.reduce((sum, c) => sum + (c.lifetime_value ?? 0), 0),
+  }), [companies, totalCount]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <PageHeader
         title="Empresas"
         description="Directorio de empresas e inteligencia comercial"
@@ -233,41 +183,41 @@ export default function CompaniesPage() {
         <BatchEnrichButton type="companies" />
       </PageHeader>
 
-      {/* Quick Stats Bar */}
+      {/* Quick Stats */}
       {!loading && companies.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           <div className="rounded-lg border bg-card p-3">
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Building2 className="h-4 w-4" />
-              <span className="text-xs font-medium">Total empresas</span>
+              <Building2 className="h-3.5 w-3.5" />
+              <span className="text-[11px] sm:text-xs font-medium">Total</span>
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums">{stats.total}{hasMore ? "+" : ""}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums">{stats.total}</p>
           </div>
           <div className="rounded-lg border bg-card p-3">
             <div className="flex items-center gap-2 text-muted-foreground">
-              <Users className="h-4 w-4" />
-              <span className="text-xs font-medium">Clientes</span>
+              <Users className="h-3.5 w-3.5" />
+              <span className="text-[11px] sm:text-xs font-medium">Clientes</span>
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{stats.customers}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{stats.customers}</p>
           </div>
           <div className="rounded-lg border bg-card p-3">
             <div className="flex items-center gap-2 text-muted-foreground">
-              <TrendingUp className="h-4 w-4" />
-              <span className="text-xs font-medium">Proveedores</span>
+              <TrendingUp className="h-3.5 w-3.5" />
+              <span className="text-[11px] sm:text-xs font-medium">Proveedores</span>
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{stats.suppliers}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{stats.suppliers}</p>
           </div>
           <div className="rounded-lg border bg-card p-3">
             <div className="flex items-center gap-2 text-muted-foreground">
-              <DollarSign className="h-4 w-4" />
-              <span className="text-xs font-medium">Valor total</span>
+              <DollarSign className="h-3.5 w-3.5" />
+              <span className="text-[11px] sm:text-xs font-medium">Valor total</span>
             </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(stats.ltv)}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(stats.ltv)}</p>
           </div>
         </div>
       )}
 
-      {/* Search + Filters + Sort */}
+      {/* Search + Filters */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -278,9 +228,7 @@ export default function CompaniesPage() {
             className="pl-9"
           />
         </div>
-
-        {/* Filter badges - horizontally scrollable on mobile */}
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0 scrollbar-none">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 sm:pb-0">
           <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-32 shrink-0">
             <option value="all">Todas</option>
             <option value="customer">Clientes</option>
@@ -299,28 +247,25 @@ export default function CompaniesPage() {
             <option value="name-desc">Nombre Z-A</option>
             <option value="lifetime_value-desc">Mayor valor</option>
             <option value="lifetime_value-asc">Menor valor</option>
-            <option value="risk_signals-desc">Mayor riesgo</option>
-            <option value="risk_signals-asc">Menor riesgo</option>
+            <option value="total_pending-desc">Mayor pendiente</option>
+            <option value="total_pending-asc">Menor pendiente</option>
           </Select>
         </div>
       </div>
 
       {/* Loading */}
       {loading && (
-        <>
-          {/* Stats skeleton */}
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[76px] w-full" />
-            ))}
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[76px]" />)}
           </div>
-          {/* Cards skeleton for mobile, table skeleton for desktop */}
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-[180px] w-full" />
-            ))}
+          <div className="space-y-2 md:hidden">
+            {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[120px]" />)}
           </div>
-        </>
+          <div className="hidden md:block">
+            {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[48px]" />)}
+          </div>
+        </div>
       )}
 
       {/* Empty state */}
@@ -328,91 +273,46 @@ export default function CompaniesPage() {
         <EmptyState
           icon={Building2}
           title="Sin empresas"
-          description={
-            search
-              ? "No se encontraron empresas con ese nombre."
-              : "Aun no hay empresas registradas en el sistema."
-          }
+          description={search ? "No se encontraron empresas con ese nombre." : "Aun no hay empresas en el sistema."}
         />
       )}
 
-      {/* Mobile Card Layout */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* MOBILE: Card layout                                          */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       {!loading && companies.length > 0 && (
-        <div className="space-y-3 md:hidden">
+        <div className="space-y-2 md:hidden">
           {companies.map((company) => {
             const health = getHealthIndicator(company);
-            const riskCount = getRiskSignalCount(company);
             const ext = extras[company.id];
             return (
-              <Link key={company.id} href={`/companies/${company.id}`}>
-                <div className="rounded-lg border bg-card p-4 space-y-3 transition-colors hover:border-primary/30 active:bg-muted/50">
-                  {/* Header: name + health */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <Building2 className="h-5 w-5 text-primary" />
+              <Link key={company.id} href={`/companies/${company.id}`} className="block">
+                <div className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/30 active:bg-muted/50">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                        <Building2 className="h-4 w-4 text-primary" />
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-semibold leading-tight truncate">{company.name}</p>
-                        {(company.city || company.country) && (
-                          <p className="text-xs text-muted-foreground truncate mt-0.5">
-                            {[company.city, company.country].filter(Boolean).join(", ")}
-                          </p>
-                        )}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2">
+                          <p className="text-sm font-semibold truncate">{company.name}</p>
+                          <Badge variant={health.variant} className="shrink-0 text-[10px]">{health.label}</Badge>
+                        </div>
+                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
+                          {company.is_customer && <span className="text-emerald-500">Cliente</span>}
+                          {company.is_supplier && <span className="text-blue-500">Proveedor</span>}
+                          {company.lifetime_value != null && company.lifetime_value > 0 && (
+                            <span className="font-semibold tabular-nums">{formatCurrency(company.lifetime_value)}</span>
+                          )}
+                          {company.total_pending != null && company.total_pending > 0 && (
+                            <span className="text-red-500 tabular-nums">{formatCurrency(company.total_pending)} pend.</span>
+                          )}
+                          {ext?.contactCount ? <span className="flex items-center gap-0.5"><Users className="h-3 w-3" />{ext.contactCount}</span> : null}
+                          {ext?.insightCount ? <span className="text-amber-500">{ext.insightCount} insights</span> : null}
+                        </div>
                       </div>
                     </div>
-                    <Badge variant={health.variant} className="shrink-0">{health.label}</Badge>
-                  </div>
-
-                  {/* Badges row */}
-                  <div className="flex flex-wrap gap-1.5">
-                    {company.is_customer && <Badge variant="success">Cliente</Badge>}
-                    {company.is_supplier && <Badge variant="info">Proveedor</Badge>}
-                    {company.industry && <Badge variant="secondary">{company.industry}</Badge>}
-                  </div>
-
-                  {/* Key metrics row */}
-                  <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                    {company.lifetime_value != null && company.lifetime_value > 0 && (
-                      <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
-                        {formatCurrency(company.lifetime_value)}
-                      </span>
-                    )}
-                    {riskCount > 0 && (
-                      <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                        <ShieldAlert className="h-3 w-3" />
-                        {riskCount} riesgo{riskCount !== 1 ? "s" : ""}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* Extra info row */}
-                  <div className="flex items-center gap-3 text-xs text-muted-foreground border-t pt-2">
-                    {ext && (
-                      <>
-                        <span className="flex items-center gap-1">
-                          <Users className="h-3 w-3" />
-                          {ext.contactCount}
-                        </span>
-                        {ext.openAlertCount > 0 && (
-                          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400">
-                            <AlertTriangle className="h-3 w-3" />
-                            {ext.openAlertCount}
-                          </span>
-                        )}
-                        {ext.lastEmailAt && (
-                          <span className="flex items-center gap-1">
-                            <Mail className="h-3 w-3" />
-                            {timeAgo(ext.lastEmailAt)}
-                          </span>
-                        )}
-                      </>
-                    )}
-                    {company.enriched_at && (
-                      <span className="flex items-center gap-1 ml-auto" title={`Enriquecido ${timeAgo(company.enriched_at)}`}>
-                        <Sparkles className="h-3 w-3 text-amber-500" />
-                      </span>
-                    )}
+                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
                   </div>
                 </div>
               </Link>
@@ -421,130 +321,91 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      {/* Desktop Table Layout */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* DESKTOP: Table layout (simplified columns)                   */}
+      {/* ══════════════════════════════════════════════════════════════ */}
       {!loading && companies.length > 0 && (
         <div className="hidden md:block">
           <div className="rounded-lg border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-10" />
                   <TableHead>
-                    <button
-                      onClick={() => toggleSort("name")}
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
-                    >
-                      Nombre
-                      {sortField === "name" && <ChevronDown className={`h-3 w-3 transition-transform ${sortDir === "asc" ? "rotate-180" : ""}`} />}
+                    <button onClick={() => toggleSort("name")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Empresa
+                      {sortField === "name" && <ChevronDown className={cn("h-3 w-3 transition-transform", sortDir === "asc" && "rotate-180")} />}
                     </button>
                   </TableHead>
                   <TableHead>Tipo</TableHead>
-                  <TableHead>Industria</TableHead>
                   <TableHead>
-                    <button
-                      onClick={() => toggleSort("lifetime_value")}
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
-                    >
+                    <button onClick={() => toggleSort("lifetime_value")} className="flex items-center gap-1 hover:text-foreground transition-colors">
                       Valor
-                      {sortField === "lifetime_value" && <ChevronDown className={`h-3 w-3 transition-transform ${sortDir === "asc" ? "rotate-180" : ""}`} />}
+                      {sortField === "lifetime_value" && <ChevronDown className={cn("h-3 w-3 transition-transform", sortDir === "asc" && "rotate-180")} />}
                     </button>
                   </TableHead>
                   <TableHead>
-                    <button
-                      onClick={() => toggleSort("risk_signals")}
-                      className="flex items-center gap-1 hover:text-foreground transition-colors"
-                    >
-                      Riesgos
-                      {sortField === "risk_signals" && <ChevronDown className={`h-3 w-3 transition-transform ${sortDir === "asc" ? "rotate-180" : ""}`} />}
+                    <button onClick={() => toggleSort("total_pending")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Pendiente
+                      {sortField === "total_pending" && <ChevronDown className={cn("h-3 w-3 transition-transform", sortDir === "asc" && "rotate-180")} />}
                     </button>
                   </TableHead>
                   <TableHead>Salud</TableHead>
                   <TableHead className="text-center">Contactos</TableHead>
-                  <TableHead className="text-center">Alertas</TableHead>
+                  <TableHead className="text-center">Insights</TableHead>
                   <TableHead>Ultimo email</TableHead>
-                  <TableHead>Ubicacion</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {companies.map((company) => {
                   const health = getHealthIndicator(company);
-                  const riskCount = getRiskSignalCount(company);
                   const ext = extras[company.id];
                   return (
-                    <TableRow key={company.id} className="cursor-pointer hover:bg-muted/50">
+                    <TableRow
+                      key={company.id}
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => router.push(`/companies/${company.id}`)}
+                    >
                       <TableCell>
-                        <Link href={`/companies/${company.id}`} className="contents">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                             <Building2 className="h-4 w-4 text-primary" />
                           </div>
-                        </Link>
-                      </TableCell>
-                      <TableCell>
-                        <Link href={`/companies/${company.id}`} className="font-medium hover:underline">
-                          {company.name}
-                        </Link>
+                          <div className="min-w-0">
+                            <p className="font-medium truncate">{company.name}</p>
+                            {company.city && <p className="text-[10px] text-muted-foreground truncate">{company.city}</p>}
+                          </div>
+                          {company.enriched_at && <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-wrap gap-1">
-                          {company.is_customer && <Badge variant="success">Cliente</Badge>}
-                          {company.is_supplier && <Badge variant="info">Proveedor</Badge>}
+                          {company.is_customer && <Badge variant="success" className="text-[10px]">Cliente</Badge>}
+                          {company.is_supplier && <Badge variant="info" className="text-[10px]">Proveedor</Badge>}
                         </div>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {company.industry ?? "—"}
                       </TableCell>
                       <TableCell>
                         {company.lifetime_value != null && company.lifetime_value > 0 ? (
-                          <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400">
+                          <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400 text-sm">
                             {formatCurrency(company.lifetime_value)}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground">—</span>
-                        )}
+                        ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>
-                        {riskCount > 0 ? (
-                          <span className="flex items-center gap-1 text-amber-600 dark:text-amber-400 text-sm tabular-nums">
-                            <ShieldAlert className="h-3.5 w-3.5" />
-                            {riskCount}
+                        {company.total_pending != null && company.total_pending > 0 ? (
+                          <span className="font-semibold tabular-nums text-red-600 dark:text-red-400 text-sm">
+                            {formatCurrency(company.total_pending)}
                           </span>
-                        ) : (
-                          <span className="text-muted-foreground">0</span>
-                        )}
+                        ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
-                      <TableCell>
-                        <Badge variant={health.variant}>{health.label}</Badge>
-                      </TableCell>
-                      <TableCell className="text-center tabular-nums text-muted-foreground">
-                        {ext ? ext.contactCount : "—"}
-                      </TableCell>
+                      <TableCell><Badge variant={health.variant}>{health.label}</Badge></TableCell>
+                      <TableCell className="text-center tabular-nums text-muted-foreground">{ext?.contactCount ?? "—"}</TableCell>
                       <TableCell className="text-center">
-                        {ext && ext.openAlertCount > 0 ? (
-                          <span className="flex items-center justify-center gap-1 text-amber-600 dark:text-amber-400 tabular-nums">
-                            <AlertTriangle className="h-3.5 w-3.5" />
-                            {ext.openAlertCount}
-                          </span>
-                        ) : (
-                          <span className="text-muted-foreground tabular-nums">{ext ? "0" : "—"}</span>
-                        )}
+                        {ext && ext.insightCount > 0 ? (
+                          <Badge variant="warning" className="text-[10px]">{ext.insightCount}</Badge>
+                        ) : <span className="text-muted-foreground tabular-nums">{ext ? "0" : "—"}</span>}
                       </TableCell>
-                      <TableCell className="text-muted-foreground whitespace-nowrap">
+                      <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
                         {ext?.lastEmailAt ? timeAgo(ext.lastEmailAt) : "—"}
-                      </TableCell>
-                      <TableCell className="text-muted-foreground">
-                        {(company.city || company.country) ? (
-                          <div className="flex items-center gap-1">
-                            <MapPin className="h-3.5 w-3.5 shrink-0" />
-                            <span className="truncate max-w-[120px]">
-                              {[company.city, company.country].filter(Boolean).join(", ")}
-                            </span>
-                          </div>
-                        ) : "—"}
-                        {company.enriched_at && (
-                          <span className="inline-flex ml-1.5" title={`Enriquecido ${timeAgo(company.enriched_at)}`}>
-                            <Sparkles className="h-3 w-3 text-amber-500" />
-                          </span>
-                        )}
                       </TableCell>
                     </TableRow>
                   );
@@ -556,8 +417,8 @@ export default function CompaniesPage() {
       )}
 
       {/* Load more */}
-      {hasMore && companies.length > 0 && (
-        <div className="flex justify-center pt-4">
+      {hasMore && companies.length > 0 && !loading && (
+        <div className="flex justify-center pt-2">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? "Cargando..." : "Cargar mas empresas"}
           </Button>
