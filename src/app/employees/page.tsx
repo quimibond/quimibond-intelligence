@@ -2,19 +2,20 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { MiniStatCard } from "@/components/shared/mini-stat-card";
 import { LoadingGrid } from "@/components/shared/loading-grid";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { EmptyState } from "@/components/shared/empty-state";
+import { Select } from "@/components/ui/select-native";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from "@/components/ui/table";
-import { formatDate } from "@/lib/utils";
 import {
-  Users, Mail, CheckSquare, AlertTriangle, Clock, User, BarChart3,
+  Users, CheckSquare, AlertTriangle, Clock, User, BarChart3,
 } from "lucide-react";
 
 interface Employee {
@@ -36,7 +37,8 @@ export default function EmployeesPage() {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [employeeMetrics, setEmployeeMetrics] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
+  const [departmentFilter, setDepartmentFilter] = useState("all");
 
   useEffect(() => {
     async function load() {
@@ -93,14 +95,13 @@ export default function EmployeesPage() {
         insightsByEmail.set(i.assignee_email, (insightsByEmail.get(i.assignee_email) ?? 0) + 1);
       }
 
-      // Employee metrics lookup by name (fuzzy — first name match)
+      // Employee metrics lookup by name (fuzzy -- first name match)
       const metricsByName = new Map<string, { execution_score: number; actions_overdue: number; contacts_managed: number }>();
       for (const m of metricsRes.data ?? []) {
         if (m.name) metricsByName.set(m.name.toLowerCase(), m);
       }
 
       function findMetrics(name: string) {
-        // Try exact match first, then first name
         const lower = name.toLowerCase();
         if (metricsByName.has(lower)) return metricsByName.get(lower)!;
         const firstName = lower.split(" ")[0];
@@ -175,14 +176,22 @@ export default function EmployeesPage() {
 
   const departments = [...new Set(employees.map(e => e.department).filter(Boolean))] as string[];
 
-  const filtered = filter === "all"
-    ? employees
-    : filter === "issues"
-      ? employees.filter(e => e.overdue_activities > 0)
-      : employees.filter(e => e.department === filter);
+  // Apply search + department filter
+  const filtered = employees.filter((e) => {
+    if (departmentFilter === "issues" && e.overdue_activities <= 0) return false;
+    if (departmentFilter !== "all" && departmentFilter !== "issues" && e.department !== departmentFilter) return false;
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      const matchesName = e.name.toLowerCase().includes(q);
+      const matchesEmail = e.email?.toLowerCase().includes(q);
+      const matchesDept = e.department?.toLowerCase().includes(q);
+      const matchesJob = e.job_title?.toLowerCase().includes(q);
+      if (!matchesName && !matchesEmail && !matchesDept && !matchesJob) return false;
+    }
+    return true;
+  });
 
   const sorted = [...filtered].sort((a, b) => {
-    // Sort by: overdue first, then low execution score, then pending
     if (b.overdue_activities !== a.overdue_activities) return b.overdue_activities - a.overdue_activities;
     if ((a.execution_score ?? 100) !== (b.execution_score ?? 100)) return (a.execution_score ?? 100) - (b.execution_score ?? 100);
     return b.pending_activities - a.pending_activities;
@@ -217,135 +226,172 @@ export default function EmployeesPage() {
         <MiniStatCard icon={CheckSquare} label="Insights" value={totalInsights} />
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        <button
-          onClick={() => setFilter("all")}
-          className={cn(
-            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-            filter === "all" ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/80"
-          )}
+      {/* Search + Filters */}
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar empleado...">
+        <Select
+          value={departmentFilter}
+          onChange={(e) => setDepartmentFilter(e.target.value)}
+          className="w-40 shrink-0"
+          aria-label="Filtrar por departamento"
         >
-          Todos ({employees.length})
-        </button>
-        {withIssues > 0 && (
-          <button
-            onClick={() => setFilter(filter === "issues" ? "all" : "issues")}
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-              filter === "issues" ? "bg-danger text-white" : "bg-danger/10 text-danger-foreground hover:bg-danger/20"
-            )}
-          >
-            Con retrasos ({withIssues})
-          </button>
-        )}
-        {departments.map(d => (
-          <button
-            key={d}
-            onClick={() => setFilter(filter === d ? "all" : d)}
-            className={cn(
-              "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-              filter === d ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/80"
-            )}
-          >
-            {d} ({employees.filter(e => e.department === d).length})
-          </button>
-        ))}
-      </div>
+          <option value="all">Todos ({employees.length})</option>
+          {withIssues > 0 && (
+            <option value="issues">Con retrasos ({withIssues})</option>
+          )}
+          {departments.map(d => (
+            <option key={d} value={d}>
+              {d} ({employees.filter(e => e.department === d).length})
+            </option>
+          ))}
+        </Select>
+      </FilterBar>
 
-      {/* Employee List */}
-      <div className="space-y-2">
-        {sorted.map((emp) => {
-          const hasIssues = emp.overdue_activities > 0;
+      {/* Empty state */}
+      {sorted.length === 0 && (
+        <EmptyState
+          icon={Users}
+          title="Sin empleados"
+          description={
+            search
+              ? "No se encontraron empleados con esa busqueda."
+              : departmentFilter === "issues"
+                ? "Sin empleados con retrasos."
+                : "Sin empleados en este departamento."
+          }
+        />
+      )}
 
-          return (
-            <Card key={emp.id} className={cn(hasIssues && "border-danger/20")}>
-              <CardContent className="py-3">
-                <div className="flex items-center gap-3 sm:gap-4">
-                  {/* Avatar */}
-                  <div className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold shrink-0",
-                    hasIssues ? "bg-danger/15 text-danger-foreground" : "bg-muted text-muted-foreground"
-                  )}>
-                    {emp.name?.charAt(0) ?? <User className="h-4 w-4" />}
-                  </div>
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* MOBILE: Card layout                                          */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {sorted.length > 0 && (
+        <div className="space-y-2 md:hidden">
+          {sorted.map((emp) => {
+            const hasIssues = emp.overdue_activities > 0;
 
-                  {/* Info */}
-                  <div className="min-w-0 flex-1">
-                    <p className="font-medium text-sm truncate">{emp.name}</p>
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
-                      {emp.department && <span>{emp.department}</span>}
-                      {emp.job_title && <><span>·</span><span className="truncate">{emp.job_title}</span></>}
+            return (
+              <Card key={emp.id} className={cn(hasIssues && "border-danger/20")}>
+                <CardContent className="py-3">
+                  <div className="flex items-center gap-3">
+                    {/* Avatar */}
+                    <div className={cn(
+                      "flex h-9 w-9 items-center justify-center rounded-full text-sm font-semibold shrink-0",
+                      hasIssues ? "bg-danger/15 text-danger-foreground" : "bg-muted text-muted-foreground"
+                    )}>
+                      {emp.name?.charAt(0) ?? <User className="h-4 w-4" />}
+                    </div>
+
+                    {/* Info */}
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium text-sm truncate">{emp.name}</p>
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground flex-wrap">
+                        {emp.department && <span>{emp.department}</span>}
+                        {emp.job_title && <><span>·</span><span className="truncate">{emp.job_title}</span></>}
+                      </div>
+                    </div>
+
+                    {/* Mobile badges */}
+                    <div className="flex gap-1 shrink-0">
+                      {emp.overdue_activities > 0 && (
+                        <Badge variant="critical" className="text-[10px]">{emp.overdue_activities} venc.</Badge>
+                      )}
+                      {emp.pending_activities > 0 && !emp.overdue_activities && (
+                        <Badge variant="outline" className="text-[10px]">{emp.pending_activities}</Badge>
+                      )}
+                      {emp.insights_count > 0 && (
+                        <Badge variant="warning" className="text-[10px]">{emp.insights_count}</Badge>
+                      )}
                     </div>
                   </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
-                  {/* Metrics — desktop */}
-                  <div className="hidden sm:flex items-center gap-4 text-center shrink-0">
-                    <div>
-                      <p className="text-[10px] text-muted-foreground">Pendientes</p>
-                      <p className="font-semibold text-sm tabular-nums">{emp.pending_activities}</p>
-                    </div>
-                    <div>
-                      <p className="text-[10px] text-muted-foreground">Vencidas</p>
-                      <p className={cn("font-semibold text-sm tabular-nums", emp.overdue_activities > 0 && "text-danger-foreground")}>
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* DESKTOP: Table layout                                        */}
+      {/* ══════════════════════════════════════════════════════════════ */}
+      {sorted.length > 0 && (
+        <div className="hidden md:block">
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Empleado</TableHead>
+                  <TableHead>Departamento</TableHead>
+                  <TableHead className="text-right">Pendientes</TableHead>
+                  <TableHead className="text-right">Vencidas</TableHead>
+                  <TableHead className="text-right">Ejecucion</TableHead>
+                  <TableHead className="text-right">Acc. vencidas</TableHead>
+                  <TableHead className="text-right">Clientes</TableHead>
+                  <TableHead className="text-right">Insights</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sorted.map((emp) => {
+                  const hasIssues = emp.overdue_activities > 0;
+                  return (
+                    <TableRow key={emp.id}>
+                      <TableCell>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className={cn(
+                            "flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                            hasIssues ? "bg-danger/15 text-danger-foreground" : "bg-muted text-muted-foreground"
+                          )}>
+                            {emp.name?.charAt(0) ?? <User className="h-3.5 w-3.5" />}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm truncate">{emp.name}</p>
+                            {emp.job_title && <p className="text-[10px] text-muted-foreground truncate">{emp.job_title}</p>}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {emp.department ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-sm">
+                        {emp.pending_activities}
+                      </TableCell>
+                      <TableCell className={cn(
+                        "text-right tabular-nums text-sm",
+                        emp.overdue_activities > 0 && "text-danger-foreground font-semibold"
+                      )}>
                         {emp.overdue_activities}
-                      </p>
-                    </div>
-                    {emp.execution_score != null && (
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Ejecucion</p>
-                        <p className={cn(
-                          "font-semibold text-sm tabular-nums",
-                          emp.execution_score >= 50 ? "text-success" : emp.execution_score >= 20 ? "text-warning" : "text-danger-foreground"
-                        )}>
-                          {emp.execution_score}%
-                        </p>
-                      </div>
-                    )}
-                    {emp.actions_overdue > 0 && (
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Acc. vencidas</p>
-                        <p className="font-semibold text-sm tabular-nums text-danger-foreground">{emp.actions_overdue}</p>
-                      </div>
-                    )}
-                    {emp.contacts_managed > 0 && (
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Clientes</p>
-                        <p className="font-semibold text-sm tabular-nums">{emp.contacts_managed}</p>
-                      </div>
-                    )}
-                    {emp.insights_count > 0 && (
-                      <div>
-                        <p className="text-[10px] text-muted-foreground">Insights</p>
-                        <p className="font-semibold text-sm tabular-nums text-warning">{emp.insights_count}</p>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Mobile badges */}
-                  <div className="flex sm:hidden gap-1 shrink-0">
-                    {emp.overdue_activities > 0 && (
-                      <Badge variant="critical" className="text-[10px]">{emp.overdue_activities} venc.</Badge>
-                    )}
-                    {emp.pending_activities > 0 && !emp.overdue_activities && (
-                      <Badge variant="outline" className="text-[10px]">{emp.pending_activities}</Badge>
-                    )}
-                    {emp.insights_count > 0 && (
-                      <Badge variant="warning" className="text-[10px]">{emp.insights_count}</Badge>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-
-        {sorted.length === 0 && (
-          <div className="text-center py-12 text-sm text-muted-foreground">
-            {filter === "issues" ? "Sin empleados con retrasos" : "Sin empleados en este departamento"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-sm">
+                        {emp.execution_score != null ? (
+                          <span className={cn(
+                            "font-semibold",
+                            emp.execution_score >= 50 ? "text-success" : emp.execution_score >= 20 ? "text-warning" : "text-danger-foreground"
+                          )}>
+                            {emp.execution_score}%
+                          </span>
+                        ) : "—"}
+                      </TableCell>
+                      <TableCell className={cn(
+                        "text-right tabular-nums text-sm",
+                        emp.actions_overdue > 0 && "text-danger-foreground font-semibold"
+                      )}>
+                        {emp.actions_overdue > 0 ? emp.actions_overdue : "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-sm text-muted-foreground">
+                        {emp.contacts_managed > 0 ? emp.contacts_managed : "—"}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {emp.insights_count > 0 ? (
+                          <Badge variant="warning" className="text-[10px]">{emp.insights_count}</Badge>
+                        ) : <span className="text-muted-foreground tabular-nums text-sm">0</span>}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Employee Metrics Table */}
       {employeeMetrics.length > 0 && (

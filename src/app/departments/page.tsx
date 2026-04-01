@@ -2,16 +2,17 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { LoadingGrid } from "@/components/shared/loading-grid";
+import { MiniStatCard } from "@/components/shared/mini-stat-card";
+import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { formatDate } from "@/lib/utils";
-import { Building2, Users, AlertTriangle, Clock, BarChart3 } from "lucide-react";
+import { Building2, Users, AlertTriangle, BarChart3 } from "lucide-react";
 
 interface DeptData {
   department: string;
@@ -131,81 +132,108 @@ export default function DepartmentsPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Areas" description="Rendimiento por departamento" />
-        <LoadingGrid rows={6} rowHeight="h-[140px]" />
+        <LoadingGrid stats={3} rows={6} rowHeight="h-[140px]" />
       </div>
     );
   }
 
   const totalEmployees = departments.reduce((s, d) => s + d.employee_count, 0);
+  const totalOverdue = departments.reduce((s, d) => s + d.activities_overdue, 0);
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Areas"
-        description={`${departments.length} departamentos — ${totalEmployees} empleados`}
+        description="Rendimiento por departamento"
       />
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {departments.map((dept) => {
-          const hasIssues = dept.activities_overdue > 0;
+      {/* Quick Stats */}
+      {departments.length > 0 && (
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <MiniStatCard icon={Building2} label="Departamentos" value={departments.length} />
+          <MiniStatCard icon={Users} label="Empleados" value={totalEmployees} />
+          <MiniStatCard
+            icon={AlertTriangle}
+            label="Vencidas"
+            value={totalOverdue}
+            valueClassName={totalOverdue > 0 ? "text-danger-foreground" : undefined}
+          />
+        </div>
+      )}
 
-          return (
-            <Card key={dept.department} className={cn(hasIssues && "border-danger/20")}>
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <Building2 className={cn("h-4 w-4 shrink-0", hasIssues ? "text-danger" : "text-muted-foreground")} />
-                    <CardTitle className="text-sm sm:text-base truncate">{dept.department}</CardTitle>
-                  </div>
-                  <Badge variant="outline" className="text-[10px] shrink-0">
-                    <Users className="h-3 w-3 mr-1" />
-                    {dept.employee_count}
-                  </Badge>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {/* Lead */}
-                {dept.lead_or_manager && (
-                  <p className="text-xs text-muted-foreground">
-                    Responsable: <span className="font-medium text-foreground">{dept.lead_or_manager}</span>
-                  </p>
-                )}
-                {dept.description && (
-                  <p className="text-xs text-muted-foreground line-clamp-2">{dept.description}</p>
-                )}
+      {/* Empty state */}
+      {departments.length === 0 && (
+        <EmptyState
+          icon={Building2}
+          title="Sin departamentos"
+          description="Aun no hay departamentos en el sistema."
+        />
+      )}
 
-                {/* Metrics */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <p className="text-lg font-bold tabular-nums">{dept.activities_pending}</p>
-                    <p className="text-[10px] text-muted-foreground">Pendientes</p>
+      {/* Department Cards */}
+      {departments.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {departments.map((dept) => {
+            const hasIssues = dept.activities_overdue > 0;
+
+            return (
+              <Card key={dept.department} className={cn(hasIssues && "border-danger/20")}>
+                <CardHeader className="pb-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Building2 className={cn("h-4 w-4 shrink-0", hasIssues ? "text-danger" : "text-muted-foreground")} />
+                      <CardTitle className="text-sm sm:text-base truncate">{dept.department}</CardTitle>
+                    </div>
+                    <Badge variant="outline" className="text-[10px] shrink-0">
+                      <Users className="h-3 w-3 mr-1" />
+                      {dept.employee_count}
+                    </Badge>
                   </div>
-                  <div>
-                    <p className={cn("text-lg font-bold tabular-nums", dept.activities_overdue > 0 && "text-danger-foreground")}>
-                      {dept.activities_overdue}
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {/* Lead */}
+                  {dept.lead_or_manager && (
+                    <p className="text-xs text-muted-foreground">
+                      Responsable: <span className="font-medium text-foreground">{dept.lead_or_manager}</span>
                     </p>
-                    <p className="text-[10px] text-muted-foreground">Vencidas</p>
-                  </div>
-                  <div>
-                    <p className={cn("text-lg font-bold tabular-nums", dept.insights_count > 0 && "text-warning")}>
-                      {dept.insights_count}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">Insights</p>
-                  </div>
-                </div>
+                  )}
+                  {dept.description && (
+                    <p className="text-xs text-muted-foreground line-clamp-2">{dept.description}</p>
+                  )}
 
-                {/* Per-employee average */}
-                {dept.employee_count > 0 && (
-                  <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-2 border-t">
-                    <span>Prom. por empleado</span>
-                    <span className="tabular-nums">{Math.round(dept.activities_pending / dept.employee_count)} actividades</span>
+                  {/* Metrics */}
+                  <div className="grid grid-cols-3 gap-2 text-center">
+                    <div>
+                      <p className="text-lg font-bold tabular-nums">{dept.activities_pending}</p>
+                      <p className="text-[10px] text-muted-foreground">Pendientes</p>
+                    </div>
+                    <div>
+                      <p className={cn("text-lg font-bold tabular-nums", dept.activities_overdue > 0 && "text-danger-foreground")}>
+                        {dept.activities_overdue}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">Vencidas</p>
+                    </div>
+                    <div>
+                      <p className={cn("text-lg font-bold tabular-nums", dept.insights_count > 0 && "text-warning-foreground")}>
+                        {dept.insights_count}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">Insights</p>
+                    </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
+
+                  {/* Per-employee average */}
+                  {dept.employee_count > 0 && (
+                    <div className="flex items-center justify-between text-[10px] text-muted-foreground pt-2 border-t">
+                      <span>Prom. por empleado</span>
+                      <span className="tabular-nums">{Math.round(dept.activities_pending / dept.employee_count)} actividades</span>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
 
       {/* Department Metrics Table */}
       {deptMetrics.length > 0 && (
