@@ -1,50 +1,47 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, timeAgo, formatCurrency } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  Bot, Play, Loader2, CheckCircle2, XCircle, AlertTriangle,
-  TrendingUp, DollarSign, Truck, Users, Shield, Rocket, Brain,
-  Database, Server, UserCircle,
-  Eye, ThumbsUp, ThumbsDown, RefreshCw, Zap,
+  ArrowRight, Bot, Brain, CheckCircle2, Database, DollarSign,
+  Loader2, Play, Rocket, Server, Shield, TrendingUp, Truck,
+  Users, XCircle, Zap,
 } from "lucide-react";
 
 const DOMAIN_ICONS: Record<string, React.ElementType> = {
-  sales: TrendingUp,
-  finance: DollarSign,
-  operations: Truck,
-  relationships: Users,
-  risk: Shield,
-  growth: Rocket,
-  meta: Brain,
-  data_quality: Database,
-  odoo: Server,
+  sales: TrendingUp, finance: DollarSign, operations: Truck,
+  relationships: Users, risk: Shield, growth: Rocket, meta: Brain,
+  data_quality: Database, odoo: Server,
 };
-
 const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-emerald-500",
-  finance: "text-amber-500",
-  operations: "text-blue-500",
-  relationships: "text-purple-500",
-  risk: "text-red-500",
-  growth: "text-cyan-500",
-  meta: "text-indigo-500",
-  data_quality: "text-teal-500",
-  odoo: "text-orange-500",
+  sales: "text-emerald-500", finance: "text-amber-500", operations: "text-blue-500",
+  relationships: "text-purple-500", risk: "text-red-500", growth: "text-cyan-500",
+  meta: "text-indigo-500", data_quality: "text-teal-500", odoo: "text-orange-500",
 };
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: "bg-red-500/15 text-red-600 border-red-500/30",
-  high: "bg-orange-500/15 text-orange-600 border-orange-500/30",
-  medium: "bg-amber-500/15 text-amber-600 border-amber-500/30",
-  low: "bg-blue-500/15 text-blue-600 border-blue-500/30",
-  info: "bg-gray-500/15 text-gray-600 border-gray-500/30",
+const DOMAIN_BG: Record<string, string> = {
+  sales: "bg-emerald-500/10", finance: "bg-amber-500/10", operations: "bg-blue-500/10",
+  relationships: "bg-purple-500/10", risk: "bg-red-500/10", growth: "bg-cyan-500/10",
+  meta: "bg-indigo-500/10", data_quality: "bg-teal-500/10", odoo: "bg-orange-500/10",
+};
+const DOMAIN_DESC: Record<string, string> = {
+  sales: "Ordenes, CRM, top clientes, oportunidades",
+  finance: "Facturas, cartera vencida, cash flow",
+  operations: "Entregas, inventario, manufactura",
+  relationships: "Health scores, threads, sentimiento",
+  risk: "Facturas vencidas, entregas atrasadas, contactos criticos",
+  growth: "Top clientes, tendencias, cross-sell",
+  meta: "Evalua rendimiento de otros agentes",
+  data_quality: "Datos faltantes, links rotos, metricas",
+  odoo: "Gaps en sync, modelos faltantes",
 };
 
 interface AgentOverview {
@@ -61,26 +58,9 @@ interface AgentOverview {
   avg_confidence: number | null;
 }
 
-interface Insight {
-  id: number;
-  agent_id: number;
-  insight_type: string;
-  category: string;
-  severity: string;
-  title: string;
-  description: string;
-  recommendation: string | null;
-  confidence: number;
-  business_impact_estimate: number | null;
-  assignee_name: string | null;
-  assignee_department: string | null;
-  state: string;
-  created_at: string;
-}
-
 export default function AgentsPage() {
   const [agents, setAgents] = useState<AgentOverview[]>([]);
-  const [insights, setInsights] = useState<Insight[]>([]);
+  const [recentInsights, setRecentInsights] = useState<{ id: number; title: string; severity: string; agent_id: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
@@ -90,13 +70,14 @@ export default function AgentsPage() {
       supabase.rpc("get_agents_overview"),
       supabase
         .from("agent_insights")
-        .select("id, agent_id, insight_type, category, severity, title, description, recommendation, confidence, business_impact_estimate, assignee_name, assignee_department, state, created_at")
+        .select("id, title, severity, agent_id, created_at")
         .in("state", ["new", "seen"])
+        .gte("confidence", 0.65)
         .order("created_at", { ascending: false })
-        .limit(30),
+        .limit(5),
     ]);
     setAgents(agentsRes.data ?? []);
-    setInsights(insightsRes.data ?? []);
+    setRecentInsights(insightsRes.data ?? []);
     setLoading(false);
   }, []);
 
@@ -129,17 +110,12 @@ export default function AgentsPage() {
     }
   }
 
-  async function updateInsightState(id: number, state: string) {
-    await supabase.from("agent_insights").update({ state, was_useful: state === "acted_on" }).eq("id", id);
-    setInsights(prev => prev.filter(i => i.id !== id));
-  }
-
   if (loading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Agentes de IA" description="Sistema multi-agente de inteligencia autonoma" />
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[180px]" />)}
+        <PageHeader title="Agentes de IA" description="Sistema multi-agente de inteligencia" />
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[160px]" />)}
         </div>
       </div>
     );
@@ -147,218 +123,148 @@ export default function AgentsPage() {
 
   const totalInsights = agents.reduce((s, a) => s + a.total_insights, 0);
   const newInsights = agents.reduce((s, a) => s + a.new_insights, 0);
-  const agentsPendingRun = agents.filter(a => a.is_active).length;
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="space-y-5">
+      {/* Header — stacks on mobile */}
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <PageHeader
           title="Agentes de IA"
-          description={`${agents.length} agentes activos — ${totalInsights} insights generados, ${newInsights} nuevos`}
+          description={`${agents.length} agentes — ${totalInsights} insights generados${newInsights > 0 ? `, ${newInsights} nuevos` : ""}`}
         />
-        <div className="flex flex-col items-end gap-1 shrink-0">
-          <Button
-            onClick={handleRunNext}
-            disabled={runningAll || runningAgent !== null}
-          >
-            {runningAll ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-            Ejecutar Siguiente
-          </Button>
-          <span className="text-[10px] text-muted-foreground">
-            {agentsPendingRun} agentes en cola
-          </span>
-        </div>
+        <Button
+          onClick={handleRunNext}
+          disabled={runningAll || runningAgent !== null}
+          className="shrink-0 w-full sm:w-auto"
+        >
+          {runningAll ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+          Ejecutar Siguiente
+        </Button>
       </div>
 
       {/* Agent Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {agents.map((agent) => {
           const Icon = DOMAIN_ICONS[agent.domain] ?? Bot;
           const color = DOMAIN_COLORS[agent.domain] ?? "text-muted-foreground";
+          const bg = DOMAIN_BG[agent.domain] ?? "bg-muted";
           const isRunning = runningAgent === agent.slug;
+          const desc = DOMAIN_DESC[agent.domain] ?? "";
 
           return (
             <Card key={agent.slug} className="relative overflow-hidden">
-              <CardHeader className="pb-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Icon className={cn("h-5 w-5", color)} />
-                    <CardTitle className="text-sm font-semibold">{agent.name}</CardTitle>
+              <CardContent className="pt-4 pb-3 space-y-3">
+                {/* Agent header */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", bg)}>
+                      <Icon className={cn("h-4.5 w-4.5", color)} />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold truncate">{agent.name}</p>
+                      <p className="text-[10px] text-muted-foreground truncate">{desc}</p>
+                    </div>
                   </div>
                   {agent.is_active ? (
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" title="Activo" />
+                    <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 mt-1" title="Activo" />
                   ) : (
-                    <span className="h-2 w-2 rounded-full bg-gray-400" title="Inactivo" />
+                    <span className="h-2 w-2 rounded-full bg-gray-400 shrink-0 mt-1" title="Inactivo" />
                   )}
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <div className="grid grid-cols-2 gap-2 text-sm">
+
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
-                    <p className="text-muted-foreground text-xs">Corridas</p>
-                    <p className="font-semibold">{agent.total_runs}</p>
+                    <p className="text-lg font-bold tabular-nums">{agent.total_runs}</p>
+                    <p className="text-[10px] text-muted-foreground">corridas</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground text-xs">Insights</p>
-                    <p className="font-semibold">
+                    <p className="text-lg font-bold tabular-nums">
                       {agent.total_insights}
                       {agent.new_insights > 0 && (
-                        <span className="ml-1 text-xs text-emerald-500">+{agent.new_insights}</span>
+                        <span className="text-xs text-emerald-500 ml-0.5">+{agent.new_insights}</span>
                       )}
                     </p>
+                    <p className="text-[10px] text-muted-foreground">insights</p>
                   </div>
                   <div>
-                    <p className="text-muted-foreground text-xs">Confianza</p>
-                    <p className="font-semibold">{agent.avg_confidence != null ? `${(agent.avg_confidence * 100).toFixed(0)}%` : "—"}</p>
-                  </div>
-                  <div>
-                    <p className="text-muted-foreground text-xs">Ultima corrida</p>
-                    <p className="font-semibold text-xs">{agent.last_run_at ? timeAgo(agent.last_run_at) : "nunca"}</p>
+                    <p className="text-lg font-bold tabular-nums">
+                      {agent.avg_confidence != null ? `${(agent.avg_confidence * 100).toFixed(0)}%` : "—"}
+                    </p>
+                    <p className="text-[10px] text-muted-foreground">confianza</p>
                   </div>
                 </div>
 
-                {agent.last_run_status && (
-                  <div className="flex items-center gap-1.5 text-xs">
+                {/* Status + Run button */}
+                <div className="flex items-center justify-between gap-2 pt-1 border-t">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
                     {agent.last_run_status === "completed" ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
                     ) : agent.last_run_status === "failed" ? (
-                      <XCircle className="h-3.5 w-3.5 text-red-500" />
+                      <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                    ) : agent.last_run_status === "running" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
                     ) : (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500" />
+                      <Bot className="h-3.5 w-3.5 shrink-0" />
                     )}
-                    <span className="text-muted-foreground capitalize">{agent.last_run_status}</span>
+                    <span className="truncate">{agent.last_run_at ? timeAgo(agent.last_run_at) : "nunca ejecutado"}</span>
                   </div>
-                )}
-
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="w-full"
-                  onClick={() => handleRun(agent.slug)}
-                  disabled={isRunning || runningAll}
-                >
-                  {isRunning ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin mr-1.5" />
-                  ) : (
-                    <Play className="h-3.5 w-3.5 mr-1.5" />
-                  )}
-                  {isRunning ? "Analizando..." : "Ejecutar"}
-                </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="shrink-0 h-7 px-2.5"
+                    onClick={() => handleRun(agent.slug)}
+                    disabled={isRunning || runningAll}
+                  >
+                    {isRunning ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <><Play className="h-3 w-3 mr-1" /><span className="text-xs">Ejecutar</span></>
+                    )}
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           );
         })}
       </div>
 
-      {/* Insights Feed */}
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="h-4 w-4 text-amber-500" />
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-              Insights Recientes ({insights.length})
-            </h2>
-          </div>
-          <Button size="sm" variant="ghost" onClick={load}>
-            <RefreshCw className="h-3.5 w-3.5 mr-1.5" />
-            Actualizar
-          </Button>
-        </div>
-
-        {insights.length === 0 ? (
-          <Card>
-            <CardContent className="py-8 text-center text-sm text-muted-foreground">
-              No hay insights pendientes. Ejecuta un agente para generar analisis.
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="space-y-2">
-            {insights.map((insight) => {
-              const agent = agents.find(a => a.agent_id === insight.agent_id);
+      {/* Recent insights — compact preview, links to inbox */}
+      {recentInsights.length > 0 && (
+        <Card>
+          <CardHeader className="pb-2">
+            <Link href="/inbox" className="flex items-center justify-between group">
+              <div className="flex items-center gap-2">
+                <Bot className="h-4 w-4 text-purple-500" />
+                <CardTitle className="text-sm sm:text-base">Insights Recientes</CardTitle>
+                <Badge variant="outline" className="text-[10px]">{newInsights} nuevos</Badge>
+              </div>
+              <div className="flex items-center gap-1 text-sm text-muted-foreground">
+                <span className="hidden sm:inline text-xs">Ver todos en Inbox</span>
+                <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
+              </div>
+            </Link>
+          </CardHeader>
+          <CardContent className="space-y-1.5">
+            {recentInsights.map((ins) => {
+              const agent = agents.find(a => a.agent_id === ins.agent_id);
               const AgentIcon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
-
               return (
-                <Card key={insight.id} className="transition-colors hover:bg-muted/30">
-                  <CardContent className="py-3">
-                    <div className="flex items-start gap-3">
-                      <AgentIcon className={cn("h-4 w-4 mt-0.5 shrink-0", DOMAIN_COLORS[agent?.domain ?? ""])} />
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-medium text-sm">{insight.title}</span>
-                          <Badge className={cn("text-[10px] px-1.5", SEVERITY_COLORS[insight.severity])}>
-                            {insight.severity}
-                          </Badge>
-                          <Badge variant="outline" className="text-[10px] px-1.5">
-                            {insight.insight_type}
-                          </Badge>
-                          <span className="text-[10px] text-muted-foreground">
-                            {(insight.confidence * 100).toFixed(0)}% confianza
-                          </span>
-                        </div>
-                        <p className="text-sm text-muted-foreground line-clamp-2">{insight.description}</p>
-                        {insight.recommendation && (
-                          <p className="text-sm text-foreground/80">
-                            <span className="font-medium">Accion:</span> {insight.recommendation}
-                          </p>
-                        )}
-                        {insight.business_impact_estimate != null && insight.business_impact_estimate > 0 && (
-                          <p className="text-xs text-muted-foreground">
-                            Impacto estimado: ${insight.business_impact_estimate.toLocaleString()} MXN
-                          </p>
-                        )}
-                        <div className="flex items-center gap-2 pt-1 flex-wrap">
-                          <span className="text-[10px] text-muted-foreground">{timeAgo(insight.created_at)}</span>
-                          <span className="text-[10px] text-muted-foreground">· {agent?.name}</span>
-                          {(insight.assignee_name || insight.assignee_department) && (
-                            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                              · <UserCircle className="h-3 w-3" />
-                              {insight.assignee_name ?? "Sin asignar"}
-                              {insight.assignee_department && (
-                                <Badge variant="outline" className="text-[9px] px-1 py-0 leading-tight">
-                                  {insight.assignee_department}
-                                </Badge>
-                              )}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <div className="flex gap-1 shrink-0">
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-500/10"
-                          onClick={() => updateInsightState(insight.id, "acted_on")}
-                          title="Util / Actuar"
-                        >
-                          <ThumbsUp className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
-                          onClick={() => updateInsightState(insight.id, "dismissed")}
-                          title="Descartar"
-                        >
-                          <ThumbsDown className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          className="h-7 w-7 p-0 text-muted-foreground hover:bg-muted"
-                          onClick={() => updateInsightState(insight.id, "seen")}
-                          title="Marcar como visto"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
+                <Link
+                  key={ins.id}
+                  href={`/inbox/insight/${ins.id}`}
+                  className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors"
+                >
+                  <AgentIcon className={cn("h-4 w-4 shrink-0", DOMAIN_COLORS[agent?.domain ?? ""])} />
+                  <SeverityBadge severity={ins.severity} />
+                  <span className="text-sm font-medium truncate flex-1 min-w-0">{ins.title}</span>
+                  <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{timeAgo(ins.created_at)}</span>
+                </Link>
               );
             })}
-          </div>
-        )}
-      </div>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
