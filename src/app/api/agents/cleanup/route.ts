@@ -218,18 +218,17 @@ export async function POST(request: NextRequest) {
       results.errors.push(`Contact names: ${String(err).slice(0, 100)}`);
     }
 
-    // ── 5. Refresh company_profile materialized view ───────────────────
+    // ── 5. Refresh materialized views ───────────────────────────────────
     try {
       await supabase.rpc("refresh_company_profile");
       results.profile_refreshed = true;
     } catch {
-      // View may not support CONCURRENTLY yet, try direct refresh
-      try {
-        await supabase.rpc("refresh_company_profile");
-        results.profile_refreshed = true;
-      } catch (err) {
-        results.errors.push(`Profile refresh: ${String(err).slice(0, 100)}`);
-      }
+      // ignore if view doesn't exist yet
+    }
+    try {
+      await supabase.rpc("refresh_company_handlers");
+    } catch {
+      // ignore if view doesn't exist yet
     }
 
     // ── 6. Call RPCs for additional cleanup ─────────────────────────────
