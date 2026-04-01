@@ -10,11 +10,12 @@ export function MainContent({ children }: { children: React.ReactNode }) {
 
   // Login page: no sidebar padding, no mobile top padding
   if (pathname === "/login") {
-    return <main>{children}</main>;
+    return <main id="main-content">{children}</main>;
   }
 
   return (
     <main
+      id="main-content"
       className={cn(
         "transition-[padding-left] duration-200",
         collapsed ? "md:pl-16" : "md:pl-64"
