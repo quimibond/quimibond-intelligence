@@ -29,6 +29,10 @@
       "schedule": "30 5 * * *"
     },
     {
+      "path": "/api/pipeline/employee-metrics",
+      "schedule": "0 5 * * 1"
+    },
+    {
       "path": "/api/agents/evolve",
       "schedule": "0 6 * * *"
     },

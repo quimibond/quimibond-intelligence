@@ -50,6 +50,7 @@ export async function POST(request: NextRequest) {
       growingRes,
       lateDeliveriesRes,
       emailVolumeRes,
+      employeeRes,
       previousRes,
     ] = await Promise.all([
       // 1. Agent insights from last 24h (new, high-value)
@@ -151,7 +152,16 @@ export async function POST(request: NextRequest) {
         .select("sender_type", { count: "exact", head: true })
         .gte("email_date", yesterday),
 
-      // 12. Previous briefing for continuity
+      // 12. Employee performance (bottom performers)
+      supabase
+        .from("employee_metrics")
+        .select("name, department, actions_overdue, activities_overdue, execution_score, overall_score")
+        .eq("period_type", "weekly")
+        .lt("execution_score", 30)
+        .order("execution_score", { ascending: true })
+        .limit(5),
+
+      // 13. Previous briefing for continuity
       supabase
         .from("briefings")
         .select("summary_text")
@@ -169,6 +179,7 @@ export async function POST(request: NextRequest) {
     const churning = churningRes.data ?? [];
     const growing = growingRes.data ?? [];
     const lateDeliveries = lateDeliveriesRes.data ?? [];
+    const underperformers = employeeRes.data ?? [];
     const previousSummary = previousRes.data?.[0]?.summary_text ?? "";
 
     // ── Build the consolidated data package ─────────────────────────────
@@ -182,6 +193,7 @@ export async function POST(request: NextRequest) {
       overdueActions,
       upcomingActions,
       churning,
+      underperformers,
       growing,
       lateDeliveries,
       emailCount: emailVolumeRes.count ?? 0,
@@ -324,6 +336,7 @@ interface BriefingData {
   overdueActions: Record<string, unknown>[];
   upcomingActions: Record<string, unknown>[];
   churning: Record<string, unknown>[];
+  underperformers: Record<string, unknown>[];
   growing: Record<string, unknown>[];
   lateDeliveries: Record<string, unknown>[];
   emailCount: number;
@@ -428,7 +441,16 @@ function buildConsolidatedPackage(data: BriefingData): string {
     lines.push("");
   }
 
-  // 8. Email intelligence (high-signal facts)
+  // 8. Team performance alerts
+  if (data.underperformers.length) {
+    lines.push(`--- EQUIPO: PERSONAS CON EJECUCION BAJA (<30%) ---`);
+    for (const e of data.underperformers) {
+      lines.push(`  ${e.name} (${e.department}): score ${e.execution_score}% — ${e.actions_overdue} acciones vencidas, ${e.activities_overdue} actividades Odoo vencidas`);
+    }
+    lines.push("");
+  }
+
+  // 9. Email intelligence (high-signal facts)
   if (data.facts.length) {
     lines.push(`--- INTELIGENCIA DE EMAIL (hechos clave) ---`);
     for (const f of data.facts) {
