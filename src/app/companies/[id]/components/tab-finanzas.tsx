@@ -88,7 +88,7 @@ export function TabFinanzas({ financials, revenueRows, odooSnapshots }: TabFinan
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Total Facturado</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+            <p className="mt-1 text-2xl font-bold tabular-nums text-info-foreground">
               {formatCurrency(totalInvoiced)}
             </p>
           </CardContent>
@@ -96,7 +96,7 @@ export function TabFinanzas({ financials, revenueRows, odooSnapshots }: TabFinan
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Total Cobrado</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+            <p className="mt-1 text-2xl font-bold tabular-nums text-success-foreground">
               {formatCurrency(totalCollected)}
             </p>
           </CardContent>
@@ -220,7 +220,7 @@ export function TabFinanzas({ financials, revenueRows, odooSnapshots }: TabFinan
                       <TableCell className="text-right tabular-nums">
                         {formatCurrency(Number(s.pending_amount ?? 0))}
                       </TableCell>
-                      <TableCell className="text-right tabular-nums text-red-600 dark:text-red-400">
+                      <TableCell className="text-right tabular-nums text-danger-foreground">
                         {formatCurrency(Number(s.overdue_amount ?? 0))}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">

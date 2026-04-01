@@ -138,7 +138,7 @@ export default function ThreadDetailPage() {
                     <div className={cn(
                       "flex h-7 w-7 items-center justify-center rounded-full text-xs",
                       email.sender_type === "internal"
-                        ? "bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300"
+                        ? "bg-info/15 text-info-foreground"
                         : "bg-muted"
                     )}>
                       <User className="h-3.5 w-3.5" />

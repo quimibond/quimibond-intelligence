@@ -105,10 +105,10 @@ export default function SyncPage() {
 
   const statusIcon = (status: string) => {
     switch (status) {
-      case "completed": return <CheckCircle2 className="h-4 w-4 text-emerald-500" />;
-      case "running": return <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />;
-      case "pending": return <Clock className="h-4 w-4 text-amber-500" />;
-      case "error": case "failed": return <XCircle className="h-4 w-4 text-red-500" />;
+      case "completed": return <CheckCircle2 className="h-4 w-4 text-success" />;
+      case "running": return <Loader2 className="h-4 w-4 text-info animate-spin" />;
+      case "pending": return <Clock className="h-4 w-4 text-warning" />;
+      case "error": case "failed": return <XCircle className="h-4 w-4 text-danger" />;
       default: return <Clock className="h-4 w-4 text-muted-foreground" />;
     }
   };

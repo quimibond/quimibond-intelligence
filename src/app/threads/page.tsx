@@ -64,8 +64,8 @@ function urgencyLabel(hours: number | null): string {
 }
 
 function rowBgClass(hours: number | null): string {
-  if (hours != null && hours > 72) return "bg-red-500/5";
-  if (hours != null && hours > 24) return "bg-amber-500/5";
+  if (hours != null && hours > 72) return "bg-danger/5";
+  if (hours != null && hours > 24) return "bg-warning/5";
   return "";
 }
 
@@ -400,7 +400,7 @@ export default function ThreadsPage() {
                             className={cn(
                               "rounded-lg border bg-background p-3",
                               email.sender_type === "outbound"
-                                ? "border-blue-200 dark:border-blue-800/40"
+                                ? "border-info/30"
                                 : "border-border"
                             )}
                           >
@@ -624,7 +624,7 @@ function ThreadRow({
                     className={cn(
                       "rounded-lg border bg-background p-3",
                       email.sender_type === "outbound"
-                        ? "border-blue-200 dark:border-blue-800/40"
+                        ? "border-info/30"
                         : "border-border"
                     )}
                   >

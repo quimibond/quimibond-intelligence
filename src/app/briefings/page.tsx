@@ -179,7 +179,7 @@ export default function BriefingsPage() {
                     )}
                     {summary.accounts_failed != null &&
                       summary.accounts_failed > 0 && (
-                        <span className="flex items-center gap-1 text-amber-500">
+                        <span className="flex items-center gap-1 text-warning">
                           <AlertTriangle className="h-3 w-3" />
                           {summary.accounts_failed} fallidas
                         </span>

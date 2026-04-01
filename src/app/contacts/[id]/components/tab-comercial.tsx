@@ -115,7 +115,7 @@ function PurchasePatterns({ pp }: { pp: any }) {
         {Array.isArray(pp.volume_drops) && pp.volume_drops.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+              <TrendingDown className="h-3.5 w-3.5 text-danger" />
               Caidas de Volumen
             </p>
             <div className="flex flex-wrap gap-2">
@@ -132,7 +132,7 @@ function PurchasePatterns({ pp }: { pp: any }) {
         {Array.isArray(pp.cross_sell) && pp.cross_sell.length > 0 && (
           <div className="space-y-2">
             <p className="text-xs font-medium text-muted-foreground flex items-center gap-1">
-              <TrendingUp className="h-3.5 w-3.5 text-emerald-500" />
+              <TrendingUp className="h-3.5 w-3.5 text-success" />
               Oportunidades Cross-sell
             </p>
             <div className="flex flex-wrap gap-2">
@@ -179,9 +179,9 @@ function InventoryIntelligence({ inv }: { inv: any }) {
           {inv.can_fulfill_next_order != null && (
             <div className="flex items-center gap-1.5">
               {inv.can_fulfill_next_order ? (
-                <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                <CheckCircle2 className="h-4 w-4 text-success" />
               ) : (
-                <XCircle className="h-4 w-4 text-red-500" />
+                <XCircle className="h-4 w-4 text-danger" />
               )}
               <span className="text-sm">
                 {inv.can_fulfill_next_order ? "Puede cumplir proximo pedido" : "No puede cumplir proximo pedido"}
@@ -265,9 +265,9 @@ function PaymentBehavior({ pay }: { pay: any }) {
               <p className="text-xs text-muted-foreground">Prom. dias tarde</p>
               <p className={cn(
                 "mt-1 text-2xl font-bold tabular-nums",
-                Number(pay.avg_days_late) > 15 ? "text-red-600 dark:text-red-400" :
-                Number(pay.avg_days_late) > 5 ? "text-amber-600 dark:text-amber-400" :
-                "text-emerald-600 dark:text-emerald-400"
+                Number(pay.avg_days_late) > 15 ? "text-danger-foreground" :
+                Number(pay.avg_days_late) > 5 ? "text-warning-foreground" :
+                "text-success-foreground"
               )}>
                 {Math.round(Number(pay.avg_days_late))}d
               </p>
@@ -316,8 +316,8 @@ function PaymentBehavior({ pay }: { pay: any }) {
                       <TableCell className="text-muted-foreground text-sm">{String(inv.payment_date ?? "—")}</TableCell>
                       <TableCell className={cn(
                         "text-right tabular-nums",
-                        daysDiff > 15 ? "text-red-600 dark:text-red-400 font-medium" :
-                        daysDiff > 0 ? "text-amber-600 dark:text-amber-400" : ""
+                        daysDiff > 15 ? "text-danger-foreground font-medium" :
+                        daysDiff > 0 ? "text-warning-foreground" : ""
                       )}>
                         {daysDiff > 0 ? `+${daysDiff}` : daysDiff}
                       </TableCell>

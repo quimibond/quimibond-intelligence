@@ -286,7 +286,7 @@ export default function CompanyDetailPage() {
           {company.industry && <Badge variant="secondary">{company.industry}</Badge>}
           {company.enriched_at && (
             <span className="flex items-center gap-1 text-xs text-muted-foreground" title={`Enriquecido ${timeAgo(company.enriched_at)}`}>
-              <Sparkles className="h-3 w-3 text-amber-500" />
+              <Sparkles className="h-3 w-3 text-warning" />
               {timeAgo(company.enriched_at)}
             </span>
           )}
@@ -302,7 +302,7 @@ export default function CompanyDetailPage() {
               <DollarSign className="h-3.5 w-3.5" />
               Lifetime Value
             </div>
-            <p className="mt-1 text-lg font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+            <p className="mt-1 text-lg font-bold tabular-nums text-success-foreground">
               {formatCurrency(company.lifetime_value)}
             </p>
           </CardContent>
@@ -320,7 +320,7 @@ export default function CompanyDetailPage() {
             </div>
             <p className={cn(
               "mt-1 text-lg font-bold tabular-nums",
-              overdue && overdue > 0 ? "text-red-600 dark:text-red-400" : "text-muted-foreground"
+              overdue && overdue > 0 ? "text-danger-foreground" : "text-muted-foreground"
             )}>
               {overdue != null ? formatCurrency(overdue) : "—"}
             </p>
@@ -348,7 +348,7 @@ export default function CompanyDetailPage() {
               <TrendingUp className="h-3.5 w-3.5" />
               Pipeline
             </div>
-            <p className="mt-1 text-lg font-bold tabular-nums text-blue-600 dark:text-blue-400">
+            <p className="mt-1 text-lg font-bold tabular-nums text-info-foreground">
               {pipeline?.pipeline_summary?.pipeline_value != null
                 ? formatCurrency(pipeline.pipeline_summary.pipeline_value)
                 : "—"}

@@ -157,7 +157,7 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 pb-4">
-        <Play className="h-5 w-5 text-blue-500" />
+        <Play className="h-5 w-5 text-info" />
         <CardTitle className="text-base">Pipeline de Inteligencia (Vercel)</CardTitle>
       </CardHeader>
       <CardContent>
@@ -176,7 +176,7 @@ function PipelineTrigger({ onComplete }: { onComplete: () => void }) {
                 )}
               >
                 {isRunning ? (
-                  <RefreshCw className="h-5 w-5 text-blue-500 animate-spin shrink-0 mt-0.5" />
+                  <RefreshCw className="h-5 w-5 text-info animate-spin shrink-0 mt-0.5" />
                 ) : (
                   <Icon className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
                 )}
@@ -223,7 +223,7 @@ function OdooSyncTrigger({ onComplete }: { onComplete: () => void }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 pb-4">
-        <Server className="h-5 w-5 text-amber-500" />
+        <Server className="h-5 w-5 text-warning" />
         <CardTitle className="text-base">Sync Odoo ↔ Supabase</CardTitle>
         <span className="text-xs text-muted-foreground ml-2">
           Odoo ejecuta cada 5min (pull) y 1h (push)
@@ -312,7 +312,7 @@ function MaintenancePanel({ onComplete }: { onComplete: () => void }) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 pb-4">
-        <RefreshCw className="h-5 w-5 text-emerald-500" />
+        <RefreshCw className="h-5 w-5 text-success" />
         <CardTitle className="text-base">Mantenimiento</CardTitle>
       </CardHeader>
       <CardContent>
@@ -330,7 +330,7 @@ function MaintenancePanel({ onComplete }: { onComplete: () => void }) {
                   running !== null ? "opacity-50 cursor-not-allowed" : "hover:bg-muted/50 cursor-pointer"
                 )}
               >
-                {isRunning ? <RefreshCw className="h-5 w-5 text-blue-500 animate-spin shrink-0 mt-0.5" /> : <Icon className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
+                {isRunning ? <RefreshCw className="h-5 w-5 text-info animate-spin shrink-0 mt-0.5" /> : <Icon className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />}
                 <div>
                   <p className="text-sm font-medium">{a.label}</p>
                   <p className="text-xs text-muted-foreground mt-0.5">{a.desc}</p>
@@ -389,7 +389,7 @@ function TokenUsageCard() {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center gap-2 pb-4">
-        <Brain className="h-5 w-5 text-purple-500" />
+        <Brain className="h-5 w-5 text-domain-meta" />
         <CardTitle className="text-base">Claude API (30 dias)</CardTitle>
         <Badge variant="secondary" className="ml-auto">~${estimatedCost.toFixed(2)} USD</Badge>
       </CardHeader>
@@ -651,7 +651,7 @@ export default function SystemPage() {
       {syncCommands.length > 0 && (
         <Card>
           <CardHeader className="flex flex-row items-center gap-2 pb-4">
-            <Server className="h-5 w-5 text-amber-500" />
+            <Server className="h-5 w-5 text-warning" />
             <CardTitle className="text-base">Comandos Odoo Recientes</CardTitle>
           </CardHeader>
           <CardContent>

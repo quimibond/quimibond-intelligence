@@ -94,7 +94,7 @@ export default function BriefingDetailPage() {
             )}
             {summary.accounts_failed != null &&
               summary.accounts_failed > 0 && (
-                <span className="flex items-center gap-1 text-amber-500">
+                <span className="flex items-center gap-1 text-warning">
                   <AlertTriangle className="h-3.5 w-3.5" />
                   {summary.accounts_failed} cuentas fallidas
                 </span>

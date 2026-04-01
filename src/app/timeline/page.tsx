@@ -46,11 +46,11 @@ const typeConfig: Record<
   TimelineItemType,
   { icon: React.ElementType; color: string; dotColor: string; label: string; badgeVariant: "info" | "warning" | "success" | "secondary" | "default" }
 > = {
-  alert: { icon: Bell, color: "text-red-500", dotColor: "bg-red-500", label: "Alerta", badgeVariant: "warning" },
-  action: { icon: CheckSquare, color: "text-blue-500", dotColor: "bg-blue-500", label: "Accion", badgeVariant: "info" },
-  email: { icon: Mail, color: "text-emerald-500", dotColor: "bg-emerald-500", label: "Email", badgeVariant: "success" },
-  fact: { icon: Lightbulb, color: "text-amber-500", dotColor: "bg-amber-500", label: "Hecho", badgeVariant: "secondary" },
-  event: { icon: Activity, color: "text-purple-500", dotColor: "bg-purple-500", label: "Evento", badgeVariant: "default" },
+  alert: { icon: Bell, color: "text-danger", dotColor: "bg-danger", label: "Alerta", badgeVariant: "warning" },
+  action: { icon: CheckSquare, color: "text-info", dotColor: "bg-info", label: "Accion", badgeVariant: "info" },
+  email: { icon: Mail, color: "text-success", dotColor: "bg-success", label: "Email", badgeVariant: "success" },
+  fact: { icon: Lightbulb, color: "text-warning", dotColor: "bg-warning", label: "Hecho", badgeVariant: "secondary" },
+  event: { icon: Activity, color: "text-domain-relationships", dotColor: "bg-domain-relationships", label: "Evento", badgeVariant: "default" },
 };
 
 function getDateThreshold(range: DateRange): string {

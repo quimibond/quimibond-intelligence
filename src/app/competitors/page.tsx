@@ -248,7 +248,7 @@ export default function CompetitorsPage() {
 
           <div>
             <h2 className="text-lg font-semibold flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-amber-500" />
+              <Lightbulb className="h-4 w-4 text-warning" />
               Hechos de Competidores
             </h2>
             <p className="text-sm text-muted-foreground">

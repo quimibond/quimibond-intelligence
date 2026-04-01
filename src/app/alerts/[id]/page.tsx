@@ -164,7 +164,7 @@ export default function AlertDetailPage() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-1.5">
-                        <TrendingUp className="h-3.5 w-3.5 text-amber-500" />
+                        <TrendingUp className="h-3.5 w-3.5 text-warning" />
                         Impacto de Negocio
                       </CardTitle>
                     </CardHeader>
@@ -177,7 +177,7 @@ export default function AlertDetailPage() {
                   <Card>
                     <CardHeader className="pb-2">
                       <CardTitle className="text-sm flex items-center gap-1.5">
-                        <Lightbulb className="h-3.5 w-3.5 text-blue-500" />
+                        <Lightbulb className="h-3.5 w-3.5 text-info" />
                         Accion Sugerida
                       </CardTitle>
                     </CardHeader>

@@ -532,7 +532,7 @@ export default function NetworkPage() {
           </Card>
           <div className="flex flex-wrap items-center gap-4 mt-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1">
-              <span className="inline-block h-2 w-4 rounded bg-blue-500" /> Interno
+              <span className="inline-block h-2 w-4 rounded bg-info" /> Interno
             </span>
             <span className="flex items-center gap-1">
               <span className="inline-block h-2 w-4 rounded bg-orange-500" /> Externo
@@ -590,7 +590,7 @@ export default function NetworkPage() {
                               {peer.name ?? peer.email}
                             </Link>
                             <Badge variant="outline" className="shrink-0">{edge.weight}</Badge>
-                            {edge.is_bidirectional && <Zap className="h-3 w-3 text-amber-500" />}
+                            {edge.is_bidirectional && <Zap className="h-3 w-3 text-warning" />}
                           </div>
                         );
                       })}

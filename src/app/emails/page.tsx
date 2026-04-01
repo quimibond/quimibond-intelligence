@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Loader2, Mail, Paperclip, Search } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime, truncate } from "@/lib/utils";
@@ -23,18 +24,19 @@ import {
 } from "@/components/ui/table";
 
 const senderTypeBadgeVariant: Record<string, "info" | "warning" | "secondary"> = {
-  inbound: "info",
-  outbound: "warning",
+  external: "info",
+  internal: "warning",
 };
 
 const senderTypeLabel: Record<string, string> = {
-  inbound: "Recibido",
-  outbound: "Enviado",
+  external: "Recibido",
+  internal: "Enviado",
 };
 
 const PAGE_SIZE = 50;
 
 export default function EmailsPage() {
+  const router = useRouter();
   const [emails, setEmails] = useState<Email[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -197,38 +199,26 @@ export default function EmailsPage() {
               </TableHeader>
               <TableBody>
                 {emails.map((email) => (
-                  <TableRow key={email.id} className="cursor-pointer hover:bg-muted/50">
-                    <TableCell className="whitespace-nowrap text-muted-foreground">
-                      <Link href={`/emails/${email.id}`} className="contents">
-                        {formatDateTime(email.email_date)}
-                      </Link>
+                  <TableRow
+                    key={email.id}
+                    className="cursor-pointer hover:bg-muted/50"
+                    onClick={() => router.push(`/emails/${email.id}`)}
+                  >
+                    <TableCell className="whitespace-nowrap text-muted-foreground text-sm">
+                      {formatDateTime(email.email_date)}
                     </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/emails/${email.id}`}
-                        className="text-sm hover:underline"
-                      >
-                        {truncate(email.sender, 40) || "—"}
-                      </Link>
+                    <TableCell className="text-sm">
+                      {truncate(email.sender, 40) || "—"}
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {truncate(email.recipient, 40) || "—"}
                     </TableCell>
-                    <TableCell>
-                      <Link
-                        href={`/emails/${email.id}`}
-                        className="font-medium hover:underline"
-                      >
-                        {truncate(email.subject, 60) || "—"}
-                      </Link>
+                    <TableCell className="font-medium">
+                      {truncate(email.subject, 60) || "—"}
                     </TableCell>
                     <TableCell>
                       {email.sender_type && (
-                        <Badge
-                          variant={
-                            senderTypeBadgeVariant[email.sender_type] ?? "secondary"
-                          }
-                        >
+                        <Badge variant={senderTypeBadgeVariant[email.sender_type] ?? "secondary"}>
                           {senderTypeLabel[email.sender_type] ?? email.sender_type}
                         </Badge>
                       )}

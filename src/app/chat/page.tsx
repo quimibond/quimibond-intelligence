@@ -256,7 +256,7 @@ export default function ChatPage() {
                         className={cn(
                           "h-6 w-6 p-0",
                           msg.rated === "positive" &&
-                            "text-green-600 dark:text-green-400"
+                            "text-success-foreground"
                         )}
                         onClick={() => rateMessage(i, "positive")}
                       >
@@ -273,7 +273,7 @@ export default function ChatPage() {
                         className={cn(
                           "h-6 w-6 p-0",
                           msg.rated === "negative" &&
-                            "text-red-600 dark:text-red-400"
+                            "text-danger-foreground"
                         )}
                         onClick={() => rateMessage(i, "negative")}
                       >

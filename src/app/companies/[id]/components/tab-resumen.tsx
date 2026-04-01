@@ -104,12 +104,12 @@ export function TabResumen({ company, relationships }: TabResumenProps) {
       {riskSignals.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-red-600 dark:text-red-400">
+            <CardTitle className="text-danger-foreground">
               Senales de Riesgo
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="list-inside list-disc space-y-1 text-sm text-red-600 dark:text-red-400">
+            <ul className="list-inside list-disc space-y-1 text-sm text-danger-foreground">
               {riskSignals.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
@@ -122,12 +122,12 @@ export function TabResumen({ company, relationships }: TabResumenProps) {
       {opportunitySignals.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-emerald-600 dark:text-emerald-400">
+            <CardTitle className="text-success-foreground">
               Senales de Oportunidad
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <ul className="list-inside list-disc space-y-1 text-sm text-emerald-600 dark:text-emerald-400">
+            <ul className="list-inside list-disc space-y-1 text-sm text-success-foreground">
               {opportunitySignals.map((s, i) => (
                 <li key={i}>{s}</li>
               ))}
@@ -197,7 +197,7 @@ function OdooContextCards({ company }: { company: Company }) {
       {Array.isArray(pp?.volume_drops) && pp.volume_drops.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
+            <CardTitle className="flex items-center gap-2 text-sm text-danger-foreground">
               <TrendingDown className="h-4 w-4" />
               Caidas de Volumen
             </CardTitle>
@@ -219,7 +219,7 @@ function OdooContextCards({ company }: { company: Company }) {
       {Array.isArray(pp?.cross_sell) && pp.cross_sell.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-sm text-emerald-600 dark:text-emerald-400">
+            <CardTitle className="flex items-center gap-2 text-sm text-success-foreground">
               <Sparkles className="h-4 w-4" />
               Oportunidades Cross-sell
             </CardTitle>
@@ -241,7 +241,7 @@ function OdooContextCards({ company }: { company: Company }) {
       {Array.isArray(pp?.discount_anomalies) && pp.discount_anomalies.length > 0 && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm text-amber-600 dark:text-amber-400">Descuentos Inusuales</CardTitle>
+            <CardTitle className="text-sm text-warning-foreground">Descuentos Inusuales</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex flex-wrap gap-2">
@@ -260,7 +260,7 @@ function OdooContextCards({ company }: { company: Company }) {
         <Card>
           <CardContent className="pt-4">
             <p className="text-xs text-muted-foreground">Revenue Total 12m (desde compras)</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+            <p className="mt-1 text-2xl font-bold tabular-nums text-info-foreground">
               {formatCurrency(Number(pp.total_revenue_12m))}
             </p>
           </CardContent>

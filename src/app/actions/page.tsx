@@ -289,21 +289,21 @@ export default function ActionsPage() {
           <p className="mt-1 text-2xl font-bold">{counts.pending + counts.overdue + counts.completed}</p>
         </div>
         <div className="rounded-lg border bg-card p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-amber-600 dark:text-amber-400">
+          <div className="flex items-center gap-2 text-warning-foreground">
             <Clock className="h-4 w-4" />
             <span className="text-xs font-medium">Pendientes</span>
           </div>
           <p className="mt-1 text-2xl font-bold">{counts.pending}</p>
         </div>
         <div className="rounded-lg border bg-card p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-red-600 dark:text-red-400">
+          <div className="flex items-center gap-2 text-danger-foreground">
             <AlertTriangle className="h-4 w-4" />
             <span className="text-xs font-medium">Vencidas</span>
           </div>
           <p className="mt-1 text-2xl font-bold">{counts.overdue}</p>
         </div>
         <div className="rounded-lg border bg-card p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400">
+          <div className="flex items-center gap-2 text-success-foreground">
             <CheckCircle2 className="h-4 w-4" />
             <span className="text-xs font-medium">Completadas</span>
           </div>
@@ -395,8 +395,8 @@ export default function ActionsPage() {
               const overdue = isOverdue(action);
               const reason = (action as unknown as Record<string, unknown>).reason;
               const priorityColor: Record<string, string> = {
-                high: "bg-red-500",
-                medium: "bg-amber-500",
+                high: "bg-danger",
+                medium: "bg-warning",
                 low: "bg-gray-400",
               };
               return (
@@ -525,8 +525,8 @@ export default function ActionsPage() {
                 {filtered.map((action) => {
                   const overdue = isOverdue(action);
                   const priorityDot: Record<string, string> = {
-                    high: "bg-red-500",
-                    medium: "bg-amber-500",
+                    high: "bg-danger",
+                    medium: "bg-warning",
                     low: "bg-gray-400",
                   };
                   return (
@@ -586,7 +586,7 @@ export default function ActionsPage() {
                           <span
                             className={
                               overdue
-                                ? "font-medium text-red-600 dark:text-red-400"
+                                ? "font-medium text-danger-foreground"
                                 : "text-muted-foreground"
                             }
                           >
