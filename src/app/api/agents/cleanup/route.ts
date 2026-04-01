@@ -237,7 +237,7 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 6. Call RPCs for additional cleanup ─────────────────────────────
-    try { await supabase.rpc("fix_all_company_links"); } catch { /* may not exist */ }
+    try { await supabase.rpc("resolve_all_company_links"); } catch { /* may not exist */ }
     try { await supabase.rpc("link_orphan_insights"); } catch { /* may not exist */ }
 
     // ── Log results ────────────────────────────────────────────────────

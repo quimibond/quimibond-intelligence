@@ -593,6 +593,184 @@ export interface CompanyPipeline {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// TIER 6B: AI AGENTS
+// ═══════════════════════════════════════════════════════════════
+
+export interface AIAgent {
+  id: number;
+  slug: string;
+  name: string;
+  description: string | null;
+  domain: string;
+  system_prompt: string;
+  analysis_schedule: string | null;
+  is_active: boolean;
+  config: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentInsight {
+  id: number;
+  agent_id: number;
+  run_id: number | null;
+  insight_type: string;
+  category: string | null;
+  severity: string | null;
+  title: string;
+  description: string;
+  evidence: unknown;
+  recommendation: string | null;
+  company_id: number | null;
+  contact_id: number | null;
+  confidence: number | null;
+  business_impact_estimate: number | null;
+  state: string | null;
+  expires_at: string | null;
+  was_useful: boolean | null;
+  user_feedback: string | null;
+  assignee_email: string | null;
+  assignee_name: string | null;
+  assignee_department: string | null;
+  assignee_user_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgentRun {
+  id: number;
+  agent_id: number;
+  status: string;
+  trigger_type: string;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  entities_analyzed: number | null;
+  insights_generated: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  error_message: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+export interface AgentMemory {
+  id: number;
+  agent_id: number;
+  memory_type: string;
+  context_type: string | null;
+  context_id: string | null;
+  content: string;
+  importance: number | null;
+  times_used: number;
+  last_used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TIER 6C: ODOO EMPLOYEES & DEPARTMENTS
+// ═══════════════════════════════════════════════════════════════
+
+export interface OdooEmployee {
+  id: number;
+  odoo_employee_id: number;
+  odoo_user_id: number | null;
+  name: string;
+  work_email: string | null;
+  work_phone: string | null;
+  department_name: string | null;
+  department_id: number | null;
+  job_title: string | null;
+  job_name: string | null;
+  manager_name: string | null;
+  manager_id: number | null;
+  coach_name: string | null;
+  is_active: boolean;
+  synced_at: string;
+}
+
+export interface Department {
+  id: number;
+  name: string;
+  lead_user_id: number | null;
+  lead_name: string | null;
+  lead_email: string | null;
+  description: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TIER 6D: MATERIALIZED VIEWS
+// ═══════════════════════════════════════════════════════════════
+
+/** Materialized view: company_profile — refreshed by refresh_company_profile() */
+export interface CompanyProfile {
+  company_id: number;
+  name: string;
+  canonical_name: string | null;
+  is_customer: boolean;
+  is_supplier: boolean;
+  industry: string | null;
+  credit_limit: number | null;
+  total_revenue: number | null;
+  total_orders: number | null;
+  last_order_date: string | null;
+  revenue_90d: number | null;
+  revenue_prior_90d: number | null;
+  trend_pct: number | null;
+  total_purchases: number | null;
+  last_purchase_date: string | null;
+  revenue_share_pct: number | null;
+  pending_amount: number | null;
+  overdue_amount: number | null;
+  overdue_count: number | null;
+  overdue_30d_count: number | null;
+  max_days_overdue: number | null;
+  total_deliveries: number | null;
+  late_deliveries: number | null;
+  otd_rate: number | null;
+  email_count: number | null;
+  last_email_date: string | null;
+  contact_count: number | null;
+  risk_level: string | null;
+  tier: string | null;
+}
+
+/** View: snapshot_changes — daily delta comparison */
+export interface SnapshotChange {
+  company_id: number;
+  company_name: string | null;
+  current_date: string | null;
+  compare_date: string | null;
+  pending_now: number | null;
+  pending_before: number | null;
+  pending_change: number | null;
+  overdue_now: number | null;
+  overdue_before: number | null;
+  overdue_change: number | null;
+  orders_now: number | null;
+  orders_before: number | null;
+  late_now: number | null;
+  late_before: number | null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// TIER 6E: TOKEN USAGE
+// ═══════════════════════════════════════════════════════════════
+
+export interface TokenUsage {
+  id: number;
+  endpoint: string;
+  model: string | null;
+  input_tokens: number;
+  output_tokens: number;
+  created_at: string;
+}
+
+// ═══════════════════════════════════════════════════════════════
 // TIER 7: SYSTEM & OPERATIONS
 // ═══════════════════════════════════════════════════════════════
 

@@ -96,7 +96,7 @@ export async function POST() {
 
     // ── 3. Link invoices to companies ───────────────────────────────────
     try {
-      const { data: result } = await supabase.rpc("fix_all_company_links");
+      const { data: result } = await supabase.rpc("resolve_all_company_links");
       const r = result?.[0] ?? result ?? {};
       const total = (r.invoices_fixed ?? 0) + (r.orders_fixed ?? 0) + (r.deliveries_fixed ?? 0);
       if (total > 0) {

@@ -619,7 +619,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         // Price comparison: recent vs older purchase lines for same products
         sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
         // Single-source products: bought from only 1 supplier
-        sb.rpc("execute_safe_ddl", { ddl_command: "SELECT 1" }).then(() => null).catch(() => null), // placeholder
+        sb.rpc("execute_safe_ddl", { p_sql: "SELECT 1", p_description: "placeholder", p_change_type: "auto" }).then(() => null).catch(() => null), // placeholder
       ]);
       return `${profileSection}## Top proveedores (por monto de compra)\n${safeJSON(topSuppliers.data)}\n## Ordenes de compra recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra recientes (para detectar cambios de precio)\n${safeJSON(priceChanges.data)}`;
     }
