@@ -25,6 +25,10 @@
       "schedule": "0 */6 * * *"
     },
     {
+      "path": "/api/pipeline/snapshot",
+      "schedule": "30 5 * * *"
+    },
+    {
       "path": "/api/agents/evolve",
       "schedule": "0 6 * * *"
     },
