@@ -53,7 +53,7 @@ export async function POST(request: NextRequest) {
     const cutoff = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
     const { data: unprocessed, error: queryErr } = await supabase
       .from("emails")
-      .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type")
+      .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type, has_attachments, attachments")
       .eq("kg_processed", false)
       .gte("email_date", cutoff)
       .order("email_date", { ascending: true }) // oldest first
@@ -194,12 +194,22 @@ async function processBatch(
   apiKey: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
-  emails: { id: number; sender: string | null; recipient: string | null; subject: string | null; body: string | null; snippet: string | null; email_date: string | null; sender_type: string | null; account: string | null }[]
+  emails: { id: number; sender: string | null; recipient: string | null; subject: string | null; body: string | null; snippet: string | null; email_date: string | null; sender_type: string | null; account: string | null; has_attachments?: boolean; attachments?: { filename: string; mimeType: string; size: number }[] | null }[]
 ): Promise<BatchResult> {
-  // Format emails for Claude
+  // Format emails for Claude — including attachment context
   const emailsText = emails.map((e, i) => {
     const body = (e.body ?? e.snippet ?? "").slice(0, 800);
-    return `--- EMAIL ${i + 1} ---\nDe: ${e.sender}\nPara: ${e.recipient}\nAsunto: ${e.subject}\nFecha: ${e.email_date}\nTipo: ${e.sender_type}\nCuerpo:\n${body}`;
+    let attachmentInfo = "";
+    if (e.has_attachments && e.attachments?.length) {
+      const atts = (e.attachments as { filename: string; mimeType: string; size: number }[])
+        .filter(a => !a.mimeType.startsWith("image/") || a.size > 100000) // skip small images (logos/signatures)
+        .map(a => {
+          const kb = Math.round(a.size / 1024);
+          return `${a.filename} (${a.mimeType}, ${kb}KB)`;
+        });
+      if (atts.length) attachmentInfo = `\nAdjuntos: ${atts.join(", ")}`;
+    }
+    return `--- EMAIL ${i + 1} ---\nDe: ${e.sender}\nPara: ${e.recipient}\nAsunto: ${e.subject}\nFecha: ${e.email_date}\nTipo: ${e.sender_type}${attachmentInfo}\nCuerpo:\n${body}`;
   }).join("\n\n");
 
   const { result } = await callClaudeJSON<{
@@ -211,7 +221,7 @@ async function processBatch(
     model: "claude-haiku-4-5-20251001",
     max_tokens: 4000,
     temperature: 0,
-    system: `Extractor de inteligencia para Quimibond (textiles, Mexico). Extrae entidades, hechos y relaciones de emails de negocio. Responde SOLO JSON valido.`,
+    system: `Extractor de inteligencia para Quimibond (textiles, Mexico). Extrae entidades, hechos y relaciones de emails de negocio. Los emails pueden tener ADJUNTOS listados — incluye facts sobre documentos importantes (facturas, ordenes de compra, pagos, fichas tecnicas, CFDIs). Ejemplo: si hay adjunto "Factura-INV2026-0213.pdf" → fact: "Se envio factura INV-2026-0213". Responde SOLO JSON valido.`,
     messages: [{
       role: "user",
       content: `Extrae inteligencia de estos ${emails.length} emails.\n\n${emailsText}\n\nJSON: {"entities":[{"name":"str","type":"person|company|product","email":"str or null"}],"facts":[{"entity_name":"str","type":"commitment|complaint|request|price|information|change","text":"str","date":"YYYY-MM-DD or null","confidence":0.9}],"relationships":[{"entity_a":"str","entity_b":"str","type":"works_at|buys_from|sells_to|supplies|mentioned_with","context":"str"}],"action_items":[{"assignee":"quien","description":"que hacer","type":"call|email|follow_up|review|other","priority":"low|medium|high","due_date":"YYYY-MM-DD or null","related_to":"contacto o empresa"}]}`,

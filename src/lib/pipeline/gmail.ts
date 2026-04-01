@@ -209,14 +209,15 @@ function extractBodyFromParts(parts: unknown[]): string {
   return "";
 }
 
-function extractAttachments(parts: unknown[]): { filename: string; mimeType: string; size: number }[] {
-  const attachments: { filename: string; mimeType: string; size: number }[] = [];
-  for (const part of parts as { filename?: string; mimeType?: string; body?: { size?: number; attachmentId?: string }; parts?: unknown[] }[]) {
-    if (part.filename && part.body?.attachmentId) {
+function extractAttachments(parts: unknown[]): { filename: string; mimeType: string; size: number; attachmentId?: string }[] {
+  const attachments: { filename: string; mimeType: string; size: number; attachmentId?: string }[] = [];
+  for (const part of parts as { filename?: string; mimeType?: string; body?: { size?: number; attachmentId?: string; data?: string }; parts?: unknown[] }[]) {
+    if (part.filename && (part.body?.attachmentId || part.body?.data)) {
       attachments.push({
         filename: part.filename,
         mimeType: part.mimeType ?? "application/octet-stream",
         size: part.body.size ?? 0,
+        attachmentId: part.body.attachmentId,
       });
     }
     if (part.parts) {

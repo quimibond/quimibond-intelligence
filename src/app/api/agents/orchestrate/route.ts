@@ -1,13 +1,10 @@
 /**
- * Agent Orchestrator v3 — Smarter context, dedup, adaptive thresholds.
+ * Agent Orchestrator v4 — Parallel execution, model routing.
  *
- * Improvements over v2:
- * - Deduplication: checks for similar active insights before inserting
- * - Adaptive confidence: per-agent threshold based on learning history
- * - Low-confidence insights archived (not deleted) for learning signal
- * - Memory loading: weighted by importance × recency, tracks usage
- * - Token-aware context: truncates to ~60K chars to avoid overflow
- * - Structured prompt: explicit JSON schema for more consistent output
+ * v4 improvements:
+ * - PARALLEL: Runs up to 3 agents per invocation (was 1)
+ * - MODEL ROUTING: Haiku for meta/cleanup, Sonnet for business agents
+ * - All v3 features: dedup, adaptive thresholds, smart memory, etc.
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
@@ -65,219 +62,211 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Pick the agent that ran least recently (or never)
-    let targetAgent = agents[0];
-    let oldestRun = Date.now();
+    // Pick up to 3 agents that need to run (least recently ran first)
+    const MAX_PARALLEL = 3;
+    const sortedAgents = [...agents].sort((a, b) => {
+      const aRun = lastRunMap.get(a.id);
+      const bRun = lastRunMap.get(b.id);
+      if (!aRun && !bRun) return 0;
+      if (!aRun) return -1;
+      if (!bRun) return 1;
+      return new Date(aRun).getTime() - new Date(bRun).getTime();
+    });
+    const targetAgents = sortedAgents.slice(0, MAX_PARALLEL);
 
-    for (const agent of agents) {
-      const lastRun = lastRunMap.get(agent.id);
-      if (!lastRun) {
-        targetAgent = agent;
-        oldestRun = 0;
-        break;
-      }
-      const runTime = new Date(lastRun).getTime();
-      if (runTime < oldestRun) {
-        oldestRun = runTime;
-        targetAgent = agent;
+    console.log(`[orchestrate] Running ${targetAgents.length} agents in parallel: ${targetAgents.map(a => a.slug).join(", ")}`);
+
+    // ── Run agents in parallel ──────────────────────────────────────────
+    const agentResults = await Promise.allSettled(
+      targetAgents.map(agent => runSingleAgent(apiKey, supabase, agent, start))
+    );
+
+    const summary = [];
+    let totalInsights = 0;
+    let totalArchived = 0;
+    let totalDupes = 0;
+
+    for (let i = 0; i < agentResults.length; i++) {
+      const result = agentResults[i];
+      const agent = targetAgents[i];
+      if (result.status === "fulfilled") {
+        summary.push({ agent: agent.slug, ...result.value });
+        totalInsights += result.value.insights_generated;
+        totalArchived += result.value.insights_archived;
+        totalDupes += result.value.duplicates_skipped;
+      } else {
+        summary.push({ agent: agent.slug, error: String(result.reason) });
       }
     }
 
-    console.log(`[orchestrate] Running ${targetAgent.slug} (last ran: ${oldestRun === 0 ? "never" : new Date(oldestRun).toISOString()})`);
+    const recentThreshold = new Date(Date.now() - 4 * 3600_000).toISOString();
+    const agentsNeedingRun = agents.filter(a => {
+      if (targetAgents.find(t => t.id === a.id)) return false;
+      const last = lastRunMap.get(a.id);
+      return !last || last < recentThreshold;
+    }).length;
 
-    // ── Run the selected agent ──────────────────────────────────────────
-    const { data: run } = await supabase
-      .from("agent_runs")
-      .insert({ agent_id: targetAgent.id, status: "running", trigger_type: "orchestrator" })
-      .select("id")
-      .single();
-    const runId = run?.id;
-
-    try {
-      // Build context (token-aware)
-      const context = await buildAgentContext(supabase, targetAgent.domain);
-
-      // Load memories — weighted by importance × recency, up to 10
-      const { data: memories } = await supabase
-        .from("agent_memory")
-        .select("id, content, importance, updated_at")
-        .eq("agent_id", targetAgent.id)
-        .gt("importance", 0.2)
-        .order("importance", { ascending: false })
-        .limit(15);
-
-      // Score memories: importance * recency_factor (newer = higher)
-      const now = Date.now();
-      const scoredMemories = (memories ?? [])
-        .map(m => {
-          const ageMs = now - new Date(m.updated_at).getTime();
-          const ageDays = ageMs / 86400_000;
-          const recencyFactor = Math.max(0.3, 1 - ageDays / 90); // decays over 90 days
-          return { ...m, score: m.importance * recencyFactor };
-        })
-        .sort((a, b) => b.score - a.score)
-        .slice(0, 10);
-
-      const memoryText = scoredMemories.length
-        ? `\n\nTus observaciones previas (aprende de estas):\n${scoredMemories.map(m => `- ${m.content}`).join("\n")}`
-        : "";
-
-      // Mark memories as used (increment times_used)
-      if (scoredMemories.length) {
-        const memoryIds = scoredMemories.map(m => m.id);
-        const { error: rpcError } = await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds });
-        if (rpcError) {
-          // Fallback: update one by one if RPC doesn't exist
-          for (const id of memoryIds) {
-            supabase.from("agent_memory")
-              .update({ updated_at: new Date().toISOString() })
-              .eq("id", id).then();
-          }
-        }
-      }
-
-      // Load adaptive confidence threshold for this agent
-      const confidenceThreshold = await getAgentConfidenceThreshold(supabase, targetAgent.id);
-
-      // Call Claude with structured prompt
-      const { result, usage } = await callClaudeJSON<Record<string, unknown>[]>(
-        apiKey,
-        {
-          model: process.env.CLAUDE_MODEL || "claude-sonnet-4-6",
-          max_tokens: 4096,
-          temperature: 0.2,
-          system: targetAgent.system_prompt + AGENT_SYSTEM_SUFFIX,
-          messages: [{
-            role: "user",
-            content: buildAgentPrompt(context, memoryText, confidenceThreshold),
-          }],
-        },
-        `agent-${targetAgent.slug}`
-      );
-
-      const insights = Array.isArray(result) ? result : [];
-
-      // ── Deduplicate against active insights ────────────────────────────
-      let duplicatesSkipped = 0;
-      const filteredInsights = [];
-
-      if (insights.length > 0) {
-        // Load recent active insights for this agent to check for duplicates
-        const { data: existingInsights } = await supabase
-          .from("agent_insights")
-          .select("title, company_id, category")
-          .eq("agent_id", targetAgent.id)
-          .in("state", ["new", "seen"])
-          .order("created_at", { ascending: false })
-          .limit(50);
-
-        const existingTitles = new Set(
-          (existingInsights ?? []).map(i => normalizeForDedup(i.title))
-        );
-
-        for (const insight of insights) {
-          const normalizedTitle = normalizeForDedup(String(insight.title || ""));
-          if (existingTitles.has(normalizedTitle)) {
-            duplicatesSkipped++;
-            continue;
-          }
-          existingTitles.add(normalizedTitle);
-          filteredInsights.push(insight);
-        }
-      }
-
-      // Resolve company names and write insights
-      if (filteredInsights.length > 0) {
-        const rows = [];
-        for (const i of filteredInsights) {
-          let companyId: number | null = null;
-          if (i.company_name) {
-            const { data: co } = await supabase
-              .from("companies").select("id")
-              .ilike("canonical_name", String(i.company_name).trim())
-              .limit(1).single();
-            if (co) companyId = co.id;
-          }
-          if (!companyId && i.company_id) companyId = Number(i.company_id);
-
-          let contactId: number | null = null;
-          if (i.contact_email) {
-            const { data: ct } = await supabase
-              .from("contacts").select("id, company_id")
-              .eq("email", String(i.contact_email).toLowerCase())
-              .limit(1).single();
-            if (ct) {
-              contactId = ct.id;
-              if (!companyId && ct.company_id) companyId = ct.company_id;
-            }
-          }
-
-          const confidence = Math.min(1, Math.max(0, Number(i.confidence) || 0.5));
-
-          rows.push({
-            agent_id: targetAgent.id, run_id: runId,
-            insight_type: String(i.insight_type || "recommendation"),
-            category: String(i.category || targetAgent.domain),
-            severity: String(i.severity || "info"),
-            title: String(i.title || ""),
-            description: String(i.description || ""),
-            evidence: i.evidence || [],
-            recommendation: i.recommendation ? String(i.recommendation) : null,
-            confidence,
-            business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
-            company_id: companyId, contact_id: contactId,
-            // Low confidence: archive instead of showing — preserves learning signal
-            state: confidence < confidenceThreshold ? "archived" : "new",
-          });
-        }
-        await supabase.from("agent_insights").insert(rows);
-      }
-
-      const duration = (Date.now() - start) / 1000;
-      const activeInsights = filteredInsights.filter(
-        i => (Number(i.confidence) || 0.5) >= confidenceThreshold
-      ).length;
-
-      if (runId) {
-        await supabase.from("agent_runs").update({
-          status: "completed", completed_at: new Date().toISOString(),
-          duration_seconds: Math.round(duration * 10) / 10,
-          insights_generated: activeInsights,
-          input_tokens: usage?.input_tokens ?? 0,
-          output_tokens: usage?.output_tokens ?? 0,
-        }).eq("id", runId);
-      }
-
-      if (usage) logTokenUsage(`agent-${targetAgent.slug}`, process.env.CLAUDE_MODEL || "claude-sonnet-4-6", usage.input_tokens, usage.output_tokens);
-
-      // How many agents still need to run?
-      const recentThreshold = new Date(Date.now() - 4 * 3600_000).toISOString();
-      const agentsNeedingRun = agents.filter(a => {
-        const last = lastRunMap.get(a.id);
-        return !last || last < recentThreshold;
-      }).length - 1;
-
-      return NextResponse.json({
-        success: true,
-        agent: targetAgent.slug,
-        insights_generated: activeInsights,
-        insights_archived: filteredInsights.length - activeInsights,
-        duplicates_skipped: duplicatesSkipped,
-        confidence_threshold: confidenceThreshold,
-        elapsed_s: Math.round(duration),
-        remaining_agents: Math.max(0, agentsNeedingRun),
-      });
-    } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      if (runId) {
-        await supabase.from("agent_runs").update({
-          status: "failed", completed_at: new Date().toISOString(), error_message: errMsg,
-        }).eq("id", runId);
-      }
-      return NextResponse.json({ error: errMsg, agent: targetAgent.slug }, { status: 500 });
-    }
+    return NextResponse.json({
+      success: true,
+      agents_ran: targetAgents.length,
+      insights_generated: totalInsights,
+      insights_archived: totalArchived,
+      duplicates_skipped: totalDupes,
+      elapsed_s: Math.round((Date.now() - start) / 1000),
+      remaining_agents: Math.max(0, agentsNeedingRun),
+      details: summary,
+    });
   } catch (err) {
     return NextResponse.json({ error: String(err) }, { status: 500 });
+  }
+}
+
+// ── Model routing: Opus for strategic, Sonnet for business, Haiku for routine ──
+const AGENT_MODEL_MAP: Record<string, string> = {
+  risk: "claude-opus-4-6",        // Strategic reasoning about threats — highest stakes
+  predictive: "claude-opus-4-6",   // Complex pattern recognition + forecasting
+  meta: "claude-haiku-4-5-20251001",      // Evaluation, not deep reasoning
+  cleanup: "claude-haiku-4-5-20251001",   // Classification/enrichment
+  // Everything else: Sonnet (default)
+};
+
+function getModelForAgent(slug: string): string {
+  return AGENT_MODEL_MAP[slug] ?? process.env.CLAUDE_MODEL ?? "claude-sonnet-4-6";
+}
+
+// ── Run a single agent (called in parallel) ─────────────────────────────
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchStart: number) {
+  const { data: run } = await supabase
+    .from("agent_runs")
+    .insert({ agent_id: agent.id, status: "running", trigger_type: "orchestrator" })
+    .select("id")
+    .single();
+  const runId = run?.id;
+  const agentStart = Date.now();
+
+  try {
+    const context = await buildAgentContext(supabase, agent.domain);
+
+    const { data: memories } = await supabase
+      .from("agent_memory")
+      .select("id, content, importance, updated_at")
+      .eq("agent_id", agent.id)
+      .gt("importance", 0.2)
+      .order("importance", { ascending: false })
+      .limit(15);
+
+    const now = Date.now();
+    const scoredMemories = (memories ?? [])
+      .map((m: { id: number; content: string; importance: number; updated_at: string }) => {
+        const ageDays = (now - new Date(m.updated_at).getTime()) / 86400_000;
+        const recencyFactor = Math.max(0.3, 1 - ageDays / 90);
+        return { ...m, score: m.importance * recencyFactor };
+      })
+      .sort((a: { score: number }, b: { score: number }) => b.score - a.score)
+      .slice(0, 10);
+
+    const memoryText = scoredMemories.length
+      ? `\n\nTus observaciones previas (aprende de estas):\n${scoredMemories.map((m: { content: string }) => `- ${m.content}`).join("\n")}`
+      : "";
+
+    if (scoredMemories.length) {
+      const memoryIds = scoredMemories.map((m: { id: number }) => m.id);
+      await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds }).catch(() => {});
+    }
+
+    const confidenceThreshold = await getAgentConfidenceThreshold(supabase, agent.id);
+    const model = getModelForAgent(agent.slug);
+
+    const { result, usage } = await callClaudeJSON<Record<string, unknown>[]>(
+      apiKey,
+      {
+        model,
+        max_tokens: 4096,
+        temperature: 0.2,
+        system: agent.system_prompt + AGENT_SYSTEM_SUFFIX,
+        messages: [{
+          role: "user",
+          content: buildAgentPrompt(context, memoryText, confidenceThreshold),
+        }],
+      },
+      `agent-${agent.slug}`
+    );
+
+    const insights = Array.isArray(result) ? result : [];
+
+    // Deduplicate
+    let duplicatesSkipped = 0;
+    const filteredInsights = [];
+    if (insights.length > 0) {
+      const { data: existing } = await supabase
+        .from("agent_insights").select("title")
+        .eq("agent_id", agent.id).in("state", ["new", "seen"])
+        .order("created_at", { ascending: false }).limit(50);
+      const existingTitles = new Set((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
+      for (const insight of insights) {
+        const norm = normalizeForDedup(String(insight.title || ""));
+        if (existingTitles.has(norm)) { duplicatesSkipped++; continue; }
+        existingTitles.add(norm);
+        filteredInsights.push(insight);
+      }
+    }
+
+    // Save insights
+    if (filteredInsights.length > 0) {
+      const rows = [];
+      for (const i of filteredInsights) {
+        let companyId: number | null = null;
+        if (i.company_name) {
+          const { data: co } = await supabase.from("companies").select("id")
+            .ilike("canonical_name", String(i.company_name).trim()).limit(1).single();
+          if (co) companyId = co.id;
+        }
+        if (!companyId && i.company_id) companyId = Number(i.company_id);
+        let contactId: number | null = null;
+        if (i.contact_email) {
+          const { data: ct } = await supabase.from("contacts").select("id, company_id")
+            .eq("email", String(i.contact_email).toLowerCase()).limit(1).single();
+          if (ct) { contactId = ct.id; if (!companyId && ct.company_id) companyId = ct.company_id; }
+        }
+        const confidence = Math.min(1, Math.max(0, Number(i.confidence) || 0.5));
+        rows.push({
+          agent_id: agent.id, run_id: runId,
+          insight_type: String(i.insight_type || "recommendation"),
+          category: String(i.category || agent.domain),
+          severity: String(i.severity || "info"),
+          title: String(i.title || ""), description: String(i.description || ""),
+          evidence: i.evidence || [],
+          recommendation: i.recommendation ? String(i.recommendation) : null,
+          confidence,
+          business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
+          company_id: companyId, contact_id: contactId,
+          state: confidence < confidenceThreshold ? "archived" : "new",
+        });
+      }
+      await supabase.from("agent_insights").insert(rows);
+    }
+
+    const activeInsights = filteredInsights.filter(i => (Number(i.confidence) || 0.5) >= confidenceThreshold).length;
+    const duration = (Date.now() - agentStart) / 1000;
+
+    if (runId) {
+      await supabase.from("agent_runs").update({
+        status: "completed", completed_at: new Date().toISOString(),
+        duration_seconds: Math.round(duration * 10) / 10,
+        insights_generated: activeInsights,
+        input_tokens: usage?.input_tokens ?? 0, output_tokens: usage?.output_tokens ?? 0,
+      }).eq("id", runId);
+    }
+    if (usage) logTokenUsage(`agent-${agent.slug}`, model, usage.input_tokens, usage.output_tokens);
+
+    return { insights_generated: activeInsights, insights_archived: filteredInsights.length - activeInsights, duplicates_skipped: duplicatesSkipped, model, elapsed_s: Math.round(duration) };
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    if (runId) {
+      await supabase.from("agent_runs").update({ status: "failed", completed_at: new Date().toISOString(), error_message: errMsg }).eq("id", runId);
+    }
+    throw err;
   }
 }
 

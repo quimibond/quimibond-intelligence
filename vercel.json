@@ -29,6 +29,10 @@
       "schedule": "0 */6 * * *"
     },
     {
+      "path": "/api/pipeline/parse-cfdi",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/pipeline/snapshot",
       "schedule": "30 5 * * *"
     },
