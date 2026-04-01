@@ -47,6 +47,27 @@ interface Insight {
   created_at: string;
 }
 
+interface CompanyProfile {
+  company_id: number;
+  name: string;
+  total_revenue: number;
+  revenue_90d: number;
+  trend_pct: number | null;
+  overdue_amount: number;
+  tier: string;
+  risk_level: string;
+}
+
+interface CompanyGroup {
+  company: CompanyProfile | null;
+  companyName: string;
+  insights: Insight[];
+  maxSeverity: string;
+  totalImpact: number;
+}
+
+type ViewMode = "list" | "company";
+
 const DOMAIN_ICONS: Record<string, React.ElementType> = {
   sales: TrendingUp, finance: DollarSign, operations: Truck,
   relationships: Users, risk: Shield, growth: Zap, meta: Bot,
@@ -96,9 +117,11 @@ export default function InboxPage() {
   const [freshness, setFreshness] = useState<{ lastSync: string | null; lastAnalyze: string | null; lastAgents: string | null }>({ lastSync: null, lastAnalyze: null, lastAgents: null });
   const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
 
-  // Filters
+  // Filters & view
+  const [viewMode, setViewMode] = useState<ViewMode>("company");
   const [filterMode, setFilterMode] = useState<FilterMode>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<AssigneeFilter>("all");
+  const [companyProfiles, setCompanyProfiles] = useState<Map<number, CompanyProfile>>(new Map());
 
   // Mobile swipe state
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -132,7 +155,7 @@ export default function InboxPage() {
   const [allAssignees, setAllAssignees] = useState<string[]>([]);
 
   const load = useCallback(async () => {
-    const [insightsRes, agentsRes, freshnessRes, assigneesRes] = await Promise.all([
+    const [insightsRes, agentsRes, freshnessRes, assigneesRes, profilesRes] = await Promise.all([
       supabase
         .from("agent_insights")
         .select("*")
@@ -153,6 +176,11 @@ export default function InboxPage() {
         .in("state", ["new", "seen"])
         .gte("confidence", 0.65)
         .not("assignee_name", "is", null),
+      // Company profiles for grouping
+      supabase
+        .from("company_profile")
+        .select("company_id, name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level")
+        .order("total_revenue", { ascending: false }),
     ]);
 
     const [odooFresh, emailFresh, agentFresh] = freshnessRes;
@@ -167,6 +195,13 @@ export default function InboxPage() {
       agentMap[a.id] = { slug: a.slug, name: a.name, domain: a.domain };
     }
     setAgents(agentMap);
+
+    // Build company profile map
+    const profileMap = new Map<number, CompanyProfile>();
+    for (const p of profilesRes.data ?? []) {
+      profileMap.set(p.company_id, p as CompanyProfile);
+    }
+    setCompanyProfiles(profileMap);
 
     // Extract all unique assignees from full dataset (not limited by page)
     const assigneeNames = Array.from(new Set(
@@ -665,9 +700,179 @@ export default function InboxPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════════ */}
-      {/* DESKTOP: Table view (hidden on mobile)                           */}
+      {/* DESKTOP: View toggle                                             */}
       {/* ══════════════════════════════════════════════════════════════════ */}
       {filteredInsights.length > 0 && (
+        <div className="hidden md:flex items-center gap-1 mb-3 px-0">
+          <button
+            onClick={() => setViewMode("company")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              viewMode === "company" ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/80"
+            )}
+          >
+            Por empresa
+          </button>
+          <button
+            onClick={() => setViewMode("list")}
+            className={cn(
+              "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+              viewMode === "list" ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/80"
+            )}
+          >
+            Lista
+          </button>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* DESKTOP: Company grouped view                                    */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {filteredInsights.length > 0 && viewMode === "company" && (() => {
+        // Group insights by company
+        const severityOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+        const groups = new Map<string, CompanyGroup>();
+
+        for (const insight of filteredInsights) {
+          const key = insight.company_id ? String(insight.company_id) : "_no_company";
+          if (!groups.has(key)) {
+            const profile = insight.company_id ? companyProfiles.get(insight.company_id) : null;
+            groups.set(key, {
+              company: profile ?? null,
+              companyName: profile?.name ?? "Sin empresa asignada",
+              insights: [],
+              maxSeverity: "info",
+              totalImpact: 0,
+            });
+          }
+          const group = groups.get(key)!;
+          group.insights.push(insight);
+          if ((severityOrder[insight.severity] ?? 5) < (severityOrder[group.maxSeverity] ?? 5)) {
+            group.maxSeverity = insight.severity;
+          }
+          if (insight.business_impact_estimate) group.totalImpact += insight.business_impact_estimate;
+        }
+
+        // Sort groups: by max severity, then by total revenue
+        const sortedGroups = [...groups.values()].sort((a, b) => {
+          const sevDiff = (severityOrder[a.maxSeverity] ?? 5) - (severityOrder[b.maxSeverity] ?? 5);
+          if (sevDiff !== 0) return sevDiff;
+          return (b.company?.total_revenue ?? 0) - (a.company?.total_revenue ?? 0);
+        });
+
+        const TIER_COLORS: Record<string, string> = {
+          strategic: "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
+          important: "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
+          key_supplier: "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
+          regular: "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+        };
+        const RISK_COLORS: Record<string, string> = {
+          critical: "text-danger", high: "text-danger", medium: "text-warning", low: "text-muted-foreground",
+        };
+
+        return (
+          <div className="hidden md:block space-y-3">
+            {sortedGroups.map((group) => (
+              <Card key={group.companyName} className="overflow-hidden">
+                {/* Company header */}
+                <div className="flex items-center justify-between px-4 py-2.5 bg-muted/30 border-b">
+                  <div className="flex items-center gap-3">
+                    <div className={cn(
+                      "w-1 h-8 rounded-full",
+                      group.maxSeverity === "critical" && "bg-danger",
+                      group.maxSeverity === "high" && "bg-warning",
+                      group.maxSeverity === "medium" && "bg-info",
+                      !["critical", "high", "medium"].includes(group.maxSeverity) && "bg-muted-foreground/30",
+                    )} />
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="font-semibold text-sm">{group.companyName}</h3>
+                        {group.company?.tier && (
+                          <Badge className={cn("text-[10px] font-normal", TIER_COLORS[group.company.tier] ?? "bg-muted")}>
+                            {group.company.tier}
+                          </Badge>
+                        )}
+                        {group.company?.risk_level && group.company.risk_level !== "low" && (
+                          <span className={cn("text-[10px] font-medium", RISK_COLORS[group.company.risk_level])}>
+                            riesgo {group.company.risk_level}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                        {group.company?.total_revenue ? (
+                          <span>Revenue: {formatCurrency(group.company.total_revenue)}</span>
+                        ) : null}
+                        {group.company?.overdue_amount ? (
+                          <span className="text-danger">Vencido: {formatCurrency(group.company.overdue_amount)}</span>
+                        ) : null}
+                        {group.company?.trend_pct != null ? (
+                          <span className={group.company.trend_pct >= 0 ? "text-success" : "text-danger"}>
+                            {group.company.trend_pct >= 0 ? "+" : ""}{group.company.trend_pct.toFixed(0)}% tendencia
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-xs text-muted-foreground">{group.insights.length} insight{group.insights.length !== 1 ? "s" : ""}</span>
+                    {group.totalImpact > 0 && (
+                      <div className="text-xs font-semibold">{formatCurrency(group.totalImpact)}</div>
+                    )}
+                  </div>
+                </div>
+                {/* Insights list */}
+                <div className="divide-y">
+                  {group.insights.map((insight) => {
+                    const agent = agents[insight.agent_id];
+                    const Icon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+                    const isSeen = seenIds.has(insight.id);
+                    return (
+                      <div
+                        key={insight.id}
+                        className={cn("flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-muted/30 group", !isSeen && "bg-accent/30")}
+                        onClick={() => goToDetail(insight.id)}
+                      >
+                        <div className={cn("flex h-7 w-7 items-center justify-center rounded-md shrink-0", DOMAIN_BG[agent?.domain ?? ""] ?? "bg-muted")}>
+                          <Icon className={cn("h-3.5 w-3.5", DOMAIN_COLORS[agent?.domain ?? ""])} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5">
+                            {!isSeen && <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />}
+                            <h4 className={cn("text-sm truncate", !isSeen ? "font-semibold" : "font-normal")}>{insight.title}</h4>
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <SeverityBadge severity={insight.severity} />
+                            <span className="text-[10px] text-muted-foreground">{agent?.name?.replace("Agente de ", "")}</span>
+                            {insight.assignee_name && (
+                              <span className="text-[10px] text-muted-foreground">
+                                 {insight.assignee_name}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" onClick={e => e.stopPropagation()}>
+                          <Button size="icon" variant="ghost" className="h-7 w-7" onClick={() => actOnInsight(insight.id)} disabled={acting === insight.id}>
+                            {acting === insight.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <ThumbsUp className="h-3 w-3" />}
+                          </Button>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-muted-foreground" onClick={() => dismissInsight(insight.id)}>
+                            <ThumbsDown className="h-3 w-3" />
+                          </Button>
+                        </div>
+                        <span className="text-[11px] text-muted-foreground whitespace-nowrap shrink-0">{timeAgo(insight.created_at)}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {/* DESKTOP: Table view (hidden on mobile)                           */}
+      {/* ══════════════════════════════════════════════════════════════════ */}
+      {filteredInsights.length > 0 && viewMode === "list" && (
         <div className="hidden md:block rounded-lg border">
           <Table>
             <TableHeader>
