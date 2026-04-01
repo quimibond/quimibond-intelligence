@@ -14,6 +14,8 @@ import {
   Sparkles,
   Truck,
   TrendingUp,
+  ShoppingCart,
+  Receipt,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, formatCurrency, timeAgo } from "@/lib/utils";
@@ -52,6 +54,8 @@ import {
   TabProductos,
   TabOperaciones,
   TabSalud,
+  TabVentas,
+  TabCompras,
 } from "./components";
 import type { ResolvedRelationship, RevenueRow } from "./components";
 
@@ -434,6 +438,14 @@ export default function CompanyDetailPage() {
             <Truck className="mr-1 h-3.5 w-3.5" />
             Operaciones
           </TabsTrigger>
+          <TabsTrigger value="ventas">
+            <ShoppingCart className="mr-1 h-3.5 w-3.5" />
+            Ventas
+          </TabsTrigger>
+          <TabsTrigger value="compras">
+            <Receipt className="mr-1 h-3.5 w-3.5" />
+            Compras
+          </TabsTrigger>
           <TabsTrigger value="salud">
             <Heart className="mr-1 h-3.5 w-3.5" />
             Salud
@@ -466,6 +478,12 @@ export default function CompanyDetailPage() {
         </TabsContent>
         <TabsContent value="operaciones" className="space-y-6">
           <TabOperaciones logistics={logistics} pipeline={pipeline} />
+        </TabsContent>
+        <TabsContent value="ventas" className="space-y-6">
+          <TabVentas companyId={company.id} />
+        </TabsContent>
+        <TabsContent value="compras" className="space-y-6">
+          <TabCompras companyId={company.id} />
         </TabsContent>
         <TabsContent value="salud" className="space-y-6">
           <TabSalud healthScores={healthScores} />

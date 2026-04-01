@@ -8,4 +8,6 @@ export { TabEmails } from "./tab-emails";
 export { TabProductos } from "./tab-productos";
 export { TabOperaciones } from "./tab-operaciones";
 export { TabSalud } from "./tab-salud";
+export { TabVentas } from "./tab-ventas";
+export { TabCompras } from "./tab-compras";
 export type { ResolvedRelationship, RevenueRow } from "./types";

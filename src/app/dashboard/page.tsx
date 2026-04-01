@@ -136,7 +136,7 @@ function AgentsSummary() {
       {/* Agent cards - horizontal scroll on mobile */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 min-w-0">
-          {agents.slice(0, 7).map((a) => {
+          {agents.map((a) => {
             const dc = getDomainConfig(a.domain);
             const Icon = dc.icon;
             return (

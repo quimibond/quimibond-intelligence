@@ -264,14 +264,25 @@ export default function InboxPage() {
 
   const actOnInsight = useCallback(async (id: number) => {
     setActing(id);
-    await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", id);
-    setInsights(prev => prev.filter(i => i.id !== id));
-    toast.success("Marcado como util — el sistema aprendera de esto");
-    setActing(null);
+    try {
+      const { error } = await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", id);
+      if (error) {
+        toast.error("Error al marcar insight: " + error.message);
+        return;
+      }
+      setInsights(prev => prev.filter(i => i.id !== id));
+      toast.success("Marcado como util — el sistema aprendera de esto");
+    } finally {
+      setActing(null);
+    }
   }, []);
 
   const dismissInsight = useCallback(async (id: number) => {
-    await supabase.from("agent_insights").update({ state: "dismissed", was_useful: false }).eq("id", id);
+    const { error } = await supabase.from("agent_insights").update({ state: "dismissed", was_useful: false }).eq("id", id);
+    if (error) {
+      toast.error("Error al descartar insight: " + error.message);
+      return;
+    }
     setInsights(prev => prev.filter(i => i.id !== id));
     toast("Descartado — el sistema ajustara sus prioridades");
   }, []);

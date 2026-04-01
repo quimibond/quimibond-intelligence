@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
-import { cn, timeAgo, formatCurrency } from "@/lib/utils";
+import { cn, timeAgo, formatCurrency, truncate } from "@/lib/utils";
 import { getDomainConfig } from "@/lib/domains";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -13,8 +13,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowRight, Bot, CheckCircle2,
-  Loader2, Play, XCircle, Zap,
+  ArrowRight, Bot, Brain, CheckCircle2,
+  Loader2, MessageSquare, Play, XCircle, Zap,
 } from "lucide-react";
 
 interface AgentOverview {
@@ -34,12 +34,14 @@ interface AgentOverview {
 export default function AgentsPage() {
   const [agents, setAgents] = useState<AgentOverview[]>([]);
   const [recentInsights, setRecentInsights] = useState<{ id: number; title: string; severity: string; agent_id: number; created_at: string }[]>([]);
+  const [feedbackItems, setFeedbackItems] = useState<{ id: number; title: string; state: string; agent_id: number; updated_at: string }[]>([]);
+  const [recentMemories, setRecentMemories] = useState<{ id: number; content: string; memory_type: string; importance: number; agent_id: number; created_at: string }[]>([]);
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
 
   const load = useCallback(async () => {
-    const [agentsRes, insightsRes] = await Promise.all([
+    const [agentsRes, insightsRes, feedbackRes, memoriesRes] = await Promise.all([
       supabase.rpc("get_agents_overview"),
       supabase
         .from("agent_insights")
@@ -48,9 +50,22 @@ export default function AgentsPage() {
         .gte("confidence", 0.65)
         .order("created_at", { ascending: false })
         .limit(5),
+      supabase
+        .from("agent_insights")
+        .select("id, title, state, agent_id, updated_at")
+        .in("state", ["acted_on", "dismissed"])
+        .order("updated_at", { ascending: false })
+        .limit(10),
+      supabase
+        .from("agent_memory")
+        .select("id, content, memory_type, importance, agent_id, created_at")
+        .order("created_at", { ascending: false })
+        .limit(5),
     ]);
     setAgents(agentsRes.data ?? []);
     setRecentInsights(insightsRes.data ?? []);
+    setFeedbackItems(feedbackRes.data ?? []);
+    setRecentMemories(memoriesRes.data ?? []);
     setLoading(false);
   }, []);
 
@@ -237,6 +252,73 @@ export default function AgentsPage() {
             })}
           </CardContent>
         </Card>
+      )}
+
+      {/* Feedback & Learning */}
+      {(feedbackItems.length > 0 || recentMemories.length > 0) && (
+        <div className="grid gap-3 lg:grid-cols-2">
+          {/* Feedback Reciente */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <MessageSquare className="h-4 w-4 text-domain-meta" />
+                <CardTitle className="text-sm sm:text-base">Feedback Reciente</CardTitle>
+                <Badge variant="outline" className="text-[10px]">{feedbackItems.length}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {feedbackItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">Sin feedback reciente</p>
+              ) : (
+                feedbackItems.map((item) => {
+                  const agent = agents.find(a => a.agent_id === item.agent_id);
+                  const wasUseful = item.state === "acted_on";
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5"
+                    >
+                      <Badge variant={wasUseful ? "default" : "secondary"} className="shrink-0 text-[10px]">
+                        {wasUseful ? "Util" : "Descartado"}
+                      </Badge>
+                      <span className="text-sm truncate flex-1 min-w-0">{truncate(item.title, 60)}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{agent?.name ?? "—"}</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(item.updated_at)}</span>
+                    </div>
+                  );
+                })
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Aprendizajes Recientes */}
+          <Card>
+            <CardHeader className="pb-2">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-domain-meta" />
+                <CardTitle className="text-sm sm:text-base">Aprendizajes Recientes</CardTitle>
+                <Badge variant="outline" className="text-[10px]">{recentMemories.length}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-1.5">
+              {recentMemories.length === 0 ? (
+                <p className="text-xs text-muted-foreground py-2">Sin aprendizajes recientes</p>
+              ) : (
+                recentMemories.map((mem) => (
+                  <div
+                    key={mem.id}
+                    className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5"
+                  >
+                    <Badge variant="outline" className="shrink-0 text-[10px]">{mem.memory_type}</Badge>
+                    <span className="text-sm truncate flex-1 min-w-0">{truncate(mem.content, 120)}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{mem.importance}</span>
+                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(mem.created_at)}</span>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </div>
       )}
     </div>
   );
