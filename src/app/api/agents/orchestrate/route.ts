@@ -507,7 +507,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getDomainData(sb: any, domain: string): Promise<string> {
   // Load company profiles for domains that need company context
-  const needsProfiles = ["sales", "finance", "risk", "growth", "relationships", "cleanup", "suppliers"];
+  const needsProfiles = ["sales", "finance", "risk", "growth", "relationships", "cleanup", "suppliers", "predictive"];
   let profileSection = "";
   if (needsProfiles.includes(domain)) {
     const { data: profiles } = await sb
@@ -613,6 +613,15 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         sb.from("employee_metrics").select("name, department, emails_sent, emails_received, actions_assigned, actions_completed, actions_overdue, activities_overdue, contacts_managed, execution_score, overall_score").eq("period_type", "weekly").order("overall_score", { ascending: true }).limit(20),
       ]);
       return `## Rendimiento del equipo (esta semana)\n${safeJSON(emp.data)}\n## Runs recientes\n${safeJSON(r.data)}\n## Insights recientes (estado y feedback)\n${safeJSON(i.data)}\n## Memorias activas\n${safeJSON(mem.data)}`;
+    }
+    case "predictive": {
+      const [reorder, cashFlow, trend, topAtRisk] = await Promise.all([
+        sb.from("client_reorder_predictions").select("company_name, order_count, avg_cycle_days, stddev_days, last_order_date, days_since_last, avg_order_value, predicted_next_order, days_overdue_reorder, reorder_status, total_revenue, tier").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).order("days_overdue_reorder", { ascending: false }).limit(20),
+        sb.from("cash_flow_aging").select("company_name, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, tier").limit(15),
+        sb.from("monthly_revenue_trend").select("month, revenue, active_clients, mom_change_pct").limit(15),
+        sb.from("client_reorder_predictions").select("company_name, avg_cycle_days, days_since_last, avg_order_value, reorder_status, total_revenue, tier").eq("reorder_status", "on_track").in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(10),
+      ]);
+      return `${profileSection}## Clientes con reorden VENCIDO o en riesgo\n${safeJSON(reorder.data)}\n## Cash flow aging (cartera por antigüedad)\n${safeJSON(cashFlow.data)}\n## Tendencia mensual de revenue\n${safeJSON(trend.data)}\n## Clientes estrategicos on-track (para prediccion de reorden)\n${safeJSON(topAtRisk.data)}`;
     }
     case "suppliers": {
       const [topSuppliers, recentPOs, priceChanges, singleSource] = await Promise.all([

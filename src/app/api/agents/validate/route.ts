@@ -208,14 +208,56 @@ export async function POST() {
       }
     }
 
-    // ── 8. Deduplicate companies and entities (RPC) ─────────────────────
+    // ── 8. Closed-loop: escalate stale assigned insights ─────────────
+    let escalated = 0;
+    {
+      // Insights assigned to someone but not acted on after 3+ days → escalate
+      const threeDaysAgo = new Date(Date.now() - 3 * 86400_000).toISOString();
+      const { data: staleAssigned } = await supabase
+        .from("agent_insights")
+        .select("id, title, assignee_name, assignee_department, severity, company_id, created_at")
+        .in("state", ["new", "seen"])
+        .in("severity", ["critical", "high"])
+        .not("assignee_name", "is", null)
+        .lt("created_at", threeDaysAgo)
+        .not("assignee_name", "eq", "Jose J. Mizrahi") // Don't escalate CEO's own
+        .limit(20);
+
+      if (staleAssigned?.length) {
+        for (const insight of staleAssigned) {
+          // Create an escalation insight for the CEO
+          await supabase.from("agent_insights").insert({
+            agent_id: insight.id, // will be overridden by trigger
+            insight_type: "recommendation",
+            category: "escalation",
+            severity: insight.severity,
+            title: `Escalacion: "${insight.title}" sin accion por ${insight.assignee_name}`,
+            description: `Insight de severidad ${insight.severity} asignado a ${insight.assignee_name} (${insight.assignee_department}) hace mas de 3 dias sin respuesta. Insight original: ${insight.title}`,
+            recommendation: `Verificar con ${insight.assignee_name} si esta en proceso o necesita apoyo. Si no, reasignar o tomar accion directa.`,
+            confidence: 0.95,
+            company_id: insight.company_id,
+            state: "new",
+            evidence: [{ original_insight_id: insight.id, assigned_to: insight.assignee_name, created_at: insight.created_at }],
+          });
+
+          // Mark original as "seen" so it doesn't escalate again
+          await supabase.from("agent_insights")
+            .update({ state: "seen" })
+            .eq("id", insight.id);
+
+          escalated++;
+        }
+      }
+    }
+
+    // ── 10. Deduplicate companies and entities (RPC) ────────────────────
     let deduped = { companies: 0, entities: 0 };
     try {
       const { data: dedupeResult } = await supabase.rpc("deduplicate_all");
       if (dedupeResult?.[0]) deduped = dedupeResult[0];
     } catch { /* RPC may not exist */ }
 
-    // ── 9. Link orphan insights to companies (fuzzy match) ────────────
+    // ── 11. Link orphan insights to companies (fuzzy match) ───────────
     let linked = 0;
     try {
       const { data: linkResult } = await supabase.rpc("link_orphan_insights");
@@ -223,12 +265,12 @@ export async function POST() {
     } catch { /* RPC may not exist yet */ }
 
     // ── 10. Log results ─────────────────────────────────────────────────
-    if (resolved > 0 || expired > 0) {
+    if (resolved > 0 || expired > 0 || escalated > 0) {
       await supabase.from("pipeline_logs").insert({
         level: "info",
         phase: "insight_validation",
         message: `Validated: ${resolved} auto-resolved, ${expired} auto-expired of ${activeInsights.length} active`,
-        details: { resolved, expired, linked, deduped, insight_deduped: insightDeduped, total_active: activeInsights.length },
+        details: { resolved, expired, escalated, linked, deduped, insight_deduped: insightDeduped, total_active: activeInsights.length },
       });
     }
 
@@ -237,6 +279,7 @@ export async function POST() {
       active_insights: activeInsights.length,
       resolved,
       expired,
+      escalated,
       insight_deduped: insightDeduped,
       linked_to_companies: linked,
       still_valid: activeInsights.length - resolved - expired - insightDeduped,

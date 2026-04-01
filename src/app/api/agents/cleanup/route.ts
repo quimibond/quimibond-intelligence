@@ -230,6 +230,11 @@ export async function POST(request: NextRequest) {
     } catch {
       // ignore if view doesn't exist yet
     }
+    try {
+      await supabase.rpc("refresh_reorder_predictions");
+    } catch {
+      // ignore if view doesn't exist yet
+    }
 
     // ── 6. Call RPCs for additional cleanup ─────────────────────────────
     try { await supabase.rpc("fix_all_company_links"); } catch { /* may not exist */ }
