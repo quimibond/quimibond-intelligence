@@ -4,20 +4,21 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  AlertTriangle, ChevronRight, Loader2, Search, TrendingDown,
-  TrendingUp, Users, UserX,
+  AlertTriangle, ChevronRight, Loader2, TrendingDown,
+  TrendingUp, Users,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, getInitials, timeAgo, sentimentColor } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { MiniStatCard } from "@/components/shared/mini-stat-card";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
@@ -155,57 +156,30 @@ export default function ContactsPage() {
       {/* Quick stats */}
       {!loading && contacts.length > 0 && (
         <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <Users className="h-3.5 w-3.5" /> Total
-            </div>
-            <p className="text-xl sm:text-2xl font-bold tabular-nums mt-1">{stats.total}</p>
-          </div>
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <AlertTriangle className="h-3.5 w-3.5" /> En riesgo
-            </div>
-            <p className={cn("text-xl sm:text-2xl font-bold tabular-nums mt-1", stats.atRisk > 0 && "text-danger-foreground")}>
-              {stats.atRisk}
-            </p>
-          </div>
-          <div className="rounded-lg border bg-card p-3">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <div className={cn("h-2.5 w-2.5 rounded-full", healthBgColor(stats.avgHealth))} /> Salud prom.
-            </div>
-            <p className={cn("text-xl sm:text-2xl font-bold tabular-nums mt-1", healthColor(stats.avgHealth))}>
-              {stats.avgHealth ?? "—"}
-            </p>
-          </div>
+          <MiniStatCard icon={Users} label="Total" value={stats.total} />
+          <MiniStatCard icon={AlertTriangle} label="En riesgo" value={stats.atRisk} valueClassName={stats.atRisk > 0 ? "text-danger-foreground" : undefined} />
+          <MiniStatCard icon={Users} label="Salud prom." value={stats.avgHealth ?? "—"} valueClassName={healthColor(stats.avgHealth)} />
         </div>
       )}
 
       {/* Filters */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <div className="relative flex-1 min-w-[200px] sm:max-w-sm">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input placeholder="Buscar por nombre o email..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
-        </div>
-        <div className="flex items-center gap-2">
-          <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="w-36 shrink-0">
-            <option value="all">Riesgo: Todos</option>
-            <option value="low">Bajo</option>
-            <option value="medium">Medio</option>
-            <option value="high">Alto</option>
-            <option value="critical">Critico</option>
-          </Select>
-          <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-36 shrink-0">
-            <option value="all">Tipo: Todos</option>
-            <option value="customer">Clientes</option>
-            <option value="supplier">Proveedores</option>
-          </Select>
-        </div>
-      </div>
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por nombre o email...">
+        <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="w-36 shrink-0">
+          <option value="all">Riesgo: Todos</option>
+          <option value="low">Bajo</option>
+          <option value="medium">Medio</option>
+          <option value="high">Alto</option>
+          <option value="critical">Critico</option>
+        </Select>
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-36 shrink-0">
+          <option value="all">Tipo: Todos</option>
+          <option value="customer">Clientes</option>
+          <option value="supplier">Proveedores</option>
+        </Select>
+      </FilterBar>
 
       {loading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-14" />)}
-        </div>
+        <LoadingGrid stats={3} rows={6} statCols="3" />
       ) : contacts.length === 0 ? (
         <EmptyState icon={Users} title="Sin contactos" description="No se encontraron contactos con los filtros actuales." />
       ) : (

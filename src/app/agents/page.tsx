@@ -4,45 +4,18 @@ import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, formatCurrency } from "@/lib/utils";
+import { getDomainConfig } from "@/lib/domains";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  ArrowRight, Bot, Brain, CheckCircle2, Database, DollarSign,
-  Loader2, Play, Rocket, Server, Shield, TrendingUp, Truck,
-  Users, XCircle, Zap,
+  ArrowRight, Bot, CheckCircle2,
+  Loader2, Play, XCircle, Zap,
 } from "lucide-react";
-
-const DOMAIN_ICONS: Record<string, React.ElementType> = {
-  sales: TrendingUp, finance: DollarSign, operations: Truck,
-  relationships: Users, risk: Shield, growth: Rocket, meta: Brain,
-  data_quality: Database, odoo: Server,
-};
-const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
-  relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth",
-  meta: "text-domain-meta", data_quality: "text-info", odoo: "text-warning",
-};
-const DOMAIN_BG: Record<string, string> = {
-  sales: "bg-domain-sales/10", finance: "bg-domain-finance/10", operations: "bg-domain-operations/10",
-  relationships: "bg-domain-relationships/10", risk: "bg-domain-risk/10", growth: "bg-domain-growth/10",
-  meta: "bg-domain-meta/10", data_quality: "bg-info/10", odoo: "bg-warning/10",
-};
-const DOMAIN_DESC: Record<string, string> = {
-  sales: "Ordenes, CRM, top clientes, oportunidades",
-  finance: "Facturas, cartera vencida, cash flow",
-  operations: "Entregas, inventario, manufactura",
-  relationships: "Health scores, threads, sentimiento",
-  risk: "Facturas vencidas, entregas atrasadas, contactos criticos",
-  growth: "Top clientes, tendencias, cross-sell",
-  meta: "Evalua rendimiento de otros agentes",
-  data_quality: "Datos faltantes, links rotos, metricas",
-  odoo: "Gaps en sync, modelos faltantes",
-};
 
 interface AgentOverview {
   agent_id: number;
@@ -114,9 +87,7 @@ export default function AgentsPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Agentes de IA" description="Sistema multi-agente de inteligencia" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[160px]" />)}
-        </div>
+        <LoadingGrid rows={6} rowHeight="h-[160px]" />
       </div>
     );
   }
@@ -145,11 +116,12 @@ export default function AgentsPage() {
       {/* Agent Cards */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {agents.map((agent) => {
-          const Icon = DOMAIN_ICONS[agent.domain] ?? Bot;
-          const color = DOMAIN_COLORS[agent.domain] ?? "text-muted-foreground";
-          const bg = DOMAIN_BG[agent.domain] ?? "bg-muted";
+          const dc = getDomainConfig(agent.domain);
+          const Icon = dc.icon;
+          const color = dc.color;
+          const bg = dc.bg;
           const isRunning = runningAgent === agent.slug;
-          const desc = DOMAIN_DESC[agent.domain] ?? "";
+          const desc = dc.description;
 
           return (
             <Card key={agent.slug} className="relative overflow-hidden">
@@ -248,14 +220,15 @@ export default function AgentsPage() {
           <CardContent className="space-y-1.5">
             {recentInsights.map((ins) => {
               const agent = agents.find(a => a.agent_id === ins.agent_id);
-              const AgentIcon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+              const insDc = getDomainConfig(agent?.domain ?? "");
+              const AgentIcon = insDc.icon;
               return (
                 <Link
                   key={ins.id}
                   href={`/inbox/insight/${ins.id}`}
                   className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors"
                 >
-                  <AgentIcon className={cn("h-4 w-4 shrink-0", DOMAIN_COLORS[agent?.domain ?? ""])} />
+                  <AgentIcon className={cn("h-4 w-4 shrink-0", insDc.color)} />
                   <SeverityBadge severity={ins.severity} />
                   <span className="text-sm font-medium truncate flex-1 min-w-0">{ins.title}</span>
                   <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{timeAgo(ins.created_at)}</span>

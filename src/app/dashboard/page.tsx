@@ -6,18 +6,19 @@ import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
 import type { GlobalAging, PipelineGlobal } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
+import { getDomainConfig } from "@/lib/domains";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, Activity, Bot, Brain, CheckSquare, CreditCard,
-  DollarSign, FileText, Loader2, Mail, MessageSquare, PackageX,
-  Play, Shield, Target, TrendingUp, Truck, UserCheck, Users, Zap,
+  DollarSign, FileText, Loader2, Mail, MessageSquare,
+  Play, Shield, Target, TrendingUp, Truck, Users, Zap,
 } from "lucide-react";
 
 // ── Clickable KPI Card ──
@@ -109,14 +110,7 @@ function AgentsSummary() {
     load();
   }, []);
 
-  const DOMAIN_ICONS: Record<string, React.ElementType> = {
-    sales: TrendingUp, finance: DollarSign, operations: Truck,
-    relationships: Users, risk: Shield, growth: Zap, meta: Brain,
-  };
-  const DOMAIN_COLORS: Record<string, string> = {
-    sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
-    relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth", meta: "text-domain-meta",
-  };
+  // Domain config is now centralized in @/lib/domains
 
   async function runAll() {
     setRunningAll(true);
@@ -143,11 +137,11 @@ function AgentsSummary() {
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 min-w-0">
           {agents.slice(0, 7).map((a) => {
-            const Icon = DOMAIN_ICONS[a.domain] ?? Bot;
-            const color = DOMAIN_COLORS[a.domain] ?? "text-muted-foreground";
+            const dc = getDomainConfig(a.domain);
+            const Icon = dc.icon;
             return (
               <Link key={a.slug} href="/agents" className="flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1.5 sm:px-3 sm:py-2 hover:bg-muted/50 transition-colors">
-                <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", color)} />
+                <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", dc.color)} />
                 <div className="text-[11px] sm:text-xs">
                   <p className="font-medium">{a.name?.replace("Agente de ", "")}</p>
                   <p className="text-muted-foreground">
@@ -331,11 +325,7 @@ export default function DashboardPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Centro de Control" description="Vista ejecutiva — Quimibond Intelligence" />
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-[100px] w-full" />
-          ))}
-        </div>
+        <LoadingGrid stats={4} rows={4} statHeight="h-[100px]" />
       </div>
     );
   }

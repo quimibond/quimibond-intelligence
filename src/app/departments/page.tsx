@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Skeleton } from "@/components/ui/skeleton";
 import { Building2, Users, AlertTriangle, Clock } from "lucide-react";
 
 interface DeptData {
@@ -115,9 +115,7 @@ export default function DepartmentsPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Areas" description="Rendimiento por departamento" />
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[140px]" />)}
-        </div>
+        <LoadingGrid rows={6} rowHeight="h-[140px]" />
       </div>
     );
   }

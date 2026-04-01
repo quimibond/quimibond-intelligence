@@ -4,13 +4,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
-  Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, DollarSign,
-  Eye, Filter, Loader2, PartyPopper, RefreshCw, Shield,
-  SkipForward, ThumbsDown, ThumbsUp, TrendingUp, Truck, Users,
-  X, Zap,
+  Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock,
+  Eye, Filter, Loader2, PartyPopper, RefreshCw,
+  SkipForward, ThumbsDown, ThumbsUp,
+  X,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, formatCurrency } from "@/lib/utils";
+import { getDomainConfig } from "@/lib/domains";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -68,18 +69,6 @@ interface CompanyGroup {
 
 type ViewMode = "list" | "company";
 
-const DOMAIN_ICONS: Record<string, React.ElementType> = {
-  sales: TrendingUp, finance: DollarSign, operations: Truck,
-  relationships: Users, risk: Shield, growth: Zap, meta: Bot,
-};
-const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
-  relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth", meta: "text-domain-meta",
-};
-const DOMAIN_BG: Record<string, string> = {
-  sales: "bg-domain-sales/10", finance: "bg-domain-finance/10", operations: "bg-domain-operations/10",
-  relationships: "bg-domain-relationships/10", risk: "bg-domain-risk/10", growth: "bg-domain-growth/10", meta: "bg-domain-meta/10",
-};
 const TIER_LABELS: Record<string, { label: string; color: string }> = {
   urgent: { label: "URGENTE", color: "bg-danger text-white" },
   important: { label: "IMPORTANTE", color: "bg-warning text-white" },
@@ -575,11 +564,12 @@ export default function InboxPage() {
                       <div className="flex items-center gap-2">
                         {(() => {
                           const agent = agents[currentInsight.agent_id];
-                          const Icon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+                          const dc = getDomainConfig(agent?.domain ?? "");
+                          const Icon = dc.icon;
                           return (
                             <>
-                              <div className={cn("flex h-6 w-6 items-center justify-center rounded-full", DOMAIN_BG[agent?.domain ?? ""])}>
-                                <Icon className={cn("h-3.5 w-3.5", DOMAIN_COLORS[agent?.domain ?? ""])} />
+                              <div className={cn("flex h-6 w-6 items-center justify-center rounded-full", dc.bg)}>
+                                <Icon className={cn("h-3.5 w-3.5", dc.color)} />
                               </div>
                               <span className="text-xs font-medium text-muted-foreground">
                                 {agent?.name?.replace("Agente de ", "") ?? "Agente"}
@@ -824,7 +814,8 @@ export default function InboxPage() {
                 <div className="divide-y">
                   {group.insights.map((insight) => {
                     const agent = agents[insight.agent_id];
-                    const Icon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+                    const dc2 = getDomainConfig(agent?.domain ?? "");
+                    const Icon = dc2.icon;
                     const isSeen = seenIds.has(insight.id);
                     return (
                       <div
@@ -832,8 +823,8 @@ export default function InboxPage() {
                         className={cn("flex items-center gap-3 px-4 py-2 cursor-pointer hover:bg-muted/30 group", !isSeen && "bg-accent/30")}
                         onClick={() => goToDetail(insight.id)}
                       >
-                        <div className={cn("flex h-7 w-7 items-center justify-center rounded-md shrink-0", DOMAIN_BG[agent?.domain ?? ""] ?? "bg-muted")}>
-                          <Icon className={cn("h-3.5 w-3.5", DOMAIN_COLORS[agent?.domain ?? ""])} />
+                        <div className={cn("flex h-7 w-7 items-center justify-center rounded-md shrink-0", dc2.bg)}>
+                          <Icon className={cn("h-3.5 w-3.5", dc2.color)} />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
@@ -889,7 +880,8 @@ export default function InboxPage() {
             <TableBody>
               {filteredInsights.map((insight) => {
                 const agent = agents[insight.agent_id];
-                const Icon = DOMAIN_ICONS[agent?.domain ?? ""] ?? Bot;
+                const dc3 = getDomainConfig(agent?.domain ?? "");
+                const Icon = dc3.icon;
                 const tier = computeTier(insight);
                 const isSeen = seenIds.has(insight.id);
 
@@ -914,8 +906,8 @@ export default function InboxPage() {
                     {/* Main content: icon + title + meta */}
                     <TableCell className="pl-3">
                       <div className="flex items-center gap-3">
-                        <div className={cn("flex h-8 w-8 items-center justify-center rounded-md shrink-0", DOMAIN_BG[agent?.domain ?? ""] ?? "bg-muted")}>
-                          <Icon className={cn("h-4 w-4", DOMAIN_COLORS[agent?.domain ?? ""])} />
+                        <div className={cn("flex h-8 w-8 items-center justify-center rounded-md shrink-0", dc3.bg)}>
+                          <Icon className={cn("h-4 w-4", dc3.color)} />
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-1.5">
