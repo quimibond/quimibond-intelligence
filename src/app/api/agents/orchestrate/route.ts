@@ -390,11 +390,116 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
     .order("created_at", { ascending: false }).limit(5);
 
   const analysisBrief = recentAnalysis?.length
-    ? `## Analisis recientes\n${recentAnalysis.map((a: { details: Record<string, unknown> }) => `- ${a.details?.account}: ${a.details?.summary_text ?? ""}`).join("\n")}\n\n`
+    ? `## Analisis recientes de email\n${recentAnalysis.map((a: { details: Record<string, unknown> }) => `- ${a.details?.account}: ${a.details?.summary_text ?? ""}`).join("\n")}\n\n`
     : "";
 
+  // Load email intelligence (facts + action_items) relevant to this domain
+  const emailIntel = await getEmailIntelligence(supabase, domain);
+
   const domainData = await getDomainData(supabase, domain);
-  return analysisBrief + domainData;
+  return analysisBrief + emailIntel + domainData;
+}
+
+/**
+ * Loads facts, action_items, and complaints from the knowledge graph
+ * filtered by relevance to each agent's domain.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
+  const sections: string[] = [];
+
+  // Domain-specific fact types and action filters
+  const factFilters: Record<string, string[]> = {
+    finance: ["price", "commitment", "complaint"],
+    sales: ["request", "commitment", "price"],
+    risk: ["complaint", "commitment", "change"],
+    operations: ["commitment", "change", "complaint"],
+    relationships: ["request", "complaint", "commitment"],
+    growth: ["request", "price"],
+  };
+
+  const actionFilters: Record<string, string[]> = {
+    finance: ["review", "approve"],
+    sales: ["follow_up", "send_quote", "call", "email"],
+    risk: ["follow_up", "investigate"],
+    operations: ["deliver", "review"],
+    relationships: ["email", "call", "follow_up", "meeting"],
+    growth: ["follow_up", "send_quote"],
+  };
+
+  const relevantFactTypes = factFilters[domain];
+  const relevantActionTypes = actionFilters[domain];
+
+  if (!relevantFactTypes && !relevantActionTypes) return "";
+
+  // Load relevant facts from knowledge graph
+  if (relevantFactTypes) {
+    const { data: facts } = await sb
+      .from("facts")
+      .select("fact_type, fact_text, confidence, created_at")
+      .in("fact_type", relevantFactTypes)
+      .gte("confidence", 0.85)
+      .order("created_at", { ascending: false })
+      .limit(15);
+
+    if (facts?.length) {
+      sections.push(`## Inteligencia de emails (hechos extraidos)\n${facts.map((f: { fact_type: string; fact_text: string }) =>
+        `- [${f.fact_type}] ${f.fact_text}`
+      ).join("\n")}`);
+    }
+  }
+
+  // Load relevant pending action_items
+  if (relevantActionTypes) {
+    const { data: actions } = await sb
+      .from("action_items")
+      .select("action_type, description, priority, contact_name, contact_company, company_id, assignee_name, due_date, state")
+      .in("action_type", relevantActionTypes)
+      .eq("state", "pending")
+      .order("due_date", { ascending: true, nullsFirst: false })
+      .limit(15);
+
+    if (actions?.length) {
+      sections.push(`## Acciones pendientes (extraidas de emails)\n${actions.map((a: { action_type: string; description: string; priority: string; contact_name: string; assignee_name: string; due_date: string }) =>
+        `- [${a.priority}] ${a.action_type}: ${a.description.slice(0, 150)}${a.contact_name ? ` (${a.contact_name})` : ""}${a.assignee_name ? ` → ${a.assignee_name}` : ""}${a.due_date ? ` vence: ${a.due_date}` : ""}`
+      ).join("\n")}`);
+    }
+  }
+
+  // Load overdue action_items (all domains care about overdue items for their people)
+  const { data: overdue } = await sb
+    .from("action_items")
+    .select("action_type, description, priority, contact_name, assignee_name, due_date")
+    .eq("state", "pending")
+    .lt("due_date", new Date().toISOString().split("T")[0])
+    .in("priority", ["high", "critical"])
+    .order("due_date", { ascending: true })
+    .limit(10);
+
+  if (overdue?.length) {
+    sections.push(`## Acciones VENCIDAS de alta prioridad\n${overdue.map((a: { description: string; assignee_name: string; due_date: string }) =>
+      `- VENCIDA ${a.due_date}: ${a.description.slice(0, 120)} → ${a.assignee_name || "sin asignar"}`
+    ).join("\n")}`);
+  }
+
+  // Load recent complaints (all domains should know about unhappy stakeholders)
+  if (domain !== "growth" && domain !== "meta") {
+    const { data: complaints } = await sb
+      .from("facts")
+      .select("fact_text, confidence, created_at")
+      .eq("fact_type", "complaint")
+      .gte("confidence", 0.9)
+      .order("created_at", { ascending: false })
+      .limit(5);
+
+    if (complaints?.length && !sections.some(s => s.includes("complaint"))) {
+      sections.push(`## Quejas/problemas detectados en emails\n${complaints.map((c: { fact_text: string }) =>
+        `- ${c.fact_text}`
+      ).join("\n")}`);
+    }
+  }
+
+  return sections.length ? sections.join("\n\n") + "\n\n" : "";
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
