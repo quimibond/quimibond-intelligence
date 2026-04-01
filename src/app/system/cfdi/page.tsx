@@ -29,9 +29,9 @@ interface CfdiDocument {
   receptor_rfc: string | null;
   total: number | null;
   moneda: string | null;
-  fecha_emision: string | null;
+  fecha: string | null;
   tipo_comprobante: string | null;
-  folio_fiscal: string | null;
+  uuid: string | null;
 }
 
 const tipoLabels: Record<string, { label: string; variant: "success" | "warning" | "critical" | "info" | "secondary" }> = {
@@ -53,8 +53,8 @@ export default function CfdiPage() {
     async function load() {
       const { data } = await supabase
         .from("cfdi_documents")
-        .select("id, emisor_nombre, emisor_rfc, receptor_nombre, receptor_rfc, total, moneda, fecha_emision, tipo_comprobante, folio_fiscal")
-        .order("fecha_emision", { ascending: false })
+        .select("id, emisor_nombre, emisor_rfc, receptor_nombre, receptor_rfc, total, moneda, fecha, tipo_comprobante, uuid")
+        .order("fecha", { ascending: false })
         .limit(500);
 
       setDocuments((data ?? []) as CfdiDocument[]);
@@ -72,7 +72,7 @@ export default function CfdiPage() {
         d.emisor_rfc?.toLowerCase().includes(q) ||
         d.receptor_nombre?.toLowerCase().includes(q) ||
         d.receptor_rfc?.toLowerCase().includes(q) ||
-        d.folio_fiscal?.toLowerCase().includes(q)
+        d.uuid?.toLowerCase().includes(q)
     );
   }, [documents, search]);
 
@@ -153,7 +153,7 @@ export default function CfdiPage() {
                 <TableHead>Moneda</TableHead>
                 <TableHead>Fecha</TableHead>
                 <TableHead>Tipo</TableHead>
-                <TableHead>Folio Fiscal</TableHead>
+                <TableHead>UUID</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -182,7 +182,7 @@ export default function CfdiPage() {
                     </TableCell>
                     <TableCell>{doc.moneda ?? "—"}</TableCell>
                     <TableCell className="text-muted-foreground whitespace-nowrap">
-                      {doc.fecha_emision ? formatDateTime(doc.fecha_emision) : "—"}
+                      {doc.fecha ? formatDateTime(doc.fecha) : "—"}
                     </TableCell>
                     <TableCell>
                       {tipo ? (
@@ -192,7 +192,7 @@ export default function CfdiPage() {
                       )}
                     </TableCell>
                     <TableCell className="font-mono text-xs max-w-[200px] truncate">
-                      {doc.folio_fiscal ?? "—"}
+                      {doc.uuid ?? "—"}
                     </TableCell>
                   </TableRow>
                 );
