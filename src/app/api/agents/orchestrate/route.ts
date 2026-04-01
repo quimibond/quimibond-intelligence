@@ -125,14 +125,15 @@ export async function POST(request: NextRequest) {
       // Mark memories as used (increment times_used)
       if (scoredMemories.length) {
         const memoryIds = scoredMemories.map(m => m.id);
-        await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds }).catch(() => {
+        const { error: rpcError } = await supabase.rpc("increment_memory_usage", { memory_ids: memoryIds });
+        if (rpcError) {
           // Fallback: update one by one if RPC doesn't exist
           for (const id of memoryIds) {
             supabase.from("agent_memory")
               .update({ updated_at: new Date().toISOString() })
               .eq("id", id).then();
           }
-        });
+        }
       }
 
       // Load adaptive confidence threshold for this agent
