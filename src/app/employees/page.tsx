@@ -4,10 +4,11 @@ import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
+import { MiniStatCard } from "@/components/shared/mini-stat-card";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Users, Mail, CheckSquare, AlertTriangle, Clock, User,
 } from "lucide-react";
@@ -145,12 +146,7 @@ export default function EmployeesPage() {
     return (
       <div className="space-y-6">
         <PageHeader title="Empleados" description="Carga de trabajo y actividades" />
-        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-[80px]" />)}
-        </div>
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => <Skeleton key={i} className="h-[72px]" />)}
-        </div>
+        <LoadingGrid stats={4} rows={6} statHeight="h-[80px]" rowHeight="h-[72px]" />
       </div>
     );
   }
@@ -164,43 +160,10 @@ export default function EmployeesPage() {
 
       {/* KPIs */}
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardContent className="pt-3 pb-2">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <Users className="h-3.5 w-3.5" /> Empleados
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums">{employees.length}</p>
-          </CardContent>
-        </Card>
-        <Card className={cn(totalOverdue > 0 && "border-danger/30 bg-danger/5")}>
-          <CardContent className="pt-3 pb-2">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <AlertTriangle className="h-3.5 w-3.5 text-danger" /> Vencidas
-            </div>
-            <p className={cn("mt-1 text-xl sm:text-2xl font-bold tabular-nums", totalOverdue > 0 && "text-danger-foreground")}>
-              {totalOverdue}
-            </p>
-            <p className="text-[10px] text-muted-foreground">{withIssues} con retrasos</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-2">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <Clock className="h-3.5 w-3.5 text-warning" /> Pendientes
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums">{totalPending}</p>
-            <p className="text-[10px] text-muted-foreground">actividades en Odoo</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-3 pb-2">
-            <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
-              <CheckSquare className="h-3.5 w-3.5 text-info" /> Insights
-            </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums">{totalInsights}</p>
-            <p className="text-[10px] text-muted-foreground">asignados pendientes</p>
-          </CardContent>
-        </Card>
+        <MiniStatCard icon={Users} label="Empleados" value={employees.length} />
+        <MiniStatCard icon={AlertTriangle} label="Vencidas" value={totalOverdue} valueClassName={totalOverdue > 0 ? "text-danger-foreground" : undefined} />
+        <MiniStatCard icon={Clock} label="Pendientes" value={totalPending} />
+        <MiniStatCard icon={CheckSquare} label="Insights" value={totalInsights} />
       </div>
 
       {/* Filters */}

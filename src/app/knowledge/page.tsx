@@ -6,7 +6,6 @@ import {
   Link2,
   Lightbulb,
   Tag,
-  Search,
   Network,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
@@ -14,9 +13,10 @@ import { timeAgo, formatDate, truncate } from "@/lib/utils";
 import type { Entity, EntityRelationship, Fact, Topic } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
@@ -232,13 +232,7 @@ export default function KnowledgePage() {
 
   // ── Loading skeleton ──
   function TableSkeleton({ rows = 8 }: { rows?: number }) {
-    return (
-      <div className="space-y-3">
-        {Array.from({ length: rows }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
-      </div>
-    );
+    return <LoadingGrid rows={rows} />;
   }
 
   return (
@@ -258,28 +252,21 @@ export default function KnowledgePage() {
 
         {/* ── Tab: Entidades ── */}
         <TabsContent value="entities">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 py-4">
-            <div className="relative flex-1 sm:max-w-sm">
-              <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                placeholder="Buscar por nombre o email..."
-                className="pl-9"
-                value={entitySearch}
-                onChange={(e) => setEntitySearch(e.target.value)}
-              />
-            </div>
-            <Select
-              value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
-              className="w-full sm:w-40"
-            >
-              <option value="all">Todas</option>
-              {entityTypes.map((t) => (
-                <option key={t} value={t}>
-                  {t.charAt(0).toUpperCase() + t.slice(1)}
-                </option>
-              ))}
-            </Select>
+          <div className="py-4">
+            <FilterBar search={entitySearch} onSearchChange={setEntitySearch} searchPlaceholder="Buscar por nombre o email...">
+              <Select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="w-full sm:w-40"
+              >
+                <option value="all">Todas</option>
+                {entityTypes.map((t) => (
+                  <option key={t} value={t}>
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </option>
+                ))}
+              </Select>
+            </FilterBar>
           </div>
 
           {entitiesLoading ? (

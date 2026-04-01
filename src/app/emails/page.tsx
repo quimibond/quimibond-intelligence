@@ -3,17 +3,17 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Mail, Paperclip, Search } from "lucide-react";
+import { Loader2, Mail, Paperclip } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime, truncate } from "@/lib/utils";
 import type { Email } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
+import { FilterBar } from "@/components/shared/filter-bar";
+import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
   TableBody,
@@ -116,16 +116,7 @@ export default function EmailsPage() {
         description="Correos sincronizados e inteligencia extraida"
       />
 
-      <div className="flex flex-col sm:flex-row flex-wrap items-stretch sm:items-center gap-3 pb-4">
-        <div className="relative flex-1 min-w-0">
-          <Search className="absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="Buscar por remitente o asunto..."
-            className="pl-9"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-          />
-        </div>
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por remitente o asunto...">
         <Select value={accountFilter} onChange={(e) => setAccountFilter(e.target.value)} className="w-full sm:w-auto">
           <option value="all">Todas las cuentas</option>
           {accounts.map((a) => (
@@ -137,14 +128,10 @@ export default function EmailsPage() {
           <option value="internal">Enviados</option>
           <option value="external">Recibidos</option>
         </Select>
-      </div>
+      </FilterBar>
 
       {loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-12 w-full" />
-          ))}
-        </div>
+        <LoadingGrid rows={8} />
       ) : emails.length === 0 ? (
         <EmptyState
           icon={Mail}
