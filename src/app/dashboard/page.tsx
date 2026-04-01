@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, scoreToPercent, formatCurrency } from "@/lib/utils";
-import type { DirectorDashboard, DashboardKPI, GlobalAging, LateDelivery, PipelineGlobal } from "@/lib/types";
+import type { GlobalAging, PipelineGlobal } from "@/lib/types";
 import { AgingChart } from "@/components/shared/aging-chart";
 import { PageHeader } from "@/components/shared/page-header";
 import { SeverityBadge } from "@/components/shared/severity-badge";
@@ -12,15 +13,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import Link from "next/link";
-import {
-  Bell, CheckSquare, CreditCard, DollarSign, PackageX, Truck,
-  TrendingUp, Users, Mail, AlertTriangle, ClipboardList, FileText,
-  UserCheck, Brain, MessageSquare, BarChart3, Target, Shield,
-  ArrowRight, Activity, Bot, Layers, Zap, Play, Loader2,
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
-
+import {
+  ArrowRight, Activity, Bot, Brain, CheckSquare, CreditCard,
+  DollarSign, FileText, Loader2, Mail, MessageSquare, PackageX,
+  Play, Shield, Target, TrendingUp, Truck, UserCheck, Users, Zap,
+} from "lucide-react";
 
 // ── Clickable KPI Card ──
 function KPICard({
@@ -58,7 +56,7 @@ function KPICard({
 
   return (
     <Link href={href} className={cn("block group", className)}>
-      <Card className={cn("transition-all cursor-pointer", colors[variant])}>
+      <Card className={cn("transition-all cursor-pointer h-full", colors[variant])}>
         <CardContent className="pt-3 pb-2 sm:pt-4 sm:pb-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-muted-foreground min-w-0">
@@ -103,7 +101,7 @@ function AgentsSummary() {
       const [agentsRes, insightsRes] = await Promise.all([
         supabase.rpc("get_agents_overview"),
         supabase.from("agent_insights").select("id, agent_id, title, severity, confidence, insight_type, created_at")
-          .eq("state", "new").order("created_at", { ascending: false }).limit(3),
+          .in("state", ["new", "seen"]).gte("confidence", 0.65).order("created_at", { ascending: false }).limit(3),
       ]);
       setAgents(agentsRes.data ?? []);
       setInsights(insightsRes.data ?? []);
@@ -127,11 +125,10 @@ function AgentsSummary() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ run_all: true }),
       });
-      // Reload
       const [a, i] = await Promise.all([
         supabase.rpc("get_agents_overview"),
         supabase.from("agent_insights").select("id, agent_id, title, severity, confidence, insight_type, created_at")
-          .eq("state", "new").order("created_at", { ascending: false }).limit(3),
+          .in("state", ["new", "seen"]).gte("confidence", 0.65).order("created_at", { ascending: false }).limit(3),
       ]);
       setAgents(a.data ?? []);
       setInsights(i.data ?? []);
@@ -142,16 +139,16 @@ function AgentsSummary() {
 
   return (
     <div className="space-y-3">
-      {/* Agent cards row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4 overflow-x-auto pb-1">
+      {/* Agent cards - horizontal scroll on mobile */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 min-w-0">
           {agents.slice(0, 7).map((a) => {
             const Icon = DOMAIN_ICONS[a.domain] ?? Bot;
             const color = DOMAIN_COLORS[a.domain] ?? "text-muted-foreground";
             return (
-              <Link key={a.slug} href="/agents" className="flex items-center gap-2 shrink-0 rounded-lg border px-3 py-2 hover:bg-muted/50 transition-colors">
-                <Icon className={cn("h-4 w-4", color)} />
-                <div className="text-xs">
+              <Link key={a.slug} href="/agents" className="flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1.5 sm:px-3 sm:py-2 hover:bg-muted/50 transition-colors">
+                <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", color)} />
+                <div className="text-[11px] sm:text-xs">
                   <p className="font-medium">{a.name?.replace("Agente de ", "")}</p>
                   <p className="text-muted-foreground">
                     {a.new_insights > 0 ? <span className="text-emerald-500 font-medium">{a.new_insights} nuevos</span> : a.last_run_at ? timeAgo(a.last_run_at) : "nunca"}
@@ -161,35 +158,32 @@ function AgentsSummary() {
             );
           })}
         </div>
-        <Button size="sm" variant="outline" onClick={runAll} disabled={runningAll} className="shrink-0 ml-2">
+        <Button size="sm" variant="outline" onClick={runAll} disabled={runningAll} className="shrink-0">
           {runningAll ? <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" /> : <Play className="h-3.5 w-3.5 mr-1" />}
-          {runningAll ? "..." : "Ejecutar"}
+          <span className="hidden sm:inline">{runningAll ? "..." : "Ejecutar"}</span>
         </Button>
       </div>
 
-      {/* Latest insights */}
+      {/* Latest insights preview */}
       {insights.length > 0 && (
         <Card>
           <CardHeader className="pb-2">
-            <Link href="/agents" className="flex items-center justify-between group">
+            <Link href="/inbox" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
                 <Bot className="h-4 w-4 text-purple-500" />
-                <CardTitle className="text-base">Insights IA ({totalNewInsights} nuevos)</CardTitle>
+                <CardTitle className="text-sm sm:text-base">Insights Recientes ({totalNewInsights} nuevos)</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {insights.map((ins) => {
-              const agent = agents.find((a: { agent_id: number }) => a.agent_id === ins.agent_id);
-              return (
-                <Link key={ins.id} href="/agents" className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
-                  <SeverityBadge severity={ins.severity} />
-                  <span className="text-sm font-medium truncate flex-1">{ins.title}</span>
-                  <span className="text-xs text-muted-foreground shrink-0">{agent?.name?.replace("Agente de ", "") ?? ""}</span>
-                </Link>
-              );
-            })}
+          <CardContent className="space-y-1.5">
+            {insights.map((ins) => (
+              <Link key={ins.id} href={`/inbox/insight/${ins.id}`} className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors">
+                <SeverityBadge severity={ins.severity} />
+                <span className="text-sm font-medium truncate flex-1 min-w-0">{ins.title}</span>
+                <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{timeAgo(ins.created_at)}</span>
+              </Link>
+            ))}
           </CardContent>
         </Card>
       )}
@@ -197,78 +191,46 @@ function AgentsSummary() {
   );
 }
 
-// ── Main data fetch ──
+// ── Main data fetch (optimized: fewer queries, focused on agent_insights) ──
 async function fetchDashboard() {
-  const today = new Date().toISOString().split("T")[0];
-
   const [
-    alertsNewRes, alertsCritRes, actionsPendingRes, actionsOverdueRes,
-    actionsCompletedRes, contactsRiskRes, totalContactsRes, totalEmailsRes,
-    alertsResolvedRes, criticalAlertsRes, overdueActionsRes, contactsAtRiskRes,
-    stockoutRes, complianceRes, threadsStalled, totalCompanies, totalThreads,
+    insightsNewRes, insightsCritRes,
+    contactsRiskRes, totalContactsRes,
+    totalCompanies, totalEmailsRes, totalThreads,
     entitiesRes, factsRes,
-    totalValueAtRiskRes,
+    threadsStalled,
     emailsProcessedRes,
-    totalUsersRes,
-    deptRes,
+    insightsActedRes,
   ] = await Promise.all([
-    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
-    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new").in("severity", ["critical", "high"]),
-    supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
-    supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending").lt("due_date", today),
-    supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "completed"),
+    supabase.from("agent_insights").select("id", { count: "exact", head: true }).in("state", ["new", "seen"]).gte("confidence", 0.65),
+    supabase.from("agent_insights").select("id, title, severity, assignee_name, created_at")
+      .in("state", ["new", "seen"]).in("severity", ["critical", "high"]).gte("confidence", 0.65)
+      .order("created_at", { ascending: false }).limit(5),
     supabase.from("contacts").select("id", { count: "exact", head: true }).in("risk_level", ["high", "critical"]),
     supabase.from("contacts").select("id", { count: "exact", head: true }).eq("contact_type", "external"),
-    supabase.from("emails").select("id", { count: "exact", head: true }),
-    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "resolved"),
-    supabase.from("alerts").select("id, title, severity, contact_name, description, created_at, alert_type").eq("state", "new").in("severity", ["critical", "high"]).order("created_at", { ascending: false }).limit(5),
-    supabase.from("action_items").select("id, description, contact_name, contact_company, assignee_email, assignee_name, due_date, priority, action_type").eq("state", "pending").lt("due_date", today).order("due_date", { ascending: true }).limit(5),
-    supabase.from("contacts").select("id, name, risk_level, sentiment_score, relationship_score, open_alerts_count, pending_actions_count, company_id").in("risk_level", ["high", "critical"]).order("relationship_score", { ascending: true }).limit(5),
-    supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new").eq("alert_type", "stockout_risk"),
-    supabase.from("contacts").select("id", { count: "exact", head: true }).lt("payment_compliance_score", 50).not("payment_compliance_score", "is", null),
-    supabase.from("threads").select("id", { count: "exact", head: true }).in("status", ["stalled", "needs_response"]),
     supabase.from("companies").select("id", { count: "exact", head: true }),
+    supabase.from("emails").select("id", { count: "exact", head: true }),
     supabase.from("threads").select("id", { count: "exact", head: true }),
     supabase.from("entities").select("id", { count: "exact", head: true }),
     supabase.from("facts").select("id", { count: "exact", head: true }),
-    supabase.from("alerts").select("business_value_at_risk").eq("state", "new").not("business_value_at_risk", "is", null),
+    supabase.from("threads").select("id", { count: "exact", head: true }).in("status", ["stalled", "needs_response"]),
     supabase.from("emails").select("id", { count: "exact", head: true }).eq("kg_processed", true),
-    supabase.from("odoo_users").select("id", { count: "exact", head: true }),
-    supabase.from("odoo_users").select("department").not("department", "is", null),
+    supabase.from("agent_insights").select("id", { count: "exact", head: true }).eq("state", "acted_on"),
   ]);
 
   return {
-    kpi: {
-      open_alerts: alertsNewRes.count ?? 0,
-      critical_alerts: alertsCritRes.count ?? 0,
-      pending_actions: actionsPendingRes.count ?? 0,
-      overdue_actions: actionsOverdueRes.count ?? 0,
-      at_risk_contacts: contactsRiskRes.count ?? 0,
-      total_contacts: totalContactsRes.count ?? 0,
-      total_emails: totalEmailsRes.count ?? 0,
-      completed_actions: actionsCompletedRes.count ?? 0,
-      resolved_alerts: alertsResolvedRes.count ?? 0,
-    },
-    critical_alerts: criticalAlertsRes.data ?? [],
-    overdue_actions: (overdueActionsRes.data ?? []).map((a) => ({
-      ...a,
-      days_overdue: a.due_date ? Math.max(0, Math.floor((Date.now() - new Date(a.due_date).getTime()) / 86400000)) : 0,
-    })),
-    contacts_at_risk: contactsAtRiskRes.data ?? [],
-    stockoutCount: stockoutRes.count ?? 0,
-    lowComplianceCount: complianceRes.count ?? 0,
-    threadsStalled: threadsStalled.count ?? 0,
+    insightsNew: insightsNewRes.count ?? 0,
+    criticalInsights: insightsCritRes.data ?? [],
+    atRiskContacts: contactsRiskRes.count ?? 0,
+    totalContacts: totalContactsRes.count ?? 0,
     totalCompanies: totalCompanies.count ?? 0,
+    totalEmails: totalEmailsRes.count ?? 0,
     totalThreads: totalThreads.count ?? 0,
     totalEntities: entitiesRes.count ?? 0,
     totalFacts: factsRes.count ?? 0,
-    totalValueAtRisk: (totalValueAtRiskRes.data ?? []).reduce(
-      (sum: number, a: { business_value_at_risk: number | null }) => sum + (a.business_value_at_risk ?? 0), 0
-    ),
+    threadsStalled: threadsStalled.count ?? 0,
     emailsProcessed: emailsProcessedRes.count ?? 0,
-    insightsNew: 0,
-    totalUsers: totalUsersRes.count ?? 0,
-    totalDepartments: new Set((deptRes.data ?? []).map((d: { department: string }) => d.department)).size,
+    insightsActed: insightsActedRes.count ?? 0,
   };
 }
 
@@ -280,26 +242,24 @@ export default function DashboardPage() {
   const [lateDeliveryCount, setLateDeliveryCount] = useState(0);
   const [pipelineGlobal, setPipelineGlobal] = useState<PipelineGlobal | null>(null);
   const [latestBriefing, setLatestBriefing] = useState<{ briefing_date: string; summary_text: string | null; total_emails: number } | null>(null);
-  const [accountability, setAccountability] = useState<{ name: string; email: string | null; pending: number; overdue: number; completed: number }[]>([]);
+  const [contactsAtRisk, setContactsAtRisk] = useState<{ id: number; name: string; risk_level: string; relationship_score: number | null }[]>([]);
 
   useEffect(() => {
     async function load() {
-      // Phase 1: Start non-blocking fetches immediately (don't wait)
+      // Non-blocking secondary fetches
       fetchSecondaryData();
 
-      // Phase 2: KPI data (blocking, shows skeleton until complete)
       try {
         const result = await fetchDashboard();
         setData(result);
       } catch (err) {
         console.error("[dashboard] Failed to load:", err);
       }
-
       setLoading(false);
     }
 
     function fetchSecondaryData() {
-      // Non-blocking: aging, deliveries, pipeline, briefing, accountability
+      // Aging
       supabase
         .from("odoo_invoices")
         .select("amount_residual, days_overdue")
@@ -321,6 +281,7 @@ export default function DashboardPage() {
           setGlobalAging(aging);
         });
 
+      // Late deliveries
       supabase
         .from("odoo_deliveries")
         .select("id", { count: "exact", head: true })
@@ -328,6 +289,7 @@ export default function DashboardPage() {
         .not("state", "in", '("done","cancel")')
         .then(({ count }) => setLateDeliveryCount(count ?? 0));
 
+      // Pipeline
       supabase
         .from("odoo_crm_leads")
         .select("lead_type, expected_revenue, probability")
@@ -342,6 +304,7 @@ export default function DashboardPage() {
           });
         });
 
+      // Latest briefing
       supabase
         .from("briefings")
         .select("briefing_date, summary_text, total_emails")
@@ -351,26 +314,14 @@ export default function DashboardPage() {
         .single()
         .then(({ data: b }) => { if (b) setLatestBriefing(b); });
 
+      // Contacts at risk
       supabase
-        .from("action_items")
-        .select("assignee_name, assignee_email, state, due_date")
-        .not("assignee_email", "is", null)
-        .then(({ data: items }) => {
-          if (!items) return;
-          const today = new Date().toISOString().split("T")[0];
-          const map = new Map<string, { name: string; email: string | null; pending: number; overdue: number; completed: number }>();
-          for (const item of items) {
-            const key = item.assignee_email ?? "?";
-            if (!map.has(key)) map.set(key, { name: item.assignee_name ?? key, email: item.assignee_email, pending: 0, overdue: 0, completed: 0 });
-            const e = map.get(key)!;
-            if (item.state === "completed") e.completed++;
-            else if (item.state === "pending") {
-              e.pending++;
-              if (item.due_date && item.due_date < today) e.overdue++;
-            }
-          }
-          setAccountability(Array.from(map.values()).sort((a, b) => b.overdue - a.overdue || b.pending - a.pending).slice(0, 8));
-        });
+        .from("contacts")
+        .select("id, name, risk_level, relationship_score")
+        .in("risk_level", ["high", "critical"])
+        .order("relationship_score", { ascending: true })
+        .limit(5)
+        .then(({ data: c }) => { if (c) setContactsAtRisk(c); });
     }
 
     load();
@@ -379,8 +330,8 @@ export default function DashboardPage() {
   if (loading || !data) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Centro de Control" description="Balanced Scorecard — Quimibond Intelligence" />
-        <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+        <PageHeader title="Centro de Control" description="Vista ejecutiva — Quimibond Intelligence" />
+        <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 8 }).map((_, i) => (
             <Skeleton key={i} className="h-[100px] w-full" />
           ))}
@@ -389,88 +340,79 @@ export default function DashboardPage() {
     );
   }
 
-  const { kpi, critical_alerts, overdue_actions, contacts_at_risk } = data;
   const overdueAmt = globalAging ? globalAging["1_30"] + globalAging["31_60"] + globalAging["61_90"] + globalAging["90_plus"] : 0;
 
   return (
     <div className="space-y-5">
       <PageHeader
         title="Centro de Control"
-        description="Balanced Scorecard — Quimibond Intelligence"
+        description="Vista ejecutiva — Quimibond Intelligence"
       />
 
       {/* ══════════════════════════════════════════════════════════════ */}
-      {/*  PERSPECTIVA 1: ALERTAS Y RIESGOS                           */}
+      {/*  PERSPECTIVA 1: INSIGHTS Y RIESGOS                          */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Riesgos e Insights" icon={Shield} color="text-red-500" />
+      <SectionHeader title="Insights y Riesgos" icon={Shield} color="text-red-500" />
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
           title="Insights Pendientes"
-          value={kpi.open_alerts || data.insightsNew || 0}
+          value={data.insightsNew}
           subtitle="de agentes de IA"
           icon={Bot}
           href="/inbox"
-          variant={(kpi.open_alerts || data.insightsNew) > 0 ? "danger" : "default"}
+          variant={data.insightsNew > 0 ? "danger" : "default"}
         />
         <KPICard
           title="Contactos en Riesgo"
-          value={kpi.at_risk_contacts}
-          subtitle={`de ${kpi.total_contacts} externos`}
+          value={data.atRiskContacts}
+          subtitle={`de ${data.totalContacts} externos`}
           icon={Users}
-          href="/contacts?risk=high"
-          variant={kpi.at_risk_contacts > 0 ? "danger" : "default"}
-        />
-        <KPICard
-          title="Desabasto"
-          value={data.stockoutCount}
-          subtitle="alertas activas"
-          icon={PackageX}
-          href="/inbox"
-          variant={data.stockoutCount > 0 ? "warning" : "default"}
-        />
-        <KPICard
-          title="Valor en Riesgo"
-          value={data.totalValueAtRisk > 0 ? formatCurrency(data.totalValueAtRisk) : "—"}
-          subtitle={`${kpi.open_alerts} alertas abiertas`}
-          icon={DollarSign}
-          href="/inbox"
-          variant={data.totalValueAtRisk > 100000 ? "danger" : data.totalValueAtRisk > 0 ? "warning" : "default"}
+          href="/contacts"
+          variant={data.atRiskContacts > 0 ? "danger" : "default"}
         />
         <KPICard
           title="Threads sin Respuesta"
           value={data.threadsStalled}
           subtitle="necesitan atencion"
           icon={MessageSquare}
-          href="/threads?status=stalled"
+          href="/threads"
           variant={data.threadsStalled > 0 ? "warning" : "default"}
+        />
+        <KPICard
+          title="Insights Actuados"
+          value={data.insightsActed}
+          subtitle="feedback al sistema"
+          icon={CheckSquare}
+          href="/inbox"
+          variant="success"
         />
       </div>
 
-      {/* Alert + Risk detail cards */}
+      {/* Critical insights + Contacts at risk */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
             <Link href="/inbox" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
                 <Bot className="h-4 w-4 text-red-500" />
-                <CardTitle className="text-base">Insights Urgentes</CardTitle>
+                <CardTitle className="text-sm sm:text-base">Insights Urgentes</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </CardHeader>
           <CardContent>
-            {critical_alerts.length === 0 ? (
+            {data.criticalInsights.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                {kpi.open_alerts === 0 ? "No hay alertas. Ejecuta el pipeline de analisis desde Sistema." : "Sin alertas criticas — todo en orden."}
+                {data.insightsNew === 0 ? "Sin insights pendientes" : "Sin insights criticos — todo en orden"}
               </p>
             ) : (
-              <div className="space-y-2">
-                {critical_alerts.map((alert: { id: number; title: string; severity: string; contact_name: string | null; created_at: string }) => (
-                  <Link key={alert.id} href={`/alerts/${alert.id}`} className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
-                    <SeverityBadge severity={alert.severity} />
-                    <span className="text-sm font-medium truncate flex-1">{alert.title}</span>
-                    <span className="text-xs text-muted-foreground shrink-0">{timeAgo(alert.created_at)}</span>
+              <div className="space-y-1.5">
+                {data.criticalInsights.map((ins: { id: number; title: string; severity: string; assignee_name: string | null; created_at: string }) => (
+                  <Link key={ins.id} href={`/inbox/insight/${ins.id}`} className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors">
+                    <SeverityBadge severity={ins.severity} />
+                    <span className="text-sm font-medium truncate flex-1 min-w-0">{ins.title}</span>
+                    <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{timeAgo(ins.created_at)}</span>
                   </Link>
                 ))}
               </div>
@@ -480,28 +422,28 @@ export default function DashboardPage() {
 
         <Card>
           <CardHeader className="pb-3">
-            <Link href="/contacts?risk=high" className="flex items-center justify-between group">
+            <Link href="/contacts" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
                 <Users className="h-4 w-4 text-red-500" />
-                <CardTitle className="text-base">Contactos en Riesgo</CardTitle>
+                <CardTitle className="text-sm sm:text-base">Contactos en Riesgo</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
             </Link>
           </CardHeader>
           <CardContent>
-            {contacts_at_risk.length === 0 ? (
+            {contactsAtRisk.length === 0 ? (
               <p className="text-sm text-muted-foreground py-4 text-center">
-                {kpi.total_contacts === 0 ? "No hay contactos. Sincroniza desde Sistema." : "Sin contactos en riesgo alto — ejecuta el scoring desde Sistema."}
+                {data.totalContacts === 0 ? "Sin contactos — sincroniza desde Sistema" : "Sin contactos en riesgo alto"}
               </p>
             ) : (
-              <div className="space-y-2">
-                {contacts_at_risk.map((c: { id: number; name: string; risk_level: string; relationship_score: number | null; company_id: number | null }) => (
-                  <Link key={c.id} href={`/contacts/${c.id}`} className="flex items-center gap-3 rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
+              <div className="space-y-1.5">
+                {contactsAtRisk.map((c) => (
+                  <Link key={c.id} href={`/contacts/${c.id}`} className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors">
                     <RiskBadge level={c.risk_level} />
-                    <span className="text-sm font-medium truncate flex-1">{c.name}</span>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <Progress value={scoreToPercent(c.relationship_score)} className="h-1.5 w-12 sm:w-16" />
-                      <span className="text-xs text-muted-foreground w-6 text-right">{c.relationship_score ?? 0}</span>
+                    <span className="text-sm font-medium truncate flex-1 min-w-0">{c.name}</span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <Progress value={scoreToPercent(c.relationship_score)} className="h-1.5 w-10 sm:w-16" />
+                      <span className="text-xs text-muted-foreground w-5 text-right tabular-nums">{c.relationship_score ?? 0}</span>
                     </div>
                   </Link>
                 ))}
@@ -516,19 +458,19 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Finanzas y Operaciones" icon={DollarSign} color="text-amber-500" />
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
           title="Saldo Vencido"
           value={globalAging ? formatCurrency(overdueAmt) : "—"}
-          subtitle={globalAging ? `${formatCurrency(globalAging.total_outstanding)} total` : "sin datos de facturacion"}
+          subtitle={globalAging ? `${formatCurrency(globalAging.total_outstanding)} total` : "cargando..."}
           icon={CreditCard}
-          href="/analytics"
+          href="/companies"
           variant={overdueAmt > 0 ? "danger" : "default"}
         />
         <KPICard
           title="Pipeline CRM"
           value={pipelineGlobal ? formatCurrency(pipelineGlobal.pipeline_value) : "—"}
-          subtitle={pipelineGlobal ? `${pipelineGlobal.total_opportunities} oportunidades` : "sin datos de CRM"}
+          subtitle={pipelineGlobal ? `${pipelineGlobal.total_opportunities} oportunidades` : "cargando..."}
           icon={TrendingUp}
           href="/companies"
           variant="info"
@@ -542,26 +484,23 @@ export default function DashboardPage() {
           variant={lateDeliveryCount > 0 ? "warning" : "default"}
         />
         <KPICard
-          title="Compliance Bajo"
-          value={data.lowComplianceCount}
-          subtitle="contactos <50%"
+          title="Empresas"
+          value={data.totalCompanies}
+          subtitle="en el sistema"
           icon={Target}
-          href="/contacts"
-          variant={data.lowComplianceCount > 0 ? "warning" : "default"}
+          href="/companies"
+          variant="info"
         />
       </div>
 
       {/* Aging chart */}
-      {globalAging && (
+      {globalAging && globalAging.total_outstanding > 0 && (
         <Card>
           <CardHeader className="pb-3">
-            <Link href="/analytics" className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <DollarSign className="h-4 w-4 text-amber-500" />
-                <CardTitle className="text-base">Antiguedad de Saldos</CardTitle>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-            </Link>
+            <div className="flex items-center gap-2">
+              <DollarSign className="h-4 w-4 text-amber-500" />
+              <CardTitle className="text-sm sm:text-base">Antiguedad de Saldos</CardTitle>
+            </div>
           </CardHeader>
           <CardContent>
             <AgingChart data={globalAging} />
@@ -570,127 +509,18 @@ export default function DashboardPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════ */}
-      {/*  PERSPECTIVA 3: EJECUCION Y ACCOUNTABILITY                  */}
-      {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Ejecucion y Accountability" icon={CheckSquare} color="text-purple-500" />
-
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        <KPICard
-          title="Acciones Vencidas"
-          value={kpi.overdue_actions}
-          subtitle={`${kpi.pending_actions} pendientes`}
-          icon={ClipboardList}
-          href="/actions?state=pending"
-          variant={kpi.overdue_actions > 0 ? "danger" : "default"}
-        />
-        <KPICard
-          title="Completadas"
-          value={kpi.completed_actions}
-          subtitle="acciones cerradas"
-          icon={CheckSquare}
-          href="/actions?state=completed"
-          variant="success"
-        />
-        <KPICard
-          title="Alertas Resueltas"
-          value={kpi.resolved_alerts}
-          subtitle="alertas cerradas"
-          icon={Bell}
-          href="/inbox"
-          variant="success"
-        />
-        <KPICard
-          title="Emails Procesados"
-          value={kpi.total_emails}
-          subtitle={`${data.totalThreads} threads`}
-          icon={Mail}
-          href="/threads"
-          variant="info"
-        />
-      </div>
-
-      {/* Overdue + Accountability */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader className="pb-3">
-            <Link href="/actions?state=pending" className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <ClipboardList className="h-4 w-4 text-amber-500" />
-                <CardTitle className="text-base">Acciones Vencidas</CardTitle>
-                {overdue_actions.length > 0 && <Badge variant="critical">{overdue_actions.length}</Badge>}
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {overdue_actions.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Sin acciones vencidas</p>
-            ) : (
-              <div className="space-y-2">
-                {overdue_actions.map((a: { id: number; description: string; assignee_name: string | null; assignee_email: string | null; days_overdue: number; contact_name?: string | null; contact_company?: string | null; priority?: string }) => (
-                  <Link key={a.id} href={`/actions`} className="block rounded-lg border p-3 hover:bg-muted/50 transition-colors">
-                    <div className="flex items-start justify-between gap-2">
-                      <p className="text-sm font-medium line-clamp-2">{a.description}</p>
-                      <Badge variant="critical" className="shrink-0">{a.days_overdue}d</Badge>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 mt-1.5 text-xs text-muted-foreground">
-                      <span>{a.assignee_name ?? a.assignee_email ?? "Sin asignar"}</span>
-                      {a.contact_name && <><span>·</span><span>{a.contact_name}</span></>}
-                      {a.contact_company && <><span>·</span><span>{a.contact_company}</span></>}
-                    </div>
-                  </Link>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <Link href="/actions" className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <UserCheck className="h-4 w-4 text-purple-500" />
-                <CardTitle className="text-base">Accountability</CardTitle>
-              </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
-            </Link>
-          </CardHeader>
-          <CardContent>
-            {accountability.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Sin datos de responsabilidad</p>
-            ) : (
-              <div className="space-y-2">
-                {accountability.map((a) => (
-                  <div key={a.email} className="rounded-lg border p-3">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-sm font-medium truncate">{a.name}</p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
-                      {a.overdue > 0 && <Badge variant="critical" className="text-[10px] px-1.5">{a.overdue} vencidas</Badge>}
-                      {a.pending > 0 && <Badge variant="warning" className="text-[10px] px-1.5">{a.pending} pendientes</Badge>}
-                      <Badge variant="success" className="text-[10px] px-1.5">{a.completed} completadas</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {/*  PERSPECTIVA 4: INTELIGENCIA Y CONOCIMIENTO                 */}
+      {/*  PERSPECTIVA 3: INTELIGENCIA Y CONOCIMIENTO                 */}
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Inteligencia y Conocimiento" icon={Brain} color="text-blue-500" />
 
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
-          title="Empresas"
-          value={data.totalCompanies}
-          subtitle="en el sistema"
-          icon={BarChart3}
-          href="/companies"
-          variant="info"
+          title="Emails Procesados"
+          value={data.emailsProcessed ?? 0}
+          subtitle={`de ${data.totalEmails} total · ${data.totalThreads} hilos`}
+          icon={Mail}
+          href="/emails"
+          variant={data.emailsProcessed > 0 ? "info" : "warning"}
         />
         <KPICard
           title="Knowledge Graph"
@@ -701,12 +531,12 @@ export default function DashboardPage() {
           variant={data.totalEntities > 0 ? "info" : "default"}
         />
         <KPICard
-          title="Emails Procesados"
-          value={data.emailsProcessed ?? 0}
-          subtitle={`de ${kpi.total_emails} total`}
-          icon={Mail}
-          href="/system"
-          variant={data.emailsProcessed > 0 ? "info" : "warning"}
+          title="Chat IA"
+          value="Claude"
+          subtitle="pregunta lo que sea"
+          icon={MessageSquare}
+          href="/chat"
+          variant="default"
         />
         <KPICard
           title="Sistema"
@@ -728,11 +558,11 @@ export default function DashboardPage() {
                 <CardTitle className="text-sm sm:text-base truncate">Briefing — {latestBriefing.briefing_date}</CardTitle>
                 <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{latestBriefing.total_emails ?? 0} emails</span>
               </div>
-              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+              <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform shrink-0" />
             </Link>
           </CardHeader>
           <CardContent>
-            <p className="text-sm line-clamp-4">
+            <p className="text-sm line-clamp-3 sm:line-clamp-4">
               {latestBriefing.summary_text
                 ? latestBriefing.summary_text.slice(0, 500) + (latestBriefing.summary_text.length > 500 ? "..." : "")
                 : "Sin resumen disponible."}
@@ -742,35 +572,11 @@ export default function DashboardPage() {
       )}
 
       {/* ══════════════════════════════════════════════════════════════ */}
-      {/*  PERSPECTIVA 5: AGENTES DE IA                               */}
+      {/*  PERSPECTIVA 4: AGENTES DE IA                                */}
       {/* ══════════════════════════════════════════════════════════════ */}
       <SectionHeader title="Agentes de IA" icon={Bot} color="text-purple-500" />
 
       <AgentsSummary />
-
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {/*  PERSPECTIVA 6: EQUIPO                                      */}
-      {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Equipo" icon={Users} color="text-cyan-500" />
-
-      <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
-        <KPICard
-          title="Empleados"
-          value={data.totalUsers ?? 0}
-          subtitle="usuarios internos"
-          icon={UserCheck}
-          href="/employees"
-          variant="info"
-        />
-        <KPICard
-          title="Departamentos"
-          value={data.totalDepartments ?? 0}
-          subtitle="areas activas"
-          icon={Layers}
-          href="/departments"
-          variant="info"
-        />
-      </div>
     </div>
   );
 }
