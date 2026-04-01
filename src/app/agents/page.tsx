@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import Link from "next/link";
+import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, formatCurrency, truncate } from "@/lib/utils";
 import { getDomainConfig } from "@/lib/domains";
@@ -74,11 +75,16 @@ export default function AgentsPage() {
   async function handleRun(slug: string) {
     setRunningAgent(slug);
     try {
-      await fetch("/api/agents/run", {
+      const res = await fetch("/api/agents/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agent_slug: slug }),
       });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        toast.error(`Error ejecutando agente: ${data.error ?? res.statusText}`);
+        return;
+      }
       await load();
     } finally {
       setRunningAgent(null);

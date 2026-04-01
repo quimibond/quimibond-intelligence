@@ -39,9 +39,11 @@ export default function ChatPage() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
+    requestAnimationFrame(() => {
+      if (scrollRef.current) {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
+    });
   }, [messages, loading]);
 
   const sendMessage = useCallback(
@@ -81,30 +83,41 @@ export default function ChatPage() {
 
           if (reader) {
             let buffer = "";
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
+            try {
+              while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
 
-              buffer += decoder.decode(value, { stream: true });
-              const lines = buffer.split("\n");
-              buffer = lines.pop() ?? "";
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split("\n");
+                buffer = lines.pop() ?? "";
 
-              for (const line of lines) {
-                if (!line.startsWith("data: ")) continue;
-                try {
-                  const event = JSON.parse(line.slice(6));
-                  if (event.type === "delta" && event.text) {
-                    accumulated += event.text;
-                    const text = accumulated;
-                    setMessages((prev) => {
-                      const copy = [...prev];
-                      copy[copy.length - 1] = { role: "assistant", content: text };
-                      return copy;
-                    });
+                for (const line of lines) {
+                  if (!line.startsWith("data: ")) continue;
+                  try {
+                    const event = JSON.parse(line.slice(6));
+                    if (event.type === "delta" && event.text) {
+                      accumulated += event.text;
+                      const text = accumulated;
+                      setMessages((prev) => {
+                        const copy = [...prev];
+                        copy[copy.length - 1] = { role: "assistant", content: text };
+                        return copy;
+                      });
+                    }
+                  } catch {
+                    // skip
                   }
-                } catch {
-                  // skip
                 }
+              }
+            } catch (err) {
+              console.error("[chat] Stream read error:", err);
+              if (accumulated) {
+                setMessages((prev) => {
+                  const updated = [...prev];
+                  updated[updated.length - 1] = { role: "assistant", content: accumulated + "\n\n[Respuesta interrumpida]" };
+                  return updated;
+                });
               }
             }
           }

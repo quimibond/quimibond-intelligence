@@ -185,7 +185,7 @@ export default function CompanyDetailPage() {
       // Products
       Promise.resolve(supabase.rpc("get_company_products", { p_company_id: cid })).then(({ data }) => {
         if (Array.isArray(data)) setCompanyProducts(data);
-      }).catch(() => {});
+      }).catch(err => console.error("[company detail]", err));
 
       // Financials
       if (ctx?.financials) {
@@ -193,7 +193,7 @@ export default function CompanyDetailPage() {
       } else {
         Promise.resolve(supabase.rpc("get_company_financials", { p_company_id: cid })).then(({ data }) => {
           if (data) setFinancials(data as CompanyFinancials);
-        }).catch(() => {});
+        }).catch(err => console.error("[company detail]", err));
       }
 
       // Logistics
@@ -202,7 +202,7 @@ export default function CompanyDetailPage() {
       } else {
         Promise.resolve(supabase.rpc("get_company_logistics", { p_company_id: cid })).then(({ data }) => {
           if (data) setLogistics(data as CompanyLogistics);
-        }).catch(() => {});
+        }).catch(err => console.error("[company detail]", err));
       }
 
       // Pipeline
@@ -211,7 +211,7 @@ export default function CompanyDetailPage() {
       } else {
         Promise.resolve(supabase.rpc("get_company_pipeline", { p_company_id: cid })).then(({ data }) => {
           if (data) setPipeline(data as CompanyPipeline);
-        }).catch(() => {});
+        }).catch(err => console.error("[company detail]", err));
       }
 
       // Relationships

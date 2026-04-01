@@ -149,7 +149,7 @@ export function InsightContext({
       ).then(({ data }) => { if (data) setRelatedFacts(data as FactRow[]); }));
     }
 
-    Promise.all(promises);
+    Promise.all(promises).catch(err => console.error("[insight-context] fetch error:", err));
   }, [insight.id, agent?.domain, companyId, companyName, contactName, contactEmail, entityId]);
 
   const hasOdooData = odooData.invoices.length > 0 || odooData.deliveries.length > 0 || odooData.orders.length > 0 || odooData.leads.length > 0;
