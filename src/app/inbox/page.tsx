@@ -24,6 +24,9 @@ interface Insight {
   agent_slug?: string;
   agent_name?: string;
   agent_domain?: string;
+  assignee_email: string | null;
+  assignee_name: string | null;
+  assignee_department: string | null;
   insight_type: string;
   category: string;
   severity: string;
@@ -297,7 +300,10 @@ export default function InboxPage() {
                         return (
                           <>
                             <Icon className={cn("h-4 w-4", DOMAIN_COLORS[agent?.domain ?? ""])} />
-                            <span className="text-xs font-medium text-muted-foreground">{agent?.name ?? "Agente"}</span>
+                            <span className="text-xs font-medium text-muted-foreground">
+                              {agent?.name ?? "Agente"}
+                              {currentInsight.assignee_name && ` → ${currentInsight.assignee_name}`}
+                            </span>
                           </>
                         );
                       })()}
@@ -410,6 +416,9 @@ export default function InboxPage() {
                       <SeverityBadge severity={insight.severity} />
                       <Badge variant="outline" className="text-[10px]">{insight.insight_type}</Badge>
                       <span className="text-[10px] text-muted-foreground">{agent?.name?.replace("Agente de ", "")}</span>
+                      {insight.assignee_name && (
+                        <span className="text-[10px] text-muted-foreground">→ {insight.assignee_name}</span>
+                      )}
                     </div>
                     <h3 className="text-sm font-semibold truncate">{insight.title}</h3>
                     <p className="text-xs text-muted-foreground truncate mt-0.5">{insight.recommendation ?? insight.description}</p>
