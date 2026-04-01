@@ -198,21 +198,21 @@ export default function CompaniesPage() {
               <Users className="h-3.5 w-3.5" />
               <span className="text-[11px] sm:text-xs font-medium">Clientes</span>
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{stats.customers}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-success-foreground">{stats.customers}</p>
           </div>
           <div className="rounded-lg border bg-card p-3">
             <div className="flex items-center gap-2 text-muted-foreground">
               <TrendingUp className="h-3.5 w-3.5" />
               <span className="text-[11px] sm:text-xs font-medium">Proveedores</span>
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-blue-600 dark:text-blue-400">{stats.suppliers}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-info-foreground">{stats.suppliers}</p>
           </div>
           <div className="rounded-lg border bg-card p-3">
             <div className="flex items-center gap-2 text-muted-foreground">
               <DollarSign className="h-3.5 w-3.5" />
               <span className="text-[11px] sm:text-xs font-medium">Valor total</span>
             </div>
-            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">{formatCurrency(stats.ltv)}</p>
+            <p className="mt-1 text-xl sm:text-2xl font-bold tabular-nums text-success-foreground">{formatCurrency(stats.ltv)}</p>
           </div>
         </div>
       )}
@@ -299,16 +299,16 @@ export default function CompaniesPage() {
                           <Badge variant={health.variant} className="shrink-0 text-[10px]">{health.label}</Badge>
                         </div>
                         <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-                          {company.is_customer && <span className="text-emerald-500">Cliente</span>}
-                          {company.is_supplier && <span className="text-blue-500">Proveedor</span>}
+                          {company.is_customer && <span className="text-success">Cliente</span>}
+                          {company.is_supplier && <span className="text-info">Proveedor</span>}
                           {company.lifetime_value != null && company.lifetime_value > 0 && (
                             <span className="font-semibold tabular-nums">{formatCurrency(company.lifetime_value)}</span>
                           )}
                           {company.total_pending != null && company.total_pending > 0 && (
-                            <span className="text-red-500 tabular-nums">{formatCurrency(company.total_pending)} pend.</span>
+                            <span className="text-danger tabular-nums">{formatCurrency(company.total_pending)} pend.</span>
                           )}
                           {ext?.contactCount ? <span className="flex items-center gap-0.5"><Users className="h-3 w-3" />{ext.contactCount}</span> : null}
-                          {ext?.insightCount ? <span className="text-amber-500">{ext.insightCount} insights</span> : null}
+                          {ext?.insightCount ? <span className="text-warning">{ext.insightCount} insights</span> : null}
                         </div>
                       </div>
                     </div>
@@ -374,7 +374,7 @@ export default function CompaniesPage() {
                             <p className="font-medium truncate">{company.name}</p>
                             {company.city && <p className="text-[10px] text-muted-foreground truncate">{company.city}</p>}
                           </div>
-                          {company.enriched_at && <Sparkles className="h-3 w-3 text-amber-500 shrink-0" />}
+                          {company.enriched_at && <Sparkles className="h-3 w-3 text-warning shrink-0" />}
                         </div>
                       </TableCell>
                       <TableCell>
@@ -385,14 +385,14 @@ export default function CompaniesPage() {
                       </TableCell>
                       <TableCell>
                         {company.lifetime_value != null && company.lifetime_value > 0 ? (
-                          <span className="font-semibold tabular-nums text-emerald-600 dark:text-emerald-400 text-sm">
+                          <span className="font-semibold tabular-nums text-success-foreground text-sm">
                             {formatCurrency(company.lifetime_value)}
                           </span>
                         ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>
                         {company.total_pending != null && company.total_pending > 0 ? (
-                          <span className="font-semibold tabular-nums text-red-600 dark:text-red-400 text-sm">
+                          <span className="font-semibold tabular-nums text-danger-foreground text-sm">
                             {formatCurrency(company.total_pending)}
                           </span>
                         ) : <span className="text-muted-foreground">—</span>}

@@ -34,24 +34,24 @@ function KPICard({
 }) {
   const colors = {
     default: "hover:border-foreground/20",
-    danger: "border-red-500/30 bg-red-500/5 hover:bg-red-500/10",
-    warning: "border-amber-500/30 bg-amber-500/5 hover:bg-amber-500/10",
-    success: "border-emerald-500/30 bg-emerald-500/5 hover:bg-emerald-500/10",
-    info: "border-blue-500/30 bg-blue-500/5 hover:bg-blue-500/10",
+    danger: "border-danger/30 bg-danger/5 hover:bg-danger/10",
+    warning: "border-warning/30 bg-warning/5 hover:bg-warning/10",
+    success: "border-success/30 bg-success/5 hover:bg-success/10",
+    info: "border-info/30 bg-info/5 hover:bg-info/10",
   };
   const iconColors = {
     default: "text-muted-foreground",
-    danger: "text-red-500",
-    warning: "text-amber-500",
-    success: "text-emerald-500",
-    info: "text-blue-500",
+    danger: "text-danger",
+    warning: "text-warning",
+    success: "text-success",
+    info: "text-info",
   };
   const valueColors = {
     default: "",
-    danger: "text-red-600 dark:text-red-400",
-    warning: "text-amber-600 dark:text-amber-400",
-    success: "text-emerald-600 dark:text-emerald-400",
-    info: "text-blue-600 dark:text-blue-400",
+    danger: "text-danger",
+    warning: "text-warning",
+    success: "text-success",
+    info: "text-info",
   };
 
   return (
@@ -114,8 +114,8 @@ function AgentsSummary() {
     relationships: Users, risk: Shield, growth: Zap, meta: Brain,
   };
   const DOMAIN_COLORS: Record<string, string> = {
-    sales: "text-emerald-500", finance: "text-amber-500", operations: "text-blue-500",
-    relationships: "text-purple-500", risk: "text-red-500", growth: "text-cyan-500", meta: "text-indigo-500",
+    sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
+    relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth", meta: "text-domain-meta",
   };
 
   async function runAll() {
@@ -151,7 +151,7 @@ function AgentsSummary() {
                 <div className="text-[11px] sm:text-xs">
                   <p className="font-medium">{a.name?.replace("Agente de ", "")}</p>
                   <p className="text-muted-foreground">
-                    {a.new_insights > 0 ? <span className="text-emerald-500 font-medium">{a.new_insights} nuevos</span> : a.last_run_at ? timeAgo(a.last_run_at) : "nunca"}
+                    {a.new_insights > 0 ? <span className="text-success font-medium">{a.new_insights} nuevos</span> : a.last_run_at ? timeAgo(a.last_run_at) : "nunca"}
                   </p>
                 </div>
               </Link>
@@ -170,7 +170,7 @@ function AgentsSummary() {
           <CardHeader className="pb-2">
             <Link href="/inbox" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-purple-500" />
+                <Bot className="h-4 w-4 text-domain-relationships" />
                 <CardTitle className="text-sm sm:text-base">Insights Recientes ({totalNewInsights} nuevos)</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
@@ -352,7 +352,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {/*  PERSPECTIVA 1: INSIGHTS Y RIESGOS                          */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Insights y Riesgos" icon={Shield} color="text-red-500" />
+      <SectionHeader title="Insights y Riesgos" icon={Shield} color="text-danger" />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
@@ -395,7 +395,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <Link href="/inbox" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-red-500" />
+                <Bot className="h-4 w-4 text-danger" />
                 <CardTitle className="text-sm sm:text-base">Insights Urgentes</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
@@ -424,7 +424,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <Link href="/contacts" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <Users className="h-4 w-4 text-red-500" />
+                <Users className="h-4 w-4 text-danger" />
                 <CardTitle className="text-sm sm:text-base">Contactos en Riesgo</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
@@ -456,7 +456,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {/*  PERSPECTIVA 2: FINANZAS Y OPERACIONES                      */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Finanzas y Operaciones" icon={DollarSign} color="text-amber-500" />
+      <SectionHeader title="Finanzas y Operaciones" icon={DollarSign} color="text-domain-finance" />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
@@ -498,7 +498,7 @@ export default function DashboardPage() {
         <Card>
           <CardHeader className="pb-3">
             <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-amber-500" />
+              <DollarSign className="h-4 w-4 text-domain-finance" />
               <CardTitle className="text-sm sm:text-base">Antiguedad de Saldos</CardTitle>
             </div>
           </CardHeader>
@@ -511,7 +511,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {/*  PERSPECTIVA 3: INTELIGENCIA Y CONOCIMIENTO                 */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Inteligencia y Conocimiento" icon={Brain} color="text-blue-500" />
+      <SectionHeader title="Inteligencia y Conocimiento" icon={Brain} color="text-info" />
 
       <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
@@ -554,7 +554,7 @@ export default function DashboardPage() {
           <CardHeader className="pb-3">
             <Link href="/briefings" className="flex items-center justify-between group">
               <div className="flex items-center gap-2 min-w-0">
-                <FileText className="h-4 w-4 shrink-0 text-blue-500" />
+                <FileText className="h-4 w-4 shrink-0 text-info" />
                 <CardTitle className="text-sm sm:text-base truncate">Briefing — {latestBriefing.briefing_date}</CardTitle>
                 <span className="text-xs text-muted-foreground shrink-0 hidden sm:inline">{latestBriefing.total_emails ?? 0} emails</span>
               </div>
@@ -574,7 +574,7 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {/*  PERSPECTIVA 4: AGENTES DE IA                                */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Agentes de IA" icon={Bot} color="text-purple-500" />
+      <SectionHeader title="Agentes de IA" icon={Bot} color="text-domain-relationships" />
 
       <AgentsSummary />
     </div>

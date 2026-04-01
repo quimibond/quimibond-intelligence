@@ -26,21 +26,21 @@ const PAGE_SIZE = 50;
 
 function healthColor(score: number | null): string {
   if (score == null) return "text-muted-foreground";
-  if (score > 60) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 40) return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
+  if (score > 60) return "text-success-foreground";
+  if (score >= 40) return "text-warning-foreground";
+  return "text-danger-foreground";
 }
 
 function healthBgColor(score: number | null): string {
   if (score == null) return "bg-muted";
-  if (score > 60) return "bg-emerald-500";
-  if (score >= 40) return "bg-amber-500";
-  return "bg-red-500";
+  if (score > 60) return "bg-success";
+  if (score >= 40) return "bg-warning";
+  return "bg-danger";
 }
 
 function HealthBar({ score }: { score: number | null }) {
   const val = score ?? 0;
-  const barBg = score == null ? "bg-muted" : score > 60 ? "bg-emerald-500/20" : score >= 40 ? "bg-amber-500/20" : "bg-red-500/20";
+  const barBg = score == null ? "bg-muted" : score > 60 ? "bg-success/20" : score >= 40 ? "bg-warning/20" : "bg-danger/20";
   return (
     <div className="flex items-center gap-1.5">
       <div className={cn("h-1.5 w-12 rounded-full overflow-hidden", barBg)}>
@@ -157,7 +157,7 @@ export default function ContactsPage() {
             <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-muted-foreground">
               <AlertTriangle className="h-3.5 w-3.5" /> En riesgo
             </div>
-            <p className={cn("text-xl sm:text-2xl font-bold tabular-nums mt-1", stats.atRisk > 0 && "text-red-600 dark:text-red-400")}>
+            <p className={cn("text-xl sm:text-2xl font-bold tabular-nums mt-1", stats.atRisk > 0 && "text-danger-foreground")}>
               {stats.atRisk}
             </p>
           </div>
@@ -220,9 +220,9 @@ export default function ContactsPage() {
                           <div className="flex items-center gap-1.5">
                             <span className="text-sm font-medium truncate">{contact.name ?? "—"}</span>
                             {contact.health_trend === "up" || contact.health_trend === "improving"
-                              ? <TrendingUp className="h-3 w-3 text-emerald-500 shrink-0" />
+                              ? <TrendingUp className="h-3 w-3 text-success shrink-0" />
                               : contact.health_trend === "down" || contact.health_trend === "declining"
-                              ? <TrendingDown className="h-3 w-3 text-red-500 shrink-0" />
+                              ? <TrendingDown className="h-3 w-3 text-danger shrink-0" />
                               : null}
                           </div>
                           <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">

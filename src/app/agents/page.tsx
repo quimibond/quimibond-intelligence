@@ -23,14 +23,14 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   data_quality: Database, odoo: Server,
 };
 const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-emerald-500", finance: "text-amber-500", operations: "text-blue-500",
-  relationships: "text-purple-500", risk: "text-red-500", growth: "text-cyan-500",
-  meta: "text-indigo-500", data_quality: "text-teal-500", odoo: "text-orange-500",
+  sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
+  relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth",
+  meta: "text-domain-meta", data_quality: "text-info", odoo: "text-warning",
 };
 const DOMAIN_BG: Record<string, string> = {
-  sales: "bg-emerald-500/10", finance: "bg-amber-500/10", operations: "bg-blue-500/10",
-  relationships: "bg-purple-500/10", risk: "bg-red-500/10", growth: "bg-cyan-500/10",
-  meta: "bg-indigo-500/10", data_quality: "bg-teal-500/10", odoo: "bg-orange-500/10",
+  sales: "bg-domain-sales/10", finance: "bg-domain-finance/10", operations: "bg-domain-operations/10",
+  relationships: "bg-domain-relationships/10", risk: "bg-domain-risk/10", growth: "bg-domain-growth/10",
+  meta: "bg-domain-meta/10", data_quality: "bg-info/10", odoo: "bg-warning/10",
 };
 const DOMAIN_DESC: Record<string, string> = {
   sales: "Ordenes, CRM, top clientes, oportunidades",
@@ -166,7 +166,7 @@ export default function AgentsPage() {
                     </div>
                   </div>
                   {agent.is_active ? (
-                    <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0 mt-1" title="Activo" />
+                    <span className="h-2 w-2 rounded-full bg-success shrink-0 mt-1" title="Activo" />
                   ) : (
                     <span className="h-2 w-2 rounded-full bg-gray-400 shrink-0 mt-1" title="Inactivo" />
                   )}
@@ -182,7 +182,7 @@ export default function AgentsPage() {
                     <p className="text-lg font-bold tabular-nums">
                       {agent.total_insights}
                       {agent.new_insights > 0 && (
-                        <span className="text-xs text-emerald-500 ml-0.5">+{agent.new_insights}</span>
+                        <span className="text-xs text-success ml-0.5">+{agent.new_insights}</span>
                       )}
                     </p>
                     <p className="text-[10px] text-muted-foreground">insights</p>
@@ -199,11 +199,11 @@ export default function AgentsPage() {
                 <div className="flex items-center justify-between gap-2 pt-1 border-t">
                   <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
                     {agent.last_run_status === "completed" ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500 shrink-0" />
+                      <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
                     ) : agent.last_run_status === "failed" ? (
-                      <XCircle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                      <XCircle className="h-3.5 w-3.5 text-danger shrink-0" />
                     ) : agent.last_run_status === "running" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-amber-500 shrink-0" />
+                      <Loader2 className="h-3.5 w-3.5 animate-spin text-warning shrink-0" />
                     ) : (
                       <Bot className="h-3.5 w-3.5 shrink-0" />
                     )}
@@ -235,7 +235,7 @@ export default function AgentsPage() {
           <CardHeader className="pb-2">
             <Link href="/inbox" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-purple-500" />
+                <Bot className="h-4 w-4 text-domain-meta" />
                 <CardTitle className="text-sm sm:text-base">Insights Recientes</CardTitle>
                 <Badge variant="outline" className="text-[10px]">{newInsights} nuevos</Badge>
               </div>

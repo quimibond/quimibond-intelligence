@@ -29,12 +29,12 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   relationships: Users, risk: Shield, growth: Zap, meta: Brain,
 };
 const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-emerald-500", finance: "text-amber-500", operations: "text-blue-500",
-  relationships: "text-purple-500", risk: "text-red-500", growth: "text-cyan-500", meta: "text-indigo-500",
+  sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
+  relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth", meta: "text-domain-meta",
 };
 const DOMAIN_BG: Record<string, string> = {
-  sales: "bg-emerald-500/10", finance: "bg-amber-500/10", operations: "bg-blue-500/10",
-  relationships: "bg-purple-500/10", risk: "bg-red-500/10", growth: "bg-cyan-500/10", meta: "bg-indigo-500/10",
+  sales: "bg-domain-sales/10", finance: "bg-domain-finance/10", operations: "bg-domain-operations/10",
+  relationships: "bg-domain-relationships/10", risk: "bg-domain-risk/10", growth: "bg-domain-growth/10", meta: "bg-domain-meta/10",
 };
 
 export default function InsightDetailPage() {
@@ -378,7 +378,7 @@ export default function InsightDetailPage() {
             <Progress value={insight.confidence * 100} className="h-2 flex-1 max-w-40" />
             <span className={cn(
               "text-sm font-bold tabular-nums",
-              insight.confidence >= 0.85 ? "text-emerald-500" : insight.confidence >= 0.7 ? "text-amber-500" : "text-muted-foreground"
+              insight.confidence >= 0.85 ? "text-success" : insight.confidence >= 0.7 ? "text-warning" : "text-muted-foreground"
             )}>
               {(insight.confidence * 100).toFixed(0)}%
             </span>
@@ -386,8 +386,8 @@ export default function InsightDetailPage() {
 
           {/* Recommendation */}
           {insight.recommendation && (
-            <div className="rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3 md:p-4">
-              <p className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 mb-1 flex items-center gap-1">
+            <div className="rounded-lg bg-success/5 border border-success/20 p-3 md:p-4">
+              <p className="text-xs font-semibold text-success-foreground mb-1 flex items-center gap-1">
                 <Lightbulb className="h-3.5 w-3.5" /> Accion recomendada
               </p>
               <p className="text-sm font-medium">{insight.recommendation}</p>
@@ -447,7 +447,7 @@ export default function InsightDetailPage() {
                       {company.is_customer && <span>Cliente</span>}
                       {company.is_supplier && <span>Proveedor</span>}
                       {company.lifetime_value > 0 && <span>{formatCurrency(company.lifetime_value)} lifetime</span>}
-                      {company.total_pending > 0 && <span className="text-red-500">{formatCurrency(company.total_pending)} pendiente</span>}
+                      {company.total_pending > 0 && <span className="text-danger">{formatCurrency(company.total_pending)} pendiente</span>}
                     </div>
                   </div>
                 </div>
@@ -467,7 +467,7 @@ export default function InsightDetailPage() {
                 <div className="flex items-center gap-3 min-w-0">
                   <div className={cn(
                     "flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-sm font-bold",
-                    contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-red-500/15 text-red-600" : "bg-muted text-muted-foreground"
+                    contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-danger/15 text-danger-foreground" : "bg-muted text-muted-foreground"
                   )}>
                     {contact.name?.charAt(0) ?? "?"}
                   </div>
@@ -478,7 +478,7 @@ export default function InsightDetailPage() {
                       {contact.current_health_score != null && (
                         <span className={cn(
                           "font-medium shrink-0",
-                          contact.current_health_score >= 60 ? "text-emerald-500" : contact.current_health_score >= 40 ? "text-amber-500" : "text-red-500"
+                          contact.current_health_score >= 60 ? "text-success" : contact.current_health_score >= 40 ? "text-warning" : "text-danger"
                         )}>
                           Score: {contact.current_health_score}
                         </span>
@@ -498,7 +498,7 @@ export default function InsightDetailPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <Package className="h-4 w-4 text-orange-500" />
+              <Package className="h-4 w-4 text-warning" />
               <CardTitle className="text-sm">Datos de Odoo</CardTitle>
             </div>
           </CardHeader>
@@ -614,7 +614,7 @@ export default function InsightDetailPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-blue-500" />
+              <Mail className="h-4 w-4 text-info" />
               <CardTitle className="text-sm">Emails Relacionados</CardTitle>
               <Badge variant="outline" className="text-[10px] ml-auto">{relatedEmails.length}</Badge>
             </div>
@@ -626,7 +626,7 @@ export default function InsightDetailPage() {
                 href={`/emails/${email.id}`}
                 className="flex items-start gap-3 rounded-lg p-2 md:p-2.5 hover:bg-muted/50 transition-colors"
               >
-                <Mail className={cn("h-4 w-4 mt-0.5 shrink-0", email.sender_type === "external" ? "text-blue-500" : "text-muted-foreground")} />
+                <Mail className={cn("h-4 w-4 mt-0.5 shrink-0", email.sender_type === "external" ? "text-info" : "text-muted-foreground")} />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium truncate">{email.subject ?? "(sin asunto)"}</p>
                   <p className="text-xs text-muted-foreground truncate">
@@ -645,7 +645,7 @@ export default function InsightDetailPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <Brain className="h-4 w-4 text-purple-500" />
+              <Brain className="h-4 w-4 text-domain-relationships" />
               <CardTitle className="text-sm">Knowledge Graph</CardTitle>
             </div>
           </CardHeader>
@@ -671,7 +671,7 @@ export default function InsightDetailPage() {
         <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <Lightbulb className="h-4 w-4 text-amber-500" />
+              <Lightbulb className="h-4 w-4 text-warning" />
               <CardTitle className="text-sm">Otros Insights de {company?.name ?? "esta empresa"}</CardTitle>
             </div>
           </CardHeader>
@@ -723,7 +723,7 @@ export default function InsightDetailPage() {
           <div className="max-w-2xl mx-auto flex gap-3">
             <Button
               variant="outline"
-              className="flex-1 h-11 text-red-500 border-red-500/30 hover:bg-red-500/10"
+              className="flex-1 h-11 text-danger border-danger/30 hover:bg-danger/10"
               onClick={handleDismiss}
             >
               <ThumbsDown className="h-4 w-4 mr-2" />
@@ -731,7 +731,7 @@ export default function InsightDetailPage() {
               <span className="sm:hidden">No</span>
             </Button>
             <Button
-              className="flex-1 h-11 bg-emerald-600 hover:bg-emerald-700 text-white"
+              className="flex-1 h-11 bg-success hover:bg-success/90 text-white"
               onClick={handleAct}
               disabled={acting}
             >

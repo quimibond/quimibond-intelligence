@@ -48,17 +48,17 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   relationships: Users, risk: Shield, growth: Zap, meta: Bot,
 };
 const DOMAIN_COLORS: Record<string, string> = {
-  sales: "text-emerald-500", finance: "text-amber-500", operations: "text-blue-500",
-  relationships: "text-purple-500", risk: "text-red-500", growth: "text-cyan-500", meta: "text-indigo-500",
+  sales: "text-domain-sales", finance: "text-domain-finance", operations: "text-domain-operations",
+  relationships: "text-domain-relationships", risk: "text-domain-risk", growth: "text-domain-growth", meta: "text-domain-meta",
 };
 const DOMAIN_BG: Record<string, string> = {
-  sales: "bg-emerald-500/10", finance: "bg-amber-500/10", operations: "bg-blue-500/10",
-  relationships: "bg-purple-500/10", risk: "bg-red-500/10", growth: "bg-cyan-500/10", meta: "bg-indigo-500/10",
+  sales: "bg-domain-sales/10", finance: "bg-domain-finance/10", operations: "bg-domain-operations/10",
+  relationships: "bg-domain-relationships/10", risk: "bg-domain-risk/10", growth: "bg-domain-growth/10", meta: "bg-domain-meta/10",
 };
 const TIER_LABELS: Record<string, { label: string; color: string }> = {
-  urgent: { label: "URGENTE", color: "bg-red-500 text-white" },
-  important: { label: "IMPORTANTE", color: "bg-amber-500 text-white" },
-  fyi: { label: "FYI", color: "bg-blue-500/20 text-blue-600 dark:text-blue-400" },
+  urgent: { label: "URGENTE", color: "bg-danger text-white" },
+  important: { label: "IMPORTANTE", color: "bg-warning text-white" },
+  fyi: { label: "FYI", color: "bg-info/20 text-info-foreground" },
 };
 
 type FilterMode = "all" | "urgent" | "important" | "fyi";
@@ -330,9 +330,9 @@ export default function InboxPage() {
     return (
       <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
         <div className="relative">
-          <PartyPopper className="h-16 w-16 text-emerald-500" />
+          <PartyPopper className="h-16 w-16 text-success" />
           <div className="absolute inset-0 animate-ping opacity-20">
-            <PartyPopper className="h-16 w-16 text-emerald-500" />
+            <PartyPopper className="h-16 w-16 text-success" />
           </div>
         </div>
         <h2 className="text-xl font-bold">Todo al dia</h2>
@@ -369,19 +369,19 @@ export default function InboxPage() {
         <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
           {freshness.lastSync && (
             <span className="flex items-center gap-1">
-              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastSync, 2) ? "bg-emerald-500" : isRecent(freshness.lastSync, 6) ? "bg-amber-500" : "bg-red-500")} />
+              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastSync, 2) ? "bg-success" : isRecent(freshness.lastSync, 6) ? "bg-warning" : "bg-danger")} />
               Odoo: {timeAgo(freshness.lastSync)}
             </span>
           )}
           {freshness.lastAnalyze && (
             <span className="flex items-center gap-1">
-              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAnalyze, 1) ? "bg-emerald-500" : isRecent(freshness.lastAnalyze, 4) ? "bg-amber-500" : "bg-red-500")} />
+              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAnalyze, 1) ? "bg-success" : isRecent(freshness.lastAnalyze, 4) ? "bg-warning" : "bg-danger")} />
               Emails: {timeAgo(freshness.lastAnalyze)}
             </span>
           )}
           {freshness.lastAgents && (
             <span className="flex items-center gap-1">
-              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAgents, 6) ? "bg-emerald-500" : isRecent(freshness.lastAgents, 12) ? "bg-amber-500" : "bg-red-500")} />
+              <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAgents, 6) ? "bg-success" : isRecent(freshness.lastAgents, 12) ? "bg-warning" : "bg-danger")} />
               Agentes: {timeAgo(freshness.lastAgents)}
             </span>
           )}
@@ -403,7 +403,7 @@ export default function InboxPage() {
               onClick={() => setFilterMode(filterMode === "urgent" ? "all" : "urgent")}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                filterMode === "urgent" ? "bg-red-500 text-white" : "bg-red-500/10 text-red-600 dark:text-red-400 hover:bg-red-500/20"
+                filterMode === "urgent" ? "bg-danger text-white" : "bg-danger/10 text-danger-foreground hover:bg-danger/20"
               )}
             >
               Urgente ({tierCounts.urgent})
@@ -414,7 +414,7 @@ export default function InboxPage() {
               onClick={() => setFilterMode(filterMode === "important" ? "all" : "important")}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                filterMode === "important" ? "bg-amber-500 text-white" : "bg-amber-500/10 text-amber-600 dark:text-amber-400 hover:bg-amber-500/20"
+                filterMode === "important" ? "bg-warning text-white" : "bg-warning/10 text-warning-foreground hover:bg-warning/20"
               )}
             >
               Importante ({tierCounts.important})
@@ -425,7 +425,7 @@ export default function InboxPage() {
               onClick={() => setFilterMode(filterMode === "fyi" ? "all" : "fyi")}
               className={cn(
                 "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-                filterMode === "fyi" ? "bg-blue-500 text-white" : "bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-500/20"
+                filterMode === "fyi" ? "bg-info text-white" : "bg-info/10 text-info-foreground hover:bg-info/20"
               )}
             >
               FYI ({tierCounts.fyi})
@@ -505,13 +505,13 @@ export default function InboxPage() {
                 >
                   {/* Swipe indicators */}
                   {swipeX > 30 && (
-                    <div className="absolute inset-0 bg-emerald-500/10 rounded-2xl pointer-events-none flex items-center justify-center">
-                      <ThumbsUp className="h-16 w-16 text-emerald-500 opacity-50" />
+                    <div className="absolute inset-0 bg-success/10 rounded-2xl pointer-events-none flex items-center justify-center">
+                      <ThumbsUp className="h-16 w-16 text-success opacity-50" />
                     </div>
                   )}
                   {swipeX < -30 && (
-                    <div className="absolute inset-0 bg-red-500/10 rounded-2xl pointer-events-none flex items-center justify-center">
-                      <X className="h-16 w-16 text-red-500 opacity-50" />
+                    <div className="absolute inset-0 bg-danger/10 rounded-2xl pointer-events-none flex items-center justify-center">
+                      <X className="h-16 w-16 text-danger opacity-50" />
                     </div>
                   )}
 
@@ -560,8 +560,8 @@ export default function InboxPage() {
 
                     {/* Recommendation */}
                     {currentInsight.recommendation && (
-                      <div className="mt-3 rounded-lg bg-emerald-500/5 border border-emerald-500/20 p-3">
-                        <p className="text-xs font-medium text-emerald-600 dark:text-emerald-400 mb-1">Accion sugerida</p>
+                      <div className="mt-3 rounded-lg bg-success/5 border border-success/20 p-3">
+                        <p className="text-xs font-medium text-success-foreground mb-1">Accion sugerida</p>
                         <p className="text-sm">{currentInsight.recommendation}</p>
                       </div>
                     )}
@@ -586,8 +586,8 @@ export default function InboxPage() {
                   onClick={() => dismissInsight(currentInsight.id)}
                   className="flex flex-col items-center gap-1"
                 >
-                  <div className="h-14 w-14 rounded-full border-2 border-red-300 dark:border-red-500/40 flex items-center justify-center hover:bg-red-500/10 active:scale-95 transition-all">
-                    <X className="h-6 w-6 text-red-500" />
+                  <div className="h-14 w-14 rounded-full border-2 border-danger/40 flex items-center justify-center hover:bg-danger/10 active:scale-95 transition-all">
+                    <X className="h-6 w-6 text-danger" />
                   </div>
                   <span className="text-[10px] text-muted-foreground">Descartar</span>
                 </button>
@@ -610,8 +610,8 @@ export default function InboxPage() {
                   onClick={() => goToDetail(currentInsight.id)}
                   className="flex flex-col items-center gap-1"
                 >
-                  <div className="h-12 w-12 rounded-full border-2 border-blue-300 dark:border-blue-500/40 flex items-center justify-center hover:bg-blue-500/10 active:scale-95 transition-all">
-                    <Eye className="h-5 w-5 text-blue-500" />
+                  <div className="h-12 w-12 rounded-full border-2 border-info/40 flex items-center justify-center hover:bg-info/10 active:scale-95 transition-all">
+                    <Eye className="h-5 w-5 text-info" />
                   </div>
                   <span className="text-[10px] text-muted-foreground">Detalle</span>
                 </button>
@@ -634,8 +634,8 @@ export default function InboxPage() {
                   onClick={() => actOnInsight(currentInsight.id)}
                   className="flex flex-col items-center gap-1"
                 >
-                  <div className="h-14 w-14 rounded-full border-2 border-emerald-300 dark:border-emerald-500/40 flex items-center justify-center hover:bg-emerald-500/10 active:scale-95 transition-all">
-                    <ThumbsUp className="h-6 w-6 text-emerald-500" />
+                  <div className="h-14 w-14 rounded-full border-2 border-success/40 flex items-center justify-center hover:bg-success/10 active:scale-95 transition-all">
+                    <ThumbsUp className="h-6 w-6 text-success" />
                   </div>
                   <span className="text-[10px] text-muted-foreground">Util</span>
                 </button>
@@ -704,7 +704,7 @@ export default function InboxPage() {
                       <div className="text-center hidden lg:block">
                         <p className={cn(
                           "text-sm font-bold tabular-nums",
-                          insight.confidence >= 0.85 ? "text-emerald-500" : insight.confidence >= 0.7 ? "text-amber-500" : "text-muted-foreground"
+                          insight.confidence >= 0.85 ? "text-success" : insight.confidence >= 0.7 ? "text-warning" : "text-muted-foreground"
                         )}>
                           {(insight.confidence * 100).toFixed(0)}%
                         </p>
@@ -720,7 +720,7 @@ export default function InboxPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-8 w-8 p-0 text-emerald-600 hover:bg-emerald-500/10"
+                          className="h-8 w-8 p-0 text-success-foreground hover:bg-success/10"
                           onClick={() => actOnInsight(insight.id)}
                           disabled={acting === insight.id}
                           title="Marcar como util"
@@ -730,7 +730,7 @@ export default function InboxPage() {
                         <Button
                           size="sm"
                           variant="ghost"
-                          className="h-8 w-8 p-0 text-muted-foreground hover:text-red-500 hover:bg-red-500/10"
+                          className="h-8 w-8 p-0 text-muted-foreground hover:text-danger hover:bg-danger/10"
                           onClick={() => dismissInsight(insight.id)}
                           title="Descartar"
                         >
