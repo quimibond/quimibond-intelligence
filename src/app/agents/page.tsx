@@ -154,7 +154,7 @@ export default function AgentsPage() {
                       <Icon className={cn("h-4.5 w-4.5", color)} />
                     </div>
                     <div className="min-w-0">
-                      <p className="text-sm font-semibold truncate">{agent.name}</p>
+                      <Link href={`/agents/${agent.slug}`} className="text-sm font-semibold truncate hover:underline">{agent.name}</Link>
                       <p className="text-[10px] text-muted-foreground truncate">{desc}</p>
                     </div>
                   </div>
