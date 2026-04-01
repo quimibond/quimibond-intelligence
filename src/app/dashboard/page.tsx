@@ -237,6 +237,10 @@ export default function DashboardPage() {
   const [pipelineGlobal, setPipelineGlobal] = useState<PipelineGlobal | null>(null);
   const [latestBriefing, setLatestBriefing] = useState<{ briefing_date: string; summary_text: string | null; total_emails: number } | null>(null);
   const [contactsAtRisk, setContactsAtRisk] = useState<{ id: number; name: string; risk_level: string; relationship_score: number | null }[]>([]);
+  const [churnRisk, setChurnRisk] = useState(0);
+  const [overdueReorders, setOverdueReorders] = useState(0);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [topChanges, setTopChanges] = useState<any[]>([]);
 
   useEffect(() => {
     async function load() {
@@ -316,6 +320,29 @@ export default function DashboardPage() {
         .order("relationship_score", { ascending: true })
         .limit(5)
         .then(({ data: c }) => { if (c) setContactsAtRisk(c); });
+
+      // Churn risk: clients with revenue dropping >30%
+      supabase
+        .from("company_profile")
+        .select("company_id", { count: "exact", head: true })
+        .in("tier", ["strategic", "important"])
+        .lt("trend_pct", -30)
+        .then(({ count }) => setChurnRisk(count ?? 0));
+
+      // Overdue reorders
+      supabase
+        .from("client_reorder_predictions")
+        .select("company_id", { count: "exact", head: true })
+        .in("reorder_status", ["overdue", "at_risk", "critical", "lost"])
+        .then(({ count }) => setOverdueReorders(count ?? 0));
+
+      // Week-over-week changes (top movers)
+      supabase
+        .from("snapshot_changes")
+        .select("company_name, overdue_change, pending_change")
+        .order("overdue_change", { ascending: false })
+        .limit(5)
+        .then(({ data: c }) => { if (c) setTopChanges(c); });
     }
 
     load();
@@ -458,12 +485,12 @@ export default function DashboardPage() {
           variant={overdueAmt > 0 ? "danger" : "default"}
         />
         <KPICard
-          title="Pipeline CRM"
-          value={pipelineGlobal ? formatCurrency(pipelineGlobal.pipeline_value) : "—"}
-          subtitle={pipelineGlobal ? `${pipelineGlobal.total_opportunities} oportunidades` : "cargando..."}
+          title="Clientes en Riesgo"
+          value={churnRisk + overdueReorders}
+          subtitle={`${churnRisk} cayendo + ${overdueReorders} sin reordenar`}
           icon={TrendingUp}
           href="/companies"
-          variant="info"
+          variant={churnRisk + overdueReorders > 0 ? "warning" : "default"}
         />
         <KPICard
           title="Entregas Atrasadas"
@@ -483,20 +510,54 @@ export default function DashboardPage() {
         />
       </div>
 
-      {/* Aging chart */}
-      {globalAging && globalAging.total_outstanding > 0 && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-domain-finance" />
-              <CardTitle className="text-sm sm:text-base">Antiguedad de Saldos</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <AgingChart data={globalAging} />
-          </CardContent>
-        </Card>
-      )}
+      {/* Aging chart + weekly changes */}
+      <div className="grid gap-4 lg:grid-cols-2">
+        {globalAging && globalAging.total_outstanding > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-domain-finance" />
+                <CardTitle className="text-sm sm:text-base">Antiguedad de Saldos</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <AgingChart data={globalAging} />
+            </CardContent>
+          </Card>
+        )}
+
+        {topChanges.length > 0 && (
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <TrendingUp className="h-4 w-4 text-warning" />
+                <CardTitle className="text-sm sm:text-base">Cambios esta Semana</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-1.5">
+                {topChanges.map((c: { company_name: string; overdue_change: number; pending_change: number }, i: number) => (
+                  <div key={i} className="flex items-center justify-between rounded-lg border p-2">
+                    <span className="text-sm font-medium truncate flex-1 min-w-0">{c.company_name}</span>
+                    <div className="flex items-center gap-3 shrink-0 text-xs tabular-nums">
+                      {c.overdue_change !== 0 && (
+                        <span className={c.overdue_change > 0 ? "text-danger font-semibold" : "text-success"}>
+                          {c.overdue_change > 0 ? "+" : ""}{formatCurrency(c.overdue_change)} vencido
+                        </span>
+                      )}
+                      {c.pending_change !== 0 && c.overdue_change === 0 && (
+                        <span className={c.pending_change > 0 ? "text-warning" : "text-success"}>
+                          {c.pending_change > 0 ? "+" : ""}{formatCurrency(c.pending_change)} pendiente
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
       {/* ══════════════════════════════════════════════════════════════ */}
       {/*  PERSPECTIVA 3: INTELIGENCIA Y CONOCIMIENTO                 */}

@@ -24,15 +24,6 @@ const ChatRequestSchema = z.object({
   })).default([]),
 });
 
-interface ContextData {
-  contacts: string;
-  alerts: string;
-  briefing: string;
-  facts: string;
-  chatMemory: string;
-  semanticEmails: string;
-}
-
 async function getStaticContext(
   supabase: ReturnType<typeof getServiceClient>
 ): Promise<{ alerts: string; briefing: string; chatMemory: string }> {
@@ -98,7 +89,7 @@ async function gatherContext(
   const q = `%${query.toLowerCase()}%`;
 
   // Fetch static context (cached) + query-specific context in parallel
-  const [staticCtx, contactsRes, factsRes] = await Promise.all([
+  const [staticCtx, contactsRes, factsRes, companiesRes, insightsRes, employeesRes] = await Promise.all([
     getStaticContext(supabase),
 
     // Relevant contacts (query-specific)
@@ -118,6 +109,31 @@ async function gatherContext(
       .ilike("fact_text", q)
       .order("confidence", { ascending: false })
       .limit(15),
+
+    // Company profiles (query-specific or top companies)
+    supabase
+      .from("company_profile")
+      .select("name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level, email_count")
+      .or(`name.ilike.${q}`)
+      .order("total_revenue", { ascending: false })
+      .limit(10),
+
+    // Recent insights (for context about what agents are seeing)
+    supabase
+      .from("agent_insights")
+      .select("title, severity, category, assignee_name, created_at")
+      .in("state", ["new", "seen"])
+      .in("severity", ["critical", "high"])
+      .order("created_at", { ascending: false })
+      .limit(5),
+
+    // Employee metrics
+    supabase
+      .from("employee_metrics")
+      .select("name, department, execution_score, actions_overdue, contacts_managed")
+      .eq("period_type", "weekly")
+      .order("overall_score", { ascending: false })
+      .limit(10),
   ]);
 
   const contacts =
@@ -161,7 +177,49 @@ async function gatherContext(
     }
   }
 
-  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails };
+  const companies =
+    companiesRes.data && companiesRes.data.length > 0
+      ? companiesRes.data
+          .map(
+            (c) =>
+              `- ${c.name} | Tier: ${c.tier} | Revenue: $${Number(c.total_revenue).toLocaleString()} | Trend: ${c.trend_pct ?? "?"}% | Vencido: $${Number(c.overdue_amount).toLocaleString()} | Riesgo: ${c.risk_level}`
+          )
+          .join("\n")
+      : "";
+
+  const activeInsights =
+    insightsRes.data && insightsRes.data.length > 0
+      ? insightsRes.data
+          .map(
+            (i) =>
+              `- [${i.severity}] ${i.title} → ${i.assignee_name ?? "sin asignar"}`
+          )
+          .join("\n")
+      : "";
+
+  const teamMetrics =
+    employeesRes.data && employeesRes.data.length > 0
+      ? employeesRes.data
+          .map(
+            (e) =>
+              `- ${e.name} (${e.department}): ejecucion ${e.execution_score}%, ${e.actions_overdue} acciones vencidas, ${e.contacts_managed} clientes`
+          )
+          .join("\n")
+      : "";
+
+  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails, companies, activeInsights, teamMetrics };
+}
+
+interface ContextData {
+  contacts: string;
+  alerts: string;
+  briefing: string;
+  facts: string;
+  chatMemory: string;
+  semanticEmails: string;
+  companies: string;
+  activeInsights: string;
+  teamMetrics: string;
 }
 
 function buildSystemPrompt(ctx: ContextData): string {
@@ -186,6 +244,18 @@ ${ctx.briefing}
 
 ### Contactos relevantes
 ${ctx.contacts}`;
+
+  if (ctx.companies) {
+    prompt += `\n\n### Empresas relevantes (perfiles con revenue, tendencia, riesgo)\n${ctx.companies}`;
+  }
+
+  if (ctx.activeInsights) {
+    prompt += `\n\n### Insights criticos activos de agentes IA\n${ctx.activeInsights}`;
+  }
+
+  if (ctx.teamMetrics) {
+    prompt += `\n\n### Metricas de equipo (ejecucion semanal)\n${ctx.teamMetrics}`;
+  }
 
   if (ctx.facts) {
     prompt += `\n\n### Hechos del knowledge graph\n${ctx.facts}`;
