@@ -12,7 +12,7 @@ const severityEmoji: Record<string, string> = {
 };
 
 /**
- * Subscribes to new alerts and pipeline completions via Supabase Realtime.
+ * Subscribes to new agent_insights and pipeline completions via Supabase Realtime.
  * Shows toast notifications when new data arrives.
  * Renders nothing — this is a side-effect-only component.
  */
@@ -23,33 +23,37 @@ export function RealtimeAlerts() {
     if (subscribedRef.current) return;
     subscribedRef.current = true;
 
-    // Subscribe to new alerts
-    const alertChannel = supabase
-      .channel("realtime-alerts")
+    // Subscribe to new agent insights (the primary intelligence output)
+    const insightChannel = supabase
+      .channel("realtime-insights")
       .on(
         "postgres_changes",
         {
           event: "INSERT",
           schema: "public",
-          table: "alerts",
+          table: "agent_insights",
         },
         (payload) => {
-          const alert = payload.new as {
+          const insight = payload.new as {
             title?: string;
             severity?: string;
-            contact_name?: string;
+            confidence?: number;
+            assignee_name?: string;
           };
-          const prefix = severityEmoji[alert.severity ?? ""] ?? "";
+          // Only show toast for high-confidence insights
+          if ((insight.confidence ?? 0) < 0.65) return;
+
+          const prefix = severityEmoji[insight.severity ?? ""] ?? "";
           toast.warning(
-            `${prefix} ${alert.title ?? "Nueva alerta"}`,
+            `${prefix} ${insight.title ?? "Nuevo insight"}`,
             {
-              description: alert.contact_name
-                ? `Contacto: ${alert.contact_name}`
+              description: insight.assignee_name
+                ? `Responsable: ${insight.assignee_name}`
                 : undefined,
               duration: 8000,
               action: {
-                label: "Ver alertas",
-                onClick: () => (window.location.href = "/alerts"),
+                label: "Ver inbox",
+                onClick: () => (window.location.href = "/inbox"),
               },
             }
           );
@@ -91,7 +95,7 @@ export function RealtimeAlerts() {
       .subscribe();
 
     return () => {
-      supabase.removeChannel(alertChannel);
+      supabase.removeChannel(insightChannel);
       supabase.removeChannel(pipelineChannel);
       subscribedRef.current = false;
     };

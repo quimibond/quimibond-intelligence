@@ -13,10 +13,9 @@ import {
   LayoutDashboard,
   FileText,
   MessageSquare,
-  CheckSquare,
   Settings,
-  BarChart3,
   Activity,
+  Bot,
 } from "lucide-react";
 import {
   Dialog,
@@ -24,7 +23,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Separator } from "@/components/ui/separator";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
@@ -38,19 +36,21 @@ interface SearchResults {
     company_id: number | null;
     risk_level: string | null;
   }>;
-  entities: Array<{
+  companies: Array<{
     id: string;
     name: string;
     canonical_name: string | null;
-    entity_type: string | null;
+    is_customer: boolean | null;
+    is_supplier: boolean | null;
   }>;
-  alerts: Array<{
+  insights: Array<{
     id: string;
     title: string;
     description: string | null;
     severity: string;
     state: string | null;
     created_at: string | null;
+    assignee_name: string | null;
   }>;
   facts: Array<{
     id: string;
@@ -137,22 +137,22 @@ export function SearchCommand() {
 
   const hasResults =
     results &&
-    (results.contacts.length > 0 ||
-      results.entities.length > 0 ||
-      results.alerts.length > 0 ||
-      results.facts.length > 0 ||
-      results.emails.length > 0);
+    ((results.contacts?.length ?? 0) > 0 ||
+      (results.companies?.length ?? 0) > 0 ||
+      (results.insights?.length ?? 0) > 0 ||
+      (results.facts?.length ?? 0) > 0 ||
+      (results.emails?.length ?? 0) > 0);
 
   const noResults = results && !hasResults && query.trim().length >= 2;
 
   const quickActions = [
+    { label: "Inbox", icon: Bell, href: "/inbox" },
     { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { label: "Alertas criticas", icon: Bell, href: "/alerts?severity=critical&state=new" },
-    { label: "Acciones vencidas", icon: CheckSquare, href: "/actions?state=pending&overdue=true" },
+    { label: "Agentes IA", icon: Bot, href: "/agents" },
     { label: "Ultimo briefing", icon: FileText, href: "/briefings" },
     { label: "Chat con IA", icon: MessageSquare, href: "/chat" },
-    { label: "Analitica", icon: BarChart3, href: "/analytics" },
-    { label: "Timeline", icon: Activity, href: "/timeline" },
+    { label: "Empresas", icon: Building2, href: "/companies" },
+    { label: "Knowledge", icon: Search, href: "/knowledge" },
     { label: "Sistema", icon: Settings, href: "/system" },
   ];
 
@@ -180,7 +180,7 @@ export function SearchCommand() {
               ref={inputRef}
               value={query}
               onChange={(e) => handleInputChange(e.target.value)}
-              placeholder="Buscar contactos, empresas, alertas, emails..."
+              placeholder="Buscar empresas, contactos, insights, emails..."
               className="flex-1 bg-transparent py-3.5 text-sm outline-none placeholder:text-muted-foreground"
             />
             {loading && (
@@ -223,8 +223,28 @@ export function SearchCommand() {
                 </div>
               )}
 
+              {/* Empresas */}
+              {results && (results.companies?.length ?? 0) > 0 && (
+                <ResultGroup label="Empresas" icon={Building2}>
+                  {results.companies.map((c) => (
+                    <ResultItem
+                      key={c.id}
+                      onClick={() => navigate(`/companies/${c.id}`)}
+                    >
+                      <div className="flex flex-1 items-center gap-2 min-w-0">
+                        <span className="truncate font-medium">{c.name}</span>
+                        <div className="flex gap-1">
+                          {c.is_customer && <Badge variant="outline" className="text-[10px]">Cliente</Badge>}
+                          {c.is_supplier && <Badge variant="outline" className="text-[10px]">Proveedor</Badge>}
+                        </div>
+                      </div>
+                    </ResultItem>
+                  ))}
+                </ResultGroup>
+              )}
+
               {/* Contactos */}
-              {results && results.contacts.length > 0 && (
+              {results && (results.contacts?.length ?? 0) > 0 && (
                 <ResultGroup label="Contactos" icon={Users}>
                   {results.contacts.map((c) => (
                     <ResultItem
@@ -233,9 +253,9 @@ export function SearchCommand() {
                     >
                       <div className="flex flex-1 items-center gap-2 min-w-0">
                         <span className="truncate font-medium">{c.name}</span>
-                        {c.company_id && (
-                          <span className="truncate text-muted-foreground">
-                            Empresa #{c.company_id}
+                        {c.email && (
+                          <span className="truncate text-xs text-muted-foreground">
+                            {c.email}
                           </span>
                         )}
                       </div>
@@ -245,45 +265,22 @@ export function SearchCommand() {
                 </ResultGroup>
               )}
 
-              {/* Empresas (entities of type company/organization) */}
-              {results && results.entities.length > 0 && (
-                <ResultGroup label="Empresas" icon={Building2}>
-                  {results.entities.map((e) => (
-                    <ResultItem
-                      key={e.id}
-                      onClick={() => navigate(`/companies/${e.id}`)}
-                    >
-                      <div className="flex flex-1 items-center gap-2 min-w-0">
-                        <span className="truncate font-medium">
-                          {e.canonical_name || e.name}
-                        </span>
-                        {e.entity_type && (
-                          <Badge variant="outline" className="shrink-0 text-[10px]">
-                            {e.entity_type}
-                          </Badge>
-                        )}
-                      </div>
-                    </ResultItem>
-                  ))}
-                </ResultGroup>
-              )}
-
-              {/* Alertas */}
-              {results && results.alerts.length > 0 && (
-                <ResultGroup label="Alertas" icon={Bell}>
-                  {results.alerts.map((a) => (
+              {/* Insights */}
+              {results && (results.insights?.length ?? 0) > 0 && (
+                <ResultGroup label="Insights" icon={Lightbulb}>
+                  {results.insights.map((a) => (
                     <ResultItem
                       key={a.id}
-                      onClick={() => navigate(`/alerts/${a.id}`)}
+                      onClick={() => navigate(`/inbox/insight/${a.id}`)}
                     >
                       <div className="flex flex-1 items-center gap-2 min-w-0">
                         <SeverityBadge severity={a.severity} />
                         <span className="truncate">{a.title}</span>
                       </div>
-                      {a.state && (
-                        <Badge variant="outline" className="shrink-0 text-[10px]">
-                          {a.state}
-                        </Badge>
+                      {a.created_at && (
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {timeAgo(a.created_at)}
+                        </span>
                       )}
                     </ResultItem>
                   ))}
@@ -291,7 +288,7 @@ export function SearchCommand() {
               )}
 
               {/* Hechos */}
-              {results && results.facts.length > 0 && (
+              {results && (results.facts?.length ?? 0) > 0 && (
                 <ResultGroup label="Hechos" icon={Lightbulb}>
                   {results.facts.map((f) => (
                     <ResultItem key={f.id}>
@@ -311,7 +308,7 @@ export function SearchCommand() {
               )}
 
               {/* Emails */}
-              {results && results.emails.length > 0 && (
+              {results && (results.emails?.length ?? 0) > 0 && (
                 <ResultGroup label="Emails" icon={Mail}>
                   {results.emails.map((e) => (
                     <ResultItem

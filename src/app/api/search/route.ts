@@ -7,42 +7,31 @@ export async function POST(req: NextRequest) {
 
     if (!query || query.trim().length < 2) {
       return NextResponse.json(
-        { contacts: [], entities: [], alerts: [], facts: [], emails: [] },
+        { contacts: [], companies: [], insights: [], facts: [], emails: [] },
         { status: 200 }
       );
     }
 
     const supabase = getServiceClient();
     const trimmed = query.trim();
-
-    // Try RPC first
-    const { data: rpcData, error: rpcError } = await supabase.rpc(
-      "search_global",
-      { query: trimmed, max_results: 15 }
-    );
-
-    if (!rpcError && rpcData) {
-      return NextResponse.json(rpcData);
-    }
-
-    // Fallback: manual search across tables
     const pattern = `%${trimmed}%`;
 
-    const [contacts, entities, alerts, facts, emails] = await Promise.all([
+    const [contacts, companies, insights, facts, emails] = await Promise.all([
       supabase
         .from("contacts")
         .select("id, name, email, company_id, risk_level")
         .or(`name.ilike.${pattern},email.ilike.${pattern}`)
         .limit(10),
       supabase
-        .from("entities")
-        .select("id, name, canonical_name, entity_type")
+        .from("companies")
+        .select("id, name, canonical_name, is_customer, is_supplier")
         .or(`name.ilike.${pattern},canonical_name.ilike.${pattern}`)
         .limit(10),
       supabase
-        .from("alerts")
-        .select("id, title, description, severity, state, created_at")
+        .from("agent_insights")
+        .select("id, title, description, severity, state, created_at, assignee_name")
         .or(`title.ilike.${pattern},description.ilike.${pattern}`)
+        .in("state", ["new", "seen", "acted_on"])
         .order("created_at", { ascending: false })
         .limit(10),
       supabase
@@ -61,8 +50,8 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({
       contacts: contacts.data ?? [],
-      entities: entities.data ?? [],
-      alerts: alerts.data ?? [],
+      companies: companies.data ?? [],
+      insights: insights.data ?? [],
       facts: facts.data ?? [],
       emails: emails.data ?? [],
     });
