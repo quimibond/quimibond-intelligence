@@ -15,6 +15,8 @@ import {
 
 interface DeptData {
   department: string;
+  lead_or_manager: string | null;
+  description: string | null;
   employee_count: number;
   actions_pending: number;
   actions_completed: number;
@@ -29,43 +31,102 @@ export default function DepartmentsPage() {
 
   useEffect(() => {
     async function load() {
-      // Get users with departments
-      const { data: users } = await supabase
-        .from("odoo_users")
-        .select("email, department, pending_activities_count, overdue_activities_count");
+      // Fetch from multiple sources in parallel
+      const [odooDeptsRes, deptsRes, usersRes, actionsRes] = await Promise.all([
+        supabase
+          .from("odoo_departments")
+          .select("odoo_department_id, name, parent_name, manager_name, member_count"),
+        supabase
+          .from("departments")
+          .select("name, lead_name, lead_email, description"),
+        supabase
+          .from("odoo_users")
+          .select("email, department, pending_activities_count, overdue_activities_count"),
+        supabase
+          .from("action_items")
+          .select("assignee_email, state, due_date")
+          .not("assignee_email", "is", null),
+      ]);
 
-      // Get all actions
-      const { data: actions } = await supabase
-        .from("action_items")
-        .select("assignee_email, state, due_date")
-        .not("assignee_email", "is", null);
+      // Build department metadata lookups
+      const odooDeptMeta = new Map<string, { manager_name: string | null; member_count: number | null }>();
+      for (const od of odooDeptsRes.data ?? []) {
+        odooDeptMeta.set(od.name, { manager_name: od.manager_name, member_count: od.member_count });
+      }
 
-      // Map email → department
+      const deptMeta = new Map<string, { lead_name: string | null; description: string | null }>();
+      for (const d of deptsRes.data ?? []) {
+        deptMeta.set(d.name, { lead_name: d.lead_name, description: d.description });
+      }
+
+      // Map email -> department and build base dept map from users (for activity counts)
       const emailToDept = new Map<string, string>();
       const deptMap = new Map<string, DeptData>();
 
-      for (const u of users ?? []) {
+      // Seed departments from odoo_departments if available
+      for (const od of odooDeptsRes.data ?? []) {
+        const name = od.name;
+        const meta = deptMeta.get(name);
+        deptMap.set(name, {
+          department: name,
+          lead_or_manager: meta?.lead_name ?? od.manager_name ?? null,
+          description: meta?.description ?? null,
+          employee_count: od.member_count ?? 0,
+          actions_pending: 0,
+          actions_completed: 0,
+          actions_overdue: 0,
+          activities_pending: 0,
+          activities_overdue: 0,
+        });
+      }
+
+      // Enrich with user activity data (and add any departments not in odoo_departments)
+      for (const u of usersRes.data ?? []) {
         const dept = u.department || "Sin departamento";
         emailToDept.set(u.email, dept);
         if (!deptMap.has(dept)) {
+          const meta = deptMeta.get(dept);
+          const odooMeta = odooDeptMeta.get(dept);
           deptMap.set(dept, {
             department: dept,
+            lead_or_manager: meta?.lead_name ?? odooMeta?.manager_name ?? null,
+            description: meta?.description ?? null,
             employee_count: 0,
             actions_pending: 0,
             actions_completed: 0,
             actions_overdue: 0,
-            activities_pending: u.pending_activities_count ?? 0,
-            activities_overdue: u.overdue_activities_count ?? 0,
+            activities_pending: 0,
+            activities_overdue: 0,
           });
         }
         const d = deptMap.get(dept)!;
-        d.employee_count++;
+        // If we didn't get member_count from odoo_departments, count from users
+        if (!odooDeptMeta.has(dept)) {
+          d.employee_count++;
+        }
         d.activities_pending += u.pending_activities_count ?? 0;
         d.activities_overdue += u.overdue_activities_count ?? 0;
       }
 
+      // Also add departments from the departments table that weren't seen yet
+      for (const d of deptsRes.data ?? []) {
+        if (!deptMap.has(d.name)) {
+          deptMap.set(d.name, {
+            department: d.name,
+            lead_or_manager: d.lead_name ?? null,
+            description: d.description ?? null,
+            employee_count: 0,
+            actions_pending: 0,
+            actions_completed: 0,
+            actions_overdue: 0,
+            activities_pending: 0,
+            activities_overdue: 0,
+          });
+        }
+      }
+
       const today = new Date().toISOString().split("T")[0];
-      for (const a of actions ?? []) {
+      for (const a of actionsRes.data ?? []) {
         const dept = emailToDept.get(a.assignee_email) || "Sin departamento";
         if (!deptMap.has(dept)) continue;
         const d = deptMap.get(dept)!;
@@ -130,6 +191,21 @@ export default function DepartmentsPage() {
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Lead / Manager & Description */}
+                {(dept.lead_or_manager || dept.description) && (
+                  <div className="space-y-1 text-xs text-muted-foreground">
+                    {dept.lead_or_manager && (
+                      <div className="flex items-center gap-1">
+                        <Users className="h-3 w-3 shrink-0" />
+                        <span>Responsable: <span className="font-medium text-foreground">{dept.lead_or_manager}</span></span>
+                      </div>
+                    )}
+                    {dept.description && (
+                      <p className="line-clamp-2">{dept.description}</p>
+                    )}
+                  </div>
+                )}
+
                 {/* Metrics grid */}
                 <div className="grid grid-cols-3 gap-3 text-center">
                   <div>

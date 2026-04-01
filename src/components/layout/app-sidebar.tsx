@@ -39,22 +39,16 @@ import {
 const navItems = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/agents", label: "Agentes IA", icon: Bot },
   { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/contacts", label: "Contactos", icon: Users },
-  { href: "/emails", label: "Emails", icon: Mail },
-  { href: "/threads", label: "Hilos", icon: MessagesSquare },
-  { href: "/alerts", label: "Alertas", icon: Bell },
-  { href: "/actions", label: "Acciones", icon: CheckSquare },
-  { href: "/briefings", label: "Briefings", icon: FileText },
-  { href: "/timeline", label: "Timeline", icon: Activity },
-  { href: "/competitors", label: "Competidores", icon: Swords },
-  { href: "/network", label: "Red", icon: Share2 },
-  { href: "/analytics", label: "Analitica", icon: BarChart3 },
-  { href: "/knowledge", label: "Knowledge", icon: Network },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/agents", label: "Agentes IA", icon: Bot },
   { href: "/employees", label: "Empleados", icon: UserCheck },
   { href: "/departments", label: "Areas", icon: Layers },
+  { href: "/emails", label: "Emails", icon: Mail },
+  { href: "/threads", label: "Hilos", icon: MessagesSquare },
+  { href: "/briefings", label: "Briefings", icon: FileText },
+  { href: "/chat", label: "Chat IA", icon: MessageSquare },
+  { href: "/knowledge", label: "Knowledge", icon: Network },
 ];
 
 const bottomItems = [

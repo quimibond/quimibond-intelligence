@@ -14,11 +14,12 @@ import {
 } from "lucide-react";
 
 interface Employee {
-  odoo_user_id: number;
+  id: number;
   name: string;
   email: string | null;
   department: string | null;
   job_title: string | null;
+  manager: string | null;
   pending_activities_count: number;
   overdue_activities_count: number;
   // Computed from action_items
@@ -34,8 +35,13 @@ export default function EmployeesPage() {
 
   useEffect(() => {
     async function load() {
-      // Fetch users + their action stats
-      const [usersRes, actionsRes] = await Promise.all([
+      // Try odoo_employees first (real Odoo HR data), fall back to odoo_users
+      const [employeesRes, usersRes, actionsRes] = await Promise.all([
+        supabase
+          .from("odoo_employees")
+          .select("odoo_employee_id, odoo_user_id, name, work_email, work_phone, department_name, job_title, job_name, manager_name, is_active")
+          .eq("is_active", true)
+          .order("name"),
         supabase
           .from("odoo_users")
           .select("odoo_user_id, name, email, department, job_title, pending_activities_count, overdue_activities_count")
@@ -45,6 +51,59 @@ export default function EmployeesPage() {
           .select("assignee_email, state")
           .not("assignee_email", "is", null),
       ]);
+
+      // Build a lookup from odoo_users by user_id for activity counts
+      const userById = new Map<number, { pending_activities_count: number; overdue_activities_count: number; email: string | null }>();
+      for (const u of usersRes.data ?? []) {
+        userById.set(u.odoo_user_id, {
+          pending_activities_count: u.pending_activities_count ?? 0,
+          overdue_activities_count: u.overdue_activities_count ?? 0,
+          email: u.email,
+        });
+      }
+
+      // Determine which source to use: odoo_employees if available, else odoo_users
+      const useEmployees = (employeesRes.data ?? []).length > 0;
+
+      type BaseEmployee = {
+        id: number;
+        name: string;
+        email: string | null;
+        department: string | null;
+        job_title: string | null;
+        manager: string | null;
+        pending_activities_count: number;
+        overdue_activities_count: number;
+      };
+
+      let baseList: BaseEmployee[];
+
+      if (useEmployees) {
+        baseList = (employeesRes.data ?? []).map((e) => {
+          const userInfo = e.odoo_user_id ? userById.get(e.odoo_user_id) : undefined;
+          return {
+            id: e.odoo_employee_id,
+            name: e.name,
+            email: e.work_email ?? userInfo?.email ?? null,
+            department: e.department_name ?? null,
+            job_title: e.job_title ?? e.job_name ?? null,
+            manager: e.manager_name ?? null,
+            pending_activities_count: userInfo?.pending_activities_count ?? 0,
+            overdue_activities_count: userInfo?.overdue_activities_count ?? 0,
+          };
+        });
+      } else {
+        baseList = (usersRes.data ?? []).map((u) => ({
+          id: u.odoo_user_id,
+          name: u.name,
+          email: u.email ?? null,
+          department: u.department ?? null,
+          job_title: u.job_title ?? null,
+          manager: null,
+          pending_activities_count: u.pending_activities_count ?? 0,
+          overdue_activities_count: u.overdue_activities_count ?? 0,
+        }));
+      }
 
       // Aggregate actions by assignee
       const actionMap = new Map<string, { pending: number; completed: number; overdue: number }>();
@@ -71,7 +130,7 @@ export default function EmployeesPage() {
         if (entry) entry.overdue++;
       }
 
-      const enriched: Employee[] = (usersRes.data ?? []).map((u) => ({
+      const enriched: Employee[] = baseList.map((u) => ({
         ...u,
         actions_pending: actionMap.get(u.email ?? "")?.pending ?? 0,
         actions_completed: actionMap.get(u.email ?? "")?.completed ?? 0,
@@ -208,7 +267,7 @@ export default function EmployeesPage() {
           const hasIssues = emp.actions_overdue > 0 || emp.overdue_activities_count > 0;
 
           return (
-            <Card key={emp.odoo_user_id} className={cn(hasIssues && "border-red-500/20")}>
+            <Card key={emp.id} className={cn(hasIssues && "border-red-500/20")}>
               <CardContent className="py-3">
                 <div className="flex items-center gap-4">
                   {/* Avatar / name */}
@@ -224,7 +283,14 @@ export default function EmployeesPage() {
                       <div className="flex items-center gap-2 text-xs text-muted-foreground">
                         {emp.department && <span>{emp.department}</span>}
                         {emp.job_title && <><span>·</span><span>{emp.job_title}</span></>}
+                        {emp.manager && <><span>·</span><span>→ {emp.manager}</span></>}
                       </div>
+                      {emp.email && (
+                        <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
+                          <Mail className="h-3 w-3" />
+                          <span className="truncate">{emp.email}</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 

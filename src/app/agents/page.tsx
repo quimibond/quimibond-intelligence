@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   Bot, Play, Loader2, CheckCircle2, XCircle, AlertTriangle,
   TrendingUp, DollarSign, Truck, Users, Shield, Rocket, Brain,
+  Database, Server, UserCircle,
   Eye, ThumbsUp, ThumbsDown, RefreshCw, Zap,
 } from "lucide-react";
 
@@ -22,6 +23,8 @@ const DOMAIN_ICONS: Record<string, React.ElementType> = {
   risk: Shield,
   growth: Rocket,
   meta: Brain,
+  data_quality: Database,
+  odoo: Server,
 };
 
 const DOMAIN_COLORS: Record<string, string> = {
@@ -32,6 +35,8 @@ const DOMAIN_COLORS: Record<string, string> = {
   risk: "text-red-500",
   growth: "text-cyan-500",
   meta: "text-indigo-500",
+  data_quality: "text-teal-500",
+  odoo: "text-orange-500",
 };
 
 const SEVERITY_COLORS: Record<string, string> = {
@@ -67,6 +72,8 @@ interface Insight {
   recommendation: string | null;
   confidence: number;
   business_impact_estimate: number | null;
+  assignee_name: string | null;
+  assignee_department: string | null;
   state: string;
   created_at: string;
 }
@@ -83,7 +90,7 @@ export default function AgentsPage() {
       supabase.rpc("get_agents_overview"),
       supabase
         .from("agent_insights")
-        .select("id, agent_id, insight_type, category, severity, title, description, recommendation, confidence, business_impact_estimate, state, created_at")
+        .select("id, agent_id, insight_type, category, severity, title, description, recommendation, confidence, business_impact_estimate, assignee_name, assignee_department, state, created_at")
         .in("state", ["new", "seen"])
         .order("created_at", { ascending: false })
         .limit(30),
@@ -109,13 +116,12 @@ export default function AgentsPage() {
     }
   }
 
-  async function handleRunAll() {
+  async function handleRunNext() {
     setRunningAll(true);
     try {
-      await fetch("/api/agents/run", {
+      await fetch("/api/agents/orchestrate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ run_all: true }),
       });
       await load();
     } finally {
@@ -141,6 +147,7 @@ export default function AgentsPage() {
 
   const totalInsights = agents.reduce((s, a) => s + a.total_insights, 0);
   const newInsights = agents.reduce((s, a) => s + a.new_insights, 0);
+  const agentsPendingRun = agents.filter(a => a.is_active).length;
 
   return (
     <div className="space-y-6">
@@ -149,14 +156,18 @@ export default function AgentsPage() {
           title="Agentes de IA"
           description={`${agents.length} agentes activos — ${totalInsights} insights generados, ${newInsights} nuevos`}
         />
-        <Button
-          onClick={handleRunAll}
-          disabled={runningAll || runningAgent !== null}
-          className="shrink-0"
-        >
-          {runningAll ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-          Ejecutar Todos
-        </Button>
+        <div className="flex flex-col items-end gap-1 shrink-0">
+          <Button
+            onClick={handleRunNext}
+            disabled={runningAll || runningAgent !== null}
+          >
+            {runningAll ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
+            Ejecutar Siguiente
+          </Button>
+          <span className="text-[10px] text-muted-foreground">
+            {agentsPendingRun} agentes en cola
+          </span>
+        </div>
       </div>
 
       {/* Agent Cards */}
@@ -295,9 +306,20 @@ export default function AgentsPage() {
                             Impacto estimado: ${insight.business_impact_estimate.toLocaleString()} MXN
                           </p>
                         )}
-                        <div className="flex items-center gap-2 pt-1">
+                        <div className="flex items-center gap-2 pt-1 flex-wrap">
                           <span className="text-[10px] text-muted-foreground">{timeAgo(insight.created_at)}</span>
                           <span className="text-[10px] text-muted-foreground">· {agent?.name}</span>
+                          {(insight.assignee_name || insight.assignee_department) && (
+                            <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                              · <UserCircle className="h-3 w-3" />
+                              {insight.assignee_name ?? "Sin asignar"}
+                              {insight.assignee_department && (
+                                <Badge variant="outline" className="text-[9px] px-1 py-0 leading-tight">
+                                  {insight.assignee_department}
+                                </Badge>
+                              )}
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="flex gap-1 shrink-0">

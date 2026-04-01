@@ -266,6 +266,7 @@ async function fetchDashboard() {
       (sum: number, a: { business_value_at_risk: number | null }) => sum + (a.business_value_at_risk ?? 0), 0
     ),
     emailsProcessed: emailsProcessedRes.count ?? 0,
+    insightsNew: 0,
     totalUsers: totalUsersRes.count ?? 0,
     totalDepartments: new Set((deptRes.data ?? []).map((d: { department: string }) => d.department)).size,
   };
@@ -401,16 +402,16 @@ export default function DashboardPage() {
       {/* ══════════════════════════════════════════════════════════════ */}
       {/*  PERSPECTIVA 1: ALERTAS Y RIESGOS                           */}
       {/* ══════════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Alertas y Riesgos" icon={Shield} color="text-red-500" />
+      <SectionHeader title="Riesgos e Insights" icon={Shield} color="text-red-500" />
 
       <div className="grid gap-3 grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
         <KPICard
-          title="Alertas Criticas"
-          value={kpi.critical_alerts}
-          subtitle={`${kpi.open_alerts} abiertas total`}
-          icon={Bell}
-          href="/alerts?state=new&severity=critical"
-          variant={kpi.critical_alerts > 0 ? "danger" : "default"}
+          title="Insights Pendientes"
+          value={kpi.open_alerts || data.insightsNew || 0}
+          subtitle="de agentes de IA"
+          icon={Bot}
+          href="/inbox"
+          variant={(kpi.open_alerts || data.insightsNew) > 0 ? "danger" : "default"}
         />
         <KPICard
           title="Contactos en Riesgo"
@@ -425,7 +426,7 @@ export default function DashboardPage() {
           value={data.stockoutCount}
           subtitle="alertas activas"
           icon={PackageX}
-          href="/alerts?type=stockout_risk"
+          href="/inbox"
           variant={data.stockoutCount > 0 ? "warning" : "default"}
         />
         <KPICard
@@ -433,7 +434,7 @@ export default function DashboardPage() {
           value={data.totalValueAtRisk > 0 ? formatCurrency(data.totalValueAtRisk) : "—"}
           subtitle={`${kpi.open_alerts} alertas abiertas`}
           icon={DollarSign}
-          href="/alerts?sort=value"
+          href="/inbox"
           variant={data.totalValueAtRisk > 100000 ? "danger" : data.totalValueAtRisk > 0 ? "warning" : "default"}
         />
         <KPICard
@@ -450,10 +451,10 @@ export default function DashboardPage() {
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader className="pb-3">
-            <Link href="/alerts" className="flex items-center justify-between group">
+            <Link href="/inbox" className="flex items-center justify-between group">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="h-4 w-4 text-red-500" />
-                <CardTitle className="text-base">Alertas Recientes</CardTitle>
+                <Bot className="h-4 w-4 text-red-500" />
+                <CardTitle className="text-base">Insights Urgentes</CardTitle>
               </div>
               <ArrowRight className="h-4 w-4 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
             </Link>
@@ -595,7 +596,7 @@ export default function DashboardPage() {
           value={kpi.resolved_alerts}
           subtitle="alertas cerradas"
           icon={Bell}
-          href="/alerts?state=resolved"
+          href="/inbox"
           variant="success"
         />
         <KPICard
