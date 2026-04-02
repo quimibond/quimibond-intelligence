@@ -71,7 +71,7 @@ export function FeedbackButtons({
               className={cn(
                 "h-7 w-7 p-0",
                 feedback === "useful" &&
-                  "text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-950"
+                  "text-success-foreground bg-success/10"
               )}
               onClick={(e) => {
                 e.stopPropagation();
@@ -98,7 +98,7 @@ export function FeedbackButtons({
               className={cn(
                 "h-7 w-7 p-0",
                 feedback === negativeFeedback &&
-                  "text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950"
+                  "text-danger-foreground bg-danger/10"
               )}
               onClick={(e) => {
                 e.stopPropagation();

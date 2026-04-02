@@ -161,7 +161,7 @@ export default function AgentsPage() {
                   {agent.is_active ? (
                     <span className="h-2 w-2 rounded-full bg-success shrink-0 mt-1" title="Activo" />
                   ) : (
-                    <span className="h-2 w-2 rounded-full bg-gray-400 shrink-0 mt-1" title="Inactivo" />
+                    <span className="h-2 w-2 rounded-full bg-muted-foreground/50 shrink-0 mt-1" title="Inactivo" />
                   )}
                 </div>
 

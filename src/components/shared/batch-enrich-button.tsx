@@ -81,14 +81,14 @@ export function BatchEnrichButton({ type }: BatchEnrichButtonProps) {
         <span className="text-xs text-muted-foreground">
           {result.enriched} enriquecidos
           {result.errors > 0 && (
-            <span className="text-red-600 dark:text-red-400">
+            <span className="text-danger-foreground">
               , {result.errors} errores
             </span>
           )}
         </span>
       )}
       {status === "done" && errorMsg && (
-        <span className="text-xs text-red-600 dark:text-red-400 max-w-64 truncate">
+        <span className="text-xs text-danger-foreground max-w-64 truncate">
           {errorMsg}
         </span>
       )}

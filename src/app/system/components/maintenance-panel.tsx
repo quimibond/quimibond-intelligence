@@ -53,7 +53,7 @@ export function MaintenancePanel({ onComplete }: { onComplete: () => void }) {
 
   const actions = [
     { id: "resolve", label: "Resolver Conexiones", desc: "emails↔contactos, threads↔empresas", icon: GitBranch, fn: () => runRPC("resolve", "Resolver Conexiones", "resolve_all_connections") },
-    { id: "refresh_360", label: "Stats Contactos", desc: "total_sent, total_received", icon: Users, fn: () => runRPC("refresh_360", "Stats Contactos", "refresh_contact_360") },
+    { id: "dedup", label: "Deduplicar", desc: "Merge empresas y entidades duplicadas", icon: Users, fn: () => runRPC("dedup", "Deduplicar", "deduplicate_all") },
     { id: "enrich_c", label: "Enriquecer Contactos", desc: "Perfiles IA (5 contactos)", icon: Brain, fn: () => runEnrich("enrich_c", "Enriquecer Contactos", "contacts") },
     { id: "enrich_co", label: "Enriquecer Empresas", desc: "Perfiles IA (5 empresas)", icon: Brain, fn: () => runEnrich("enrich_co", "Enriquecer Empresas", "companies") },
   ];

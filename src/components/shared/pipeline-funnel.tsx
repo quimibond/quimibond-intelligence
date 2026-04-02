@@ -74,13 +74,13 @@ export function PipelineFunnel({
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Pipeline Total</p>
-          <p className="text-xl font-bold tabular-nums text-blue-600 dark:text-blue-400">
+          <p className="text-xl font-bold tabular-nums text-info-foreground">
             {fmt(summary.pipeline_value)}
           </p>
         </div>
         <div>
           <p className="text-xs text-muted-foreground">Valor Ponderado</p>
-          <p className="text-xl font-bold tabular-nums text-emerald-600 dark:text-emerald-400">
+          <p className="text-xl font-bold tabular-nums text-success-foreground">
             {fmt(summary.weighted_value)}
           </p>
         </div>
@@ -105,7 +105,7 @@ export function PipelineFunnel({
                 <div className="h-2.5 w-full rounded-full bg-muted">
                   <div
                     className={cn(
-                      "h-2.5 rounded-full bg-blue-500 transition-all"
+                      "h-2.5 rounded-full bg-info transition-all"
                     )}
                     style={{ width: `${Math.max(pct, 2)}%` }}
                   />

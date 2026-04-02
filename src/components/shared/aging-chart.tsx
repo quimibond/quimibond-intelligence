@@ -13,11 +13,11 @@ interface AgingData {
 }
 
 const BUCKETS = [
-  { key: "current" as const, label: "Al corriente", color: "bg-emerald-500" },
-  { key: "1_30" as const, label: "1-30 dias", color: "bg-amber-400" },
-  { key: "31_60" as const, label: "31-60 dias", color: "bg-orange-500" },
-  { key: "61_90" as const, label: "61-90 dias", color: "bg-red-500" },
-  { key: "90_plus" as const, label: "90+ dias", color: "bg-red-700" },
+  { key: "current" as const, label: "Al corriente", color: "bg-success" },
+  { key: "1_30" as const, label: "1-30 dias", color: "bg-warning" },
+  { key: "31_60" as const, label: "31-60 dias", color: "bg-warning/70" },
+  { key: "61_90" as const, label: "61-90 dias", color: "bg-danger" },
+  { key: "90_plus" as const, label: "90+ dias", color: "bg-danger/80" },
 ] as const;
 
 function fmt(v: number): string {

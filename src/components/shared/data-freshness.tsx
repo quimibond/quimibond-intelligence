@@ -36,9 +36,9 @@ export function DataFreshness({ className }: DataFreshnessProps) {
   if (!lastSync) return null;
 
   const colors = {
-    fresh: "text-emerald-500",
-    stale: "text-amber-500",
-    old: "text-red-500",
+    fresh: "text-success",
+    stale: "text-warning",
+    old: "text-danger",
   };
 
   return (

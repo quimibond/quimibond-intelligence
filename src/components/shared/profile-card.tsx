@@ -20,11 +20,11 @@ interface ProfileCardProps {
 }
 
 function decisionPowerColor(power: string | null): string {
-  if (!power) return "bg-gray-400";
+  if (!power) return "bg-muted-foreground/50";
   const lower = power.toLowerCase();
-  if (lower === "alto" || lower === "high") return "bg-emerald-500";
-  if (lower === "medio" || lower === "medium") return "bg-amber-500";
-  return "bg-gray-400";
+  if (lower === "alto" || lower === "high") return "bg-success";
+  if (lower === "medio" || lower === "medium") return "bg-warning";
+  return "bg-muted-foreground/50";
 }
 
 function generateTips(contact: ProfileCardProps["contact"]): string[] {

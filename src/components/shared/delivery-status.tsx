@@ -51,7 +51,7 @@ export function DeliveryStatus({
           <span className="text-xs text-muted-foreground">Pendientes</span>
         </div>
         <div className="flex flex-col items-center gap-1">
-          <span className="text-3xl font-bold tabular-nums text-red-600 dark:text-red-400">
+          <span className="text-3xl font-bold tabular-nums text-danger-foreground">
             {lateCount}
           </span>
           <span className="text-xs text-muted-foreground">Atrasadas</span>
@@ -83,7 +83,7 @@ export function DeliveryStatus({
               {pending.map((d, i) => (
                 <TableRow
                   key={i}
-                  className={d.is_late ? "bg-red-500/5" : undefined}
+                  className={d.is_late ? "bg-danger/5" : undefined}
                 >
                   <TableCell className="font-medium text-sm">
                     {d.name}

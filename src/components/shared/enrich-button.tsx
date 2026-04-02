@@ -70,9 +70,9 @@ export function EnrichButton({ type, id, name, onComplete }: EnrichButtonProps) 
         disabled={status === "loading"}
         className={cn(
           status === "success" &&
-            "border-green-500 text-green-600 dark:text-green-400",
+            "border-success text-success-foreground",
           status === "error" &&
-            "border-red-500 text-red-600 dark:text-red-400"
+            "border-danger text-danger-foreground"
         )}
         title={`Enriquecer ${name}`}
       >
@@ -86,7 +86,7 @@ export function EnrichButton({ type, id, name, onComplete }: EnrichButtonProps) 
         {status === "loading" ? "Enriqueciendo..." : "Enriquecer"}
       </Button>
       {status === "error" && errorMsg && (
-        <span className="text-xs text-red-600 dark:text-red-400 max-w-48 truncate">
+        <span className="text-xs text-danger-foreground max-w-48 truncate">
           {errorMsg}
         </span>
       )}

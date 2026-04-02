@@ -313,10 +313,10 @@ export default function CompanyDetailPage() {
           {profile?.tier && (
             <Badge className={cn(
               "text-[10px] font-semibold",
-              profile.tier === "strategic" && "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300",
-              profile.tier === "important" && "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300",
-              profile.tier === "key_supplier" && "bg-amber-100 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300",
-              profile.tier === "regular" && "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400",
+              profile.tier === "strategic" && "bg-domain-relationships/15 text-domain-relationships",
+              profile.tier === "important" && "bg-info/15 text-info-foreground",
+              profile.tier === "key_supplier" && "bg-warning/15 text-warning-foreground",
+              profile.tier === "regular" && "bg-secondary text-secondary-foreground",
             )}>{profile.tier}</Badge>
           )}
           {profile?.risk_level && profile.risk_level !== "low" && (

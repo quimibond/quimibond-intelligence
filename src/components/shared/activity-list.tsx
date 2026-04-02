@@ -37,7 +37,7 @@ export function ActivityList({ activities }: { activities: Activity[] }) {
     <div className="space-y-3">
       {overdue.length > 0 && (
         <div className="space-y-2">
-          <h4 className="flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400">
+          <h4 className="flex items-center gap-1.5 text-sm font-medium text-danger-foreground">
             <AlertCircle className="h-3.5 w-3.5" />
             Vencidas ({overdue.length})
           </h4>
@@ -64,7 +64,7 @@ function ActivityItem({ activity }: { activity: Activity }) {
   return (
     <div
       className={`flex items-start gap-3 rounded-lg border p-3 ${
-        activity.is_overdue ? "border-red-500/30 bg-red-500/5" : ""
+        activity.is_overdue ? "border-danger/30 bg-danger/5" : ""
       }`}
     >
       <div className="flex-1 space-y-1">

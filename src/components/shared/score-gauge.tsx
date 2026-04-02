@@ -22,17 +22,17 @@ export function ScoreGauge({
 
   const color =
     v >= thresholds.good
-      ? "text-emerald-600 dark:text-emerald-400"
+      ? "text-success-foreground"
       : v >= thresholds.warning
-        ? "text-amber-600 dark:text-amber-400"
-        : "text-red-600 dark:text-red-400";
+        ? "text-warning-foreground"
+        : "text-danger-foreground";
 
   const trackColor =
     v >= thresholds.good
-      ? "stroke-emerald-500"
+      ? "stroke-success"
       : v >= thresholds.warning
-        ? "stroke-amber-500"
-        : "stroke-red-500";
+        ? "stroke-warning"
+        : "stroke-danger";
 
   const dims = size === "sm" ? 64 : size === "lg" ? 120 : 88;
   const stroke = size === "sm" ? 6 : size === "lg" ? 10 : 8;
