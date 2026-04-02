@@ -41,55 +41,56 @@ export function AgentsBar({ agents, briefing }: AgentsBarProps) {
 
   return (
     <div className="space-y-3">
-      {/* Agent cards row + run button */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1 min-w-0 flex-1">
-          {agents.map((a) => {
-            const dc = getDomainConfig(a.domain);
-            const Icon = dc.icon;
-            return (
-              <Link
-                key={a.slug}
-                href="/agents"
-                className="flex items-center gap-2 shrink-0 rounded-lg border px-2.5 py-1.5 sm:px-3 sm:py-2 hover:bg-muted/50 transition-colors"
-              >
-                <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4", dc.color)} />
-                <div className="text-[11px] sm:text-xs">
-                  <p className="font-medium whitespace-nowrap">
-                    {a.name?.replace("Agente de ", "").replace("Agente ", "")}
-                  </p>
-                  <p className="text-muted-foreground whitespace-nowrap">
-                    {a.new_insights > 0 ? (
-                      <span className="text-success font-medium">
-                        {a.new_insights} nuevos
-                      </span>
-                    ) : a.last_run_at ? (
-                      timeAgo(a.last_run_at)
-                    ) : (
-                      "nunca"
-                    )}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
+      {/* Run button — visible on top for mobile */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-muted-foreground">{agents.length} agentes activos</span>
         <Button
           size="sm"
           variant="outline"
           onClick={handleOrchestrate}
           disabled={running}
-          className="shrink-0"
+          className="h-8"
         >
           {running ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
           ) : (
             <Play className="h-3.5 w-3.5 mr-1" />
           )}
-          <span className="hidden sm:inline">
-            {running ? "Ejecutando..." : "Ejecutar Siguiente"}
-          </span>
+          {running ? "Ejecutando..." : "Ejecutar"}
         </Button>
+      </div>
+
+      {/* Agent cards: grid on mobile, horizontal scroll on desktop */}
+      <div className="grid grid-cols-3 gap-2 sm:flex sm:overflow-x-auto sm:pb-1 sm:-mb-1">
+        {agents.map((a) => {
+          const dc = getDomainConfig(a.domain);
+          const Icon = dc.icon;
+          return (
+            <Link
+              key={a.slug}
+              href={`/agents/${a.slug}`}
+              className="flex flex-col items-center gap-1 rounded-lg border p-2 sm:flex-row sm:gap-2 sm:shrink-0 sm:px-3 sm:py-2 hover:bg-muted/50 transition-colors"
+            >
+              <Icon className={cn("h-4 w-4", dc.color)} />
+              <div className="text-center sm:text-left">
+                <p className="text-[10px] sm:text-xs font-medium leading-tight">
+                  {a.name?.replace("Agente de ", "").replace("Agente ", "")}
+                </p>
+                <p className="text-[9px] sm:text-[11px] text-muted-foreground leading-tight">
+                  {a.new_insights > 0 ? (
+                    <span className="text-success font-medium">
+                      {a.new_insights} nuevos
+                    </span>
+                  ) : a.last_run_at ? (
+                    timeAgo(a.last_run_at)
+                  ) : (
+                    "nunca"
+                  )}
+                </p>
+              </div>
+            </Link>
+          );
+        })}
       </div>
 
       {/* Daily briefing */}

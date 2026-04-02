@@ -41,26 +41,23 @@ export function TeamAccountability({ departments }: TeamAccountabilityProps) {
   }
 
   return (
-    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+    <div className="grid gap-2 grid-cols-2 sm:gap-3 lg:grid-cols-3">
       {departments.map((dept) => (
         <Link key={dept.id} href="/departments">
-          <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full">
-            <CardContent className="pt-3 pb-3 sm:pt-4 sm:pb-4">
-              <div className="flex items-start justify-between gap-2">
+          <Card className="hover:bg-muted/50 transition-colors cursor-pointer h-full active:bg-muted">
+            <CardContent className="p-2.5 sm:p-4">
+              <div className="flex items-start justify-between gap-1">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <Users className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <p className="text-sm font-semibold truncate">{dept.name}</p>
-                  </div>
+                  <p className="text-xs sm:text-sm font-semibold truncate">{dept.name}</p>
                   {dept.lead_name && (
-                    <p className="text-[11px] text-muted-foreground mt-0.5 truncate">
+                    <p className="text-[10px] sm:text-[11px] text-muted-foreground truncate">
                       {dept.lead_name}
                     </p>
                   )}
                 </div>
                 <span
                   className={cn(
-                    "text-lg font-bold tabular-nums shrink-0",
+                    "text-base sm:text-lg font-bold tabular-nums shrink-0",
                     rateTextColor(dept.resolution_rate)
                   )}
                 >
@@ -69,17 +66,17 @@ export function TeamAccountability({ departments }: TeamAccountabilityProps) {
               </div>
 
               {/* Stats row */}
-              <div className="flex items-center gap-3 mt-2 text-[11px] sm:text-xs text-muted-foreground">
+              <div className="flex items-center gap-2 mt-1.5 text-[10px] sm:text-xs text-muted-foreground">
                 <span>
-                  <span className="font-medium text-foreground">{dept.pending}</span> pendientes
+                  <span className="font-medium text-foreground">{dept.pending}</span> pend.
                 </span>
                 <span>
-                  <span className="font-medium text-foreground">{dept.acted_on}</span> actuados
+                  <span className="font-medium text-foreground">{dept.acted_on}</span> ok
                 </span>
               </div>
 
               {/* Resolution bar */}
-              <div className="mt-2 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+              <div className="mt-1.5 h-1 sm:h-1.5 w-full rounded-full bg-muted overflow-hidden">
                 <div
                   className={cn("h-full rounded-full transition-all", rateColor(dept.resolution_rate))}
                   style={{ width: `${dept.resolution_rate}%` }}

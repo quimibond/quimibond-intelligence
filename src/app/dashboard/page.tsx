@@ -385,20 +385,21 @@ export default function DashboardPage() {
         title="Centro de Control"
         description="Inteligencia ejecutiva — Quimibond"
       >
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] sm:text-xs text-muted-foreground whitespace-nowrap">
-            Actualizado {timeAgo(data.lastUpdated)}
+        <div className="flex items-center gap-2">
+          <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap hidden sm:inline">
+            {timeAgo(data.lastUpdated)}
           </span>
           <Button
             size="sm"
             variant="outline"
             onClick={handleRefresh}
             disabled={refreshing}
+            className="h-8 px-2 sm:px-3"
           >
             <RefreshCw
-              className={`h-3.5 w-3.5 mr-1 ${refreshing ? "animate-spin" : ""}`}
+              className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
             />
-            <span className="hidden sm:inline">Actualizar</span>
+            <span className="hidden sm:inline ml-1">Actualizar</span>
           </Button>
         </div>
       </PageHeader>

@@ -44,18 +44,18 @@ export function ContactsRisk({ contacts, totalContacts }: ContactsRiskProps) {
               <Link
                 key={c.id}
                 href={`/contacts/${c.id}`}
-                className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors"
+                className="flex items-center gap-2 rounded-lg border p-2 hover:bg-muted/50 transition-colors active:bg-muted"
               >
                 <RiskBadge level={c.risk_level} />
-                <span className="text-sm font-medium truncate flex-1 min-w-0">
+                <span className="text-xs sm:text-sm font-medium truncate flex-1 min-w-0">
                   {c.name}
                 </span>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <Progress
                     value={scoreToPercent(c.relationship_score)}
-                    className="h-1.5 w-10 sm:w-16"
+                    className="h-1.5 w-8 sm:w-16"
                   />
-                  <span className="text-xs text-muted-foreground w-5 text-right tabular-nums">
+                  <span className="text-[10px] sm:text-xs text-muted-foreground w-5 text-right tabular-nums">
                     {c.relationship_score ?? 0}
                   </span>
                 </div>

@@ -45,19 +45,19 @@ export function KPICard({
   return (
     <Link href={href} className={cn("block group", className)}>
       <Card className={cn("transition-all cursor-pointer h-full", colors[variant])}>
-        <CardContent className="pt-3 pb-2 sm:pt-4 sm:pb-3">
+        <CardContent className="p-3 sm:pt-4 sm:pb-3 sm:px-6">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs text-muted-foreground min-w-0">
-              <Icon className={cn("h-3.5 w-3.5 sm:h-4 sm:w-4 shrink-0", iconColors[variant])} />
-              <span className="truncate">{title}</span>
+            <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-muted-foreground min-w-0">
+              <Icon className={cn("h-3 w-3 sm:h-4 sm:w-4 shrink-0", iconColors[variant])} />
+              <span className="truncate leading-tight">{title}</span>
             </div>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all shrink-0" />
+            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all shrink-0 hidden sm:block" />
           </div>
-          <p className={cn("mt-1 text-xl sm:text-2xl font-bold tabular-nums truncate", valueColors[variant])}>
+          <p className={cn("mt-1 text-lg sm:text-2xl font-bold tabular-nums truncate", valueColors[variant])}>
             {value}
           </p>
           {subtitle && (
-            <p className="text-[11px] sm:text-xs text-muted-foreground mt-0.5 truncate">{subtitle}</p>
+            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate hidden sm:block">{subtitle}</p>
           )}
         </CardContent>
       </Card>

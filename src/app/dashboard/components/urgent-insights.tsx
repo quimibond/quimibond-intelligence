@@ -47,21 +47,25 @@ export function UrgentInsights({ insights, agents, totalPending }: UrgentInsight
                 <Link
                   key={ins.id}
                   href={`/inbox/insight/${ins.id}`}
-                  className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors"
+                  className="flex items-center gap-2 rounded-lg border p-2 hover:bg-muted/50 transition-colors active:bg-muted"
                 >
-                  <SeverityBadge severity={ins.severity ?? "info"} />
                   <AgentIcon
                     className={cn(
-                      "h-3.5 w-3.5 shrink-0",
+                      "h-3.5 w-3.5 shrink-0 hidden sm:block",
                       dc?.color ?? "text-muted-foreground"
                     )}
                   />
-                  <span className="text-sm font-medium truncate flex-1 min-w-0">
-                    {ins.title}
-                  </span>
-                  <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">
-                    {timeAgo(ins.created_at)}
-                  </span>
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs sm:text-sm font-medium line-clamp-1">
+                      {ins.title}
+                    </span>
+                    <div className="flex items-center gap-1.5 mt-0.5">
+                      <SeverityBadge severity={ins.severity ?? "info"} />
+                      <span className="text-[10px] text-muted-foreground">
+                        {timeAgo(ins.created_at)}
+                      </span>
+                    </div>
+                  </div>
                 </Link>
               );
             })}
