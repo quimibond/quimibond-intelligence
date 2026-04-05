@@ -285,13 +285,20 @@ async function processBatch(
     }
   }
 
-  // Save action items (batch insert)
+  // Action items: only save HIGH priority with specific assignee and due date
+  // (was saving everything → 1300+ garbage "review" items nobody did)
   const actionRows = (result.action_items ?? [])
-    .filter((a: { description?: string }) => a.description)
+    .filter((a: { description?: string; priority?: string; assignee?: string; due_date?: string }) =>
+      a.description &&
+      a.priority === "high" &&
+      a.assignee &&
+      a.due_date
+    )
+    .slice(0, 3) // max 3 actions per batch
     .map((a: { type?: string; description: string; priority?: string; assignee?: string; related_to?: string; due_date?: string }) => ({
       action_type: a.type ?? "other",
       description: a.description,
-      priority: a.priority ?? "medium",
+      priority: a.priority ?? "high",
       assignee_name: a.assignee ?? null,
       contact_name: a.related_to ?? null,
       due_date: a.due_date ?? null,

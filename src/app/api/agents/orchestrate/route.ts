@@ -16,8 +16,26 @@ export const maxDuration = 300;
 /** Max chars for the context sent to Claude (~15K tokens) */
 const MAX_CONTEXT_CHARS = 60_000;
 
-/** Default confidence threshold — overridden per-agent by learning */
-const DEFAULT_CONFIDENCE_THRESHOLD = 0.65;
+/** Default confidence threshold — raised from 0.65 to prevent noise */
+const DEFAULT_CONFIDENCE_THRESHOLD = 0.80;
+
+/** Max insights per agent per run — prevents flooding the inbox */
+const MAX_INSIGHTS_PER_RUN = 5;
+
+/** Agents that do work but should NOT generate CEO-facing insights */
+const SILENT_AGENTS = new Set(["meta", "cleanup", "data_quality", "odoo"]);
+
+/** Fixed category catalog — Claude MUST use one of these */
+const VALID_CATEGORIES = [
+  "cobranza",          // Cartera vencida, pagos pendientes, flujo de caja
+  "ventas",            // CRM, pipeline, oportunidades, clientes
+  "entregas",          // Logística, envíos, entregas tardías
+  "operaciones",       // Producción, manufactura, inventario, calidad
+  "proveedores",       // Compras, cuentas por pagar, cadena de suministro
+  "riesgo",            // Riesgo financiero, churn, concentración
+  "equipo",            // Performance de empleados, actividades vencidas
+  "datos",             // Calidad de datos, integridad, sistema
+] as const;
 
 export async function GET(request: NextRequest) {
   return POST(request);
@@ -62,8 +80,8 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Pick up to 3 agents that need to run (least recently ran first)
-    const MAX_PARALLEL = 3;
+    // Run 1 agent at a time for quality over quantity (was 3, caused flooding)
+    const MAX_PARALLEL = 1;
     const sortedAgents = [...agents].sort((a, b) => {
       const aRun = lastRunMap.get(a.id);
       const bRun = lastRunMap.get(b.id);
@@ -135,6 +153,8 @@ function getModelForAgent(slug: string): string {
 // ── Run a single agent (called in parallel) ─────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchStart: number) {
+  const isSilent = SILENT_AGENTS.has(agent.slug);
+
   const { data: run } = await supabase
     .from("agent_runs")
     .insert({ agent_id: agent.id, status: "running", trigger_type: "orchestrator" })
@@ -142,6 +162,17 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
     .single();
   const runId = run?.id;
   const agentStart = Date.now();
+
+  // Silent agents: just log the run, don't call Claude for insights
+  if (isSilent) {
+    if (runId) {
+      await supabase.from("agent_runs").update({
+        status: "completed", completed_at: new Date().toISOString(),
+        duration_seconds: 0, insights_generated: 0,
+      }).eq("id", runId);
+    }
+    return { insights_generated: 0, insights_archived: 0, duplicates_skipped: 0, model: "skipped", elapsed_s: 0 };
+  }
 
   try {
     const context = await buildAgentContext(supabase, agent.domain);
@@ -211,27 +242,48 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
       insights = [];
     }
 
-    // Deduplicate
+    // Aggressive deduplication: cross-agent, by company+topic
     let duplicatesSkipped = 0;
     const filteredInsights = [];
     if (insights.length > 0) {
+      // Check ALL active insights (not just this agent's) to prevent cross-agent dupes
       const { data: existing } = await supabase
-        .from("agent_insights").select("title")
-        .eq("agent_id", agent.id).in("state", ["new", "seen"])
-        .order("created_at", { ascending: false }).limit(50);
+        .from("agent_insights").select("title, company_id, category")
+        .in("state", ["new", "seen"])
+        .order("created_at", { ascending: false }).limit(200);
+
       const existingTitles = new Set((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
+
       for (const insight of insights) {
         const norm = normalizeForDedup(String(insight.title || ""));
         if (existingTitles.has(norm)) { duplicatesSkipped++; continue; }
+
+        // Check if same company+category already has an active insight
+        const companyName = String(insight.company_name || "").trim().toLowerCase();
+        const category = normalizeCategory(String(insight.category || agent.domain));
+        if (companyName && companyName !== "null") {
+          // We'll resolve company_id later, but for now check by normalized title similarity
+          const titleWords = norm.split(" ").filter(w => w.length > 3);
+          const hasSimilar = [...existingTitles].some(existing => {
+            const overlap = titleWords.filter(w => existing.includes(w)).length;
+            return overlap >= Math.min(3, titleWords.length * 0.5);
+          });
+          if (hasSimilar) { duplicatesSkipped++; continue; }
+        }
+
         existingTitles.add(norm);
         filteredInsights.push(insight);
       }
     }
 
+    // Enforce max insights per run
+    const cappedInsights = filteredInsights.slice(0, MAX_INSIGHTS_PER_RUN);
+    duplicatesSkipped += filteredInsights.length - cappedInsights.length;
+
     // Save insights
-    if (filteredInsights.length > 0) {
+    if (cappedInsights.length > 0) {
       const rows = [];
-      for (const i of filteredInsights) {
+      for (const i of cappedInsights) {
         let companyId: number | null = null;
         if (i.company_name) {
           const { data: co } = await supabase.from("companies").select("id")
@@ -249,8 +301,8 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         rows.push({
           agent_id: agent.id, run_id: runId,
           insight_type: String(i.insight_type || "recommendation"),
-          category: String(i.category || agent.domain),
-          severity: String(i.severity || "info"),
+          category: normalizeCategory(String(i.category || agent.domain)),
+          severity: String(i.severity || "medium"),
           title: String(i.title || ""), description: String(i.description || ""),
           evidence: i.evidence || [],
           recommendation: i.recommendation ? String(i.recommendation) : null,
@@ -263,7 +315,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
       await supabase.from("agent_insights").insert(rows);
     }
 
-    const activeInsights = filteredInsights.filter(i => (Number(i.confidence) || 0.5) >= confidenceThreshold).length;
+    const activeInsights = cappedInsights.filter(i => (Number(i.confidence) || 0.5) >= confidenceThreshold).length;
     const duration = (Date.now() - agentStart) / 1000;
 
     if (runId) {
@@ -336,6 +388,67 @@ async function getAgentConfidenceThreshold(supabase: any, agentId: number): Prom
   return DEFAULT_CONFIDENCE_THRESHOLD;
 }
 
+// ── Category normalization — maps Claude's free-text to fixed catalog ────
+const CATEGORY_MAP: Record<string, string> = {
+  // cobranza
+  payment: "cobranza", cobranza: "cobranza", cartera_vencida: "cobranza", cuentas_por_cobrar: "cobranza",
+  accounts_receivable: "cobranza", billing: "cobranza", flujo_de_caja: "cobranza", cash_flow: "cobranza",
+  financial_risk: "cobranza", finance: "cobranza", financiero: "cobranza", finanzas: "cobranza",
+  riesgo_financiero: "cobranza", gestion_riesgo_crediticio: "cobranza", control_credito: "cobranza",
+  // ventas
+  ventas: "ventas", sales: "ventas", crm: "ventas", churn: "ventas", upselling: "ventas", upsell: "ventas",
+  client_relationship: "ventas", relaciones_comerciales: "ventas", relacion_cliente: "ventas",
+  new_business: "ventas", desarrollo_negocio: "ventas", gestion_clientes: "ventas",
+  customer_health: "ventas", ventas_clientes: "ventas", pricing: "ventas", segmentation: "ventas",
+  // entregas
+  delivery: "entregas", entregas: "entregas", logistics: "entregas", logistica: "entregas",
+  // operaciones
+  operations: "operaciones", operaciones: "operaciones", inventory: "operaciones", quality: "operaciones",
+  manufacturing: "operaciones", operational: "operaciones", operativo: "operaciones",
+  compliance: "operaciones", execution: "operaciones",
+  // proveedores
+  procurement: "proveedores", proveedores: "proveedores", supplier_concentration: "proveedores",
+  supplier_relationship: "proveedores", supplier_management: "proveedores", compras: "proveedores",
+  cuentas_por_pagar: "proveedores", accounts_payable: "proveedores", supply_chain: "proveedores",
+  cadena_de_suministro: "proveedores", supplier_negotiation: "proveedores",
+  // riesgo
+  risk: "riesgo", riesgo: "riesgo", escalation: "riesgo", riesgo_cliente: "riesgo",
+  riesgo_proveedor: "riesgo", riesgo_operativo: "riesgo", portfolio_concentration: "riesgo",
+  // equipo
+  communication: "equipo", equipo: "equipo", hr_compliance: "equipo", nomina: "equipo",
+  operaciones_internas: "equipo",
+  // datos
+  data_quality: "datos", data_completeness: "datos", datos: "datos", calidad_datos: "datos",
+  integridad_datos: "datos", pipeline_blocker: "datos",
+};
+
+function normalizeCategory(raw: string): string {
+  const key = raw.toLowerCase().trim()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // remove accents
+    .replace(/[^a-z0-9_]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+
+  // Direct match
+  if (CATEGORY_MAP[key]) return CATEGORY_MAP[key];
+
+  // Partial match: check if any key is contained
+  for (const [k, v] of Object.entries(CATEGORY_MAP)) {
+    if (key.includes(k) || k.includes(key)) return v;
+  }
+
+  // Fallback: check the original string for keywords
+  const lower = raw.toLowerCase();
+  if (lower.includes("cobr") || lower.includes("pago") || lower.includes("factura") || lower.includes("finanz")) return "cobranza";
+  if (lower.includes("venta") || lower.includes("cliente") || lower.includes("crm")) return "ventas";
+  if (lower.includes("entrega") || lower.includes("logist")) return "entregas";
+  if (lower.includes("operac") || lower.includes("inventar") || lower.includes("calidad") || lower.includes("producc")) return "operaciones";
+  if (lower.includes("proveedor") || lower.includes("compra") || lower.includes("supplier")) return "proveedores";
+  if (lower.includes("riesgo") || lower.includes("risk")) return "riesgo";
+  if (lower.includes("equipo") || lower.includes("emplead") || lower.includes("nomina") || lower.includes("rh")) return "equipo";
+  if (lower.includes("dato") || lower.includes("data") || lower.includes("sistema")) return "datos";
+
+  return "operaciones"; // safe default
+}
+
 // ── Deduplication helper ────────────────────────────────────────────────
 function normalizeForDedup(title: string): string {
   return title
@@ -349,15 +462,18 @@ function normalizeForDedup(title: string): string {
 // ── Structured prompt for agents ────────────────────────────────────────
 const AGENT_SYSTEM_SUFFIX = `
 
-IMPORTANTE: Eres un agente que reporta al CEO de Quimibond.
+IMPORTANTE: Eres un agente que reporta al CEO de Quimibond (empresa textil mexicana).
 
-Reglas:
-1. Solo genera insights que requieran ACCION del CEO o su equipo
-2. Si no hay nada importante, devuelve []
-3. NO repitas insights sobre el mismo tema/empresa que ya reportaste
-4. Prioriza: riesgos financieros > oportunidades de venta > operaciones > info general
-5. Cada insight debe tener evidencia concreta (numeros, fechas, nombres)
-6. business_impact_estimate debe ser en MXN cuando sea posible calcular`;
+Reglas ESTRICTAS:
+1. MAXIMO 5 insights por respuesta. Si no hay nada importante, devuelve []
+2. Solo genera insights que requieran ACCION CONCRETA del CEO o su equipo
+3. NO repitas insights sobre el mismo tema/empresa — si ya lo reportaste, NO lo vuelvas a generar
+4. Cada insight DEBE tener evidencia CONCRETA: numeros, fechas, nombres, montos
+5. NO generes insights genericos o vagos ("mejorar comunicacion", "revisar proceso")
+6. category DEBE ser exactamente uno de: cobranza, ventas, entregas, operaciones, proveedores, riesgo, equipo, datos
+7. severity: solo "high" o "critical" para cosas urgentes. "medium" para lo demas. NUNCA uses "info" o "low"
+8. Si un problema ya tiene solucion obvia (ej: factura ya pagada), NO lo reportes
+9. business_impact_estimate debe ser en MXN cuando sea posible calcular`;
 
 function buildAgentPrompt(context: string, memoryText: string, threshold: number): string {
   // Truncate context if too long
@@ -365,21 +481,23 @@ function buildAgentPrompt(context: string, memoryText: string, threshold: number
     ? context.slice(0, MAX_CONTEXT_CHARS) + "\n\n[...datos truncados por limite de tokens]"
     : context;
 
-  return `Analiza los datos y genera SOLO insights accionables con confianza >= ${threshold}.
+  return `Analiza los datos y genera SOLO insights que requieran accion inmediata. Confianza minima: ${threshold}. MAXIMO 5 insights.
+
+Si no hay nada urgente o nuevo, devuelve []. Es mejor devolver [] que generar ruido.
 
 ${truncatedContext}${memoryText}
 
 Responde con un JSON array. Cada elemento debe tener EXACTAMENTE estos campos:
 {
-  "title": "string — titulo conciso y especifico (incluir empresa/monto si aplica)",
-  "description": "string — contexto y analisis en 2-3 oraciones",
-  "insight_type": "opportunity|risk|anomaly|recommendation|prediction",
-  "category": "string — subcategoria (payment, delivery, crm, communication, inventory, etc.)",
-  "severity": "info|low|medium|high|critical",
-  "confidence": number 0-1,
-  "recommendation": "string — accion especifica que el CEO/equipo debe tomar",
+  "title": "string — titulo conciso (empresa + problema + monto si aplica)",
+  "description": "string — contexto en 1-2 oraciones",
+  "insight_type": "opportunity|risk|anomaly|recommendation",
+  "category": "cobranza|ventas|entregas|operaciones|proveedores|riesgo|equipo|datos",
+  "severity": "medium|high|critical",
+  "confidence": number 0.8-1.0,
+  "recommendation": "string — QUE hacer especificamente (no 'revisar' sino 'llamar a X para cobrar Y')",
   "business_impact_estimate": number|null (MXN),
-  "evidence": ["string — dato concreto que soporta el insight"],
+  "evidence": ["dato concreto: cifra, fecha, o nombre"],
   "company_name": "string exacto como aparece en datos|null",
   "contact_email": "string|null"
 }`;

@@ -70,6 +70,29 @@ export const PAYMENT_STATE_LABELS: Record<string, string> = {
   in_payment: "En proceso",
 };
 
+// ── Insight Categories (fixed catalog — must match orchestrate/route.ts) ──
+export const INSIGHT_CATEGORY_LABELS: Record<string, string> = {
+  cobranza: "Cobranza",
+  ventas: "Ventas",
+  entregas: "Entregas",
+  operaciones: "Operaciones",
+  proveedores: "Proveedores",
+  riesgo: "Riesgo",
+  equipo: "Equipo",
+  datos: "Datos",
+};
+
+export const INSIGHT_CATEGORY_COLORS: Record<string, string> = {
+  cobranza: "text-red-600 bg-red-50",
+  ventas: "text-blue-600 bg-blue-50",
+  entregas: "text-orange-600 bg-orange-50",
+  operaciones: "text-purple-600 bg-purple-50",
+  proveedores: "text-amber-600 bg-amber-50",
+  riesgo: "text-rose-600 bg-rose-50",
+  equipo: "text-teal-600 bg-teal-50",
+  datos: "text-gray-600 bg-gray-50",
+};
+
 // ── General UI ──
 export const EMPTY_VALUE = "—";
 export const NO_DATA = "Sin datos";
