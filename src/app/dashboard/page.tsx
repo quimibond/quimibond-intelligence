@@ -534,6 +534,7 @@ export default function DashboardPage() {
           value={data.factsCount.toLocaleString("es-MX")}
           subtitle="en Odoo sin completar"
           icon={AlertTriangle}
+          href="/agents"
           variant={data.factsCount > 100 ? "warning" : "default"}
         />
       </div>
