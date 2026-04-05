@@ -655,14 +655,15 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
 
   switch (domain) {
     case "sales": {
-      const [orders, top, recentSaleOrders, margins, customerConcentration] = await Promise.all([
+      const [orders, top, recentSaleOrders, margins, customerConcentration, reorderRisk] = await Promise.all([
         sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(20),
-        sb.from("odoo_sale_orders").select("company_id, name, state, amount_total, date_order").order("date_order", { ascending: false }).limit(15),
+        sb.from("odoo_sale_orders").select("company_id, name, state, amount_total, date_order, salesperson_name").order("date_order", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
+        sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
       ]);
-      return `${profileSection}## Ordenes de venta recientes\n${safeJSON(recentSaleOrders.data)}\n## Lineas de venta\n${safeJSON(orders.data)}\n## Top clientes (con tendencia)\n${safeJSON(top.data)}\n## Margenes por producto+cliente (precio orden vs factura vs costo)\n${safeJSON(margins.data)}\n## CONCENTRACION: clientes que dependen >50% de 1 producto\n${safeJSON(customerConcentration.data)}`;
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado y no lo hicieron\n${safeJSON(reorderRisk.data)}\n## Ordenes recientes\n${safeJSON(recentSaleOrders.data)}\n## Top clientes (con tendencia)\n${safeJSON(top.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion: clientes >50% en 1 producto\n${safeJSON(customerConcentration.data)}`;
     }
     case "finance": {
       const [inv, ow, payments, trends, margins, payPredictions] = await Promise.all([
@@ -756,10 +757,10 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
     }
     case "predictive": {
       const [reorder, cashFlow, trend, topAtRisk] = await Promise.all([
-        sb.from("client_reorder_predictions").select("company_name, order_count, avg_cycle_days, stddev_days, last_order_date, days_since_last, avg_order_value, predicted_next_order, days_overdue_reorder, reorder_status, total_revenue, tier").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).order("days_overdue_reorder", { ascending: false }).limit(20),
+        sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).order("days_overdue_reorder", { ascending: false }).limit(20),
         sb.from("cash_flow_aging").select("company_name, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, tier").limit(15),
         sb.from("monthly_revenue_trend").select("month, revenue, active_clients, mom_change_pct").limit(15),
-        sb.from("client_reorder_predictions").select("company_name, avg_cycle_days, days_since_last, avg_order_value, reorder_status, total_revenue, tier").eq("reorder_status", "on_track").in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(10),
+        sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").eq("reorder_status", "on_track").in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(10),
       ]);
       return `${profileSection}## Clientes con reorden VENCIDO o en riesgo\n${safeJSON(reorder.data)}\n## Cash flow aging (cartera por antigüedad)\n${safeJSON(cashFlow.data)}\n## Tendencia mensual de revenue\n${safeJSON(trend.data)}\n## Clientes estrategicos on-track (para prediccion de reorden)\n${safeJSON(topAtRisk.data)}`;
     }
