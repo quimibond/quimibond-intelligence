@@ -6,6 +6,7 @@ import {
 } from "lucide-react";
 import { cn, timeAgo, formatCurrency } from "@/lib/utils";
 import { getDomainConfig } from "@/lib/domains";
+import { INSIGHT_CATEGORY_LABELS, INSIGHT_CATEGORY_COLORS } from "@/lib/constants";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -256,8 +257,15 @@ export function InboxMobile({
 
             {/* Metadata row */}
             <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <SeverityBadge severity={currentInsight.severity ?? "info"} />
-              <Badge variant="outline" className="text-[10px]">{currentInsight.insight_type}</Badge>
+              <SeverityBadge severity={currentInsight.severity ?? "medium"} />
+              {currentInsight.category && (
+                <span className={cn(
+                  "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+                  INSIGHT_CATEGORY_COLORS[currentInsight.category] ?? "text-gray-600 bg-gray-50"
+                )}>
+                  {INSIGHT_CATEGORY_LABELS[currentInsight.category] ?? currentInsight.category}
+                </span>
+              )}
               {currentInsight.assignee_name && (
                 <span className="text-[10px] text-muted-foreground ml-auto truncate max-w-[120px]">
                   → {currentInsight.assignee_name}

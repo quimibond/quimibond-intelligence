@@ -32,6 +32,7 @@ export default function InboxPage() {
   const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
   const [filterMode, setFilterMode] = useState<"all" | "urgent" | "important" | "fyi">("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
+  const [categoryFilter, setCategoryFilter] = useState("all");
   const [allAssignees, setAllAssignees] = useState<string[]>([]);
   const [companyProfiles, setCompanyProfiles] = useState<Map<number, CompanyProfile>>(new Map());
 
@@ -59,7 +60,7 @@ export default function InboxPage() {
     const [insightsRes, agentsRes, freshnessRes, assigneesRes, profilesRes] = await Promise.all([
       supabase
         .from("agent_insights").select("*")
-        .in("state", ["new", "seen"]).gte("confidence", 0.65)
+        .in("state", ["new", "seen"]).gte("confidence", 0.80)
         .order("created_at", { ascending: false }).limit(200),
       supabase.from("ai_agents").select("id, slug, name, domain"),
       Promise.all([
@@ -68,7 +69,7 @@ export default function InboxPage() {
         supabase.from("agent_runs").select("completed_at").eq("status", "completed").order("completed_at", { ascending: false }).limit(1),
       ]),
       supabase.from("agent_insights").select("assignee_name")
-        .in("state", ["new", "seen"]).gte("confidence", 0.65).not("assignee_name", "is", null),
+        .in("state", ["new", "seen"]).gte("confidence", 0.80).not("assignee_name", "is", null),
       supabase.from("company_profile")
         .select("company_id, name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level")
         .order("total_revenue", { ascending: false }),
@@ -110,7 +111,7 @@ export default function InboxPage() {
       .channel("inbox-new-insights")
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "agent_insights" }, (payload) => {
         const ni = payload.new as AgentInsight;
-        if ((ni.confidence ?? 0) >= 0.65 && ["new", "seen"].includes(ni.state ?? "")) {
+        if ((ni.confidence ?? 0) >= 0.80 && ["new", "seen"].includes(ni.state ?? "")) {
           setInsights(prev => prev.find(i => i.id === ni.id) ? prev : [ni, ...prev]);
           toast("Nuevo insight de tus agentes", { description: ni.title, duration: 5000 });
         }
@@ -123,6 +124,7 @@ export default function InboxPage() {
   const filteredInsights = insights.filter(insight => {
     if (filterMode !== "all" && computeTier(insight) !== filterMode) return false;
     if (assigneeFilter !== "all" && insight.assignee_name !== assigneeFilter) return false;
+    if (categoryFilter !== "all" && insight.category !== categoryFilter) return false;
     return true;
   });
 
@@ -215,6 +217,8 @@ export default function InboxPage() {
         assigneeFilter={assigneeFilter}
         setAssigneeFilter={setAssigneeFilter}
         allAssignees={allAssignees}
+        categoryFilter={categoryFilter}
+        setCategoryFilter={setCategoryFilter}
         freshness={freshness}
         onRefresh={load}
       />
@@ -223,7 +227,7 @@ export default function InboxPage() {
       {filteredInsights.length === 0 && insights.length > 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <p className="text-sm text-muted-foreground">No hay insights con este filtro</p>
-          <Button variant="ghost" size="sm" onClick={() => { setFilterMode("all"); setAssigneeFilter("all"); }}>
+          <Button variant="ghost" size="sm" onClick={() => { setFilterMode("all"); setAssigneeFilter("all"); setCategoryFilter("all"); }}>
             Limpiar filtros
           </Button>
         </div>

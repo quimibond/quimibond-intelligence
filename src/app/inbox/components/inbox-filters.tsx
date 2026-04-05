@@ -2,6 +2,7 @@
 
 import { RefreshCw } from "lucide-react";
 import { cn, timeAgo } from "@/lib/utils";
+import { INSIGHT_CATEGORY_LABELS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { SelectNative as Select } from "@/components/ui/select-native";
@@ -19,6 +20,8 @@ interface InboxFiltersProps {
   assigneeFilter: string;
   setAssigneeFilter: (name: string) => void;
   allAssignees: string[];
+  categoryFilter: string;
+  setCategoryFilter: (cat: string) => void;
   freshness: { lastSync: string | null; lastAnalyze: string | null; lastAgents: string | null };
   onRefresh: () => void;
 }
@@ -32,6 +35,8 @@ export function InboxFilters({
   assigneeFilter,
   setAssigneeFilter,
   allAssignees,
+  categoryFilter,
+  setCategoryFilter,
   freshness,
   onRefresh,
 }: InboxFiltersProps) {
@@ -123,22 +128,31 @@ export function InboxFilters({
           </button>
         )}
 
-        {/* Assignee filter */}
+        {/* Category + Assignee filters */}
+        <div className="h-4 w-px bg-border shrink-0 mx-1" />
+        <Select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
+          aria-label="Filtrar por categoria"
+        >
+          <option value="all">Todas las categorias</option>
+          {Object.entries(INSIGHT_CATEGORY_LABELS).map(([key, label]) => (
+            <option key={key} value={key}>{label}</option>
+          ))}
+        </Select>
         {allAssignees.length > 1 && (
-          <>
-            <div className="h-4 w-px bg-border shrink-0 mx-1" />
-            <Select
-              value={assigneeFilter}
-              onChange={(e) => setAssigneeFilter(e.target.value)}
-              className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
-              aria-label="Filtrar por responsable"
-            >
-              <option value="all">Todos los responsables</option>
-              {allAssignees.sort().map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </Select>
-          </>
+          <Select
+            value={assigneeFilter}
+            onChange={(e) => setAssigneeFilter(e.target.value)}
+            className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
+            aria-label="Filtrar por responsable"
+          >
+            <option value="all">Todos los responsables</option>
+            {allAssignees.sort().map(name => (
+              <option key={name} value={name}>{name}</option>
+            ))}
+          </Select>
         )}
       </div>
     </div>

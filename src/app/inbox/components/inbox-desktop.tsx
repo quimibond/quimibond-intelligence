@@ -5,6 +5,7 @@ import { Loader2, ThumbsDown, ThumbsUp } from "lucide-react";
 import type { AgentInsight, CompanyProfile } from "@/lib/types";
 import { cn, timeAgo, formatCurrency } from "@/lib/utils";
 import { getDomainConfig } from "@/lib/domains";
+import { INSIGHT_CATEGORY_LABELS, INSIGHT_CATEGORY_COLORS } from "@/lib/constants";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -258,13 +259,18 @@ function CompanyGroupedView({
                       </h4>
                     </div>
                     <div className="flex items-center gap-1.5 mt-0.5">
-                      <SeverityBadge severity={insight.severity ?? "info"} />
-                      <span className="text-[10px] text-muted-foreground">
-                        {agent?.name?.replace("Agente de ", "")}
-                      </span>
+                      <SeverityBadge severity={insight.severity ?? "medium"} />
+                      {insight.category && (
+                        <span className={cn(
+                          "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+                          INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-gray-600 bg-gray-50"
+                        )}>
+                          {INSIGHT_CATEGORY_LABELS[insight.category] ?? insight.category}
+                        </span>
+                      )}
                       {insight.assignee_name && (
                         <span className="text-[10px] text-muted-foreground">
-                          {insight.assignee_name}
+                          → {insight.assignee_name}
                         </span>
                       )}
                     </div>
@@ -368,10 +374,15 @@ function ListView({
                         </h3>
                       </div>
                       <div className="flex items-center gap-1.5 mt-0.5">
-                        <SeverityBadge severity={insight.severity ?? "info"} />
-                        <span className="text-[11px] text-muted-foreground">
-                          {agent?.name?.replace("Agente de ", "")}
-                        </span>
+                        <SeverityBadge severity={insight.severity ?? "medium"} />
+                        {insight.category && (
+                          <span className={cn(
+                            "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+                            INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-gray-600 bg-gray-50"
+                          )}>
+                            {INSIGHT_CATEGORY_LABELS[insight.category] ?? insight.category}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
