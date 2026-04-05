@@ -39,16 +39,11 @@ import {
 const navItems = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/agents", label: "Agentes IA", icon: Bot },
   { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/contacts", label: "Contactos", icon: Users },
-  { href: "/employees", label: "Empleados", icon: UserCheck },
-  { href: "/departments", label: "Areas", icon: Layers },
-  { href: "/emails", label: "Emails", icon: Mail },
-  { href: "/threads", label: "Hilos", icon: MessagesSquare },
   { href: "/briefings", label: "Briefings", icon: FileText },
   { href: "/chat", label: "Chat IA", icon: MessageSquare },
-  { href: "/knowledge", label: "Knowledge", icon: Network },
+  { href: "/agents", label: "Agentes IA", icon: Bot },
 ];
 
 const bottomItems = [

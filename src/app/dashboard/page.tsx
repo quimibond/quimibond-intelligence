@@ -10,16 +10,15 @@ import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  AlertTriangle, Bot, Brain, DollarSign, Heart,
-  Mail, RefreshCw, Shield, Truck, Users,
+  AlertTriangle, Bot, Building2, DollarSign, FileText, Heart,
+  RefreshCw, Truck,
 } from "lucide-react";
 
 import { KPICard } from "./components/kpi-card";
 import { SectionHeader } from "./components/section-header";
 import { UrgentInsights } from "./components/urgent-insights";
 import { ContactsRisk } from "./components/contacts-risk";
-import { TeamAccountability } from "./components/team-accountability";
-import { AgentsBar } from "./components/agents-bar";
+import Link from "next/link";
 
 // ── Types for dashboard state ──
 
@@ -523,20 +522,19 @@ export default function DashboardPage() {
           }
         />
         <KPICard
-          title="Emails Procesados"
-          value={`${data.emailsProcessedPct}%`}
-          subtitle="del total ingestado"
-          icon={Mail}
-          href="/emails"
+          title="Empresas Activas"
+          value={data.totalContacts.toLocaleString("es-MX")}
+          subtitle="contactos con empresa"
+          icon={Building2}
+          href="/companies"
           variant="info"
         />
         <KPICard
-          title="Knowledge Graph"
-          value={data.entitiesCount.toLocaleString("es-MX")}
-          subtitle={`entidades, ${data.factsCount.toLocaleString("es-MX")} hechos`}
-          icon={Brain}
-          href="/knowledge"
-          variant="info"
+          title="Actividades Vencidas"
+          value={data.factsCount.toLocaleString("es-MX")}
+          subtitle="en Odoo sin completar"
+          icon={AlertTriangle}
+          variant={data.factsCount > 100 ? "warning" : "default"}
         />
       </div>
 
@@ -556,19 +554,25 @@ export default function DashboardPage() {
         </Card>
       )}
 
-      {/* ═══════════════════════════════════════════════════════════ */}
-      {/* SECTION 3: EQUIPO                                          */}
-      {/* ═══════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Equipo" icon={Users} color="text-domain-relationships" />
-
-      <TeamAccountability departments={data.departments} />
-
-      {/* ═══════════════════════════════════════════════════════════ */}
-      {/* SECTION 4: AGENTES IA                                      */}
-      {/* ═══════════════════════════════════════════════════════════ */}
-      <SectionHeader title="Agentes IA" icon={Bot} color="text-domain-meta" />
-
-      <AgentsBar agents={data.agentsWithStats} briefing={data.briefing} />
+      {/* Briefing diario (if available) */}
+      {data.briefing && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-domain-meta" />
+                <CardTitle className="text-sm sm:text-base">Briefing del Dia</CardTitle>
+              </div>
+              <Link href="/briefings" className="text-xs text-muted-foreground hover:underline">Ver todos</Link>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {data.briefing.summary_text ?? data.briefing.summary ?? "Sin briefing disponible"}
+            </p>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
