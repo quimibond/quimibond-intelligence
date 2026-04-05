@@ -473,7 +473,8 @@ Reglas ESTRICTAS:
 6. category DEBE ser exactamente uno de: cobranza, ventas, entregas, operaciones, proveedores, riesgo, equipo, datos
 7. severity: solo "high" o "critical" para cosas urgentes. "medium" para lo demas. NUNCA uses "info" o "low"
 8. Si un problema ya tiene solucion obvia (ej: factura ya pagada), NO lo reportes
-9. business_impact_estimate debe ser en MXN cuando sea posible calcular`;
+9. business_impact_estimate debe ser en MXN cuando sea posible calcular
+10. Para productos, SIEMPRE usa product_ref (referencia interna, ej: WM4032OW152), NO el nombre largo`;
 
 function buildAgentPrompt(context: string, memoryText: string, threshold: number): string {
   // Truncate context if too long
@@ -655,11 +656,11 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
   switch (domain) {
     case "sales": {
       const [orders, top, recentSaleOrders, margins, customerConcentration] = await Promise.all([
-        sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
+        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(20),
         sb.from("odoo_sale_orders").select("company_id, name, state, amount_total, date_order").order("date_order", { ascending: false }).limit(15),
-        sb.from("product_margin_analysis").select("product_name, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
-        sb.from("customer_product_matrix").select("company_name, product_name, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
+        sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
       ]);
       return `${profileSection}## Ordenes de venta recientes\n${safeJSON(recentSaleOrders.data)}\n## Lineas de venta\n${safeJSON(orders.data)}\n## Top clientes (con tendencia)\n${safeJSON(top.data)}\n## Margenes por producto+cliente (precio orden vs factura vs costo)\n${safeJSON(margins.data)}\n## CONCENTRACION: clientes que dependen >50% de 1 producto\n${safeJSON(customerConcentration.data)}`;
     }
@@ -669,7 +670,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, overdue_30d_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(20),
         sb.from("odoo_payments").select("company_id, amount, payment_date, state").order("payment_date", { ascending: false }).limit(15),
         sb.from("snapshot_changes").select("company_name, pending_now, pending_before, pending_change, overdue_now, overdue_before, overdue_change, late_now, late_before").limit(15),
-        sb.from("margin_analysis").select("company_name, product_name, avg_order_price, avg_invoice_price, price_delta_pct").not("price_delta_pct", "is", null).gt("price_delta_pct", 10).order("price_delta_pct", { ascending: false }).limit(10),
+        sb.from("product_margin_analysis").select("company_name, product_ref, avg_order_price, avg_invoice_price, price_delta_pct").not("price_delta_pct", "is", null).gt("price_delta_pct", 10).order("price_delta_pct", { ascending: false }).limit(10),
       ]);
       return `${profileSection}## Cambios vs semana pasada (snapshot)\n${safeJSON(changes.data)}\n## Facturas (ordenadas por dias vencidas)\n${safeJSON(inv.data)}\n## Empresas con cartera vencida (con contexto de revenue)\n${safeJSON(ow.data)}\n## Pagos recientes\n${safeJSON(payments.data)}\n## ALERTA: Productos facturados >10% arriba del precio de orden\n${safeJSON(margins.data)}`;
     }
@@ -677,8 +678,8 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       const [del, prod, deadStock, orderpoints] = await Promise.all([
         sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date").order("scheduled_date", { ascending: false }).limit(25),
         sb.from("odoo_products").select("name, stock_qty, available_qty, reorder_min").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(20),
-        sb.from("dead_stock_analysis").select("product_name, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
-        sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast").lt("qty_on_hand", 100).order("qty_on_hand", { ascending: true }).limit(15),
+        sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
+        sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast").lt("qty_on_hand", 100).order("qty_on_hand", { ascending: true }).limit(15),  // orderpoints don't have product_ref yet
       ]);
       return `${profileSection}## Entregas\n${safeJSON(del.data)}\n## Inventario critico (stock < reorder min)\n${safeJSON(prod.data)}\n## DESABASTO: Orderpoints con stock bajo\n${safeJSON(orderpoints.data)}\n## INVENTARIO MUERTO: productos sin venta >60 dias con stock\n${safeJSON(deadStock.data)}`;
     }
@@ -698,7 +699,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         sb.from("odoo_deliveries").select("company_id, name, scheduled_date, is_late").eq("is_late", true).not("state", "in", '("done","cancel")').limit(10),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
         sb.from("snapshot_changes").select("company_name, overdue_now, overdue_before, overdue_change, pending_change, late_now, late_before").order("overdue_change", { ascending: false }).limit(10),
-        sb.from("supplier_product_matrix").select("supplier_name, product_name, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
       ]);
       return `${profileSection}## Cambios en riesgo vs semana pasada\n${safeJSON(changes.data)}\n## Facturas vencidas >30 dias\n${safeJSON(inv.data)}\n## Empresas en riesgo (con contexto completo)\n${safeJSON(risk.data)}\n## Entregas atrasadas\n${safeJSON(lateDeliveries.data)}\n## Clientes importantes con caida >30% (churn risk)\n${safeJSON(churning.data)}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor (riesgo supply chain)\n${safeJSON(singleSource.data)}`;
     }
@@ -764,8 +765,8 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       const [topSuppliers, recentPOs, priceChanges, supplierDep] = await Promise.all([
         sb.from("company_profile").select("name, total_purchases, total_revenue, email_count, contact_count, tier").gt("total_purchases", 50000).order("total_purchases", { ascending: false }).limit(20),
         sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order").order("date_order", { ascending: false }).limit(20),
-        sb.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
-        sb.from("supplier_product_matrix").select("supplier_name, product_name, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
+        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
       ]);
       return `${profileSection}## Top proveedores (por monto de compra)\n${safeJSON(topSuppliers.data)}\n## Ordenes de compra recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra recientes\n${safeJSON(priceChanges.data)}\n## Dependencia de proveedores por producto (quién provee qué y % de concentración)\n${safeJSON(supplierDep.data)}`;
     }
