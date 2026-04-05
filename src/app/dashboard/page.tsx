@@ -397,6 +397,18 @@ export default function DashboardPage() {
     );
   }
 
+  if (!data) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Centro de Control"
+          description="Inteligencia ejecutiva — Quimibond"
+        />
+        <LoadingGrid stats={4} rows={4} statHeight="h-[100px]" />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <PageHeader

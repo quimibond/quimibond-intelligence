@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from "next/server";
-import { createHash } from "crypto";
 
 /**
  * Simple password-based auth middleware.
@@ -9,7 +8,17 @@ import { createHash } from "crypto";
  * Login flow: POST /api/auth with password sets the cookie.
  * Logout: GET /api/auth/logout clears the cookie.
  */
-export function middleware(request: NextRequest) {
+
+/** Edge-compatible SHA-256 hash using Web Crypto API */
+async function sha256(message: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(message);
+  const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+export async function middleware(request: NextRequest) {
   const authPassword = process.env.AUTH_PASSWORD;
 
   // If no password configured, skip auth entirely
@@ -29,8 +38,11 @@ export function middleware(request: NextRequest) {
 
   // Check auth cookie (accepts both legacy plaintext and new hashed token)
   const authCookie = request.cookies.get("qb-auth")?.value;
-  const expectedToken = createHash("sha256").update(`qb-auth:${authPassword}`).digest("hex");
-  if (authCookie === expectedToken || authCookie === authPassword) {
+  if (authCookie === authPassword) {
+    return NextResponse.next();
+  }
+  const expectedToken = await sha256(`qb-auth:${authPassword}`);
+  if (authCookie === expectedToken) {
     return NextResponse.next();
   }
 
