@@ -569,7 +569,7 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             <p className="text-sm text-muted-foreground leading-relaxed">
-              {data.briefing.summary_text ?? data.briefing.summary ?? "Sin briefing disponible"}
+              {data.briefing.summary_text ?? "Sin briefing disponible"}
             </p>
           </CardContent>
         </Card>
