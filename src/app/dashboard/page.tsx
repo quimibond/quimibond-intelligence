@@ -85,6 +85,7 @@ export default function DashboardPage() {
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadDashboard = useCallback(async () => {
     try {
@@ -353,6 +354,7 @@ export default function DashboardPage() {
       });
     } catch (err) {
       console.error("[dashboard] Failed to load:", err);
+      setError(String(err));
     }
     setLoading(false);
     setRefreshing(false);
@@ -367,7 +369,7 @@ export default function DashboardPage() {
     loadDashboard();
   }
 
-  if (loading || !data) {
+  if (loading || (!data && !error)) {
     return (
       <div className="space-y-6">
         <PageHeader
@@ -375,6 +377,22 @@ export default function DashboardPage() {
           description="Inteligencia ejecutiva — Quimibond"
         />
         <LoadingGrid stats={4} rows={4} statHeight="h-[100px]" />
+      </div>
+    );
+  }
+
+  if (error && !data) {
+    return (
+      <div className="space-y-6">
+        <PageHeader
+          title="Centro de Control"
+          description="Inteligencia ejecutiva — Quimibond"
+        />
+        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center">
+          <p className="text-sm text-destructive">Error al cargar el dashboard</p>
+          <p className="text-xs text-muted-foreground mt-1">{error}</p>
+          <button onClick={handleRefresh} className="mt-3 text-xs underline">Reintentar</button>
+        </div>
       </div>
     );
   }

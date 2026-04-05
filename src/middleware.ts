@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
 
 /**
  * Simple password-based auth middleware.
- * If AUTH_PASSWORD is set, all pages require a cookie `qb-auth` matching the password.
+ * If AUTH_PASSWORD is set, all pages require a cookie `qb-auth` with a SHA-256 token.
  * If AUTH_PASSWORD is NOT set, the dashboard is open (no auth required).
  *
- * Login flow: GET /api/auth?password=xxx sets the cookie and redirects to /.
+ * Login flow: POST /api/auth with password sets the cookie.
  * Logout: GET /api/auth/logout clears the cookie.
  */
 export function middleware(request: NextRequest) {
@@ -26,9 +27,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check auth cookie
+  // Check auth cookie (accepts both legacy plaintext and new hashed token)
   const authCookie = request.cookies.get("qb-auth")?.value;
-  if (authCookie === authPassword) {
+  const expectedToken = createHash("sha256").update(`qb-auth:${authPassword}`).digest("hex");
+  if (authCookie === expectedToken || authCookie === authPassword) {
     return NextResponse.next();
   }
 

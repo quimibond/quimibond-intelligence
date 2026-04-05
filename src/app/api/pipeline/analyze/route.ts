@@ -285,11 +285,10 @@ async function processBatch(
     }
   }
 
-  // Save action items
-  let actionsSaved = 0;
-  for (const a of (result.action_items ?? [])) {
-    if (!a.description) continue;
-    await supabase.from("action_items").insert({
+  // Save action items (batch insert)
+  const actionRows = (result.action_items ?? [])
+    .filter((a: { description?: string }) => a.description)
+    .map((a: { type?: string; description: string; priority?: string; assignee?: string; related_to?: string; due_date?: string }) => ({
       action_type: a.type ?? "other",
       description: a.description,
       priority: a.priority ?? "medium",
@@ -297,8 +296,11 @@ async function processBatch(
       contact_name: a.related_to ?? null,
       due_date: a.due_date ?? null,
       state: "pending",
-    });
-    actionsSaved++;
+    }));
+  let actionsSaved = 0;
+  if (actionRows.length > 0) {
+    await supabase.from("action_items").insert(actionRows);
+    actionsSaved = actionRows.length;
   }
 
   return {

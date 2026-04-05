@@ -164,7 +164,7 @@ async function gatherContext(
   if (embedding) {
     const { data: similarEmails } = await supabase.rpc("search_similar_emails", {
       query_embedding: JSON.stringify(embedding),
-      match_threshold: 0.3,
+      match_threshold: 0.6,
       match_count: 8,
     });
     if (similarEmails && similarEmails.length > 0) {

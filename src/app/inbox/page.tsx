@@ -60,7 +60,7 @@ export default function InboxPage() {
       supabase
         .from("agent_insights").select("*")
         .in("state", ["new", "seen"]).gte("confidence", 0.65)
-        .order("created_at", { ascending: false }).limit(100),
+        .order("created_at", { ascending: false }).limit(200),
       supabase.from("ai_agents").select("id, slug, name, domain"),
       Promise.all([
         supabase.from("odoo_users").select("updated_at").order("updated_at", { ascending: false }).limit(1),

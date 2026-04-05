@@ -38,19 +38,34 @@ export async function POST() {
       .limit(200);
 
     if (orphanEmails?.length) {
-      let linked = 0;
+      // Extract all unique sender emails first (batch lookup, avoids N+1)
+      const emailAddresses = new Set<string>();
+      const emailToSender = new Map<string, string>();
       for (const email of orphanEmails) {
         const match = (email.sender ?? "").match(/<([^>]+)>/);
         const senderEmail = (match ? match[1] : email.sender ?? "").trim().toLowerCase();
-        if (!senderEmail.includes("@")) continue;
+        if (!senderEmail || !senderEmail.includes("@") || senderEmail.indexOf("@") === 0) continue;
+        emailAddresses.add(senderEmail);
+        emailToSender.set(String(email.id), senderEmail);
+      }
 
-        const { data: contact } = await supabase
+      // Batch lookup contacts
+      const contactMap = new Map<string, { id: string; company_id: string | null }>();
+      if (emailAddresses.size > 0) {
+        const { data: contacts } = await supabase
           .from("contacts")
-          .select("id, company_id")
-          .eq("email", senderEmail)
-          .limit(1)
-          .single();
+          .select("id, email, company_id")
+          .in("email", [...emailAddresses]);
+        for (const c of contacts ?? []) {
+          if (c.email) contactMap.set(c.email.toLowerCase(), { id: c.id, company_id: c.company_id });
+        }
+      }
 
+      let linked = 0;
+      for (const email of orphanEmails) {
+        const senderEmail = emailToSender.get(String(email.id));
+        if (!senderEmail) continue;
+        const contact = contactMap.get(senderEmail);
         if (contact) {
           const updates: Record<string, unknown> = { sender_contact_id: contact.id };
           if (contact.company_id) {

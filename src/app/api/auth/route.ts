@@ -1,4 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { createHash } from "crypto";
+
+/** Derive a deterministic token from the password (not the password itself) */
+function deriveToken(password: string): string {
+  return createHash("sha256").update(`qb-auth:${password}`).digest("hex");
+}
 
 export async function POST(request: NextRequest) {
   const authPassword = process.env.AUTH_PASSWORD;
@@ -13,8 +19,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
   }
 
+  const token = deriveToken(authPassword);
   const response = NextResponse.json({ success: true });
-  response.cookies.set("qb-auth", authPassword, {
+  response.cookies.set("qb-auth", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -37,8 +44,9 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Incorrect password" }, { status: 401 });
   }
 
+  const token = deriveToken(authPassword);
   const response = NextResponse.redirect(new URL("/inbox", request.url));
-  response.cookies.set("qb-auth", authPassword, {
+  response.cookies.set("qb-auth", token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

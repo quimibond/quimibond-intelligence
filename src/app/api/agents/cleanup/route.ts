@@ -133,9 +133,9 @@ export async function POST(request: NextRequest) {
             .select("id, email, company_id")
             .in("email", [...emailAddresses]);
 
-          const contactMap = new Map<string, { id: number; company_id: number | null }>();
+          const contactMap = new Map<string, { id: string; company_id: string | null }>();
           for (const ct of contacts ?? []) {
-            if (ct.email) contactMap.set(ct.email.toLowerCase(), { id: ct.id, company_id: ct.company_id });
+            if (ct.email) contactMap.set(String(ct.email).toLowerCase(), { id: ct.id, company_id: ct.company_id });
           }
 
           for (const email of orphanEmails) {
