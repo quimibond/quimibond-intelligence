@@ -252,7 +252,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         .in("state", ["new", "seen"])
         .order("created_at", { ascending: false }).limit(200);
 
-      const existingTitles = new Set((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
+      const existingTitles = new Set<string>((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
 
       for (const insight of insights) {
         const norm = normalizeForDedup(String(insight.title || ""));
@@ -264,7 +264,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         if (companyName && companyName !== "null") {
           // We'll resolve company_id later, but for now check by normalized title similarity
           const titleWords = norm.split(" ").filter(w => w.length > 3);
-          const hasSimilar = [...existingTitles].some((existing: string) => {
+          const hasSimilar = [...existingTitles].some(existing => {
             const overlap = titleWords.filter(w => existing.includes(w)).length;
             return overlap >= Math.min(3, titleWords.length * 0.5);
           });
