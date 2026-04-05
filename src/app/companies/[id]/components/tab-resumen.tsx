@@ -5,7 +5,7 @@ import {
   Sparkles,
   Brain,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, productDisplay } from "@/lib/utils";
 import type { Company, Fact } from "@/lib/types";
 import type { ResolvedRelationship } from "./types";
 import { EntityLink } from "@/components/shared/entity-link";
@@ -206,7 +206,7 @@ function OdooContextCards({ company }: { company: Company }) {
             <div className="flex flex-wrap gap-2">
               {pp.volume_drops.map((d: Record<string, unknown>, i: number) => (
                 <Badge key={i} variant="critical" className="gap-1">
-                  {String(d.product_name ?? d.name ?? "Producto")}
+                  {productDisplay(d)}
                   {d.drop_pct != null && ` (${Number(d.drop_pct).toFixed(0)}%)`}
                 </Badge>
               ))}
@@ -228,7 +228,7 @@ function OdooContextCards({ company }: { company: Company }) {
             <div className="flex flex-wrap gap-2">
               {pp.cross_sell.map((cs: Record<string, unknown>, i: number) => (
                 <Badge key={i} variant="success" className="gap-1">
-                  {String(cs.product_name ?? cs.name ?? "Producto")}
+                  {productDisplay(cs)}
                   {cs.adoption_rate != null && ` (${Math.round(Number(cs.adoption_rate) * 100)}%)`}
                 </Badge>
               ))}
@@ -247,7 +247,7 @@ function OdooContextCards({ company }: { company: Company }) {
             <div className="flex flex-wrap gap-2">
               {pp.discount_anomalies.map((da: Record<string, unknown>, i: number) => (
                 <Badge key={i} variant="warning">
-                  {String(da.product_name ?? da.name ?? "Producto")}: {String(da.discount_applied ?? da.discount ?? "?")}%
+                  {productDisplay(da)}: {String(da.discount_applied ?? da.discount ?? "?")}%
                 </Badge>
               ))}
             </div>
@@ -289,7 +289,7 @@ function OdooContextCards({ company }: { company: Company }) {
                     const status = String(p.status ?? "—");
                     return (
                       <TableRow key={i}>
-                        <TableCell className="font-medium text-sm">{String(p.name ?? p.product_name ?? "—")}</TableCell>
+                        <TableCell className="font-medium text-sm">{productDisplay(p)}</TableCell>
                         <TableCell className="text-right tabular-nums">{p.qty_available != null ? String(p.qty_available) : "—"}</TableCell>
                         <TableCell className="text-right tabular-nums">{p.days_of_inventory != null ? `${Math.round(Number(p.days_of_inventory))}d` : "—"}</TableCell>
                         <TableCell>

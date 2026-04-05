@@ -73,6 +73,11 @@ export function formatCurrency(value: number | null): string {
   );
 }
 
+/** Display product: prefer internal_ref (e.g. "ZN4032OW160") over long name */
+export function productDisplay(item: { product_ref?: string | null; product_name?: string | null; internal_ref?: string | null; name?: string | null }): string {
+  return item.product_ref || item.internal_ref || item.product_name || item.name || "—";
+}
+
 export function sentimentColor(score: number | null): string {
   if (score == null) return "text-muted-foreground";
   if (score >= 0.6) return "text-emerald-600 dark:text-emerald-400";

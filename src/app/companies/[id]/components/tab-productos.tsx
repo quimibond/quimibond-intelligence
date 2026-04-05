@@ -1,7 +1,7 @@
 "use client";
 
 import { Package } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, productDisplay } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -54,7 +54,7 @@ export function TabProductos({ companyProducts }: TabProductosProps) {
             return (
               <TableRow key={i}>
                 <TableCell className="font-medium text-sm">
-                  {String(p.product_name ?? p.name ?? "—")}
+                  {productDisplay(p)}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {String(p.order_count ?? p.orders ?? "—")}

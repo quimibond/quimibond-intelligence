@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { Factory } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { formatDate } from "@/lib/utils";
+import { formatDate, productDisplay } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -102,7 +102,7 @@ export function TabManufactura({ companyId }: TabManufacturaProps) {
                   {o.name ?? "—"}
                 </TableCell>
                 <TableCell className="text-sm text-muted-foreground">
-                  {o.product_name ?? "—"}
+                  {productDisplay(o)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={variant}>{label}</Badge>

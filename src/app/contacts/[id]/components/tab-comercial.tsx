@@ -10,8 +10,7 @@ import {
   TrendingUp,
   XCircle,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
-import { formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, productDisplay } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
@@ -94,7 +93,7 @@ function PurchasePatterns({ pp }: { pp: any }) {
                   const trend = Number(p.volume_trend_pct ?? 0);
                   return (
                     <TableRow key={i}>
-                      <TableCell className="font-medium text-sm">{String(p.name ?? p.product_name ?? "—")}</TableCell>
+                      <TableCell className="font-medium text-sm">{productDisplay(p)}</TableCell>
                       <TableCell className="text-right tabular-nums">{String(p.orders ?? p.order_count ?? "—")}</TableCell>
                       <TableCell className="text-right tabular-nums">{formatCurrency(Number(p.revenue_12m ?? p.total_revenue ?? 0))}</TableCell>
                       <TableCell className="text-right tabular-nums">{p.avg_days_between_orders ? `${Math.round(Number(p.avg_days_between_orders))}d` : "—"}</TableCell>
@@ -121,7 +120,7 @@ function PurchasePatterns({ pp }: { pp: any }) {
             <div className="flex flex-wrap gap-2">
               {pp.volume_drops.map((d: Record<string, unknown>, i: number) => (
                 <Badge key={i} variant="critical" className="gap-1">
-                  {String(d.product_name ?? d.name ?? "Producto")}
+                  {productDisplay(d)}
                   {d.drop_pct != null && ` (${Number(d.drop_pct).toFixed(0)}%)`}
                 </Badge>
               ))}
@@ -138,7 +137,7 @@ function PurchasePatterns({ pp }: { pp: any }) {
             <div className="flex flex-wrap gap-2">
               {pp.cross_sell.map((cs: Record<string, unknown>, i: number) => (
                 <Badge key={i} variant="success" className="gap-1">
-                  {String(cs.product_name ?? cs.name ?? "Producto")}
+                  {productDisplay(cs)}
                   {cs.adoption_rate != null && ` (${Math.round(Number(cs.adoption_rate) * 100)}% adopcion)`}
                 </Badge>
               ))}
@@ -152,7 +151,7 @@ function PurchasePatterns({ pp }: { pp: any }) {
             <div className="flex flex-wrap gap-2">
               {pp.discount_anomalies.map((da: Record<string, unknown>, i: number) => (
                 <Badge key={i} variant="warning">
-                  {String(da.product_name ?? da.name ?? "Producto")}: {String(da.discount_applied ?? da.discount ?? "?")}%
+                  {productDisplay(da)}: {String(da.discount_applied ?? da.discount ?? "?")}%
                   {da.avg_discount != null && ` (prom ${Number(da.avg_discount).toFixed(1)}%)`}
                 </Badge>
               ))}
@@ -218,7 +217,7 @@ function InventoryIntelligence({ inv }: { inv: any }) {
                   const Icon = status === "stockout" ? PackageX : undefined;
                   return (
                     <TableRow key={i}>
-                      <TableCell className="font-medium text-sm">{String(p.name ?? p.product_name ?? "—")}</TableCell>
+                      <TableCell className="font-medium text-sm">{productDisplay(p)}</TableCell>
                       <TableCell className="text-right tabular-nums">{p.qty_available != null ? String(p.qty_available) : "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{p.days_of_inventory != null ? `${Math.round(Number(p.days_of_inventory))}d` : "—"}</TableCell>
                       <TableCell>

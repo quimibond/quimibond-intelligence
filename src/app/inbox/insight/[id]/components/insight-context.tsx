@@ -10,7 +10,7 @@ import type {
   AgentInsight, AIAgent, Email, Fact,
   OdooInvoice, OdooDelivery, OdooOrderLine, OdooCrmLead,
 } from "@/lib/types";
-import { cn, formatCurrency, formatDate, timeAgo } from "@/lib/utils";
+import { cn, formatCurrency, formatDate, timeAgo, productDisplay } from "@/lib/utils";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -20,7 +20,7 @@ import { supabase } from "@/lib/supabase";
 type EmailRow = Pick<Email, "id" | "sender" | "recipient" | "subject" | "email_date" | "snippet" | "sender_type">;
 type InvoiceRow = Pick<OdooInvoice, "name" | "move_type" | "amount_total" | "amount_residual" | "invoice_date" | "due_date" | "state" | "payment_state" | "days_overdue">;
 type DeliveryRow = Pick<OdooDelivery, "name" | "origin" | "scheduled_date" | "date_done" | "state" | "is_late" | "lead_time_days">;
-type OrderRow = Pick<OdooOrderLine, "order_name" | "product_name" | "qty" | "subtotal" | "order_date" | "order_state">;
+type OrderRow = Pick<OdooOrderLine, "order_name" | "product_name" | "qty" | "subtotal" | "order_date" | "order_state"> & { product_ref?: string | null };
 type LeadRow = Pick<OdooCrmLead, "name" | "stage" | "expected_revenue" | "probability" | "days_open">;
 type FactRow = Pick<Fact, "id" | "fact_type" | "fact_text" | "confidence" | "fact_date">;
 type RelatedInsightRow = Pick<AgentInsight, "id" | "title" | "severity" | "state" | "agent_id" | "created_at">;
@@ -108,7 +108,7 @@ export function InsightContext({
         promises.push(wrap(
           supabase
             .from("odoo_order_lines")
-            .select("order_name, product_name, qty, subtotal, order_date, order_state")
+            .select("order_name, product_name, product_ref, qty, subtotal, order_date, order_state")
             .eq("company_id", companyId)
             .eq("order_type", "sale")
             .order("order_date", { ascending: false })
@@ -238,7 +238,7 @@ export function InsightContext({
                     <div key={i} className="flex items-center justify-between text-sm rounded-md bg-muted/30 px-3 py-2">
                       <div className="min-w-0 flex-1">
                         <span className="font-medium">{ord.order_name}</span>
-                        <span className="text-xs text-muted-foreground ml-1 block sm:inline sm:ml-2 truncate">{ord.product_name}</span>
+                        <span className="text-xs text-muted-foreground ml-1 block sm:inline sm:ml-2 truncate">{productDisplay(ord)}</span>
                       </div>
                       <div className="flex items-center gap-2 shrink-0 ml-2">
                         <span className="font-medium tabular-nums">{formatCurrency(ord.subtotal)}</span>
