@@ -665,14 +665,15 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## Ordenes de venta recientes\n${safeJSON(recentSaleOrders.data)}\n## Lineas de venta\n${safeJSON(orders.data)}\n## Top clientes (con tendencia)\n${safeJSON(top.data)}\n## Margenes por producto+cliente (precio orden vs factura vs costo)\n${safeJSON(margins.data)}\n## CONCENTRACION: clientes que dependen >50% de 1 producto\n${safeJSON(customerConcentration.data)}`;
     }
     case "finance": {
-      const [inv, ow, payments, changes, margins] = await Promise.all([
+      const [inv, ow, payments, trends, margins, payPredictions] = await Promise.all([
         sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
         sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, overdue_30d_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(20),
         sb.from("odoo_payments").select("company_id, amount, payment_date, state").order("payment_date", { ascending: false }).limit(15),
-        sb.from("snapshot_changes").select("company_name, pending_now, pending_before, pending_change, overdue_now, overdue_before, overdue_change, late_now, late_before").limit(15),
+        sb.from("weekly_trends").select("company_name, tier, overdue_now, overdue_delta, pending_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("company_name, product_ref, avg_order_price, avg_invoice_price, price_delta_pct").not("price_delta_pct", "is", null).gt("price_delta_pct", 10).order("price_delta_pct", { ascending: false }).limit(10),
+        sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, median_days_to_pay, payment_trend, total_pending, max_days_overdue, predicted_payment_date, payment_risk").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal", "MEDIO: pasado de promedio"]).order("total_pending", { ascending: false }).limit(10),
       ]);
-      return `${profileSection}## Cambios vs semana pasada (snapshot)\n${safeJSON(changes.data)}\n## Facturas (ordenadas por dias vencidas)\n${safeJSON(inv.data)}\n## Empresas con cartera vencida (con contexto de revenue)\n${safeJSON(ow.data)}\n## Pagos recientes\n${safeJSON(payments.data)}\n## ALERTA: Productos facturados >10% arriba del precio de orden\n${safeJSON(margins.data)}`;
+      return `${profileSection}## PREDICCION DE PAGO: empresas fuera de patron\n${safeJSON(payPredictions.data)}\n## Tendencia semanal: que cambio vs semana pasada\n${safeJSON(trends.data)}\n## Facturas (ordenadas por dias vencidas)\n${safeJSON(inv.data)}\n## Empresas con cartera vencida\n${safeJSON(ow.data)}\n## Pagos recientes\n${safeJSON(payments.data)}\n## Productos facturados >10% arriba del precio de orden\n${safeJSON(margins.data)}`;
     }
     case "operations": {
       const [del, prod, deadStock, orderpoints] = await Promise.all([
@@ -693,15 +694,16 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## Contactos con peor salud\n${safeJSON(ct.data)}\n## Threads sin respuesta\n${safeJSON(th.data)}\n## Actividades pendientes\n${safeJSON(activities.data)}\n## Clientes importantes SIN emails vinculados (relacion ciega)\n${safeJSON(blind.data)}`;
     }
     case "risk": {
-      const [inv, risk, lateDeliveries, churning, changes, singleSource] = await Promise.all([
+      const [inv, risk, lateDeliveries, churning, trends, singleSource, payRisk] = await Promise.all([
         sb.from("odoo_invoices").select("company_id, amount_residual, days_overdue, invoice_date").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual", { ascending: false }).limit(15),
         sb.from("company_profile").select("name, total_revenue, overdue_amount, max_days_overdue, revenue_share_pct, risk_level, tier").in("risk_level", ["high", "critical"]).order("overdue_amount", { ascending: false }).limit(15),
         sb.from("odoo_deliveries").select("company_id, name, scheduled_date, is_late").eq("is_late", true).not("state", "in", '("done","cancel")').limit(10),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
-        sb.from("snapshot_changes").select("company_name, overdue_now, overdue_before, overdue_change, pending_change, late_now, late_before").order("overdue_change", { ascending: false }).limit(10),
+        sb.from("weekly_trends").select("company_name, tier, overdue_now, overdue_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(10),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
+        sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"]).order("total_pending", { ascending: false }).limit(10),
       ]);
-      return `${profileSection}## Cambios en riesgo vs semana pasada\n${safeJSON(changes.data)}\n## Facturas vencidas >30 dias\n${safeJSON(inv.data)}\n## Empresas en riesgo (con contexto completo)\n${safeJSON(risk.data)}\n## Entregas atrasadas\n${safeJSON(lateDeliveries.data)}\n## Clientes importantes con caida >30% (churn risk)\n${safeJSON(churning.data)}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor (riesgo supply chain)\n${safeJSON(singleSource.data)}`;
+      return `${profileSection}## PREDICCION DE PAGO: empresas que exceden su patron historico\n${safeJSON(payRisk.data)}\n## Tendencia semanal: que empeoro esta semana\n${safeJSON(trends.data)}\n## Facturas vencidas >30 dias\n${safeJSON(inv.data)}\n## Empresas en riesgo\n${safeJSON(risk.data)}\n## Entregas atrasadas\n${safeJSON(lateDeliveries.data)}\n## Clientes importantes con caida >30%\n${safeJSON(churning.data)}\n## Proveedor unico por material\n${safeJSON(singleSource.data)}`;
     }
     case "growth": {
       const [growing, crossSell, newClients] = await Promise.all([
