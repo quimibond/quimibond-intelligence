@@ -471,7 +471,7 @@ export default function CompanyDetailPage() {
           <TabContactos contacts={contacts} />
         </TabsContent>
         <TabsContent value="inteligencia">
-          <TabInteligencia facts={facts} />
+          <TabInteligencia facts={facts} companyId={company.id} />
         </TabsContent>
         <TabsContent value="finanzas" className="space-y-6">
           <TabFinanzas financials={financials} revenueRows={revenueRows} odooSnapshots={odooSnapshots} />
