@@ -21,14 +21,10 @@ import {
 import { LoadingGrid } from "@/components/shared/loading-grid";
 
 const SCOPE_LABELS: Record<string, string> = {
-  daily: "General",
-  director: "Direccion",
-  ventas: "Ventas",
-  logistica: "Logistica",
-  compras: "Compras",
+  daily: "Diario",
+  weekly: "Semanal",
   account: "Por cuenta",
   company: "Por empresa",
-  weekly: "Semanal",
 };
 
 const PAGE_SIZE = 30;
@@ -45,7 +41,7 @@ export default function BriefingsPage() {
       const { data, error } = await supabase
         .from("briefings")
         .select("*")
-        .in("scope", ["daily", "director", "ventas", "logistica", "compras"])
+        .in("scope", ["daily", "weekly", "account", "company"])
         .order("briefing_date", { ascending: false })
         .limit(PAGE_SIZE);
 
@@ -63,7 +59,7 @@ export default function BriefingsPage() {
     const { data, error } = await supabase
       .from("briefings")
       .select("*")
-      .in("scope", ["daily", "director", "ventas", "logistica", "compras"])
+      .in("scope", ["daily", "weekly", "account", "company"])
       .order("briefing_date", { ascending: false })
       .range(summaries.length, summaries.length + PAGE_SIZE - 1);
 

@@ -249,7 +249,7 @@ export function InboxMobile({
                   <AgentIcon className={cn("h-4 w-4", dc.color)} />
                 </div>
                 <span className="text-xs font-medium text-muted-foreground">
-                  {agent?.name?.replace("Agente de ", "") ?? "Agente"}
+                  {agent?.name?.replace("Director de ", "Dir. ").replace("Director ", "Dir. ") ?? "Agente"}
                 </span>
               </div>
               <Badge className={cn("text-[10px] font-bold", tierStyle.pill)}>{tierStyle.label}</Badge>
