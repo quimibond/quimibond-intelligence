@@ -629,18 +629,26 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getDomainData(sb: any, domain: string): Promise<string> {
-  // Load company profiles for domains that need company context
-  const needsProfiles = ["sales", "finance", "risk", "growth", "relationships", "cleanup", "suppliers", "predictive"];
+  // Load company narratives — consolidated intelligence per company
+  // Replaces flat profiles with connected narratives (sales + finance + delivery + email + complaints)
+  const needsNarratives = ["sales", "finance", "risk", "growth", "relationships", "suppliers", "predictive"];
   let profileSection = "";
-  if (needsProfiles.includes(domain)) {
-    const { data: profiles } = await sb
-      .from("company_profile")
-      .select("name, total_revenue, revenue_90d, trend_pct, pending_amount, overdue_amount, overdue_count, max_days_overdue, late_deliveries, otd_rate, email_count, risk_level, tier")
-      .in("tier", ["strategic", "important", "key_supplier"])
+  if (needsNarratives.includes(domain)) {
+    // Companies with risk signals first (most actionable)
+    const { data: narratives } = await sb
+      .from("company_narrative")
+      .select("canonical_name, tier, risk_level, total_revenue, revenue_90d, trend_pct, days_since_last_order, salespeople, top_products, pending_amount, overdue_amount, max_days_overdue, late_deliveries, otd_rate, emails_30d, complaints, commitments, requests, recent_complaints, total_purchases, risk_signal")
       .order("total_revenue", { ascending: false })
-      .limit(25);
-    if (profiles?.length) {
-      profileSection = `## Perfil de empresas clave\n${safeJSON(profiles)}\n\n`;
+      .limit(30);
+
+    if (narratives?.length) {
+      // Split into: companies with risk signals vs healthy ones
+      const atRisk = (narratives as Record<string, unknown>[]).filter(n => n.risk_signal);
+      const healthy = (narratives as Record<string, unknown>[]).filter(n => !n.risk_signal).slice(0, 10);
+
+      profileSection = atRisk.length
+        ? `## EMPRESAS CON SEÑALES DE ALERTA (requieren atencion)\n${safeJSON(atRisk)}\n\n## Empresas sanas (contexto)\n${safeJSON(healthy)}\n\n`
+        : `## Perfil de empresas clave\n${safeJSON(healthy)}\n\n`;
     }
   }
 
