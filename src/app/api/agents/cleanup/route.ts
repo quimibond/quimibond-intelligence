@@ -231,6 +231,11 @@ export async function POST(request: NextRequest) {
       // ignore if view doesn't exist yet
     }
     try {
+      await supabase.rpc("refresh_product_intelligence");
+    } catch {
+      // ignore if views don't exist yet
+    }
+    try {
       await supabase.rpc("refresh_reorder_predictions");
     } catch {
       // ignore if view doesn't exist yet
