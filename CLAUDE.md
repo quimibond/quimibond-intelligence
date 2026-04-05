@@ -56,8 +56,264 @@ CEO INBOX (web + mobile)
 4. **Agentes → Insights** (orchestrate, cada 15 min)
    - 1 agente por invocacion (el menos reciente primero)
    - Claude analiza datos + memorias → genera insights
-   - Insights filtrados por confianza (>=65%)
-   - Asignados automaticamente a responsable por departamento
+   - Insights filtrados por confianza (>=80%)
+   - Asignados automaticamente: vendedor real de sale_orders > comprador de purchase_orders > departamento por categoria
+   - Max 5 insights por agente por ejecucion
+   - 8 categorias fijas: cobranza, ventas, entregas, operaciones, proveedores, riesgo, equipo, datos
+
+---
+
+## Mapeo Odoo → Supabase (campos)
+
+### res.partner → `contacts` + `companies`
+
+| Campo Odoo | Campo Supabase | Tabla | Notas |
+|---|---|---|---|
+| `id` | `odoo_partner_id` | contacts, companies | ID unico del partner |
+| `name` | `name` / `canonical_name` | contacts / companies | canonical_name es lowercase para dedup |
+| `email` | `email` | contacts | Puede tener multiples (separados por `;,`) |
+| `vat` | `rfc` | companies | RFC fiscal mexicano |
+| `customer_rank` | `is_customer` | contacts, companies | `> 0` = es cliente |
+| `supplier_rank` | `is_supplier` | contacts, companies | `> 0` = es proveedor |
+| `parent_id` | `company` (text) | contacts | Nombre de la empresa padre |
+| `country_id.name` | `country` | companies | |
+| `city` | `city` | companies | |
+| `category_id` | — | — | Tags de Odoo, no sincronizados aun |
+| `property_payment_term_id` | — | — | Terminos de pago, no sincronizados |
+| `commercial_partner_id` | — | — | Se usa para resolver el partner comercial |
+
+### product.product → `odoo_products`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_product_id` | ID unico |
+| `name` | `name` | Nombre largo del producto |
+| `default_code` | `internal_ref` | **REFERENCIA INTERNA** — usar este para display (ej: WM4032OW152) |
+| `categ_id.complete_name` | `category` | Ruta completa de categoria |
+| `uom_id.name` | `uom` | Unidad de medida |
+| `detailed_type` / `type` | `product_type` | Odoo 19 renombro `type` → `detailed_type` |
+| `qty_available` | `stock_qty` | Stock on-hand |
+| `free_qty` | — | Se usa para calcular `reserved_qty = qty_available - free_qty` |
+| — | `reserved_qty` | Calculado: `qty_available - free_qty` |
+| — | `available_qty` | Calculado: `stock_qty - reserved_qty` |
+| `standard_price` | `standard_price` | Costo del producto |
+| `lst_price` | `list_price` | Precio de lista (venta) |
+| `active` | `active` | |
+| `barcode` | `barcode` | |
+| `weight` | `weight` | |
+
+### sale.order → `odoo_sale_orders`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_order_id` | |
+| `name` | `name` | Ej: SO/2026/0001 |
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | Empresa comercial |
+| `user_id.name` | `salesperson_name` | **Vendedor asignado** |
+| `user_id.email` | `salesperson_email` | |
+| `user_id.id` | `salesperson_user_id` | FK para routing de insights |
+| `team_id.name` | `team_name` | Equipo de ventas |
+| `amount_total` | `amount_total` | Con IVA |
+| `amount_untaxed` | `amount_untaxed` | Sin IVA |
+| `margin` | `margin` | Margen en MXN |
+| — | `margin_percent` | Calculado: `margin / amount_untaxed * 100` |
+| `currency_id.name` | `currency` | Default MXN |
+| `state` | `state` | sale, done |
+| `date_order` | `date_order` | |
+| `commitment_date` | `commitment_date` | Fecha prometida |
+
+### sale.order.line / purchase.order.line → `odoo_order_lines`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` / `-id` | `odoo_line_id` | **Negativo para purchase** (evita collision) |
+| `order_id.id` | `odoo_order_id` | |
+| `order_id.partner_id` | `odoo_partner_id` | Empresa comercial |
+| `product_id.id` | `odoo_product_id` | |
+| `order_id.name` | `order_name` | Ej: SO/2026/0001 |
+| `order_id.date_order` | `order_date` | |
+| — | `order_type` | `sale` o `purchase` |
+| `order_id.state` | `order_state` | |
+| `product_id.name` | `product_name` | Nombre largo |
+| `product_id.default_code` | `product_ref` | **REFERENCIA INTERNA** — usar para display |
+| `product_uom_qty` | `qty` | Sale lines. Purchase usa `product_qty` con fallback |
+| `price_unit` | `price_unit` | |
+| `discount` | `discount` | % de descuento |
+| `price_subtotal` | `subtotal` | |
+| `currency_id.name` | `currency` | |
+
+### account.move → `odoo_invoices`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | |
+| `name` | `name` | Ej: INV/2026/03/0173 |
+| `move_type` | `move_type` | out_invoice, out_refund, in_invoice, in_refund |
+| `amount_total` | `amount_total` | |
+| `amount_residual` | `amount_residual` | Lo que falta por cobrar |
+| `currency_id.name` | `currency` | |
+| `invoice_date` | `invoice_date` | Fecha de factura |
+| `invoice_date_due` | `due_date` | Fecha de vencimiento |
+| `state` | `state` | posted |
+| `payment_state` | `payment_state` | not_paid, partial, paid, in_payment |
+| — | `days_overdue` | Calculado: `today - due_date` si vencida |
+| `ref` | `ref` | Referencia libre |
+
+### account.move.line → `odoo_invoice_lines`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_line_id` | |
+| `move_id.id` | `odoo_move_id` | |
+| `move_id.partner_id` | `odoo_partner_id` | |
+| `move_id.name` | `move_name` | |
+| `move_id.move_type` | `move_type` | |
+| `move_id.invoice_date` | `invoice_date` | |
+| `product_id.id` | `odoo_product_id` | |
+| `product_id.name` | `product_name` | |
+| `product_id.default_code` | `product_ref` | **REFERENCIA INTERNA** |
+| `quantity` | `quantity` | |
+| `price_unit` | `price_unit` | |
+| `discount` | `discount` | |
+| `price_subtotal` | `price_subtotal` | |
+| `price_total` | `price_total` | Con IVA |
+| `display_type` | — | Se filtran: line_section, line_note, payment_term, tax, rounding |
+
+### purchase.order → `odoo_purchase_orders`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_order_id` | |
+| `name` | `name` | Ej: P00123 |
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | |
+| `user_id.name` | `buyer_name` | **Comprador asignado** |
+| `user_id.email` | `buyer_email` | |
+| `user_id.id` | `buyer_user_id` | FK para routing de insights |
+| `amount_total` | `amount_total` | |
+| `amount_untaxed` | `amount_untaxed` | |
+| `currency_id.name` | `currency` | |
+| `state` | `state` | purchase, done |
+| `date_order` | `date_order` | |
+| `date_approve` | `date_approve` | |
+
+### stock.picking → `odoo_deliveries`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | |
+| `name` | `name` | Ej: TL/OUT/12781 |
+| `picking_type_id.name` | `picking_type` | |
+| `origin` | `origin` | Documento origen (SO) |
+| `scheduled_date` | `scheduled_date` | |
+| `date_done` | `date_done` | |
+| `state` | `state` | draft, confirmed, assigned, done, cancel |
+| — | `is_late` | Calculado: `state not done/cancel AND scheduled_date < now` |
+| — | `lead_time_days` | Calculado: `(date_done - create_date) / 86400` |
+
+### odoo_payments (extraido de account.move)
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `partner_id` | `odoo_partner_id` | |
+| — | `name` | `PAY-{invoice.name}` |
+| `move_type` | `payment_type` | inbound (out_invoice) / outbound |
+| `amount_total - amount_residual` | `amount` | Monto pagado |
+| `write_date` | `payment_date` | Proxy de fecha real de pago |
+| — | `state` | posted |
+
+### crm.lead → `odoo_crm_leads`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_lead_id` | |
+| `partner_id` | `odoo_partner_id` | |
+| `name` | `name` | |
+| `type` | `lead_type` | lead / opportunity |
+| `stage_id.name` | `stage` | |
+| `expected_revenue` | `expected_revenue` | |
+| `probability` | `probability` | 0-100 |
+| `date_deadline` | `date_deadline` | |
+| — | `days_open` | Calculado: `now - create_date` |
+| `user_id.name` | `assigned_user` | |
+
+### mail.activity → `odoo_activities` (full refresh)
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| — | `odoo_partner_id` | Resuelto via `res_model/res_id` → partner |
+| `activity_type_id.name` | `activity_type` | |
+| `summary` / `note` | `summary` | |
+| `res_model` | `res_model` | |
+| `res_id` | `res_id` | |
+| `date_deadline` | `date_deadline` | |
+| `user_id.name` | `assigned_to` | |
+| — | `is_overdue` | Calculado: `date_deadline < today` |
+
+### hr.employee → `odoo_employees`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_employee_id` | |
+| `user_id.id` | `odoo_user_id` | Link a odoo_users |
+| `name` | `name` | |
+| `work_email` | `work_email` | |
+| `work_phone` / `mobile_phone` | `work_phone` | |
+| `department_id.name` | `department_name` | |
+| `department_id.id` | `department_id` | |
+| `job_title` | `job_title` | |
+| `job_id.name` | `job_name` | |
+| `parent_id.name` | `manager_name` | |
+| `parent_id.id` | `manager_id` | |
+| `coach_id.name` | `coach_name` | |
+
+### hr.department → `odoo_departments`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_department_id` | |
+| `name` | `name` | |
+| `parent_id.name` | `parent_name` | |
+| `parent_id.id` | `parent_id` | |
+| `manager_id.name` | `manager_name` | |
+| `manager_id.id` | `manager_id` | |
+| `member_ids` | `member_count` | COUNT de miembros |
+
+### res.users → `odoo_users`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_user_id` | |
+| `name` | `name` | |
+| `email` / `login` | `email` | |
+| hr.employee.`department_id.name` | `department` | Via employee map |
+| hr.employee.`job_id.name` / `job_title` | `job_title` | |
+| mail.activity count | `pending_activities_count` | Pre-calculado |
+| mail.activity overdue count | `overdue_activities_count` | Pre-calculado |
+
+### stock.warehouse.orderpoint → `odoo_orderpoints`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_orderpoint_id` | |
+| `product_id.id` | `odoo_product_id` | |
+| `product_id.name` | `product_name` | |
+| `warehouse_id.name` | `warehouse_name` | |
+| `location_id.complete_name` | `location_name` | |
+| `product_min_qty` | `product_min_qty` | Minimo para reorden |
+| `product_max_qty` | `product_max_qty` | Maximo |
+| `qty_to_order` | `qty_to_order` | |
+| `product_id.qty_available` | `qty_on_hand` | Stock actual |
+| `product_id.virtual_available` | `qty_forecast` | Stock pronosticado |
+| `trigger` | `trigger_type` | auto / manual |
+
+### Convenciones de nombres
+
+- **`odoo_*_id`** — ID del registro en Odoo (para dedup y cross-reference)
+- **`company_id`** — FK a `companies.id` en Supabase (auto-linked por triggers)
+- **`odoo_partner_id`** — FK al partner comercial en Odoo (se usa para resolver `company_id`)
+- **`product_name`** — Nombre largo del producto en Odoo
+- **`product_ref`** / **`internal_ref`** — `default_code` de Odoo = **REFERENCIA INTERNA** (preferir para display)
+- **`synced_at`** — Timestamp de la ultima sincronizacion
 
 5. **CEO → Feedback → Learning** (cada 4h)
    - CEO actua o descarta insights
