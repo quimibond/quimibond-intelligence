@@ -264,7 +264,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         if (companyName && companyName !== "null") {
           // We'll resolve company_id later, but for now check by normalized title similarity
           const titleWords = norm.split(" ").filter(w => w.length > 3);
-          const hasSimilar = [...existingTitles].some(existing => {
+          const hasSimilar = [...existingTitles].some((existing: string) => {
             const overlap = titleWords.filter(w => existing.includes(w)).length;
             return overlap >= Math.min(3, titleWords.length * 0.5);
           });
