@@ -1,6 +1,10 @@
 {
   "crons": [
     {
+      "path": "/api/pipeline/sync-emails",
+      "schedule": "*/30 * * * *"
+    },
+    {
       "path": "/api/pipeline/analyze",
       "schedule": "*/5 * * * *"
     },
