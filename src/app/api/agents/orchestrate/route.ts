@@ -22,7 +22,7 @@ const DEFAULT_CONFIDENCE_THRESHOLD = 0.80;
 /** Max insights per agent per run — prevents flooding the inbox */
 const MAX_INSIGHTS_PER_RUN = 5;
 
-/** Agents that do work but should NOT generate CEO-facing insights */
+/** Old agents that should NOT generate insights (deactivated but kept for safety) */
 const SILENT_AGENTS = new Set(["meta", "cleanup", "data_quality", "odoo"]);
 
 /** Fixed category catalog — Claude MUST use one of these */
@@ -654,6 +654,90 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
   }
 
   switch (domain) {
+    // ═══════════════════════════════════════════════════════════════
+    // NEW: 7 DIRECTORS
+    // ═══════════════════════════════════════════════════════════════
+    case "comercial": {
+      const [reorderRisk, top, margins, concentration, recentOrders] = await Promise.all([
+        sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
+        sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(15),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
+        sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
+        sb.from("odoo_sale_orders").select("company_id, name, amount_total, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
+      ]);
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## Top clientes (tendencia)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
+    }
+    case "financiero": {
+      const [payPredictions, trends, invoices, overdue, payments] = await Promise.all([
+        sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, median_days_to_pay, payment_trend, total_pending, max_days_overdue, predicted_payment_date, payment_risk").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal", "MEDIO: pasado de promedio"]).order("total_pending", { ascending: false }).limit(15),
+        sb.from("weekly_trends").select("company_name, tier, overdue_now, overdue_delta, pending_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(15),
+        sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").gt("days_overdue", 0).order("days_overdue", { ascending: false }).limit(20),
+        sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(15),
+        sb.from("odoo_payments").select("company_id, amount, payment_date").order("payment_date", { ascending: false }).limit(10),
+      ]);
+      return `${profileSection}## PREDICCION DE PAGO: empresas fuera de patron\n${safeJSON(payPredictions.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Facturas vencidas\n${safeJSON(invoices.data)}\n## Cartera vencida por empresa\n${safeJSON(overdue.data)}\n## Pagos recientes\n${safeJSON(payments.data)}`;
+    }
+    case "operaciones_dir": {
+      const [deliveries, orderpoints, deadStock, products] = await Promise.all([
+        sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(20),
+        sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast, warehouse_name").order("qty_on_hand", { ascending: true }).limit(20),
+        sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
+        sb.from("odoo_products").select("internal_ref, name, stock_qty, available_qty, reorder_min, standard_price").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(15),
+      ]);
+      return `${profileSection}## ENTREGAS ATRASADAS\n${safeJSON(deliveries.data)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
+    }
+    case "compras": {
+      const [singleSource, supplierDep, recentPOs, priceChanges] = await Promise.all([
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(15),
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
+        sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15),
+        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, price_unit, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20),
+      ]);
+      return `${profileSection}## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
+    }
+    case "riesgo_dir": {
+      const [narrativesRisk, payRisk, singleSource, churning, trends] = await Promise.all([
+        sb.from("company_narrative").select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople").not("risk_signal", "is", null).order("total_revenue", { ascending: false }).limit(15),
+        sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"]).order("total_pending", { ascending: false }).limit(10),
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
+        sb.from("company_profile").select("name, total_revenue, revenue_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
+        sb.from("weekly_trends").select("company_name, tier, overdue_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(10),
+      ]);
+      return `${profileSection}## EMPRESAS CON SEÑALES DE ALERTA (narrativa completa)\n${safeJSON(narrativesRisk.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## Tendencia semanal: que empeoro\n${safeJSON(trends.data)}\n## Clientes estrategicos cayendo >30%\n${safeJSON(churning.data)}\n## Proveedor unico (riesgo supply chain)\n${safeJSON(singleSource.data)}`;
+    }
+    case "costos": {
+      const [margins, deadStock, priceErosion, topProducts] = await Promise.all([
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, cost_price, gross_margin_pct, total_order_value").order("total_order_value", { ascending: false }).limit(20),
+        sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers, standard_price, list_price").order("inventory_value", { ascending: false }).limit(15),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, cost_price, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
+        sb.from("odoo_products").select("internal_ref, name, stock_qty, standard_price, list_price").gt("stock_qty", 0).order("stock_qty", { ascending: false }).limit(15),
+      ]);
+      return `${profileSection}## Margenes por producto+cliente (precio venta vs costo)\n${safeJSON(margins.data)}\n## ALERTA: productos con margen <15%\n${safeJSON(priceErosion.data)}\n## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}\n## Productos con mas stock\n${safeJSON(topProducts.data)}`;
+    }
+    case "equipo_dir": {
+      const [reorderByVendor, activities, employees] = await Promise.all([
+        sb.from("client_reorder_predictions").select("company_name, tier, reorder_status, days_overdue_reorder, avg_order_value, salesperson_name, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).not("salesperson_name", "is", null).order("total_revenue", { ascending: false }).limit(30),
+        sb.from("odoo_activities").select("assigned_to, activity_type, is_overdue, summary").eq("is_overdue", true).order("assigned_to").limit(30),
+        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20),
+      ]);
+      // Group reorder risk by salesperson
+      const vendorRisk: Record<string, { clients: number; revenue: number; companies: string[] }> = {};
+      for (const r of (reorderByVendor.data ?? []) as Record<string, unknown>[]) {
+        const name = String(r.salesperson_name);
+        if (!vendorRisk[name]) vendorRisk[name] = { clients: 0, revenue: 0, companies: [] };
+        vendorRisk[name].clients++;
+        vendorRisk[name].revenue += Number(r.total_revenue ?? 0);
+        vendorRisk[name].companies.push(`${r.company_name} (${r.reorder_status})`);
+      }
+      const vendorSummary = Object.entries(vendorRisk)
+        .sort((a, b) => b[1].revenue - a[1].revenue)
+        .map(([name, d]) => `${name}: ${d.clients} clientes en riesgo ($${Math.round(d.revenue/1000)}K revenue) — ${d.companies.slice(0, 3).join(", ")}`);
+
+      return `${profileSection}## VENDEDORES CON CLIENTES EN RIESGO (agrupado)\n${vendorSummary.join("\n")}\n\n## Detalle por cliente\n${safeJSON(reorderByVendor.data)}\n## Empleados: actividades vencidas\n${safeJSON(employees.data)}\n## Actividades vencidas detalle\n${safeJSON(activities.data)}`;
+    }
+    // ═══════════════════════════════════════════════════════════════
+    // LEGACY: old domains (kept for backward compat, won't run)
+    // ═══════════════════════════════════════════════════════════════
     case "sales": {
       const [orders, top, recentSaleOrders, margins, customerConcentration, reorderRisk] = await Promise.all([
         sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
