@@ -298,171 +298,81 @@ export default function CompanyDetailPage() {
     : null;
 
   return (
-    <div className="space-y-6">
-      {/* Breadcrumbs */}
-      <Breadcrumbs items={[
-        { label: "Dashboard", href: "/" },
-        { label: "Empresas", href: "/companies" },
-        { label: company.name },
-      ]} />
-
-      {/* Header */}
-      <PageHeader title={company.name}>
-        <div className="flex flex-wrap items-center gap-2">
-          {company.is_customer && <Badge variant="success">Cliente</Badge>}
-          {company.is_supplier && <Badge variant="info">Proveedor</Badge>}
+    <div className="space-y-4">
+      {/* Header: compact */}
+      <div>
+        <button onClick={() => router.push("/companies")} className="text-xs text-muted-foreground hover:text-foreground mb-1 flex items-center gap-1">
+          ← Empresas
+        </button>
+        <div className="flex items-center gap-2">
+          <h1 className="text-xl font-black truncate">{company.name}</h1>
           {profile?.tier && (
-            <Badge className={cn(
-              "text-[10px] font-semibold",
-              profile.tier === "strategic" && "bg-domain-relationships/15 text-domain-relationships",
-              profile.tier === "important" && "bg-info/15 text-info-foreground",
-              profile.tier === "key_supplier" && "bg-warning/15 text-warning-foreground",
-              profile.tier === "regular" && "bg-secondary text-secondary-foreground",
-            )}>{profile.tier}</Badge>
+            <span className={cn(
+              "text-[10px] font-semibold px-1.5 py-0.5 rounded",
+              profile.tier === "strategic" ? "bg-domain-relationships/15 text-domain-relationships" :
+              profile.tier === "important" ? "bg-info/15 text-info-foreground" :
+              "bg-muted text-muted-foreground"
+            )}>{profile.tier}</span>
           )}
-          {profile?.risk_level && profile.risk_level !== "low" && (
-            <Badge variant="critical" className="text-[10px]">riesgo {profile.risk_level}</Badge>
-          )}
-          {company.industry && <Badge variant="secondary">{company.industry}</Badge>}
-          {company.enriched_at && (
-            <span className="flex items-center gap-1 text-xs text-muted-foreground" title={`Enriquecido ${timeAgo(company.enriched_at)}`}>
-              <Sparkles className="h-3 w-3 text-warning" />
-              {timeAgo(company.enriched_at)}
-            </span>
-          )}
-          <EnrichButton type="company" id={String(company.id)} name={company.name} />
         </div>
-        {handler?.sales_handler_name && (
-          <p className="text-xs text-muted-foreground mt-1">
-            Vendedor: <strong>{handler.sales_handler_name}</strong>
-            {handler.ops_handler_name && handler.ops_handler_name !== handler.sales_handler_name && (
-              <> | Operaciones: <strong>{handler.ops_handler_name}</strong></>
-            )}
-          </p>
-        )}
-      </PageHeader>
-
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <DollarSign className="h-3.5 w-3.5" />
-              Lifetime Value
-            </div>
-            <p className="mt-1 text-lg font-bold tabular-nums text-success-foreground">
-              {formatCurrency(company.lifetime_value)}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 flex flex-col items-center">
-            <ScoreGauge value={latestHealth?.overall_score ?? null} label="Salud" size="sm" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <CreditCard className="h-3.5 w-3.5" />
-              Saldo Vencido
-            </div>
-            <p className={cn(
-              "mt-1 text-lg font-bold tabular-nums",
-              overdue && overdue > 0 ? "text-danger-foreground" : "text-muted-foreground"
-            )}>
-              {overdue != null ? formatCurrency(overdue) : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Bell className="h-3.5 w-3.5" />
-              Alertas Abiertas
-            </div>
-            <p className="mt-1 text-2xl font-bold tabular-nums">
-              {alerts.filter(a => a.state !== "resolved" && a.state !== "dismissed").length}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4 flex flex-col items-center">
-            <ScoreGauge value={logistics?.delivery_performance?.on_time_rate ?? null} label="OTD Rate" size="sm" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <TrendingUp className="h-3.5 w-3.5" />
-              Tendencia
-            </div>
-            <p className={cn(
-              "mt-1 text-lg font-bold tabular-nums",
-              profile?.trend_pct > 0 ? "text-success-foreground" : profile?.trend_pct < 0 ? "text-danger-foreground" : "text-muted-foreground"
-            )}>
-              {profile?.trend_pct != null ? `${profile.trend_pct > 0 ? "+" : ""}${Number(profile.trend_pct).toFixed(0)}%` : "—"}
-            </p>
-            {reorderPrediction && (
-              <p className={cn(
-                "text-[10px] mt-0.5",
-                reorderPrediction.reorder_status === "on_track" ? "text-success" :
-                reorderPrediction.reorder_status === "overdue" ? "text-warning" :
-                "text-danger"
-              )}>
-                {reorderPrediction.reorder_status === "on_track" ? "Reorden al dia" :
-                 reorderPrediction.reorder_status === "overdue" ? `Reorden vencido ${reorderPrediction.days_overdue_reorder}d` :
-                 reorderPrediction.reorder_status === "lost" ? "Posible churn" :
-                 `Riesgo: ${reorderPrediction.days_overdue_reorder}d sin comprar`}
-              </p>
-            )}
-          </CardContent>
-        </Card>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {company.industry ?? (company.is_customer ? "Cliente" : "Proveedor")}
+          {handler?.sales_handler_name && <> · {handler.sales_handler_name}</>}
+        </p>
       </div>
 
-      {/* Intelligence Cards: Payment + Reorder + Risk */}
-      <CompanyIntelCards companyId={company.id} companyName={company.name} />
+      {/* 3 inline stats */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-xl bg-muted/50 p-2.5">
+          <p className="text-lg font-black tabular-nums">{formatCurrency(company.lifetime_value)}</p>
+          <p className="text-[10px] text-muted-foreground">revenue</p>
+        </div>
+        <div className="rounded-xl bg-muted/50 p-2.5">
+          <p className={cn("text-lg font-black tabular-nums", overdue && overdue > 0 ? "text-danger" : "")}>
+            {overdue != null ? formatCurrency(overdue) : "—"}
+          </p>
+          <p className="text-[10px] text-muted-foreground">vencido</p>
+        </div>
+        <div className="rounded-xl bg-muted/50 p-2.5">
+          <p className={cn("text-lg font-black tabular-nums",
+            profile?.trend_pct > 0 ? "text-success" : profile?.trend_pct < 0 ? "text-danger" : ""
+          )}>
+            {profile?.trend_pct != null ? `${profile.trend_pct > 0 ? "+" : ""}${Number(profile.trend_pct).toFixed(0)}%` : "—"}
+          </p>
+          <p className="text-[10px] text-muted-foreground">tendencia</p>
+        </div>
+      </div>
 
       {/* Tabs */}
-      <Tabs defaultValue="resumen">
+      <Tabs defaultValue="general">
         <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
           <TabsList className="inline-flex w-auto min-w-full md:min-w-0 gap-0.5 h-9">
-            <TabsTrigger value="resumen" className="text-xs px-3">Resumen</TabsTrigger>
+            <TabsTrigger value="general" className="text-xs px-3">General</TabsTrigger>
             <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
             <TabsTrigger value="finanzas" className="text-xs px-3">Finanzas</TabsTrigger>
-            <TabsTrigger value="ventas" className="text-xs px-3">Ventas</TabsTrigger>
-            <TabsTrigger value="compras" className="text-xs px-3">Compras</TabsTrigger>
             <TabsTrigger value="operaciones" className="text-xs px-3">Operaciones</TabsTrigger>
-            <TabsTrigger value="productos" className="text-xs px-3">Productos</TabsTrigger>
-            <TabsTrigger value="contactos" className="text-xs px-3">Contactos</TabsTrigger>
             <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
           </TabsList>
         </div>
 
-        <TabsContent value="resumen" className="space-y-6">
-          <TabResumen company={company} relationships={relationships} />
+        {/* General = Intel cards + contacts */}
+        <TabsContent value="general" className="space-y-4">
+          <CompanyIntelCards companyId={company.id} companyName={company.name} />
+          <TabContactos contacts={contacts} />
         </TabsContent>
         <TabsContent value="inteligencia">
           <TabInteligencia facts={facts} companyId={company.id} />
         </TabsContent>
         <TabsContent value="finanzas" className="space-y-6">
           <TabFinanzas financials={financials} revenueRows={revenueRows} odooSnapshots={odooSnapshots} />
-          <TabPagos companyId={company.id} />
-        </TabsContent>
-        <TabsContent value="ventas" className="space-y-6">
           <TabVentas companyId={company.id} />
-        </TabsContent>
-        <TabsContent value="compras" className="space-y-6">
           <TabCompras companyId={company.id} />
+          <TabPagos companyId={company.id} />
         </TabsContent>
         <TabsContent value="operaciones" className="space-y-6">
           <TabOperaciones logistics={logistics} pipeline={pipeline} />
-          <TabManufactura companyId={company.id} />
-        </TabsContent>
-        <TabsContent value="productos" className="space-y-6">
           <TabProductos companyProducts={companyProducts} />
-        </TabsContent>
-        <TabsContent value="contactos">
-          <TabContactos contacts={contacts} />
+          <TabManufactura companyId={company.id} />
         </TabsContent>
         <TabsContent value="emails">
           <TabEmails recentEmails={recentEmails} />
