@@ -6,7 +6,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
-  MessageSquare, ThumbsDown, ThumbsUp,
+  Mail, MessageSquare, ThumbsDown, ThumbsUp,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
@@ -28,6 +28,7 @@ export default function InsightDetailPage() {
   const [company, setCompany] = useState<Company | null>(null);
   const [crossSignals, setCrossSignals] = useState<{ director_name: string; title: string; severity: string }[]>([]);
   const [insightHistory, setInsightHistory] = useState<{ total_insights_30d: number; times_acted: number; times_dismissed: number; which_directors: string } | null>(null);
+  const [relatedEmails, setRelatedEmails] = useState<{ id: number; subject: string | null; sender: string | null; email_date: string | null; snippet: string | null }[]>([]);
   const [navIds, setNavIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -49,17 +50,19 @@ export default function InsightDetailPage() {
       }
 
       // Load all context in parallel
-      const [navRes, companyRes, crossRes, historyRes] = await Promise.all([
+      const [navRes, companyRes, crossRes, historyRes, emailsRes] = await Promise.all([
         supabase.from("agent_insights").select("id").in("state", ["new", "seen"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(50),
         ins.company_id ? supabase.from("companies").select("id, name, canonical_name").eq("id", ins.company_id).single() : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("cross_director_signals").select("director_name, title, severity").eq("company_id", ins.company_id).neq("title", ins.title).limit(5) : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("company_insight_history").select("total_insights_30d, times_acted, times_dismissed, which_directors").eq("company_id", ins.company_id).single() : Promise.resolve({ data: null }),
+        ins.company_id ? supabase.from("emails").select("id, subject, sender, email_date, snippet").eq("company_id", ins.company_id).order("email_date", { ascending: false }).limit(5) : Promise.resolve({ data: null }),
       ]);
 
       if (navRes.data) setNavIds(navRes.data.map((n: { id: number }) => n.id));
       if (companyRes.data) setCompany(companyRes.data as Company);
       if (crossRes.data) setCrossSignals(crossRes.data as typeof crossSignals);
       if (historyRes.data) setInsightHistory(historyRes.data as typeof insightHistory);
+      if (emailsRes.data) setRelatedEmails(emailsRes.data as typeof relatedEmails);
 
       setLoading(false);
     }
@@ -221,6 +224,40 @@ export default function InsightDetailPage() {
             {company?.name ?? "Empresa"}
           </p>
           <CompanyIntelCards companyId={insight.company_id} companyName={company?.name ?? ""} />
+        </div>
+      )}
+
+      {/* ── Related emails ── */}
+      {relatedEmails.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium px-1">
+            Emails recientes{company?.name ? ` — ${company.name}` : ""}
+          </p>
+          <div className="space-y-1.5">
+            {relatedEmails.map((email) => {
+              const senderName = (email.sender ?? "").replace(/<[^>]+>/, "").trim() || "Desconocido";
+              const dateStr = email.email_date ? new Date(email.email_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" }) : "";
+              return (
+                <Link
+                  key={email.id}
+                  href={`/emails/${email.id}`}
+                  className="flex items-start gap-3 rounded-xl border p-3 hover:bg-muted/50 transition-colors"
+                >
+                  <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm font-medium truncate">{email.subject ?? "(sin asunto)"}</p>
+                      <span className="text-[10px] text-muted-foreground shrink-0">{dateStr}</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">{senderName}</p>
+                    {email.snippet && (
+                      <p className="text-xs text-muted-foreground/70 line-clamp-1 mt-0.5">{email.snippet.slice(0, 120)}</p>
+                    )}
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
         </div>
       )}
 
