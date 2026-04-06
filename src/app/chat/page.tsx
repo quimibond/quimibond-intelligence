@@ -22,21 +22,48 @@ const WELCOME_MESSAGE: ChatMessage = {
     "Hola! Soy tu asistente de inteligencia comercial de Quimibond. Puedo ayudarte con informacion sobre contactos, empresas, alertas, riesgos, tendencias y mas. Que necesitas saber?",
 };
 
-const SUGGESTED_QUESTIONS = [
+const FALLBACK_QUESTIONS = [
   "Cuales son las alertas criticas de hoy?",
-  "Que contactos estan en mayor riesgo?",
-  "Resume el ultimo briefing diario",
-  "Que competidores han sido mencionados recientemente?",
-  "Cuales son las acciones pendientes mas urgentes?",
-  "Dame el estado general de la cartera de clientes",
+  "Resume el ultimo briefing",
+  "Dame el estado de la cartera vencida",
 ];
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([WELCOME_MESSAGE]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [suggestions, setSuggestions] = useState<string[]>(FALLBACK_QUESTIONS);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Load dynamic suggestions from active insights
+  useEffect(() => {
+    async function loadSuggestions() {
+      const { data: insights } = await supabase
+        .from("agent_insights")
+        .select("title, company_id")
+        .in("state", ["new", "seen"])
+        .in("severity", ["critical", "high"])
+        .gte("confidence", 0.80)
+        .order("created_at", { ascending: false })
+        .limit(4);
+
+      if (insights?.length) {
+        const dynamic = insights.map(i => {
+          const title = String(i.title);
+          // Convert insight title to a question
+          if (title.includes(":")) {
+            const company = title.split(":")[0].trim();
+            return `Como va ${company}?`;
+          }
+          return `Explicame: ${title.slice(0, 60)}`;
+        });
+        // Mix dynamic + 1 fallback
+        setSuggestions([...new Set(dynamic), FALLBACK_QUESTIONS[0]].slice(0, 4));
+      }
+    }
+    loadSuggestions();
+  }, []);
 
   useEffect(() => {
     requestAnimationFrame(() => {
@@ -329,7 +356,7 @@ export default function ChatPage() {
                   Preguntas sugeridas
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_QUESTIONS.map((q) => (
+                  {suggestions.map((q) => (
                     <button
                       key={q}
                       onClick={() => sendMessage(q)}

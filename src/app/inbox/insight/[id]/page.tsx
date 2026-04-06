@@ -230,6 +230,9 @@ export default function InsightDetailPage() {
         contact={contact as Contact | null}
       />
 
+      {/* ── Follow-up banner (if CEO acted) ── */}
+      <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
+
       {/* ── Contextual data panel ── */}
       <InsightContext
         insight={insight}
@@ -291,6 +294,54 @@ export default function InsightDetailPage() {
             </Button>
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Follow-up Banner ──
+function FollowUpBanner({ insightId, state }: { insightId: number; state: string }) {
+  const [followUp, setFollowUp] = useState<{
+    status: string;
+    follow_up_date: string;
+    resolution_note: string | null;
+    created_at: string;
+  } | null>(null);
+
+  useEffect(() => {
+    if (state !== "acted_on") return;
+    supabase
+      .from("insight_follow_ups")
+      .select("status, follow_up_date, resolution_note, created_at")
+      .eq("insight_id", insightId)
+      .limit(1)
+      .single()
+      .then(({ data }) => { if (data) setFollowUp(data); });
+  }, [insightId, state]);
+
+  if (!followUp) return null;
+
+  const colors: Record<string, string> = {
+    pending: "bg-blue-50 border-blue-200 text-blue-800",
+    improved: "bg-green-50 border-green-200 text-green-800",
+    unchanged: "bg-yellow-50 border-yellow-200 text-yellow-800",
+    worsened: "bg-red-50 border-red-200 text-red-800",
+  };
+  const labels: Record<string, string> = {
+    pending: "Seguimiento programado",
+    improved: "Situacion mejoro",
+    unchanged: "Sin cambio",
+    worsened: "Situacion empeoro",
+  };
+
+  return (
+    <div className={cn("rounded-xl border p-3 text-sm", colors[followUp.status] ?? "bg-muted")}>
+      <div className="flex items-center justify-between">
+        <span className="font-semibold">{labels[followUp.status] ?? followUp.status}</span>
+        <span className="text-xs opacity-70">verificar: {followUp.follow_up_date}</span>
+      </div>
+      {followUp.resolution_note && (
+        <p className="text-xs mt-1 opacity-80">{followUp.resolution_note}</p>
       )}
     </div>
   );

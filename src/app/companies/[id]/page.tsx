@@ -62,6 +62,7 @@ import {
   TabManufactura,
 } from "./components";
 import type { ResolvedRelationship, RevenueRow } from "./components";
+import { CompanyIntelCards } from "./components/company-intel-cards";
 
 export default function CompanyDetailPage() {
   const params = useParams<{ id: string }>();
@@ -417,6 +418,9 @@ export default function CompanyDetailPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Intelligence Cards: Payment + Reorder + Risk */}
+      <CompanyIntelCards companyId={company.id} companyName={company.name} />
 
       {/* Tabs */}
       <Tabs defaultValue="resumen">
