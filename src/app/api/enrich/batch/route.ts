@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { rateLimitResponse } from "@/lib/rate-limit";
+import { z } from "zod";
 
-interface BatchEnrichRequest {
-  type: "contacts" | "companies";
-  limit?: number;
-}
+const BatchEnrichSchema = z.object({
+  type: z.enum(["contacts", "companies"]),
+  limit: z.number().int().min(1).max(20).default(5),
+});
 
 export async function POST(request: NextRequest) {
   // Rate limit: 3 batch enrichments per 5 minutes per client
@@ -24,15 +25,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body: BatchEnrichRequest = await request.json();
-    const { type, limit = 5 } = body;
-
-    if (!type || !["contacts", "companies"].includes(type)) {
+    const rawBody = await request.json().catch(() => ({}));
+    const parsed = BatchEnrichSchema.safeParse(rawBody);
+    if (!parsed.success) {
       return NextResponse.json(
-        { error: "El campo 'type' debe ser 'contacts' o 'companies'." },
+        { error: "Datos invalidos", details: parsed.error.flatten() },
         { status: 400 }
       );
     }
+    const { type, limit } = parsed.data;
 
     const supabase = getServiceClient();
     let enriched = 0;

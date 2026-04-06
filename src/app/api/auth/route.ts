@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimitResponse } from "@/lib/rate-limit";
 
 /** Derive a deterministic token from the password (not the password itself) */
 async function deriveToken(password: string): Promise<string> {
@@ -10,6 +11,9 @@ async function deriveToken(password: string): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
+  const limited = rateLimitResponse(request, { limit: 5, windowMinutes: 15 });
+  if (limited) return limited;
+
   const authPassword = process.env.AUTH_PASSWORD;
   if (!authPassword) {
     return NextResponse.json({ error: "Auth not configured" }, { status: 404 });
@@ -37,6 +41,9 @@ export async function POST(request: NextRequest) {
 
 // Keep GET for backwards compatibility but redirect to POST
 export async function GET(request: NextRequest) {
+  const limited = rateLimitResponse(request, { limit: 5, windowMinutes: 15 });
+  if (limited) return limited;
+
   const authPassword = process.env.AUTH_PASSWORD;
   if (!authPassword) {
     return NextResponse.json({ error: "Auth not configured" }, { status: 404 });

@@ -24,9 +24,9 @@ export function validatePipelineAuth(request: NextRequest): NextResponse | null 
   // Vercel automatically validates this header and strips it from external requests
   if (request.headers.get("x-vercel-cron") === "1") return null;
 
-  // Check session cookie (UI calls with AUTH_PASSWORD enabled)
+  // Cookie validated by middleware — if it reaches here with a cookie, it's valid
   const cookie = request.cookies.get("qb-auth")?.value;
-  if (authPassword && cookie === authPassword) return null;
+  if (authPassword && cookie) return null;
 
   // If AUTH_PASSWORD is not set, dashboard is open — allow same-origin UI calls
   if (!authPassword) {

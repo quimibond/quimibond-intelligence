@@ -15,6 +15,7 @@ import { createHash } from "crypto";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaudeJSON } from "@/lib/claude";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
+import { sanitizeEmailForClaude } from "@/lib/sanitize";
 
 export const maxDuration = 300;
 
@@ -198,7 +199,7 @@ async function processBatch(
 ): Promise<BatchResult> {
   // Format emails for Claude — including attachment context
   const emailsText = emails.map((e, i) => {
-    const body = (e.body ?? e.snippet ?? "").slice(0, 800);
+    const body = sanitizeEmailForClaude(e.body ?? e.snippet ?? "", 800);
     let attachmentInfo = "";
     if (e.has_attachments && e.attachments?.length) {
       const atts = (e.attachments as { filename: string; mimeType: string; size: number }[])

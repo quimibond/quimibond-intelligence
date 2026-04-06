@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { callClaudeJSON } from "@/lib/claude";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { z } from "zod";
+import { sanitizeEmailForClaude } from "@/lib/sanitize";
 
 const EnrichContactSchema = z.object({
   contact_id: z.string().min(1),
@@ -106,7 +107,7 @@ export async function POST(request: NextRequest) {
       contextParts.push("\n--- Emails Recientes ---");
       for (const email of emails) {
         contextParts.push(
-          `Fecha: ${email.email_date ?? "?"} | De: ${email.sender ?? "?"} | Para: ${email.recipient ?? "?"}\nAsunto: ${email.subject ?? "(sin asunto)"}\n${(email.snippet ?? "").slice(0, 300)}\n`
+          `Fecha: ${email.email_date ?? "?"} | De: ${email.sender ?? "?"} | Para: ${email.recipient ?? "?"}\nAsunto: ${email.subject ?? "(sin asunto)"}\n${sanitizeEmailForClaude(email.snippet ?? "", 300)}\n`
         );
       }
     }

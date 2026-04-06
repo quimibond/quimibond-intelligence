@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaudeJSON } from "@/lib/claude";
 import { rateLimitResponse } from "@/lib/rate-limit";
+import { z } from "zod";
+import { sanitizeEmailForClaude } from "@/lib/sanitize";
+
+const EnrichCompanySchema = z.object({
+  company_id: z.string().min(1),
+});
 
 interface ClaudeCompanyProfile {
   description: string;
@@ -31,10 +37,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { company_id: companyId } = (await request.json()) as { company_id?: string };
-    if (!companyId) {
-      return NextResponse.json({ error: "company_id es requerido." }, { status: 400 });
+    const rawBody = await request.json().catch(() => ({}));
+    const parsed = EnrichCompanySchema.safeParse(rawBody);
+    if (!parsed.success) {
+      return NextResponse.json({ error: "company_id es requerido.", details: parsed.error.flatten() }, { status: 400 });
     }
+    const companyId = parsed.data.company_id;
 
     const supabase = getServiceClient();
 
@@ -118,7 +126,7 @@ export async function POST(request: NextRequest) {
     if (emails.length > 0) {
       parts.push(`\n--- Emails Recientes (${emails.length}) ---`);
       for (const e of emails) {
-        parts.push(`${e.email_date ?? "?"} | ${e.sender ?? "?"} → ${e.recipient ?? "?"}\n  ${e.subject ?? "(sin asunto)"}\n  ${(e.snippet ?? "").slice(0, 300)}`);
+        parts.push(`${e.email_date ?? "?"} | ${e.sender ?? "?"} → ${e.recipient ?? "?"}\n  ${e.subject ?? "(sin asunto)"}\n  ${sanitizeEmailForClaude(e.snippet ?? "", 300)}`);
       }
     }
 

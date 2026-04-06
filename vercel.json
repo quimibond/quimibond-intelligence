@@ -59,6 +59,14 @@
     {
       "path": "/api/pipeline/embeddings",
       "schedule": "15 */4 * * *"
+    },
+    {
+      "path": "/api/agents/identity-resolution",
+      "schedule": "10 */2 * * *"
+    },
+    {
+      "path": "/api/system/health",
+      "schedule": "0 */3 * * *"
     }
   ]
 }

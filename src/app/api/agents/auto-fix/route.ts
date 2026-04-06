@@ -93,20 +93,40 @@ export async function POST() {
         .not("sender_contact_id", "is", null)
         .limit(200);
 
-      let linked = 0;
-      for (const email of fixable ?? []) {
-        const { data: contact } = await supabase
+      if (fixable?.length) {
+        // Batch load all contact company_ids
+        const contactIds = [...new Set(fixable.map(e => e.sender_contact_id).filter(Boolean))];
+        const { data: contactsWithCompany } = await supabase
           .from("contacts")
-          .select("company_id")
-          .eq("id", email.sender_contact_id)
-          .single();
+          .select("id, company_id")
+          .in("id", contactIds)
+          .not("company_id", "is", null);
 
-        if (contact?.company_id) {
-          await supabase.from("emails").update({ company_id: contact.company_id }).eq("id", email.id);
-          linked++;
+        const contactCompanyMap = new Map<string, string>();
+        for (const c of contactsWithCompany ?? []) {
+          contactCompanyMap.set(String(c.id), String(c.company_id));
         }
+
+        let linked = 0;
+        // Batch update emails by company_id groups
+        const updatesByCompany = new Map<string, string[]>();
+        for (const email of fixable) {
+          const companyId = contactCompanyMap.get(String(email.sender_contact_id));
+          if (companyId) {
+            if (!updatesByCompany.has(companyId)) updatesByCompany.set(companyId, []);
+            updatesByCompany.get(companyId)!.push(String(email.id));
+          }
+        }
+
+        for (const [companyId, emailIds] of updatesByCompany) {
+          const { error } = await supabase
+            .from("emails")
+            .update({ company_id: companyId })
+            .in("id", emailIds);
+          if (!error) linked += emailIds.length;
+        }
+        if (linked > 0) fixes.push({ action: "emails_linked_to_companies", count: linked });
       }
-      if (linked > 0) fixes.push({ action: "emails_linked_to_companies", count: linked });
     }
 
     // ── 3. Link invoices to companies ───────────────────────────────────
@@ -129,31 +149,29 @@ export async function POST() {
       .limit(100);
 
     if (companiesNoEntity?.length) {
+      // Batch load all company entities by odoo_id and canonical_name
+      const odooIds = companiesNoEntity.map(c => c.odoo_partner_id).filter(Boolean);
+      const names = companiesNoEntity.map(c => c.canonical_name?.toLowerCase().trim()).filter(Boolean);
+
+      const [{ data: entsByOdoo }, { data: entsByName }] = await Promise.all([
+        odooIds.length > 0
+          ? supabase.from("entities").select("id, odoo_id").eq("entity_type", "company").in("odoo_id", odooIds)
+          : Promise.resolve({ data: [] }),
+        names.length > 0
+          ? supabase.from("entities").select("id, canonical_name").eq("entity_type", "company").in("canonical_name", names)
+          : Promise.resolve({ data: [] }),
+      ]);
+
+      const odooMap = new Map<number, number>();
+      for (const e of entsByOdoo ?? []) odooMap.set(e.odoo_id, e.id);
+      const nameMap = new Map<string, number>();
+      for (const e of entsByName ?? []) nameMap.set(e.canonical_name, e.id);
+
       let linked = 0;
       for (const co of companiesNoEntity) {
-        // Try by odoo_id
-        let entityId: number | null = null;
-        if (co.odoo_partner_id) {
-          const { data: ent } = await supabase
-            .from("entities")
-            .select("id")
-            .eq("entity_type", "company")
-            .eq("odoo_id", co.odoo_partner_id)
-            .limit(1)
-            .single();
-          if (ent) entityId = ent.id;
-        }
-        // Try by name
-        if (!entityId && co.canonical_name) {
-          const { data: ent } = await supabase
-            .from("entities")
-            .select("id")
-            .eq("entity_type", "company")
-            .eq("canonical_name", co.canonical_name.toLowerCase().trim())
-            .limit(1)
-            .single();
-          if (ent) entityId = ent.id;
-        }
+        const entityId = (co.odoo_partner_id && odooMap.get(co.odoo_partner_id))
+          || (co.canonical_name && nameMap.get(co.canonical_name.toLowerCase().trim()))
+          || null;
         if (entityId) {
           await supabase.from("companies").update({ entity_id: entityId }).eq("id", co.id);
           linked++;
@@ -171,17 +189,23 @@ export async function POST() {
       .limit(100);
 
     if (contactsNoEntity?.length) {
+      const emails = contactsNoEntity.map(c => c.email).filter(Boolean);
+      const { data: personEntities } = await supabase
+        .from("entities")
+        .select("id, email")
+        .eq("entity_type", "person")
+        .in("email", emails);
+
+      const emailMap = new Map<string, number>();
+      for (const e of personEntities ?? []) {
+        if (e.email) emailMap.set(e.email, e.id);
+      }
+
       let linked = 0;
       for (const c of contactsNoEntity) {
-        const { data: ent } = await supabase
-          .from("entities")
-          .select("id")
-          .eq("entity_type", "person")
-          .eq("email", c.email)
-          .limit(1)
-          .single();
-        if (ent) {
-          await supabase.from("contacts").update({ entity_id: ent.id }).eq("id", c.id);
+        const entityId = c.email ? emailMap.get(c.email) : undefined;
+        if (entityId) {
+          await supabase.from("contacts").update({ entity_id: entityId }).eq("id", c.id);
           linked++;
         }
       }
