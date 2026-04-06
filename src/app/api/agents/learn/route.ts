@@ -251,17 +251,17 @@ export async function POST(request: NextRequest) {
             model: "claude-sonnet-4-6",
             max_tokens: 1500,
             temperature: 0.2,
-            system: `Eres el meta-agente de Quimibond Intelligence. Tu trabajo es analizar el rendimiento de los agentes y generar lecciones ACCIONABLES.
+            system: `Eres el sistema de aprendizaje de Quimibond Intelligence. Analizas el rendimiento de los 7 Directores IA (comercial, financiero, operaciones, compras, riesgo, costos, equipo) y generas lecciones ACCIONABLES.
 
 Responde en JSON:
 {
   "lessons": ["leccion global 1", "leccion 2", ...],
   "agent_recommendations": {
-    "agent_slug": "recomendacion especifica para este agente"
+    "director_slug": "recomendacion especifica"
   }
 }
 
-Cada leccion debe ser especifica y medible, no generica. Ejemplo bueno: "El agente finance genera demasiados insights sobre facturas menores a $5,000 MXN que el CEO descarta. Filtrar facturas < $10,000 MXN." Ejemplo malo: "Mejorar la calidad de los insights."`,
+Cada leccion debe ser especifica y medible. Ejemplo bueno: "El Director Financiero genera insights sobre facturas <$5K que el CEO descarta. Filtrar facturas <$10K." Ejemplo malo: "Mejorar la calidad."`,
             messages: [{
               role: "user",
               content: `Rendimiento de agentes basado en ${totalFeedback} interacciones del CEO:\n\n${JSON.stringify(agentSummaries, null, 2)}\n\nGenera 3-5 lecciones concretas y una recomendacion por agente que tenga datos suficientes.`,
@@ -271,11 +271,10 @@ Cada leccion debe ser especifica y medible, no generica. Ejemplo bueno: "El agen
         );
         metaLessons = result.lessons ?? [];
 
-        // Save meta lessons as memories for the meta agent
-        const metaAgent = agents.find(a => a.slug === "meta");
-        if (metaAgent) {
-          for (const lesson of metaLessons) {
-            await upsertMemory(supabase, metaAgent.id, "lesson", lesson, 0.9);
+        // Save meta lessons as memories for ALL active directors
+        for (const lesson of metaLessons) {
+          for (const agent of agents) {
+            await upsertMemory(supabase, agent.id, "lesson", lesson, 0.9);
             memoriesCreated++;
           }
         }

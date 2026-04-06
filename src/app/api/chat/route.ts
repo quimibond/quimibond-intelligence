@@ -88,126 +88,138 @@ async function gatherContext(
 ): Promise<ContextData> {
   const q = `%${query.toLowerCase()}%`;
 
-  // Fetch static context (cached) + query-specific context in parallel
-  const [staticCtx, contactsRes, factsRes, companiesRes, insightsRes, employeesRes] = await Promise.all([
+  const [
+    staticCtx,
+    // Company intelligence (narratives with connected data)
+    narrativesRes,
+    // Payment predictions for mentioned companies
+    paymentRes,
+    // Reorder predictions
+    reorderRes,
+    // Active insights from Directors
+    insightsRes,
+    // Facts from knowledge graph
+    factsRes,
+    // Contacts matching query
+    contactsRes,
+  ] = await Promise.all([
     getStaticContext(supabase),
 
-    // Relevant contacts (query-specific)
+    // Company narratives: the richest source (revenue + overdue + deliveries + complaints + risk_signal)
     supabase
-      .from("contacts")
-      .select(
-        "name, email, company_id, role, risk_level, sentiment_score, relationship_score, last_activity"
-      )
-      .or(`name.ilike.${q},email.ilike.${q}`)
-      .order("last_activity", { ascending: false, nullsFirst: false })
-      .limit(10),
-
-    // Relevant facts (query-specific)
-    supabase
-      .from("facts")
-      .select("fact_text, fact_type, confidence, created_at")
-      .ilike("fact_text", q)
-      .order("confidence", { ascending: false })
-      .limit(15),
-
-    // Company profiles (query-specific or top companies)
-    supabase
-      .from("company_profile")
-      .select("name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level, email_count")
-      .or(`name.ilike.${q}`)
+      .from("company_narrative")
+      .select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, max_days_overdue, late_deliveries, otd_rate, emails_30d, complaints, recent_complaints, total_purchases, risk_signal, salespeople, top_products, days_since_last_order")
+      .or(`canonical_name.ilike.${q}`)
       .order("total_revenue", { ascending: false })
-      .limit(10),
+      .limit(5),
 
-    // Recent insights (for context about what agents are seeing)
+    // Payment predictions
+    supabase
+      .from("payment_predictions")
+      .select("company_name, avg_days_to_pay, median_days_to_pay, payment_trend, total_pending, max_days_overdue, predicted_payment_date, payment_risk")
+      .or(`company_name.ilike.${q}`)
+      .limit(5),
+
+    // Reorder predictions
+    supabase
+      .from("client_reorder_predictions")
+      .select("company_name, avg_cycle_days, days_since_last, days_overdue_reorder, reorder_status, avg_order_value, salesperson_name, top_product_ref, total_revenue")
+      .or(`company_name.ilike.${q}`)
+      .limit(5),
+
+    // Active Director insights (critical + high)
     supabase
       .from("agent_insights")
       .select("title, severity, category, assignee_name, created_at")
       .in("state", ["new", "seen"])
       .in("severity", ["critical", "high"])
+      .gte("confidence", 0.80)
       .order("created_at", { ascending: false })
-      .limit(5),
-
-    // Employee metrics
-    supabase
-      .from("employee_metrics")
-      .select("name, department, execution_score, actions_overdue, contacts_managed")
-      .eq("period_type", "weekly")
-      .order("overall_score", { ascending: false })
       .limit(10),
-  ]);
 
-  const contacts =
-    contactsRes.data && contactsRes.data.length > 0
-      ? contactsRes.data
-          .map(
-            (c) =>
-              `- ${c.name} <${c.email}> | Company ID: ${c.company_id ?? "?"} | Rol: ${c.role ?? "?"} | Riesgo: ${c.risk_level ?? "?"} | Sentimiento: ${c.sentiment_score ?? "?"} | Relacion: ${c.relationship_score ?? "?"}`
-          )
-          .join("\n")
-      : "No se encontraron contactos relevantes.";
+    // Facts from knowledge graph
+    supabase
+      .from("facts")
+      .select("fact_text, fact_type, confidence")
+      .ilike("fact_text", q)
+      .gte("confidence", 0.85)
+      .order("confidence", { ascending: false })
+      .limit(10),
+
+    // Contacts
+    supabase
+      .from("contacts")
+      .select("name, email, company_id, role, risk_level, current_health_score")
+      .or(`name.ilike.${q},email.ilike.${q}`)
+      .limit(5),
+  ]);
 
   const { alerts, briefing, chatMemory } = staticCtx;
 
-  const facts =
-    factsRes.data && factsRes.data.length > 0
-      ? factsRes.data
-          .map(
-            (f) =>
-              `- [${f.fact_type ?? "general"}] ${f.fact_text} (confianza: ${Math.round(f.confidence * 100)}%)`
-          )
-          .join("\n")
-      : "";
+  // Format company narratives (the core intelligence)
+  const companies = (narrativesRes.data ?? []).length > 0
+    ? (narrativesRes.data ?? []).map((c: Record<string, unknown>) => {
+        let line = `**${c.canonical_name}** (${c.tier}) — Revenue: $${Number(c.total_revenue ?? 0).toLocaleString()}, 90d: $${Number(c.revenue_90d ?? 0).toLocaleString()} (${c.trend_pct ?? 0}%)`;
+        if (Number(c.overdue_amount) > 0) line += ` | Vencido: $${Number(c.overdue_amount).toLocaleString()} (max ${c.max_days_overdue}d)`;
+        if (Number(c.late_deliveries) > 0) line += ` | ${c.late_deliveries} entregas tarde`;
+        if (Number(c.complaints) > 0) line += ` | ${c.complaints} quejas: "${String(c.recent_complaints ?? "").slice(0, 100)}"`;
+        if (c.salespeople) line += ` | Vendedor: ${c.salespeople}`;
+        if (c.top_products) line += ` | Productos: ${String(c.top_products).slice(0, 100)}`;
+        if (c.risk_signal) line += ` | ALERTA: ${c.risk_signal}`;
+        return line;
+      }).join("\n")
+    : "";
 
-  // Semantic email search via Voyage embeddings + pgvector
+  // Payment predictions
+  const payments = (paymentRes.data ?? []).length > 0
+    ? (paymentRes.data ?? []).map((p: Record<string, unknown>) =>
+        `- ${p.company_name}: paga en promedio ${p.avg_days_to_pay}d (mediana ${p.median_days_to_pay}d), tendencia ${p.payment_trend}, pendiente $${Number(p.total_pending ?? 0).toLocaleString()}, ${p.payment_risk}`
+      ).join("\n")
+    : "";
+
+  // Reorder predictions
+  const reorders = (reorderRes.data ?? []).length > 0
+    ? (reorderRes.data ?? []).map((r: Record<string, unknown>) =>
+        `- ${r.company_name}: compra cada ${r.avg_cycle_days}d, lleva ${r.days_since_last}d sin comprar (${r.reorder_status}), orden promedio $${Number(r.avg_order_value ?? 0).toLocaleString()}, vendedor: ${r.salesperson_name ?? "?"}, producto: ${r.top_product_ref ?? "?"}`
+      ).join("\n")
+    : "";
+
+  const contacts = (contactsRes.data ?? []).length > 0
+    ? (contactsRes.data ?? []).map((c: Record<string, unknown>) =>
+        `- ${c.name} <${c.email}> | Riesgo: ${c.risk_level ?? "?"} | Health: ${c.current_health_score ?? "?"}`
+      ).join("\n")
+    : "";
+
+  const facts = (factsRes.data ?? []).length > 0
+    ? (factsRes.data ?? []).map((f: Record<string, unknown>) =>
+        `- [${f.fact_type}] ${f.fact_text}`
+      ).join("\n")
+    : "";
+
+  const activeInsights = (insightsRes.data ?? []).length > 0
+    ? (insightsRes.data ?? []).map((i: Record<string, unknown>) =>
+        `- [${i.severity}/${i.category}] ${i.title} → ${i.assignee_name ?? "sin asignar"}`
+      ).join("\n")
+    : "";
+
+  // Semantic email search
   let semanticEmails = "";
   const embedding = await getVoyageEmbedding(query);
   if (embedding) {
     const { data: similarEmails } = await supabase.rpc("search_similar_emails", {
       query_embedding: JSON.stringify(embedding),
       match_threshold: 0.6,
-      match_count: 8,
+      match_count: 5,
     });
     if (similarEmails && similarEmails.length > 0) {
       semanticEmails = similarEmails
-        .map(
-          (e: { subject: string; sender: string; snippet: string; email_date: string; similarity: number }) =>
-            `- [${Math.round(e.similarity * 100)}%] ${e.email_date?.split("T")[0] ?? "?"} | ${e.sender ?? "?"}\n  ${e.subject ?? "(sin asunto)"}\n  ${(e.snippet ?? "").slice(0, 200)}`
-        )
-        .join("\n");
+        .map((e: { subject: string; sender: string; snippet: string; email_date: string; similarity: number }) =>
+          `- ${e.email_date?.split("T")[0] ?? "?"} | ${e.sender ?? "?"} | ${e.subject ?? "(sin asunto)"}\n  ${(e.snippet ?? "").slice(0, 150)}`
+        ).join("\n");
     }
   }
 
-  const companies =
-    companiesRes.data && companiesRes.data.length > 0
-      ? companiesRes.data
-          .map(
-            (c) =>
-              `- ${c.name} | Tier: ${c.tier} | Revenue: $${Number(c.total_revenue).toLocaleString()} | Trend: ${c.trend_pct ?? "?"}% | Vencido: $${Number(c.overdue_amount).toLocaleString()} | Riesgo: ${c.risk_level}`
-          )
-          .join("\n")
-      : "";
-
-  const activeInsights =
-    insightsRes.data && insightsRes.data.length > 0
-      ? insightsRes.data
-          .map(
-            (i) =>
-              `- [${i.severity}] ${i.title} → ${i.assignee_name ?? "sin asignar"}`
-          )
-          .join("\n")
-      : "";
-
-  const teamMetrics =
-    employeesRes.data && employeesRes.data.length > 0
-      ? employeesRes.data
-          .map(
-            (e) =>
-              `- ${e.name} (${e.department}): ejecucion ${e.execution_score}%, ${e.actions_overdue} acciones vencidas, ${e.contacts_managed} clientes`
-          )
-          .join("\n")
-      : "";
-
-  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails, companies, activeInsights, teamMetrics };
+  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails, companies, activeInsights, payments, reorders };
 }
 
 interface ContextData {
@@ -219,54 +231,56 @@ interface ContextData {
   semanticEmails: string;
   companies: string;
   activeInsights: string;
-  teamMetrics: string;
+  payments: string;
+  reorders: string;
 }
 
 function buildSystemPrompt(ctx: ContextData): string {
-  let prompt = `Eres el asistente de inteligencia comercial de Quimibond, empresa textil mexicana.
-Tu rol es ayudar al equipo directivo a entender la situacion comercial: contactos, alertas, riesgos, oportunidades y tendencias.
+  let prompt = `Eres el asistente de inteligencia ejecutiva de Quimibond (fabricante mexicano de entretelas y no-tejidos).
+Tienes acceso a datos en tiempo real de ventas, cobranza, entregas, proveedores, y comunicaciones.
 
 Reglas:
-- Responde siempre en espanol (Mexico).
-- Se conciso pero completo. Usa datos concretos del contexto cuando esten disponibles.
-- Si no tienes informacion suficiente, dilo honestamente.
-- Cuando menciones contactos, incluye su empresa y datos relevantes.
-- Puedes hacer recomendaciones accionables basadas en los datos.
-- Usa formato markdown para listas y enfasis.
+- Responde en español (Mexico). Se directo y concreto.
+- USA los datos del contexto — no inventes. Si no hay datos, dilo.
+- Incluye montos en MXN, nombres de responsables, y referencias de producto cuando estén disponibles.
+- Haz recomendaciones accionables: "llamar a X", "revisar factura Y", no genéricos.
+- Para productos, usa la referencia interna (ej: WM4032OW152) no el nombre largo.
+- Formato markdown para listas y énfasis.
 
-## Contexto actual
-
-### Alertas abiertas
-${ctx.alerts}
-
-### Ultimo briefing
-${ctx.briefing}
-
-### Contactos relevantes
-${ctx.contacts}`;
+## Datos en tiempo real`;
 
   if (ctx.companies) {
-    prompt += `\n\n### Empresas relevantes (perfiles con revenue, tendencia, riesgo)\n${ctx.companies}`;
+    prompt += `\n\n### Inteligencia de empresas (ventas, cartera, entregas, quejas, riesgo)\n${ctx.companies}`;
+  }
+
+  if (ctx.payments) {
+    prompt += `\n\n### Prediccion de pagos (patron historico vs actual)\n${ctx.payments}`;
+  }
+
+  if (ctx.reorders) {
+    prompt += `\n\n### Prediccion de reorden (ciclo de compra vs dias sin comprar)\n${ctx.reorders}`;
   }
 
   if (ctx.activeInsights) {
-    prompt += `\n\n### Insights criticos activos de agentes IA\n${ctx.activeInsights}`;
+    prompt += `\n\n### Insights activos de los 7 Directores IA\n${ctx.activeInsights}`;
   }
 
-  if (ctx.teamMetrics) {
-    prompt += `\n\n### Metricas de equipo (ejecucion semanal)\n${ctx.teamMetrics}`;
+  if (ctx.contacts) {
+    prompt += `\n\n### Contactos\n${ctx.contacts}`;
   }
 
   if (ctx.facts) {
-    prompt += `\n\n### Hechos del knowledge graph\n${ctx.facts}`;
+    prompt += `\n\n### Hechos extraidos de emails\n${ctx.facts}`;
   }
 
   if (ctx.semanticEmails) {
-    prompt += `\n\n### Emails relevantes (busqueda semantica)\n${ctx.semanticEmails}`;
+    prompt += `\n\n### Emails relevantes\n${ctx.semanticEmails}`;
   }
 
+  prompt += `\n\n### Briefing del dia\n${ctx.briefing}`;
+
   if (ctx.chatMemory) {
-    prompt += `\n\n### Ejemplos de respuestas exitosas previas\n${ctx.chatMemory}`;
+    prompt += `\n\n### Respuestas previas exitosas\n${ctx.chatMemory}`;
   }
 
   return prompt;
