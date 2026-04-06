@@ -267,16 +267,30 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         .order("created_at", { ascending: false }).limit(200);
 
       const existingTitles = new Set<string>((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
+      // Track company+category combos for cross-director dedup
+      const existingCompanyCat = new Set<string>(
+        (existing ?? []).filter((i: { company_id: number | null }) => i.company_id)
+          .map((i: { company_id: number; category: string }) => `${i.company_id}:${i.category}`)
+      );
 
       for (const insight of insights) {
         const norm = normalizeForDedup(String(insight.title || ""));
         if (existingTitles.has(norm)) { duplicatesSkipped++; continue; }
 
-        // Check if same company+category already has an active insight
+        // Cross-director dedup: if another director already has an active insight
+        // for the same company + same category, skip it
         const companyName = String(insight.company_name || "").trim().toLowerCase();
         const category = normalizeCategory(String(insight.category || agent.domain));
         if (companyName && companyName !== "null") {
-          // We'll resolve company_id later, but for now check by normalized title similarity
+          // Try to resolve company_id for dedup check
+          const { data: co } = await supabase.from("companies").select("id")
+            .ilike("canonical_name", companyName).limit(1).single();
+          if (co && existingCompanyCat.has(`${co.id}:${category}`)) {
+            duplicatesSkipped++;
+            continue;
+          }
+
+          // Also check by title word overlap (fallback)
           const titleWords = norm.split(" ").filter(w => w.length > 3);
           const hasSimilar = [...existingTitles].some(existing => {
             const overlap = titleWords.filter(w => existing.includes(w)).length;
@@ -286,6 +300,12 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         }
 
         existingTitles.add(norm);
+        // Track for cross-director dedup within this run
+        if (companyName && companyName !== "null") {
+          const { data: co2 } = await supabase.from("companies").select("id")
+            .ilike("canonical_name", companyName).limit(1).single();
+          if (co2) existingCompanyCat.add(`${co2.id}:${category}`);
+        }
         filteredInsights.push(insight);
       }
     }
@@ -317,6 +337,14 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         const titleStr = String(i.title || "");
         const isMeta = META_TITLE_PATTERNS.some(p => p.test(titleStr));
         if (isMeta) {
+          duplicatesSkipped++;
+          continue;
+        }
+
+        // Filter out likely unit-error margin insights (cost/kg vs price/m)
+        // If title mentions "por debajo del costo" with >5x difference, it's a unit mismatch
+        if (/\d+x\s+(por\s+)?(debajo|encima|below|above)/i.test(titleStr) ||
+            /precio.*~?\d+x.*costo/i.test(titleStr)) {
           duplicatesSkipped++;
           continue;
         }
@@ -450,7 +478,7 @@ const CATEGORY_MAP: Record<string, string> = {
 
 /** Categories that are internal system noise — should NOT reach the CEO inbox */
 const META_TITLE_PATTERNS = [
-  /sesgo\s+(sistem|hacia)/i,
+  /sesgo\s+(sistem|hacia|cr[ií]tico)/i,
   /calibraci[oó]n\s+(de|imposible)/i,
   /director\s+\w+\s+(ausente|fantasma)/i,
   /frecuencia\s+de\s+activaci/i,
@@ -459,6 +487,12 @@ const META_TITLE_PATTERNS = [
   /sin\s+datos\s+(de|para)\s+(clientes|cartera|productos|empresas)/i,
   /agentes?\s+con\s+\d+%/i,
   /validaci[oó]n\s+prematura/i,
+  /tasa\s+de\s+aceptaci/i,
+  /diversificaci[oó]n\s+de\s+tipos/i,
+  /patr[oó]n\s+(de\s+)?(desalineaci|rechazo)/i,
+  /identificar\s+patr[oó]n\s+en\s+rechazos/i,
+  /\d+%\s+de?\s+aceptaci/i,
+  /volumen\s+bajo.*validaci/i,
 ];
 
 function normalizeCategory(raw: string): string {
@@ -515,7 +549,8 @@ Reglas ESTRICTAS:
 9. business_impact_estimate debe ser en MXN cuando sea posible calcular
 10. Para productos, SIEMPRE usa product_ref (referencia interna, ej: WM4032OW152), NO el nombre largo
 11. IGNORA empresas con nombre "quimibond" o "productora de no tejidos" — son la propia empresa
-12. Si ves margenes de -80% a -95%, probablemente es error de unidades (costo por kg vs precio por metro). NO los reportes como perdidas reales sin verificar
+12. Si ves margenes de -80% a -95% o precios de venta que son 3x+ MENORES que el costo, es casi seguro error de unidades (costo por kg vs precio por metro). NO los reportes. Si la diferencia es >3x entre costo y precio, IGNORALO completamente
+13. Si ves un problema que OTRO director ya reporto (ver seccion "QUE DICEN OTROS DIRECTORES"), NO generes un insight duplicado — devuelve [] en su lugar
 13. NO reportes datos viejos (entregas de >6 meses, ordenes de >1 año)
 14. Si otro director ya reporto el mismo tema (ver seccion "QUE DICEN OTROS DIRECTORES"), NO lo repitas — en su lugar, agrega contexto nuevo que el otro director no tenia`;
 
