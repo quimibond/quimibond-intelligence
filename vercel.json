@@ -14,7 +14,7 @@
     },
     {
       "path": "/api/agents/orchestrate",
-      "schedule": "*/15 * * * *"
+      "schedule": "*/30 * * * *"
     },
     {
       "path": "/api/agents/cleanup",

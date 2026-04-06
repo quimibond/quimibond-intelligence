@@ -152,6 +152,19 @@ export async function POST(request: NextRequest) {
         );
     }
 
+    // Log to pipeline_logs for monitoring
+    await supabase.from("pipeline_logs").insert({
+      level: result.failedCount > 0 ? "warning" : "info",
+      phase: "emails_synced",
+      message: `Sync: ${saved} emails, ${threads.length} threads (${result.successCount} cuentas ok, ${result.failedCount} fallidas)`,
+      details: {
+        total: saved,
+        threads: threads.length,
+        accounts_ok: result.successCount,
+        accounts_failed: result.failedCount,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       emails: saved,
