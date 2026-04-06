@@ -43,7 +43,7 @@ const navItems = [
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/briefings", label: "Briefings", icon: FileText },
   { href: "/chat", label: "Chat IA", icon: MessageSquare },
-  { href: "/agents", label: "Agentes IA", icon: Bot },
+  { href: "/agents", label: "Directores IA", icon: Bot },
 ];
 
 const bottomItems = [

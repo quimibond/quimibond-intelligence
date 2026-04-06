@@ -40,6 +40,7 @@ export default function AgentsPage() {
   const [loading, setLoading] = useState(true);
   const [runningAgent, setRunningAgent] = useState<string | null>(null);
   const [runningAll, setRunningAll] = useState(false);
+  const [showInactive, setShowInactive] = useState(false);
 
   const load = useCallback(async () => {
     const [agentsRes, insightsRes, feedbackRes, memoriesRes] = await Promise.all([
@@ -48,7 +49,7 @@ export default function AgentsPage() {
         .from("agent_insights")
         .select("id, title, severity, agent_id, created_at")
         .in("state", ["new", "seen"])
-        .gte("confidence", 0.65)
+        .gte("confidence", 0.80)
         .order("created_at", { ascending: false })
         .limit(5),
       supabase
@@ -113,16 +114,18 @@ export default function AgentsPage() {
     );
   }
 
-  const totalInsights = agents.reduce((s, a) => s + a.total_insights, 0);
-  const newInsights = agents.reduce((s, a) => s + a.new_insights, 0);
+  const activeAgents = agents.filter(a => a.is_active);
+  const inactiveAgents = agents.filter(a => !a.is_active);
+  const totalInsights = activeAgents.reduce((s, a) => s + a.total_insights, 0);
+  const newInsights = activeAgents.reduce((s, a) => s + a.new_insights, 0);
 
   return (
     <div className="space-y-5">
-      {/* Header — stacks on mobile */}
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <PageHeader
-          title="Agentes de IA"
-          description={`${agents.length} agentes — ${totalInsights} insights generados${newInsights > 0 ? `, ${newInsights} nuevos` : ""}`}
+          title="Directores IA"
+          description={`${activeAgents.length} directores activos — ${totalInsights} insights${newInsights > 0 ? `, ${newInsights} nuevos` : ""}`}
         />
         <Button
           onClick={handleRunNext}
@@ -134,9 +137,9 @@ export default function AgentsPage() {
         </Button>
       </div>
 
-      {/* Agent Cards */}
+      {/* Active Directors */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {agents.map((agent) => {
+        {activeAgents.map((agent) => {
           const dc = getDomainConfig(agent.domain);
           const Icon = dc.icon;
           const color = dc.color;
@@ -221,6 +224,41 @@ export default function AgentsPage() {
           );
         })}
       </div>
+
+      {/* Inactive agents toggle */}
+      {inactiveAgents.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowInactive(!showInactive)}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+          >
+            {showInactive ? "Ocultar" : "Mostrar"} {inactiveAgents.length} agentes inactivos
+          </button>
+          {showInactive && (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mt-3 opacity-50">
+              {inactiveAgents.map((agent) => {
+                const dc = getDomainConfig(agent.domain);
+                const Icon = dc.icon;
+                return (
+                  <Card key={agent.slug} className="relative overflow-hidden">
+                    <CardContent className="pt-4 pb-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted")}>
+                          <Icon className="h-4.5 w-4.5 text-muted-foreground" />
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate line-through">{agent.name}</p>
+                          <p className="text-[10px] text-muted-foreground">Desactivado — {agent.total_insights} insights historicos</p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Recent insights — compact preview, links to inbox */}
       {recentInsights.length > 0 && (
