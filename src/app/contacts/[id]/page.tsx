@@ -307,18 +307,15 @@ export default function ContactDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="perfil">
-        <TabsList className="flex-wrap h-auto gap-1 overflow-x-auto">
-          <TabsTrigger value="perfil">Perfil</TabsTrigger>
-          <TabsTrigger value="comercial">
-            <ShoppingCart className="mr-1 h-3.5 w-3.5" />
-            Comercial
-          </TabsTrigger>
-          <TabsTrigger value="salud">Salud</TabsTrigger>
-          <TabsTrigger value="emails">Emails</TabsTrigger>
-          <TabsTrigger value="inteligencia">Inteligencia</TabsTrigger>
-          <TabsTrigger value="alertas">Alertas</TabsTrigger>
-          <TabsTrigger value="acciones">Acciones</TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="inline-flex w-auto min-w-full md:min-w-0 gap-0.5 h-9">
+            <TabsTrigger value="perfil" className="text-xs px-3">Perfil</TabsTrigger>
+            <TabsTrigger value="comercial" className="text-xs px-3">Comercial</TabsTrigger>
+            <TabsTrigger value="salud" className="text-xs px-3">Salud</TabsTrigger>
+            <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
+            <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="perfil" className="space-y-6">
           <TabPerfil contact={contact} personProfile={personProfile} />
@@ -334,12 +331,6 @@ export default function ContactDetailPage() {
         </TabsContent>
         <TabsContent value="inteligencia">
           <TabInteligencia facts={facts} />
-        </TabsContent>
-        <TabsContent value="alertas">
-          <TabAlertas alerts={alerts} />
-        </TabsContent>
-        <TabsContent value="acciones">
-          <TabAcciones actions={actions} />
         </TabsContent>
       </Tabs>
     </div>

@@ -424,76 +424,29 @@ export default function CompanyDetailPage() {
 
       {/* Tabs */}
       <Tabs defaultValue="resumen">
-        <TabsList className="flex-wrap h-auto gap-1 overflow-x-auto">
-          <TabsTrigger value="resumen">Resumen</TabsTrigger>
-          <TabsTrigger value="contactos">Contactos ({contacts.length})</TabsTrigger>
-          <TabsTrigger value="inteligencia">Inteligencia ({facts.length})</TabsTrigger>
-          <TabsTrigger value="finanzas">
-            <DollarSign className="mr-1 h-3.5 w-3.5" />
-            Finanzas
-          </TabsTrigger>
-          <TabsTrigger value="alertas">Alertas ({alerts.length})</TabsTrigger>
-          <TabsTrigger value="acciones">Acciones ({actions.length})</TabsTrigger>
-          <TabsTrigger value="emails">
-            <Mail className="mr-1 h-3.5 w-3.5" />
-            Emails ({recentEmails.length})
-          </TabsTrigger>
-          <TabsTrigger value="productos">
-            <Package className="mr-1 h-3.5 w-3.5" />
-            Productos
-          </TabsTrigger>
-          <TabsTrigger value="operaciones">
-            <Truck className="mr-1 h-3.5 w-3.5" />
-            Operaciones
-          </TabsTrigger>
-          <TabsTrigger value="ventas">
-            <ShoppingCart className="mr-1 h-3.5 w-3.5" />
-            Ventas
-          </TabsTrigger>
-          <TabsTrigger value="compras">
-            <Receipt className="mr-1 h-3.5 w-3.5" />
-            Compras
-          </TabsTrigger>
-          <TabsTrigger value="pagos">
-            <Banknote className="mr-1 h-3.5 w-3.5" />
-            Pagos
-          </TabsTrigger>
-          <TabsTrigger value="manufactura">
-            <Factory className="mr-1 h-3.5 w-3.5" />
-            Manufactura
-          </TabsTrigger>
-          <TabsTrigger value="salud">
-            <Heart className="mr-1 h-3.5 w-3.5" />
-            Salud
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
+          <TabsList className="inline-flex w-auto min-w-full md:min-w-0 gap-0.5 h-9">
+            <TabsTrigger value="resumen" className="text-xs px-3">Resumen</TabsTrigger>
+            <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
+            <TabsTrigger value="finanzas" className="text-xs px-3">Finanzas</TabsTrigger>
+            <TabsTrigger value="ventas" className="text-xs px-3">Ventas</TabsTrigger>
+            <TabsTrigger value="compras" className="text-xs px-3">Compras</TabsTrigger>
+            <TabsTrigger value="operaciones" className="text-xs px-3">Operaciones</TabsTrigger>
+            <TabsTrigger value="productos" className="text-xs px-3">Productos</TabsTrigger>
+            <TabsTrigger value="contactos" className="text-xs px-3">Contactos</TabsTrigger>
+            <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="resumen" className="space-y-6">
           <TabResumen company={company} relationships={relationships} />
-        </TabsContent>
-        <TabsContent value="contactos">
-          <TabContactos contacts={contacts} />
         </TabsContent>
         <TabsContent value="inteligencia">
           <TabInteligencia facts={facts} companyId={company.id} />
         </TabsContent>
         <TabsContent value="finanzas" className="space-y-6">
           <TabFinanzas financials={financials} revenueRows={revenueRows} odooSnapshots={odooSnapshots} />
-        </TabsContent>
-        <TabsContent value="alertas">
-          <TabAlertas alerts={alerts} />
-        </TabsContent>
-        <TabsContent value="acciones">
-          <TabAcciones actions={actions} />
-        </TabsContent>
-        <TabsContent value="emails">
-          <TabEmails recentEmails={recentEmails} />
-        </TabsContent>
-        <TabsContent value="productos" className="space-y-6">
-          <TabProductos companyProducts={companyProducts} />
-        </TabsContent>
-        <TabsContent value="operaciones" className="space-y-6">
-          <TabOperaciones logistics={logistics} pipeline={pipeline} />
+          <TabPagos companyId={company.id} />
         </TabsContent>
         <TabsContent value="ventas" className="space-y-6">
           <TabVentas companyId={company.id} />
@@ -501,14 +454,18 @@ export default function CompanyDetailPage() {
         <TabsContent value="compras" className="space-y-6">
           <TabCompras companyId={company.id} />
         </TabsContent>
-        <TabsContent value="pagos" className="space-y-6">
-          <TabPagos companyId={company.id} />
-        </TabsContent>
-        <TabsContent value="manufactura" className="space-y-6">
+        <TabsContent value="operaciones" className="space-y-6">
+          <TabOperaciones logistics={logistics} pipeline={pipeline} />
           <TabManufactura companyId={company.id} />
         </TabsContent>
-        <TabsContent value="salud" className="space-y-6">
-          <TabSalud healthScores={healthScores} />
+        <TabsContent value="productos" className="space-y-6">
+          <TabProductos companyProducts={companyProducts} />
+        </TabsContent>
+        <TabsContent value="contactos">
+          <TabContactos contacts={contacts} />
+        </TabsContent>
+        <TabsContent value="emails">
+          <TabEmails recentEmails={recentEmails} />
         </TabsContent>
       </Tabs>
     </div>
