@@ -22,7 +22,7 @@ interface ContactsRiskProps {
 export function ContactsRisk({ contacts, totalContacts }: ContactsRiskProps) {
   return (
     <Card className="h-full">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-2">
         <Link href="/contacts" className="flex items-center justify-between group">
           <div className="flex items-center gap-2">
             <Users className="h-4 w-4 text-danger" />
@@ -33,29 +33,27 @@ export function ContactsRisk({ contacts, totalContacts }: ContactsRiskProps) {
       </CardHeader>
       <CardContent>
         {contacts.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
-            {totalContacts === 0
-              ? "Sin contactos — sincroniza desde Sistema"
-              : "Sin contactos en riesgo alto"}
+          <p className="text-sm text-muted-foreground py-6 text-center">
+            Sin contactos en riesgo alto
           </p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {contacts.map((c) => (
               <Link
                 key={c.id}
                 href={`/contacts/${c.id}`}
-                className="flex items-center gap-2 rounded-lg border p-2 hover:bg-muted/50 transition-colors active:bg-muted"
+                className="flex items-center gap-3 rounded-xl border p-3 hover:bg-muted/50 transition-colors active:bg-muted"
               >
                 <RiskBadge level={c.risk_level} />
-                <span className="text-xs sm:text-sm font-medium truncate flex-1 min-w-0">
+                <span className="text-sm font-medium truncate flex-1 min-w-0">
                   {c.name}
                 </span>
-                <div className="flex items-center gap-1.5 shrink-0">
+                <div className="flex items-center gap-2 shrink-0">
                   <Progress
                     value={scoreToPercent(c.relationship_score)}
-                    className="h-1.5 w-8 sm:w-16"
+                    className="h-1.5 w-12"
                   />
-                  <span className="text-[10px] sm:text-xs text-muted-foreground w-5 text-right tabular-nums">
+                  <span className="text-xs text-muted-foreground w-6 text-right tabular-nums">
                     {c.relationship_score ?? 0}
                   </span>
                 </div>

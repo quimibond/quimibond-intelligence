@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
-import { ArrowRight } from "lucide-react";
 
 export interface KPICardProps {
   title: string;
@@ -45,19 +44,16 @@ export function KPICard({
   return (
     <Link href={href} className={cn("block group", className)}>
       <Card className={cn("transition-all cursor-pointer h-full", colors[variant])}>
-        <CardContent className="p-3 sm:pt-4 sm:pb-3 sm:px-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1 sm:gap-2 text-[10px] sm:text-xs text-muted-foreground min-w-0">
-              <Icon className={cn("h-3 w-3 sm:h-4 sm:w-4 shrink-0", iconColors[variant])} />
-              <span className="truncate leading-tight">{title}</span>
-            </div>
-            <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground transition-all shrink-0 hidden sm:block" />
+        <CardContent className="p-4 sm:pt-4 sm:pb-3 sm:px-6">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+            <Icon className={cn("h-4 w-4 shrink-0", iconColors[variant])} />
+            <span className="truncate leading-tight">{title}</span>
           </div>
-          <p className={cn("mt-1 text-lg sm:text-2xl font-bold tabular-nums truncate", valueColors[variant])}>
+          <p className={cn("text-xl sm:text-2xl font-black tabular-nums truncate", valueColors[variant])}>
             {value}
           </p>
           {subtitle && (
-            <p className="text-[10px] sm:text-xs text-muted-foreground mt-0.5 truncate hidden sm:block">{subtitle}</p>
+            <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{subtitle}</p>
           )}
         </CardContent>
       </Card>

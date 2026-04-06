@@ -4,6 +4,7 @@ import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { timeAgo } from "@/lib/utils";
 import { getDomainConfig } from "@/lib/domains";
+import { INSIGHT_CATEGORY_LABELS, INSIGHT_CATEGORY_COLORS } from "@/lib/constants";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ArrowRight, Bot } from "lucide-react";
@@ -20,7 +21,7 @@ export function UrgentInsights({ insights, agents, totalPending }: UrgentInsight
 
   return (
     <Card className="h-full">
-      <CardHeader className="pb-3">
+      <CardHeader className="pb-2">
         <Link href="/inbox" className="flex items-center justify-between group">
           <div className="flex items-center gap-2">
             <Bot className="h-4 w-4 text-danger" />
@@ -31,13 +32,13 @@ export function UrgentInsights({ insights, agents, totalPending }: UrgentInsight
       </CardHeader>
       <CardContent>
         {insights.length === 0 ? (
-          <p className="text-sm text-muted-foreground py-4 text-center">
+          <p className="text-sm text-muted-foreground py-6 text-center">
             {totalPending === 0
               ? "Sin insights pendientes"
-              : "Sin insights criticos — todo en orden"}
+              : "Sin insights criticos"}
           </p>
         ) : (
-          <div className="space-y-1.5">
+          <div className="space-y-2">
             {insights.map((ins) => {
               const agent = agentMap.get(ins.agent_id);
               const dc = agent ? getDomainConfig(agent.domain) : null;
@@ -47,21 +48,26 @@ export function UrgentInsights({ insights, agents, totalPending }: UrgentInsight
                 <Link
                   key={ins.id}
                   href={`/inbox/insight/${ins.id}`}
-                  className="flex items-center gap-2 rounded-lg border p-2 hover:bg-muted/50 transition-colors active:bg-muted"
+                  className="flex items-start gap-3 rounded-xl border p-3 hover:bg-muted/50 transition-colors active:bg-muted"
                 >
-                  <AgentIcon
-                    className={cn(
-                      "h-3.5 w-3.5 shrink-0 hidden sm:block",
-                      dc?.color ?? "text-muted-foreground"
-                    )}
-                  />
+                  <div className={cn("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg", dc?.bg ?? "bg-muted")}>
+                    <AgentIcon className={cn("h-4 w-4", dc?.color ?? "text-muted-foreground")} />
+                  </div>
                   <div className="min-w-0 flex-1">
-                    <span className="text-xs sm:text-sm font-medium line-clamp-1">
+                    <span className="text-sm font-semibold line-clamp-2 leading-snug">
                       {ins.title}
                     </span>
-                    <div className="flex items-center gap-1.5 mt-0.5">
-                      <SeverityBadge severity={ins.severity ?? "info"} />
-                      <span className="text-[10px] text-muted-foreground">
+                    <div className="flex items-center gap-1.5 mt-1">
+                      <SeverityBadge severity={ins.severity ?? "medium"} />
+                      {ins.category && (
+                        <span className={cn(
+                          "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
+                          INSIGHT_CATEGORY_COLORS[ins.category] ?? "text-gray-600 bg-gray-50"
+                        )}>
+                          {INSIGHT_CATEGORY_LABELS[ins.category] ?? ins.category}
+                        </span>
+                      )}
+                      <span className="text-[11px] text-muted-foreground ml-auto">
                         {timeAgo(ins.created_at)}
                       </span>
                     </div>

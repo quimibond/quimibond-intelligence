@@ -30,7 +30,7 @@ export function MobileTabBar() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden border-t border-border bg-background/95 backdrop-blur-md safe-area-bottom">
-      <div className="flex items-center justify-around px-2 h-14">
+      <div className="flex items-center justify-around px-1 h-16">
         {tabs.map(({ href, label, icon: Icon }) => {
           const active = isActive(href);
           return (
@@ -38,12 +38,12 @@ export function MobileTabBar() {
               key={href}
               href={href}
               className={cn(
-                "flex flex-col items-center justify-center gap-0.5 flex-1 py-1 transition-colors",
+                "flex flex-col items-center justify-center gap-1 flex-1 py-1.5 transition-colors",
                 active ? "text-primary" : "text-muted-foreground"
               )}
             >
               <Icon className={cn("h-5 w-5", active && "stroke-[2.5]")} />
-              <span className={cn("text-[10px] font-medium", active && "font-bold")}>
+              <span className={cn("text-[11px]", active ? "font-bold" : "font-medium")}>
                 {label}
               </span>
             </Link>

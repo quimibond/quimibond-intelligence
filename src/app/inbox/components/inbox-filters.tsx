@@ -41,22 +41,22 @@ export function InboxFilters({
   onRefresh,
 }: InboxFiltersProps) {
   return (
-    <div className="px-1 py-2 md:px-0 md:py-0 md:mb-4 space-y-2">
-      <div className="flex items-center justify-between px-2">
+    <div className="px-3 py-2 md:px-0 md:py-0 md:mb-4 space-y-2">
+      <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl md:text-2xl font-black">Inbox</h1>
-          <p className="text-[11px] md:text-sm text-muted-foreground">
+          <p className="text-xs md:text-sm text-muted-foreground">
             {totalCount} pendiente{totalCount !== 1 ? "s" : ""}
             {filteredCount !== totalCount && ` · ${filteredCount} filtrado${filteredCount !== 1 ? "s" : ""}`}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onRefresh} title="Actualizar" className="h-8 w-8">
+        <Button variant="ghost" size="icon" onClick={onRefresh} title="Actualizar" className="h-9 w-9">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
 
       {/* Freshness indicators */}
-      <div className="flex flex-wrap gap-3 text-[10px] text-muted-foreground">
+      <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
         {freshness.lastSync && (
           <span className="flex items-center gap-1">
             <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastSync, 2) ? "bg-success" : isRecent(freshness.lastSync, 6) ? "bg-warning" : "bg-danger")} />
