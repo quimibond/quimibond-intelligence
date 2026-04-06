@@ -715,14 +715,15 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
     // NEW: 7 DIRECTORS
     // ═══════════════════════════════════════════════════════════════
     case "comercial": {
-      const [reorderRisk, top, margins, concentration, recentOrders] = await Promise.all([
+      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(15),
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
         sb.from("odoo_sale_orders").select("company_id, name, amount_total, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
+        sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10),
       ]);
-      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## Top clientes (tendencia)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
       const [payPredictions, trends, invoices, overdue, payments] = await Promise.all([
@@ -753,14 +754,15 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
     }
     case "riesgo_dir": {
-      const [narrativesRisk, payRisk, singleSource, churning, trends] = await Promise.all([
+      const [narrativesRisk, payRisk, singleSource, churning, trends, unanswered] = await Promise.all([
         sb.from("company_narrative").select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople").not("risk_signal", "is", null).order("total_revenue", { ascending: false }).limit(15),
         sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"]).order("total_pending", { ascending: false }).limit(10),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
         sb.from("weekly_trends").select("company_name, tier, overdue_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(10),
+        sb.from("threads").select("subject, last_sender, hours_without_response, account").eq("last_sender_type", "external").gt("hours_without_response", 72).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
       ]);
-      return `${profileSection}## EMPRESAS CON SEÑALES DE ALERTA (narrativa completa)\n${safeJSON(narrativesRisk.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## Tendencia semanal: que empeoro\n${safeJSON(trends.data)}\n## Clientes estrategicos cayendo >30%\n${safeJSON(churning.data)}\n## Proveedor unico (riesgo supply chain)\n${safeJSON(singleSource.data)}`;
+      return `${profileSection}## EMPRESAS CON SEÑALES DE ALERTA\n${safeJSON(narrativesRisk.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Clientes cayendo >30%\n${safeJSON(churning.data)}\n## Proveedor unico\n${safeJSON(singleSource.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA >72h\n${safeJSON(unanswered.data)}`;
     }
     case "costos": {
       const [margins, deadStock, priceErosion, topProducts] = await Promise.all([
@@ -772,10 +774,12 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## Margenes por producto+cliente (precio venta vs costo)\n${safeJSON(margins.data)}\n## ALERTA: productos con margen <15%\n${safeJSON(priceErosion.data)}\n## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}\n## Productos con mas stock\n${safeJSON(topProducts.data)}`;
     }
     case "equipo_dir": {
-      const [reorderByVendor, activities, employees] = await Promise.all([
+      const [reorderByVendor, activities, employees, stalledThreads] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, reorder_status, days_overdue_reorder, avg_order_value, salesperson_name, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).not("salesperson_name", "is", null).order("total_revenue", { ascending: false }).limit(30),
         sb.from("odoo_activities").select("assigned_to, activity_type, is_overdue, summary").eq("is_overdue", true).order("assigned_to").limit(30),
         sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20),
+        // Threads where external client wrote and nobody from Quimibond responded in 48h+
+        sb.from("threads").select("subject, last_sender, hours_without_response, account, company_id").eq("last_sender_type", "external").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(15),
       ]);
       // Group reorder risk by salesperson
       const vendorRisk: Record<string, { clients: number; revenue: number; companies: string[] }> = {};
@@ -790,7 +794,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         .sort((a, b) => b[1].revenue - a[1].revenue)
         .map(([name, d]) => `${name}: ${d.clients} clientes en riesgo ($${Math.round(d.revenue/1000)}K revenue) — ${d.companies.slice(0, 3).join(", ")}`);
 
-      return `${profileSection}## VENDEDORES CON CLIENTES EN RIESGO (agrupado)\n${vendorSummary.join("\n")}\n\n## Detalle por cliente\n${safeJSON(reorderByVendor.data)}\n## Empleados: actividades vencidas\n${safeJSON(employees.data)}\n## Actividades vencidas detalle\n${safeJSON(activities.data)}`;
+      return `${profileSection}## EMAILS SIN RESPUESTA >48h (clientes esperando)\n${safeJSON(stalledThreads.data)}\n\n## VENDEDORES CON CLIENTES EN RIESGO (agrupado)\n${vendorSummary.join("\n")}\n\n## Detalle por cliente\n${safeJSON(reorderByVendor.data)}\n## Empleados: actividades vencidas\n${safeJSON(employees.data)}\n## Actividades vencidas detalle\n${safeJSON(activities.data)}`;
     }
     // ═══════════════════════════════════════════════════════════════
     // LEGACY: old domains (kept for backward compat, won't run)
