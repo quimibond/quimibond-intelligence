@@ -20,7 +20,7 @@ const MAX_CONTEXT_CHARS = 60_000;
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.80;
 
 /** Max insights per agent per run — prevents flooding the inbox */
-const MAX_INSIGHTS_PER_RUN = 5;
+const MAX_INSIGHTS_PER_RUN = 3;
 
 /** Old agents that should NOT generate insights (deactivated but kept for safety) */
 const SILENT_AGENTS = new Set(["meta", "cleanup", "data_quality", "odoo"]);
@@ -462,29 +462,34 @@ function normalizeForDedup(title: string): string {
 // ── Structured prompt for agents ────────────────────────────────────────
 const AGENT_SYSTEM_SUFFIX = `
 
-IMPORTANTE: Eres un agente que reporta al CEO de Quimibond (empresa textil mexicana).
+IMPORTANTE: Eres un director virtual de Quimibond (fabricante textil mexicano de entretelas y no-tejidos).
 
 Reglas ESTRICTAS:
-1. MAXIMO 5 insights por respuesta. Si no hay nada importante, devuelve []
+1. MAXIMO 3 insights por respuesta. Si no hay nada importante, devuelve []
 2. Solo genera insights que requieran ACCION CONCRETA del CEO o su equipo
-3. NO repitas insights sobre el mismo tema/empresa — si ya lo reportaste, NO lo vuelvas a generar
+3. NO repitas insights sobre el mismo tema/empresa — si otro director ya lo reportó en "QUE DICEN OTROS DIRECTORES", NO lo repitas
 4. Cada insight DEBE tener evidencia CONCRETA: numeros, fechas, nombres, montos
 5. NO generes insights genericos o vagos ("mejorar comunicacion", "revisar proceso")
 6. category DEBE ser exactamente uno de: cobranza, ventas, entregas, operaciones, proveedores, riesgo, equipo, datos
 7. severity: solo "high" o "critical" para cosas urgentes. "medium" para lo demas. NUNCA uses "info" o "low"
 8. Si un problema ya tiene solucion obvia (ej: factura ya pagada), NO lo reportes
 9. business_impact_estimate debe ser en MXN cuando sea posible calcular
-10. Para productos, SIEMPRE usa product_ref (referencia interna, ej: WM4032OW152), NO el nombre largo`;
+10. Para productos, SIEMPRE usa product_ref (referencia interna, ej: WM4032OW152), NO el nombre largo
+11. IGNORA empresas con nombre "quimibond" o "productora de no tejidos" — son la propia empresa
+12. Si ves margenes de -80% a -95%, probablemente es error de unidades (costo por kg vs precio por metro). NO los reportes como perdidas reales sin verificar
+13. NO reportes datos viejos (entregas de >6 meses, ordenes de >1 año)
+14. Si otro director ya reporto el mismo tema (ver seccion "QUE DICEN OTROS DIRECTORES"), NO lo repitas — en su lugar, agrega contexto nuevo que el otro director no tenia`;
 
 function buildAgentPrompt(context: string, memoryText: string, threshold: number): string {
-  // Truncate context if too long
   const truncatedContext = context.length > MAX_CONTEXT_CHARS
     ? context.slice(0, MAX_CONTEXT_CHARS) + "\n\n[...datos truncados por limite de tokens]"
     : context;
 
-  return `Analiza los datos y genera SOLO insights que requieran accion inmediata. Confianza minima: ${threshold}. MAXIMO 5 insights.
+  return `Analiza los datos y genera SOLO insights que requieran accion inmediata. Confianza minima: ${threshold}. MAXIMO 3 insights.
 
 Si no hay nada urgente o nuevo, devuelve []. Es mejor devolver [] que generar ruido.
+
+IMPORTANTE: Si otro director ya reporto algo en "QUE DICEN OTROS DIRECTORES", NO lo repitas.
 
 ${truncatedContext}${memoryText}
 
@@ -731,7 +736,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
     }
     case "operaciones_dir": {
       const [deliveries, orderpoints, deadStock, products] = await Promise.all([
-        sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(20),
+        sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').gte("scheduled_date", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("scheduled_date", { ascending: true }).limit(15),
         sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast, warehouse_name").order("qty_on_hand", { ascending: true }).limit(20),
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, available_qty, reorder_min, standard_price").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(15),
@@ -759,7 +764,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
     }
     case "costos": {
       const [margins, deadStock, priceErosion, topProducts] = await Promise.all([
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, cost_price, gross_margin_pct, total_order_value").order("total_order_value", { ascending: false }).limit(20),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, cost_price, gross_margin_pct, total_order_value").not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(20),
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers, standard_price, list_price").order("inventory_value", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, cost_price, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, standard_price, list_price").gt("stock_qty", 0).order("stock_qty", { ascending: false }).limit(15),
