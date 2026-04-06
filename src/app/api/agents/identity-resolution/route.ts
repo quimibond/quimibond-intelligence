@@ -6,11 +6,12 @@
  *
  * Steps:
  * 1. Link contacts to companies by email domain
- * 2. Link contacts to Odoo partners by email match
- * 3. Link companies to Odoo by fuzzy name match (pg_trgm)
+ * 2. Inherit odoo_partner_id from company to contacts
+ * 3. Link companies to entities by fuzzy name match (pg_trgm)
  * 4. Link contacts to companies by odoo_partner_id
- * 5. Propagate commercial_partner_id
+ * 5. Link contacts to entities by email
  * 6. Fill missing company domains
+ * 7. Link orphan emails to companies via sender contact
  *
  * Runs every 2 hours via Vercel cron. Idempotent.
  */

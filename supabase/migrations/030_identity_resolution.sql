@@ -1,7 +1,9 @@
 -- Migration 030: Identity Resolution
--- Resolves the gap where external contacts have no odoo_partner_id link
--- and companies extracted from emails are disconnected from Odoo companies.
--- Uses pg_trgm (enabled in migration 025) for fuzzy name matching.
+-- Resolves the gap where external contacts have no company_id link
+-- and companies are disconnected from the knowledge graph (entity_id).
+-- Uses pg_trgm (enabled in earlier migrations) for fuzzy name matching.
+-- Matches LIVE schema: contacts has email, company_id, odoo_partner_id, entity_id
+-- (NO commercial_partner_id, NO company text field)
 
 -- ============================================================================
 -- Function: get_identity_gaps()
@@ -16,47 +18,42 @@ DECLARE
   total_contacts int;
   contacts_no_company int;
   contacts_no_odoo int;
-  contacts_no_commercial int;
+  contacts_no_entity int;
   total_companies int;
   companies_no_odoo int;
+  companies_no_entity int;
   companies_no_domain int;
+  emails_no_company int;
+  invoices_no_company int;
 BEGIN
   SELECT count(*) INTO total_contacts FROM contacts;
-
-  SELECT count(*) INTO contacts_no_company
-  FROM contacts WHERE company_id IS NULL;
-
-  SELECT count(*) INTO contacts_no_odoo
-  FROM contacts WHERE odoo_partner_id IS NULL;
-
-  SELECT count(*) INTO contacts_no_commercial
-  FROM contacts WHERE commercial_partner_id IS NULL;
-
+  SELECT count(*) INTO contacts_no_company FROM contacts WHERE company_id IS NULL;
+  SELECT count(*) INTO contacts_no_odoo FROM contacts WHERE odoo_partner_id IS NULL;
+  SELECT count(*) INTO contacts_no_entity FROM contacts WHERE entity_id IS NULL;
   SELECT count(*) INTO total_companies FROM companies;
-
-  SELECT count(*) INTO companies_no_odoo
-  FROM companies WHERE odoo_partner_id IS NULL;
-
-  SELECT count(*) INTO companies_no_domain
-  FROM companies WHERE domain IS NULL OR domain = '';
+  SELECT count(*) INTO companies_no_odoo FROM companies WHERE odoo_partner_id IS NULL;
+  SELECT count(*) INTO companies_no_entity FROM companies WHERE entity_id IS NULL;
+  SELECT count(*) INTO companies_no_domain FROM companies WHERE domain IS NULL OR domain = '';
+  SELECT count(*) INTO emails_no_company FROM emails WHERE company_id IS NULL;
+  SELECT count(*) INTO invoices_no_company FROM odoo_invoices WHERE company_id IS NULL;
 
   RETURN jsonb_build_object(
     'total_contacts', total_contacts,
     'contacts_without_company', contacts_no_company,
     'contacts_without_odoo_partner', contacts_no_odoo,
-    'contacts_without_commercial_partner', contacts_no_commercial,
+    'contacts_without_entity', contacts_no_entity,
     'total_companies', total_companies,
     'companies_without_odoo_partner', companies_no_odoo,
+    'companies_without_entity', companies_no_entity,
     'companies_without_domain', companies_no_domain,
+    'emails_without_company', emails_no_company,
+    'invoices_without_company', invoices_no_company,
     'contact_company_pct', CASE WHEN total_contacts > 0
-      THEN round((1.0 - contacts_no_company::numeric / total_contacts) * 100, 1)
-      ELSE 0 END,
+      THEN round((1.0 - contacts_no_company::numeric / total_contacts) * 100, 1) ELSE 0 END,
     'contact_odoo_pct', CASE WHEN total_contacts > 0
-      THEN round((1.0 - contacts_no_odoo::numeric / total_contacts) * 100, 1)
-      ELSE 0 END,
-    'company_odoo_pct', CASE WHEN total_companies > 0
-      THEN round((1.0 - companies_no_odoo::numeric / total_companies) * 100, 1)
-      ELSE 0 END,
+      THEN round((1.0 - contacts_no_odoo::numeric / total_contacts) * 100, 1) ELSE 0 END,
+    'company_entity_pct', CASE WHEN total_companies > 0
+      THEN round((1.0 - companies_no_entity::numeric / total_companies) * 100, 1) ELSE 0 END,
     'measured_at', now()
   );
 END;
@@ -65,6 +62,7 @@ $$;
 -- ============================================================================
 -- Function: resolve_identities()
 -- Intelligent multi-step identity resolution. Idempotent — safe to run repeatedly.
+-- Matches LIVE contacts schema (no commercial_partner_id, no company text).
 -- ============================================================================
 CREATE OR REPLACE FUNCTION resolve_identities()
 RETURNS jsonb
@@ -72,17 +70,18 @@ LANGUAGE plpgsql
 SECURITY DEFINER
 AS $$
 DECLARE
-  step1_contacts_to_companies int := 0;
-  step2_contacts_to_odoo int := 0;
-  step3_companies_to_odoo int := 0;
-  step4_contacts_via_odoo int := 0;
-  step5_propagated int := 0;
-  step6_domains_filled int := 0;
+  step1_domain int := 0;
+  step2_odoo_inherit int := 0;
+  step3_fuzzy_companies int := 0;
+  step4_odoo_to_company int := 0;
+  step5_entity_companies int := 0;
+  step6_entity_contacts int := 0;
+  step7_domains int := 0;
+  step8_emails_to_company int := 0;
 BEGIN
   -- ========================================================================
   -- Step 1: Link contacts to companies by email domain
-  -- contacts.email domain → companies.domain (already extracted by qb19)
-  -- Example: juan@textilesnorte.com → company where domain = 'textilesnorte.com'
+  -- juan@textilesnorte.com → company where domain = 'textilesnorte.com'
   -- ========================================================================
   UPDATE contacts c
   SET company_id = co.id, updated_at = now()
@@ -93,30 +92,12 @@ BEGIN
     AND co.domain IS NOT NULL
     AND co.domain != ''
     AND split_part(c.email, '@', 2) = co.domain;
-  GET DIAGNOSTICS step1_contacts_to_companies = ROW_COUNT;
+  GET DIAGNOSTICS step1_domain = ROW_COUNT;
 
   -- ========================================================================
-  -- Step 2: Link contacts to Odoo partners by email match
-  -- Find contacts whose email appears as a sender in emails that are linked
-  -- to companies which have odoo data (invoices/orders with odoo_partner_id).
-  -- This gives us the odoo_partner_id for the contact's company.
+  -- Step 2: Inherit odoo_partner_id from company
+  -- If contact has company_id and company has odoo_partner_id, inherit it
   -- ========================================================================
-  UPDATE contacts c
-  SET odoo_partner_id = sub.odoo_partner_id, updated_at = now()
-  FROM (
-    -- Match contact email to Odoo contacts that have odoo_partner_id set
-    SELECT DISTINCT ON (c2.id) c2.id AS contact_id, oc.odoo_partner_id
-    FROM contacts c2
-    JOIN contacts oc
-      ON oc.email = c2.email
-      AND oc.odoo_partner_id IS NOT NULL
-    WHERE c2.odoo_partner_id IS NULL
-      AND c2.email IS NOT NULL
-  ) sub
-  WHERE c.id = sub.contact_id;
-  GET DIAGNOSTICS step2_contacts_to_odoo = ROW_COUNT;
-
-  -- Also try: if contact has company_id and that company has odoo_partner_id
   UPDATE contacts c
   SET odoo_partner_id = co.odoo_partner_id, updated_at = now()
   FROM companies co
@@ -124,63 +105,44 @@ BEGIN
     AND c.company_id IS NOT NULL
     AND c.company_id = co.id
     AND co.odoo_partner_id IS NOT NULL;
-
-  step2_contacts_to_odoo := step2_contacts_to_odoo + (
-    SELECT count(*) FROM contacts
-    WHERE odoo_partner_id IS NOT NULL
-      AND updated_at >= now() - interval '5 seconds'
-      AND company_id IS NOT NULL
-  ) - step2_contacts_to_odoo;
+  GET DIAGNOSTICS step2_odoo_inherit = ROW_COUNT;
 
   -- ========================================================================
-  -- Step 3: Link companies to Odoo by name fuzzy match
-  -- companies.canonical_name vs other companies where odoo_partner_id is set
-  -- Uses pg_trgm similarity() with threshold 0.6
+  -- Step 3: Link companies to entities by canonical_name fuzzy match
+  -- 903 companies have no entity_id — try to match by name
   -- ========================================================================
-  UPDATE companies target
-  SET odoo_partner_id = sub.odoo_partner_id, updated_at = now()
-  FROM (
-    SELECT DISTINCT ON (t.id)
-      t.id AS target_id,
-      src.odoo_partner_id,
-      similarity(t.canonical_name, src.canonical_name) AS sim
-    FROM companies t
-    JOIN companies src
-      ON src.odoo_partner_id IS NOT NULL
-      AND src.id != t.id
-      AND t.canonical_name IS NOT NULL
-      AND src.canonical_name IS NOT NULL
-      AND similarity(t.canonical_name, src.canonical_name) >= 0.6
-    WHERE t.odoo_partner_id IS NULL
-    ORDER BY t.id, similarity(t.canonical_name, src.canonical_name) DESC
-  ) sub
-  WHERE target.id = sub.target_id;
-  GET DIAGNOSTICS step3_companies_to_odoo = ROW_COUNT;
-
-  -- Also try matching company canonical_name against contacts that have
-  -- odoo_partner_id and a "company" field set (text name from Odoo)
   UPDATE companies co
-  SET odoo_partner_id = sub.partner_id, updated_at = now()
+  SET entity_id = sub.entity_id, updated_at = now()
   FROM (
     SELECT DISTINCT ON (co2.id)
       co2.id AS company_id,
-      c.odoo_partner_id AS partner_id
+      e.id AS entity_id
     FROM companies co2
-    JOIN contacts c
-      ON c.odoo_partner_id IS NOT NULL
-      AND c.company IS NOT NULL
-      AND similarity(co2.canonical_name, lower(c.company)) >= 0.6
-    WHERE co2.odoo_partner_id IS NULL
+    JOIN entities e
+      ON e.entity_type = 'company'
+      AND e.canonical_name IS NOT NULL
       AND co2.canonical_name IS NOT NULL
-    ORDER BY co2.id, similarity(co2.canonical_name, lower(c.company)) DESC
+      AND similarity(co2.canonical_name, e.canonical_name) >= 0.6
+    WHERE co2.entity_id IS NULL
+    ORDER BY co2.id, similarity(co2.canonical_name, e.canonical_name) DESC
   ) sub
   WHERE co.id = sub.company_id;
+  GET DIAGNOSTICS step5_entity_companies = ROW_COUNT;
 
-  step3_companies_to_odoo := step3_companies_to_odoo + (
-    SELECT count(*) FROM companies
-    WHERE odoo_partner_id IS NOT NULL
-      AND updated_at >= now() - interval '5 seconds'
-  ) - step3_companies_to_odoo;
+  -- Also try exact match on odoo_id
+  UPDATE companies co
+  SET entity_id = e.id, updated_at = now()
+  FROM entities e
+  WHERE co.entity_id IS NULL
+    AND e.entity_type = 'company'
+    AND e.odoo_id IS NOT NULL
+    AND co.odoo_partner_id IS NOT NULL
+    AND e.odoo_id = co.odoo_partner_id;
+
+  step5_entity_companies := step5_entity_companies + (
+    SELECT count(*) FROM companies WHERE entity_id IS NOT NULL
+      AND updated_at >= now() - interval '10 seconds'
+  );
 
   -- ========================================================================
   -- Step 4: Link contacts to companies by odoo_partner_id match
@@ -192,24 +154,23 @@ BEGIN
   WHERE c.company_id IS NULL
     AND c.odoo_partner_id IS NOT NULL
     AND co.odoo_partner_id = c.odoo_partner_id;
-  GET DIAGNOSTICS step4_contacts_via_odoo = ROW_COUNT;
+  GET DIAGNOSTICS step4_odoo_to_company = ROW_COUNT;
 
   -- ========================================================================
-  -- Step 5: Propagate commercial_partner_id
-  -- If contact.company_id is set and company has odoo_partner_id,
-  -- set contact.commercial_partner_id = company.odoo_partner_id
+  -- Step 5: Link contacts to entities by email match
   -- ========================================================================
   UPDATE contacts c
-  SET commercial_partner_id = co.odoo_partner_id, updated_at = now()
-  FROM companies co
-  WHERE c.commercial_partner_id IS NULL
-    AND c.company_id IS NOT NULL
-    AND c.company_id = co.id
-    AND co.odoo_partner_id IS NOT NULL;
-  GET DIAGNOSTICS step5_propagated = ROW_COUNT;
+  SET entity_id = e.id, updated_at = now()
+  FROM entities e
+  WHERE c.entity_id IS NULL
+    AND c.email IS NOT NULL
+    AND e.entity_type = 'person'
+    AND e.email IS NOT NULL
+    AND lower(c.email) = lower(e.email);
+  GET DIAGNOSTICS step6_entity_contacts = ROW_COUNT;
 
   -- ========================================================================
-  -- Step 6 (bonus): Fill company domains from contact emails where missing
+  -- Step 6: Fill company domains from contact emails where missing
   -- ========================================================================
   UPDATE companies co
   SET domain = sub.extracted_domain, updated_at = now()
@@ -231,19 +192,40 @@ BEGIN
   ) sub
   WHERE co.id = sub.company_id
     AND (co.domain IS NULL OR co.domain = '');
-  GET DIAGNOSTICS step6_domains_filled = ROW_COUNT;
+  GET DIAGNOSTICS step7_domains = ROW_COUNT;
+
+  -- ========================================================================
+  -- Step 7: Link emails to companies via sender contact
+  -- ========================================================================
+  UPDATE emails em
+  SET company_id = c.company_id
+  FROM contacts c
+  WHERE em.company_id IS NULL
+    AND em.sender_contact_id IS NOT NULL
+    AND em.sender_contact_id = c.id
+    AND c.company_id IS NOT NULL;
+  GET DIAGNOSTICS step8_emails_to_company = ROW_COUNT;
 
   RETURN jsonb_build_object(
-    'contacts_linked_to_companies', step1_contacts_to_companies,
-    'contacts_linked_to_odoo', step2_contacts_to_odoo,
-    'companies_linked_to_odoo', step3_companies_to_odoo,
-    'contacts_linked_via_odoo_partner', step4_contacts_via_odoo,
-    'commercial_partner_propagated', step5_propagated,
-    'company_domains_filled', step6_domains_filled,
-    'total_resolved', step1_contacts_to_companies + step2_contacts_to_odoo
-      + step3_companies_to_odoo + step4_contacts_via_odoo
-      + step5_propagated + step6_domains_filled,
+    'contacts_linked_by_domain', step1_domain,
+    'contacts_odoo_inherited', step2_odoo_inherit,
+    'companies_linked_to_entities', step5_entity_companies,
+    'contacts_linked_by_odoo_partner', step4_odoo_to_company,
+    'contacts_linked_to_entities', step6_entity_contacts,
+    'company_domains_filled', step7_domains,
+    'emails_linked_to_companies', step8_emails_to_company,
+    'total_resolved', step1_domain + step2_odoo_inherit + step5_entity_companies
+      + step4_odoo_to_company + step6_entity_contacts + step7_domains + step8_emails_to_company,
     'resolved_at', now()
   );
 END;
 $$;
+
+-- ============================================================================
+-- Missing indexes detected in live DB audit
+-- ============================================================================
+CREATE INDEX IF NOT EXISTS idx_pipeline_logs_phase_created ON pipeline_logs(phase, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_action_items_state_due ON action_items(state, due_date) WHERE state IN ('pending', 'in_progress');
+CREATE INDEX IF NOT EXISTS idx_companies_entity_null ON companies(id) WHERE entity_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_contacts_company_null ON contacts(id) WHERE company_id IS NULL;
+CREATE INDEX IF NOT EXISTS idx_emails_company_null ON emails(id) WHERE company_id IS NULL AND sender_contact_id IS NOT NULL;
