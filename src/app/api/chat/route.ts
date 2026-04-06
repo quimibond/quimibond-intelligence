@@ -90,18 +90,14 @@ async function gatherContext(
 
   const [
     staticCtx,
-    // Company intelligence (narratives with connected data)
     narrativesRes,
-    // Payment predictions for mentioned companies
     paymentRes,
-    // Reorder predictions
     reorderRes,
-    // Active insights from Directors
     insightsRes,
-    // Facts from knowledge graph
     factsRes,
-    // Contacts matching query
     contactsRes,
+    invoicesRes,
+    anomaliesRes,
   ] = await Promise.all([
     getStaticContext(supabase),
 
@@ -152,6 +148,25 @@ async function gatherContext(
       .select("name, email, company_id, role, risk_level, current_health_score")
       .or(`name.ilike.${q},email.ilike.${q}`)
       .limit(5),
+
+    // Overdue invoices for mentioned companies
+    supabase
+      .from("odoo_invoices")
+      .select("name, amount_total, amount_residual, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
+      .eq("move_type", "out_invoice")
+      .in("payment_state", ["not_paid", "partial"])
+      .eq("state", "posted")
+      .gt("days_overdue", 0)
+      .order("days_overdue", { ascending: false })
+      .limit(20),
+
+    // Accounting anomalies
+    supabase
+      .from("accounting_anomalies")
+      .select("anomaly_type, severity, description, company_name, amount")
+      .in("severity", ["critical", "high"])
+      .order("amount", { ascending: false })
+      .limit(10),
   ]);
 
   const { alerts, briefing, chatMemory } = staticCtx;
@@ -219,7 +234,21 @@ async function gatherContext(
     }
   }
 
-  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails, companies, activeInsights, payments, reorders };
+  // Format overdue invoices
+  const overdueInvoices = (invoicesRes.data ?? []).length > 0
+    ? (invoicesRes.data ?? []).map((inv: Record<string, unknown>) =>
+        `- ${inv.name}: $${Number(inv.amount_residual ?? 0).toLocaleString()} ${inv.currency} vencida ${inv.days_overdue}d (total $${Number(inv.amount_total ?? 0).toLocaleString()}, pagado $${Number(inv.amount_paid ?? 0).toLocaleString()}, vence ${inv.due_date}, terminos: ${inv.payment_term ?? "?"})`
+      ).join("\n")
+    : "";
+
+  // Format anomalies
+  const anomalies = (anomaliesRes.data ?? []).length > 0
+    ? (anomaliesRes.data ?? []).map((a: Record<string, unknown>) =>
+        `- [${a.severity}/${a.anomaly_type}] ${a.description}`
+      ).join("\n")
+    : "";
+
+  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails, companies, activeInsights, payments, reorders, overdueInvoices, anomalies };
 }
 
 interface ContextData {
@@ -233,6 +262,8 @@ interface ContextData {
   activeInsights: string;
   payments: string;
   reorders: string;
+  overdueInvoices: string;
+  anomalies: string;
 }
 
 function buildSystemPrompt(ctx: ContextData): string {
@@ -259,6 +290,14 @@ Reglas:
 
   if (ctx.reorders) {
     prompt += `\n\n### Prediccion de reorden (ciclo de compra vs dias sin comprar)\n${ctx.reorders}`;
+  }
+
+  if (ctx.overdueInvoices) {
+    prompt += `\n\n### Facturas vencidas (cartera por cobrar)\n${ctx.overdueInvoices}`;
+  }
+
+  if (ctx.anomalies) {
+    prompt += `\n\n### Anomalias contables detectadas\n${ctx.anomalies}`;
   }
 
   if (ctx.activeInsights) {

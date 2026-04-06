@@ -9,9 +9,17 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   ArrowRight, DollarSign, Inbox, RefreshCw, Truck,
-  TrendingUp, TrendingDown, Minus, FileText,
+  TrendingUp, TrendingDown, Minus, FileText, Banknote,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip } from "recharts";
+
+interface CashflowBucket {
+  period: string;
+  receivable: number;
+  expected: number;
+  probability: number;
+}
 
 interface DashboardData {
   insightsPending: number;
@@ -19,6 +27,9 @@ interface DashboardData {
   otdRate: number | null;
   trends: { company_name: string; trend_signal: string; overdue_delta: number; late_delta: number }[];
   briefingSummary: string | null;
+  cashflow: CashflowBucket[];
+  cashflowTotal: { receivable: number; expected: number; probability: number } | null;
+  anomalyCount: number;
   lastUpdated: string;
 }
 
@@ -30,7 +41,7 @@ export default function DashboardPage() {
 
   const load = useCallback(async () => {
     try {
-      const [insightsRes, overdueRes, otdDoneRes, otdOntimeRes, trendsRes, briefingRes] = await Promise.all([
+      const [insightsRes, overdueRes, otdDoneRes, otdOntimeRes, trendsRes, briefingRes, cashflowRes, anomalyRes] = await Promise.all([
         // Pending insights count
         supabase.from("agent_insights").select("id", { count: "exact", head: true })
           .in("state", ["new", "seen"]).gte("confidence", 0.80),
@@ -56,6 +67,16 @@ export default function DashboardPage() {
         // Latest briefing
         supabase.from("briefings").select("summary_text")
           .eq("scope", "daily").order("created_at", { ascending: false }).limit(1),
+
+        // Cashflow projection
+        supabase.from("cashflow_projection")
+          .select("flow_type, period, gross_amount, net_amount, probability")
+          .order("sort_order"),
+
+        // Anomaly count
+        supabase.from("accounting_anomalies")
+          .select("id", { count: "exact", head: true })
+          .in("severity", ["critical", "high"]),
       ]);
 
       const overdueTotal = (overdueRes.data ?? []).reduce((s, i) => s + Number(i.amount_residual ?? 0), 0);
@@ -63,12 +84,30 @@ export default function DashboardPage() {
       const ontimeCount = otdOntimeRes.count ?? 0;
       const otdRate = doneCount > 0 ? Math.round((ontimeCount / doneCount) * 100) : null;
 
+      // Process cashflow
+      const cfRows = (cashflowRes.data ?? []) as { flow_type: string; period: string; gross_amount: number; net_amount: number; probability: number }[];
+      const receivableBuckets = cfRows.filter(r => r.flow_type === "receivable");
+      const cfSummary = cfRows.find(r => r.flow_type === "summary");
+      const cashflow: CashflowBucket[] = receivableBuckets.map(r => ({
+        period: r.period.replace(" dias", "d"),
+        receivable: Number(r.gross_amount ?? 0),
+        expected: Number(r.net_amount ?? 0),
+        probability: Number(r.probability ?? 0),
+      }));
+
       setData({
         insightsPending: insightsRes.count ?? 0,
         overdueAmount: overdueTotal,
         otdRate,
         trends: (trendsRes.data ?? []) as DashboardData["trends"],
         briefingSummary: briefingRes.data?.[0]?.summary_text ?? null,
+        cashflow,
+        cashflowTotal: cfSummary ? {
+          receivable: Number(cfSummary.gross_amount ?? 0),
+          expected: Number(cfSummary.net_amount ?? 0),
+          probability: Number(cfSummary.probability ?? 0),
+        } : null,
+        anomalyCount: anomalyRes.count ?? 0,
         lastUpdated: new Date().toISOString(),
       });
     } catch (err) {
@@ -142,6 +181,55 @@ export default function DashboardPage() {
           href="/inbox"
         />
       </div>
+
+      {/* Cashflow Projection */}
+      {data.cashflow.length > 0 && (
+        <Card>
+          <CardHeader className="pb-1">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Banknote className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-semibold">Flujo de efectivo</CardTitle>
+              </div>
+              {data.anomalyCount > 0 && (
+                <span className="text-[10px] font-medium text-danger bg-danger/10 rounded-full px-2 py-0.5">
+                  {data.anomalyCount} anomalías
+                </span>
+              )}
+            </div>
+            {data.cashflowTotal && (
+              <p className="text-xs text-muted-foreground">
+                Por cobrar: {formatCurrency(data.cashflowTotal.receivable)} → esperado: {formatCurrency(data.cashflowTotal.expected)} ({data.cashflowTotal.probability}%)
+              </p>
+            )}
+          </CardHeader>
+          <CardContent className="pt-2">
+            <div className="h-32">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.cashflow} barGap={2}>
+                  <XAxis dataKey="period" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis hide />
+                  <Tooltip
+                    formatter={(value) => formatCurrency(Number(value))}
+                    labelFormatter={(label) => `Período: ${label}`}
+                    contentStyle={{ fontSize: 12, borderRadius: 8 }}
+                  />
+                  <Bar dataKey="receivable" name="Por cobrar" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                    {data.cashflow.map((_, i) => (
+                      <Cell key={i} fill="hsl(var(--muted-foreground) / 0.2)" />
+                    ))}
+                  </Bar>
+                  <Bar dataKey="expected" name="Esperado" radius={[4, 4, 0, 0]} maxBarSize={40}>
+                    {data.cashflow.map((entry, i) => (
+                      <Cell key={i} fill={entry.probability >= 85 ? "hsl(var(--success))" : "hsl(var(--warning))"} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Weekly Trends */}
       {data.trends.length > 0 && (
