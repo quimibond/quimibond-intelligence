@@ -51,6 +51,10 @@
     {
       "path": "/api/pipeline/briefing",
       "schedule": "30 6 * * *"
+    },
+    {
+      "path": "/api/pipeline/reconcile",
+      "schedule": "0 7 * * *"
     }
   ]
 }

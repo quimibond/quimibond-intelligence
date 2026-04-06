@@ -198,9 +198,98 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── 5. FOLLOW-UP RESOLUTION: check if CEO-acted insights actually improved ──
+
+    let followUpsResolved = 0;
+    const { data: pendingFollowUps } = await supabase
+      .from("insight_follow_ups")
+      .select("id, company_id, category, original_title, snapshot_at_action, follow_up_date")
+      .eq("status", "pending")
+      .lte("follow_up_date", new Date().toISOString().split("T")[0]);
+
+    if (pendingFollowUps?.length) {
+      for (const fu of pendingFollowUps) {
+        if (!fu.company_id || !fu.snapshot_at_action) {
+          // No company to track, expire it
+          await supabase.from("insight_follow_ups").update({
+            status: "expired", resolved_at: now, resolution_note: "Sin empresa para verificar"
+          }).eq("id", fu.id);
+          followUpsResolved++;
+          continue;
+        }
+
+        // Get current company metrics from narrative
+        const { data: current } = await supabase
+          .from("company_narrative")
+          .select("overdue_amount, revenue_90d, late_deliveries, complaints, days_since_last_order")
+          .eq("company_id", fu.company_id)
+          .limit(1)
+          .single();
+
+        if (!current) {
+          await supabase.from("insight_follow_ups").update({
+            status: "expired", resolved_at: now, resolution_note: "Empresa no encontrada en narrativa"
+          }).eq("id", fu.id);
+          followUpsResolved++;
+          continue;
+        }
+
+        const snap = fu.snapshot_at_action as Record<string, number>;
+        let status: string;
+        let note: string;
+
+        // Compare current vs snapshot based on category
+        if (fu.category === "cobranza") {
+          const before = snap.overdue_amount ?? 0;
+          const after = Number(current.overdue_amount ?? 0);
+          if (after < before * 0.5) { status = "improved"; note = `Cartera bajó de $${Math.round(before)} a $${Math.round(after)}`; }
+          else if (after > before * 1.2) { status = "worsened"; note = `Cartera SUBIO de $${Math.round(before)} a $${Math.round(after)}`; }
+          else { status = "unchanged"; note = `Cartera sin cambio significativo ($${Math.round(after)})`; }
+        } else if (fu.category === "ventas") {
+          const beforeDays = snap.days_since_last_order ?? 999;
+          const afterDays = Number(current.days_since_last_order ?? 999);
+          if (afterDays < beforeDays) { status = "improved"; note = `Cliente volvió a comprar (${afterDays}d desde ultima orden)`; }
+          else { status = "unchanged"; note = `Sin nueva orden (${afterDays}d sin comprar)`; }
+        } else if (fu.category === "entregas") {
+          const before = snap.late_deliveries ?? 0;
+          const after = Number(current.late_deliveries ?? 0);
+          if (after < before) { status = "improved"; note = `Entregas tarde bajaron de ${before} a ${after}`; }
+          else if (after > before) { status = "worsened"; note = `Entregas tarde SUBIERON de ${before} a ${after}`; }
+          else { status = "unchanged"; note = `Sin cambio (${after} tarde)`; }
+        } else {
+          // Generic comparison: check if overdue went down
+          const before = snap.overdue_amount ?? 0;
+          const after = Number(current.overdue_amount ?? 0);
+          if (after < before * 0.7) { status = "improved"; note = "Metricas mejoraron"; }
+          else if (after > before * 1.3) { status = "worsened"; note = "Metricas empeoraron"; }
+          else { status = "unchanged"; note = "Sin cambio significativo"; }
+        }
+
+        await supabase.from("insight_follow_ups").update({
+          status, resolved_at: now, resolution_note: note
+        }).eq("id", fu.id);
+        followUpsResolved++;
+
+        // If worsened, create a new insight to re-escalate
+        if (status === "worsened") {
+          await supabase.from("agent_insights").insert({
+            agent_id: (await supabase.from("ai_agents").select("id").eq("slug", "riesgo").limit(1).single()).data?.id,
+            title: `RE-ESCALADA: ${fu.original_title} — situación empeoró después de acción`,
+            description: note,
+            category: fu.category ?? "riesgo",
+            severity: "critical",
+            confidence: 0.95,
+            company_id: fu.company_id,
+            state: "new",
+          });
+        }
+      }
+    }
+
     return NextResponse.json({
       success: true,
       actions_closed: closed,
+      follow_ups_resolved: followUpsResolved,
       message: closed > 0
         ? `${closed} acciones cerradas automaticamente`
         : "Sin acciones para cerrar",
