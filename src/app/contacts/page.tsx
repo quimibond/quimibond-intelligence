@@ -151,16 +151,12 @@ export default function ContactsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Contactos" description="Directorio con inteligencia relacional" />
-
-      {/* Quick stats */}
-      {!loading && contacts.length > 0 && (
-        <div className="grid grid-cols-3 gap-3">
-          <MiniStatCard icon={Users} label="Total" value={stats.total} />
-          <MiniStatCard icon={AlertTriangle} label="En riesgo" value={stats.atRisk} valueClassName={stats.atRisk > 0 ? "text-danger-foreground" : undefined} />
-          <MiniStatCard icon={Users} label="Salud prom." value={stats.avgHealth ?? "—"} valueClassName={healthColor(stats.avgHealth)} />
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-black">Contactos</h1>
+          <p className="text-xs text-muted-foreground">{stats.total} contactos{stats.atRisk > 0 ? ` · ${stats.atRisk} en riesgo` : ""}</p>
         </div>
-      )}
+      </div>
 
       {/* Filters */}
       <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar por nombre o email...">
@@ -187,42 +183,23 @@ export default function ContactsPage() {
           {/* ══════════════════════════════════════════════════════════════ */}
           {/* MOBILE: Compact cards                                        */}
           {/* ══════════════════════════════════════════════════════════════ */}
-          <div className="space-y-2 md:hidden">
+          <div className="space-y-1.5 md:hidden">
             {contacts.map((contact) => {
               const companyName = getCompanyName(contact);
+              const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-red-500" : contact.risk_level === "medium" ? "bg-orange-400" : "bg-emerald-500";
               return (
                 <Link key={contact.id} href={`/contacts/${contact.id}`} className="block">
-                  <div className="rounded-lg border bg-card p-3 transition-colors active:bg-muted/50">
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                        <Avatar className="h-9 w-9 shrink-0">
-                          <AvatarFallback className="text-xs">{getInitials(contact.name)}</AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium truncate">{contact.name ?? "—"}</span>
-                            {contact.health_trend === "up" || contact.health_trend === "improving"
-                              ? <TrendingUp className="h-3 w-3 text-success shrink-0" />
-                              : contact.health_trend === "down" || contact.health_trend === "declining"
-                              ? <TrendingDown className="h-3 w-3 text-danger shrink-0" />
-                              : null}
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-                            {companyName && <span className="truncate">{companyName}</span>}
-                            {contact.role && <span className="truncate">{contact.role}</span>}
-                            {contact.current_health_score != null && (
-                              <span className={cn("font-medium shrink-0", healthColor(contact.current_health_score))}>
-                                {contact.current_health_score}
-                              </span>
-                            )}
-                            {contact.last_activity && <span className="shrink-0">{timeAgo(contact.last_activity)}</span>}
-                          </div>
-                        </div>
+                  <div className="rounded-2xl border bg-card p-3.5 active:bg-muted/50 transition-colors">
+                    <div className="flex items-start gap-2.5">
+                      <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", riskDot)} />
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[15px] font-bold truncate">{contact.name ?? "—"}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          {companyName ?? contact.role ?? contact.email ?? ""}
+                          {contact.current_health_score != null && ` · health ${contact.current_health_score}`}
+                        </p>
                       </div>
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <RiskBadge level={contact.risk_level} />
-                        <ChevronRight className="h-4 w-4 text-muted-foreground" />
-                      </div>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 mt-1 shrink-0" />
                     </div>
                   </div>
                 </Link>

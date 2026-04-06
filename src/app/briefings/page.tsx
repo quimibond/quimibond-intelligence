@@ -83,7 +83,7 @@ export default function BriefingsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Briefings" description="Cargando..." />
+        <div className="h-7 w-24 bg-muted rounded animate-pulse" />
         <LoadingGrid rows={4} rowHeight="h-48" />
       </div>
     );
@@ -91,10 +91,10 @@ export default function BriefingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Briefings"
-        description="Resumenes de inteligencia generados por IA, por rol"
-      />
+      <div>
+        <h1 className="text-2xl font-black">Briefings</h1>
+        <p className="text-xs text-muted-foreground">Resumenes diarios de inteligencia</p>
+      </div>
 
       <div className="flex flex-wrap items-center gap-3">
         <Select

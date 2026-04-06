@@ -18,8 +18,7 @@ interface ChatMessage {
 
 const WELCOME_MESSAGE: ChatMessage = {
   role: "assistant",
-  content:
-    "Hola! Soy tu asistente de inteligencia comercial de Quimibond. Puedo ayudarte con informacion sobre contactos, empresas, alertas, riesgos, tendencias y mas. Que necesitas saber?",
+  content: "Hola! Preguntame sobre cualquier empresa, cliente, proveedor o situacion del negocio.",
 };
 
 const FALLBACK_QUESTIONS = [

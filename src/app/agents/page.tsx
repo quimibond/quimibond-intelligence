@@ -108,7 +108,7 @@ export default function AgentsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Directores IA" description="Sistema de inteligencia ejecutiva" />
+        <div className="h-7 w-32 bg-muted rounded animate-pulse" />
         <LoadingGrid rows={6} rowHeight="h-[160px]" />
       </div>
     );
@@ -123,10 +123,10 @@ export default function AgentsPage() {
     <div className="space-y-5">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <PageHeader
-          title="Directores IA"
-          description={`${activeAgents.length} directores activos — ${totalInsights} insights${newInsights > 0 ? `, ${newInsights} nuevos` : ""}`}
-        />
+        <div>
+          <h1 className="text-2xl font-black">Directores IA</h1>
+          <p className="text-xs text-muted-foreground">{activeAgents.length} activos · {totalInsights} insights{newInsights > 0 ? ` · ${newInsights} nuevos` : ""}</p>
+        </div>
         <Button
           onClick={handleRunNext}
           disabled={runningAll || runningAgent !== null}
