@@ -55,14 +55,49 @@ export default function InsightDetailPage() {
         ins.company_id ? supabase.from("companies").select("id, name, canonical_name").eq("id", ins.company_id).single() : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("cross_director_signals").select("director_name, title, severity").eq("company_id", ins.company_id).neq("title", ins.title).limit(5) : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("company_insight_history").select("total_insights_30d, times_acted, times_dismissed, which_directors").eq("company_id", ins.company_id).single() : Promise.resolve({ data: null }),
-        ins.company_id ? supabase.from("emails").select("id, subject, sender, email_date, snippet").eq("company_id", ins.company_id).order("email_date", { ascending: false }).limit(5) : Promise.resolve({ data: null }),
+        Promise.resolve({ data: null }), // emails loaded separately below
       ]);
 
       if (navRes.data) setNavIds(navRes.data.map((n: { id: number }) => n.id));
       if (companyRes.data) setCompany(companyRes.data as Company);
       if (crossRes.data) setCrossSignals(crossRes.data as typeof crossSignals);
       if (historyRes.data) setInsightHistory(historyRes.data as typeof insightHistory);
-      if (emailsRes.data) setRelatedEmails(emailsRes.data as typeof relatedEmails);
+
+      // Smart email search: extract keywords from title, search in subject/snippet
+      if (ins.company_id) {
+        const stopwords = new Set(["de","del","la","el","en","sin","por","con","para","los","las","un","una","que","no","se","su","al","es","y","o","a","e"]);
+        const keywords = (ins.title ?? "").split(/[\s—–\-:,.|()\/]+/)
+          .map((w: string) => w.replace(/[^a-záéíóúñü0-9]/gi, "").toLowerCase())
+          .filter((w: string) => w.length > 3 && !stopwords.has(w) && !/^\d+$/.test(w))
+          .slice(0, 4);
+
+        let emails: typeof relatedEmails = [];
+
+        // Try keyword search first
+        if (keywords.length >= 2) {
+          const pattern = keywords.slice(0, 3).map((k: string) => `%${k}%`);
+          const orFilter = pattern.map((p: string) => `subject.ilike.${p},snippet.ilike.${p}`).join(",");
+          const { data } = await supabase.from("emails")
+            .select("id, subject, sender, email_date, snippet")
+            .eq("company_id", ins.company_id)
+            .or(orFilter)
+            .order("email_date", { ascending: false })
+            .limit(5);
+          emails = data ?? [];
+        }
+
+        // Fallback: most recent from company
+        if (emails.length === 0) {
+          const { data } = await supabase.from("emails")
+            .select("id, subject, sender, email_date, snippet")
+            .eq("company_id", ins.company_id)
+            .order("email_date", { ascending: false })
+            .limit(3);
+          emails = data ?? [];
+        }
+
+        setRelatedEmails(emails as typeof relatedEmails);
+      }
 
       setLoading(false);
     }
