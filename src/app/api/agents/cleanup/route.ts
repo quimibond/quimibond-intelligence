@@ -250,6 +250,16 @@ export async function POST(request: NextRequest) {
     } catch {
       /* may not exist */
     }
+    try {
+      await supabase.rpc("refresh_accounting_anomalies");
+    } catch {
+      /* may not exist */
+    }
+    try {
+      await supabase.rpc("refresh_cashflow_projection");
+    } catch {
+      /* may not exist */
+    }
 
     // ── 6. Call RPCs for additional cleanup ─────────────────────────────
     try { await supabase.rpc("resolve_all_company_links"); } catch { /* may not exist */ }

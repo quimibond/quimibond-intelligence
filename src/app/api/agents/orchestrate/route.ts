@@ -800,14 +800,22 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
-      const [payPredictions, trends, invoices, overdue, payments] = await Promise.all([
+      const [payPredictions, trends, invoices, overdue, payments, anomalies, cashflow] = await Promise.all([
         sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, median_days_to_pay, payment_trend, total_pending, max_days_overdue, predicted_payment_date, payment_risk").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal", "MEDIO: pasado de promedio"]).order("total_pending", { ascending: false }).limit(15),
         sb.from("weekly_trends").select("company_name, tier, overdue_now, overdue_delta, pending_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(15),
         sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").gt("days_overdue", 0).order("days_overdue", { ascending: false }).limit(20),
         sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(15),
         sb.from("odoo_payments").select("company_id, amount, payment_date").order("payment_date", { ascending: false }).limit(10),
+        sb.from("accounting_anomalies").select("anomaly_type, severity, description, company_name, amount").order("amount", { ascending: false }).limit(20),
+        sb.from("cashflow_projection").select("flow_type, period, item_count, gross_amount, net_amount, probability").order("sort_order"),
       ]);
-      return `${profileSection}## PREDICCION DE PAGO: empresas fuera de patron\n${safeJSON(payPredictions.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Facturas vencidas\n${safeJSON(invoices.data)}\n## Cartera vencida por empresa\n${safeJSON(overdue.data)}\n## Pagos recientes\n${safeJSON(payments.data)}`;
+      const receivables = ((cashflow.data ?? []) as Record<string, unknown>[]).filter(r => r.flow_type === "receivable");
+      const cashSummary = ((cashflow.data ?? []) as Record<string, unknown>[]).find(r => r.flow_type === "summary");
+      const anomalyList = (anomalies.data ?? []) as Record<string, unknown>[];
+      const duplicates = anomalyList.filter(a => a.anomaly_type === "duplicate_invoice");
+      const staleReceivables = anomalyList.filter(a => a.anomaly_type === "stale_receivable");
+      const creditNotes = anomalyList.filter(a => a.anomaly_type === "unusual_credit_note");
+      return `${profileSection}## FLUJO DE EFECTIVO PROYECTADO (cobranza esperada vs compromisos)\nResumen: cobrable bruto $${cashSummary?.gross_amount ?? "?"}, neto esperado $${cashSummary?.net_amount ?? "?"} (probabilidad ${cashSummary?.probability ?? "?"}%)\n${safeJSON(receivables)}\n## ANOMALIAS CONTABLES: posibles facturas duplicadas (${duplicates.length})\n${safeJSON(duplicates.slice(0, 10))}\n## Cartera estancada >90 dias (${staleReceivables.length} facturas)\n${safeJSON(staleReceivables.slice(0, 10))}\n## Notas de credito inusuales >$50K (${creditNotes.length})\n${safeJSON(creditNotes)}\n## PREDICCION DE PAGO: empresas fuera de patron\n${safeJSON(payPredictions.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Facturas vencidas\n${safeJSON(invoices.data)}\n## Cartera vencida por empresa\n${safeJSON(overdue.data)}\n## Pagos recientes\n${safeJSON(payments.data)}`;
     }
     case "operaciones_dir": {
       const [deliveries, orderpoints, deadStock, products] = await Promise.all([
