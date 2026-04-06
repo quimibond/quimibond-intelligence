@@ -17,9 +17,9 @@ interface InboxMobileProps {
 }
 
 const SEVERITY_DOTS: Record<string, string> = {
-  critical: "bg-red-500",
-  high: "bg-orange-400",
-  medium: "bg-yellow-400",
+  critical: "bg-danger",
+  high: "bg-warning",
+  medium: "bg-warning/60",
 };
 
 export function InboxMobile({
@@ -102,13 +102,13 @@ function SwipeCard({
     >
       {/* Swipe overlays */}
       {isSwipingRight && (
-        <div className="absolute inset-0 bg-emerald-500/15 z-10 flex items-center pl-5" style={{ opacity: swipeOpacity }}>
-          <span className="text-emerald-600 text-sm font-semibold">Util</span>
+        <div className="absolute inset-0 bg-success/15 z-10 flex items-center pl-5" style={{ opacity: swipeOpacity }}>
+          <span className="text-success-foreground text-sm font-semibold">Util</span>
         </div>
       )}
       {isSwipingLeft && (
-        <div className="absolute inset-0 bg-red-500/15 z-10 flex items-center justify-end pr-5" style={{ opacity: swipeOpacity }}>
-          <span className="text-red-600 text-sm font-semibold">Descartar</span>
+        <div className="absolute inset-0 bg-danger/15 z-10 flex items-center justify-end pr-5" style={{ opacity: swipeOpacity }}>
+          <span className="text-danger-foreground text-sm font-semibold">Descartar</span>
         </div>
       )}
 

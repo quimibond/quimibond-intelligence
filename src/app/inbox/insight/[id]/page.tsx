@@ -17,7 +17,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { CompanyIntelCards } from "@/app/companies/[id]/components/company-intel-cards";
 
 const SEV_DOTS: Record<string, string> = {
-  critical: "bg-red-500", high: "bg-orange-400", medium: "bg-yellow-400",
+  critical: "bg-danger", high: "bg-warning", medium: "bg-warning/60",
 };
 
 export default function InsightDetailPage() {
@@ -205,7 +205,7 @@ export default function InsightDetailPage() {
       {isDone && (
         <div className={cn(
           "rounded-xl px-4 py-2.5 text-sm font-medium text-center",
-          insight.state === "acted_on" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"
+          insight.state === "acted_on" ? "bg-success/10 text-success-foreground" : "bg-muted text-muted-foreground"
         )}>
           {insight.state === "acted_on" ? "Marcado como util" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
         </div>
@@ -284,10 +284,10 @@ function FollowUpBanner({ insightId, state }: { insightId: number; state: string
   if (!followUp) return null;
 
   const colors: Record<string, string> = {
-    pending: "bg-blue-50 text-blue-800",
-    improved: "bg-emerald-50 text-emerald-800",
-    unchanged: "bg-yellow-50 text-yellow-800",
-    worsened: "bg-red-50 text-red-800",
+    pending: "bg-info/10 text-info-foreground",
+    improved: "bg-success/10 text-success-foreground",
+    unchanged: "bg-warning/10 text-warning-foreground",
+    worsened: "bg-danger/10 text-danger-foreground",
   };
   const labels: Record<string, string> = {
     pending: "Seguimiento programado",

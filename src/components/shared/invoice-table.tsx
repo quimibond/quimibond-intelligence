@@ -29,7 +29,7 @@ function fmt(v: number): string {
 function overdueColor(days: number): string {
   if (days <= 0) return "";
   if (days <= 30) return "text-warning-foreground";
-  if (days <= 60) return "text-orange-600 dark:text-orange-400";
+  if (days <= 60) return "text-warning-foreground";
   return "text-danger-foreground font-semibold";
 }
 

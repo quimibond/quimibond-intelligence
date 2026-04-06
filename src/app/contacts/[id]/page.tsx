@@ -209,7 +209,7 @@ export default function ContactDetailPage() {
 
   const totalEmails = (contact.total_sent ?? 0) + (contact.total_received ?? 0);
 
-  const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-red-500" : contact.risk_level === "medium" ? "bg-orange-400" : "bg-emerald-500";
+  const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-danger" : contact.risk_level === "medium" ? "bg-warning" : "bg-success";
 
   return (
     <div className="space-y-4">

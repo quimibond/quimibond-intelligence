@@ -44,18 +44,18 @@ interface Narrative {
 }
 
 const RISK_COLORS: Record<string, string> = {
-  "CRITICO: excede maximo historico": "text-red-600 bg-red-50 border-red-200",
-  "ALTO: fuera de patron normal": "text-orange-600 bg-orange-50 border-orange-200",
-  "MEDIO: pasado de promedio": "text-yellow-600 bg-yellow-50 border-yellow-200",
-  "NORMAL: dentro de patron": "text-green-600 bg-green-50 border-green-200",
+  "CRITICO: excede maximo historico": "text-danger-foreground bg-danger/10",
+  "ALTO: fuera de patron normal": "text-warning-foreground bg-warning/10",
+  "MEDIO: pasado de promedio": "text-warning-foreground bg-warning/5",
+  "NORMAL: dentro de patron": "text-success-foreground bg-success/10",
 };
 
 const REORDER_COLORS: Record<string, string> = {
-  lost: "text-red-600 bg-red-50",
-  critical: "text-red-600 bg-red-50",
-  at_risk: "text-orange-600 bg-orange-50",
-  overdue: "text-yellow-600 bg-yellow-50",
-  on_track: "text-green-600 bg-green-50",
+  lost: "text-danger-foreground bg-danger/10",
+  critical: "text-danger-foreground bg-danger/10",
+  at_risk: "text-warning-foreground bg-warning/10",
+  overdue: "text-warning-foreground bg-warning/5",
+  on_track: "text-success-foreground bg-success/10",
 };
 
 const REORDER_LABELS: Record<string, string> = {

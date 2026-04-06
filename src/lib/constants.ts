@@ -83,14 +83,14 @@ export const INSIGHT_CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const INSIGHT_CATEGORY_COLORS: Record<string, string> = {
-  cobranza: "text-red-600 bg-red-50",
-  ventas: "text-blue-600 bg-blue-50",
-  entregas: "text-orange-600 bg-orange-50",
-  operaciones: "text-purple-600 bg-purple-50",
-  proveedores: "text-amber-600 bg-amber-50",
-  riesgo: "text-rose-600 bg-rose-50",
-  equipo: "text-teal-600 bg-teal-50",
-  datos: "text-gray-600 bg-gray-50",
+  cobranza: "text-danger-foreground bg-danger/10",
+  ventas: "text-domain-sales bg-domain-sales/10",
+  entregas: "text-warning-foreground bg-warning/10",
+  operaciones: "text-domain-operations bg-domain-operations/10",
+  proveedores: "text-domain-finance bg-domain-finance/10",
+  riesgo: "text-domain-risk bg-domain-risk/10",
+  equipo: "text-domain-relationships bg-domain-relationships/10",
+  datos: "text-muted-foreground bg-muted",
 };
 
 // ── General UI ──

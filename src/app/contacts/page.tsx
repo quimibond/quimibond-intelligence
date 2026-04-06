@@ -186,7 +186,7 @@ export default function ContactsPage() {
           <div className="space-y-1.5 md:hidden">
             {contacts.map((contact) => {
               const companyName = getCompanyName(contact);
-              const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-red-500" : contact.risk_level === "medium" ? "bg-orange-400" : "bg-emerald-500";
+              const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-danger" : contact.risk_level === "medium" ? "bg-warning" : "bg-success";
               return (
                 <Link key={contact.id} href={`/contacts/${contact.id}`} className="block">
                   <div className="rounded-2xl border bg-card p-3.5 active:bg-muted/50 transition-colors">

@@ -263,7 +263,7 @@ function CompanyGroupedView({
                       {insight.category && (
                         <span className={cn(
                           "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
-                          INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-gray-600 bg-gray-50"
+                          INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-muted-foreground bg-muted"
                         )}>
                           {INSIGHT_CATEGORY_LABELS[insight.category] ?? insight.category}
                         </span>
@@ -378,7 +378,7 @@ function ListView({
                         {insight.category && (
                           <span className={cn(
                             "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
-                            INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-gray-600 bg-gray-50"
+                            INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-muted-foreground bg-muted"
                           )}>
                             {INSIGHT_CATEGORY_LABELS[insight.category] ?? insight.category}
                           </span>
