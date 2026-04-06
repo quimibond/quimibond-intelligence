@@ -187,26 +187,18 @@ export default function CompaniesPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader
-        title="Empresas"
-        description="Directorio de empresas e inteligencia comercial"
-      >
-        <BatchEnrichButton type="companies" />
-      </PageHeader>
-
-      {/* Quick Stats */}
-      {!loading && companies.length > 0 && (
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <MiniStatCard icon={Building2} label="Total" value={stats.total} />
-          <MiniStatCard icon={Users} label="Clientes" value={stats.customers} valueClassName="text-success-foreground" />
-          <MiniStatCard icon={TrendingUp} label="Proveedores" value={stats.suppliers} valueClassName="text-info-foreground" />
-          <MiniStatCard icon={DollarSign} label="Valor total" value={formatCurrency(stats.ltv)} valueClassName="text-success-foreground" />
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-black">Empresas</h1>
+          <p className="text-xs text-muted-foreground">{stats.total} empresas</p>
         </div>
-      )}
+        <div className="hidden md:block"><BatchEnrichButton type="companies" /></div>
+      </div>
 
       {/* Search + Filters */}
-      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar empresa...">
-        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-32 shrink-0" aria-label="Filtrar por tipo">
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar...">
+        <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-28 shrink-0" aria-label="Tipo">
           <option value="all">Todas</option>
           <option value="customer">Clientes</option>
           <option value="supplier">Proveedores</option>
@@ -218,15 +210,12 @@ export default function CompaniesPage() {
             setSortField(f);
             setSortDir(d);
           }}
-          className="w-44 shrink-0"
-          aria-label="Ordenar por"
+          className="w-36 shrink-0 hidden md:block"
+          aria-label="Ordenar"
         >
           <option value="name-asc">Nombre A-Z</option>
-          <option value="name-desc">Nombre Z-A</option>
           <option value="lifetime_value-desc">Mayor valor</option>
-          <option value="lifetime_value-asc">Menor valor</option>
           <option value="total_pending-desc">Mayor pendiente</option>
-          <option value="total_pending-asc">Menor pendiente</option>
         </Select>
       </FilterBar>
 
@@ -246,38 +235,33 @@ export default function CompaniesPage() {
       {/* MOBILE: Card layout                                          */}
       {/* ══════════════════════════════════════════════════════════════ */}
       {!loading && companies.length > 0 && (
-        <div className="space-y-2 md:hidden">
+        <div className="space-y-1.5 md:hidden">
           {companies.map((company) => {
             const health = getHealthIndicator(company);
-            const ext = extras[company.id];
+            const riskDot = health.variant === "critical" ? "bg-red-500" : health.variant === "warning" ? "bg-orange-400" : "bg-emerald-500";
+            // Pick the most relevant secondary metric
+            const secondaryMetric = company.total_pending && company.total_pending > 10000
+              ? `${formatCurrency(company.total_pending)} vencido`
+              : company.trend_pct != null && company.trend_pct !== 0
+              ? `${company.trend_pct > 0 ? "+" : ""}${Number(company.trend_pct).toFixed(0)}% tendencia`
+              : company.industry ?? (company.is_customer ? "Cliente" : "Proveedor");
+
             return (
               <Link key={company.id} href={`/companies/${company.id}`} className="block">
-                <div className="rounded-lg border bg-card p-3 transition-colors hover:border-primary/30 active:bg-muted/50">
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
-                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                        <Building2 className="h-4 w-4 text-primary" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <p className="text-sm font-semibold truncate">{company.name}</p>
-                          <Badge variant={health.variant} className="shrink-0 text-[10px]">{health.label}</Badge>
-                        </div>
-                        <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-0.5">
-                          {company.is_customer && <span className="text-success">Cliente</span>}
-                          {company.is_supplier && <span className="text-info">Proveedor</span>}
-                          {company.lifetime_value != null && company.lifetime_value > 0 && (
-                            <span className="font-semibold tabular-nums">{formatCurrency(company.lifetime_value)}</span>
-                          )}
-                          {company.total_pending != null && company.total_pending > 0 && (
-                            <span className="text-danger tabular-nums">{formatCurrency(company.total_pending)} pend.</span>
-                          )}
-                          {ext?.contactCount ? <span className="flex items-center gap-0.5"><Users className="h-3 w-3" />{ext.contactCount}</span> : null}
-                          {ext?.insightCount ? <span className="text-warning">{ext.insightCount} insights</span> : null}
-                        </div>
-                      </div>
+                <div className="rounded-2xl border bg-card p-3.5 active:bg-muted/50 transition-colors">
+                  <div className="flex items-start gap-2.5">
+                    <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", riskDot)} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[15px] font-bold truncate">{company.name}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {company.lifetime_value != null && company.lifetime_value > 0
+                          ? formatCurrency(company.lifetime_value)
+                          : "—"}
+                        {" · "}
+                        {secondaryMetric}
+                      </p>
                     </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/40 mt-1 shrink-0" />
                   </div>
                 </div>
               </Link>
