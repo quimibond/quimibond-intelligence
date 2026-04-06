@@ -67,6 +67,10 @@
     {
       "path": "/api/system/health",
       "schedule": "0 */3 * * *"
+    },
+    {
+      "path": "/api/notifications/whatsapp",
+      "schedule": "0 7 * * *"
     }
   ]
 }
