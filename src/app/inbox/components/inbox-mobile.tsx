@@ -1,14 +1,8 @@
 "use client";
 
 import { useCallback, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
-import {
-  ArrowUp, CheckCircle, ChevronRight, XCircle,
-} from "lucide-react";
-import { cn, timeAgo, formatCurrency } from "@/lib/utils";
-import { getDomainConfig } from "@/lib/domains";
-import { INSIGHT_CATEGORY_LABELS, INSIGHT_CATEGORY_COLORS } from "@/lib/constants";
-import { SeverityBadge } from "@/components/shared/severity-badge";
+import { ChevronRight } from "lucide-react";
+import { cn, timeAgo } from "@/lib/utils";
 import type { AgentInsight } from "@/lib/types";
 
 interface InboxMobileProps {
@@ -22,23 +16,21 @@ interface InboxMobileProps {
   onMarkSeen: (id: number) => void;
 }
 
+const SEVERITY_DOTS: Record<string, string> = {
+  critical: "bg-red-500",
+  high: "bg-orange-400",
+  medium: "bg-yellow-400",
+};
+
 export function InboxMobile({
-  insights,
-  agents,
-  seenIds,
-  acting,
-  onAct,
-  onDismiss,
-  onDetail,
-  onMarkSeen,
+  insights, agents, seenIds, acting, onAct, onDismiss, onDetail, onMarkSeen,
 }: InboxMobileProps) {
   return (
-    <div className="space-y-3 px-1">
+    <div className="space-y-2 px-1">
       {insights.map((insight) => (
         <SwipeCard
           key={insight.id}
           insight={insight}
-          agent={agents[insight.agent_id]}
           isSeen={seenIds.has(insight.id)}
           isActing={acting === insight.id}
           onAct={() => onAct(insight.id)}
@@ -51,20 +43,10 @@ export function InboxMobile({
   );
 }
 
-// ── Individual Swipeable Card ──
-
 function SwipeCard({
-  insight,
-  agent,
-  isSeen,
-  isActing,
-  onAct,
-  onDismiss,
-  onDetail,
-  onMarkSeen,
+  insight, isSeen, isActing, onAct, onDismiss, onDetail, onMarkSeen,
 }: {
   insight: AgentInsight;
-  agent?: { slug: string; name: string; domain: string };
   isSeen: boolean;
   isActing: boolean;
   onAct: () => void;
@@ -78,10 +60,6 @@ function SwipeCard({
   const startY = useRef(0);
   const isScrolling = useRef<boolean | null>(null);
 
-  const dc = getDomainConfig(agent?.domain ?? "");
-  const Icon = dc.icon;
-  const directorName = agent?.name?.replace("Director de ", "").replace("Director ", "") ?? "";
-
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     startX.current = e.touches[0].clientX;
     startY.current = e.touches[0].clientY;
@@ -92,40 +70,28 @@ function SwipeCard({
   const handleTouchMove = useCallback((e: React.TouchEvent) => {
     const dx = e.touches[0].clientX - startX.current;
     const dy = e.touches[0].clientY - startY.current;
-
-    // Determine if scrolling vertically (don't hijack scroll)
     if (isScrolling.current === null) {
       isScrolling.current = Math.abs(dy) > Math.abs(dx);
     }
     if (isScrolling.current) return;
-
     e.preventDefault();
     setSwipeX(dx);
   }, []);
 
   const handleTouchEnd = useCallback(() => {
-    if (isScrolling.current) {
-      isScrolling.current = null;
-      return;
-    }
-
-    if (swipeX > 100) {
-      setDismissed(true);
-      setTimeout(onAct, 200);
-    } else if (swipeX < -100) {
-      setDismissed(true);
-      setTimeout(onDismiss, 200);
-    }
+    if (isScrolling.current) { isScrolling.current = null; return; }
+    if (swipeX > 100) { setDismissed(true); setTimeout(onAct, 150); }
+    else if (swipeX < -100) { setDismissed(true); setTimeout(onDismiss, 150); }
     setSwipeX(0);
     isScrolling.current = null;
   }, [swipeX, onAct, onDismiss]);
 
   if (dismissed) return null;
 
-  // Swipe visual feedback
-  const isSwipingRight = swipeX > 40;
-  const isSwipingLeft = swipeX < -40;
+  const isSwipingRight = swipeX > 30;
+  const isSwipingLeft = swipeX < -30;
   const swipeOpacity = Math.min(Math.abs(swipeX) / 120, 1);
+  const sevDot = SEVERITY_DOTS[insight.severity ?? "medium"] ?? "bg-gray-400";
 
   return (
     <div
@@ -134,106 +100,59 @@ function SwipeCard({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Swipe action overlays */}
+      {/* Swipe overlays */}
       {isSwipingRight && (
-        <div
-          className="absolute inset-0 bg-emerald-500/20 z-10 flex items-center justify-start pl-6"
-          style={{ opacity: swipeOpacity }}
-        >
-          <div className="flex items-center gap-2 text-emerald-600">
-            <CheckCircle className="h-8 w-8" />
-            <span className="text-sm font-bold">Util</span>
-          </div>
+        <div className="absolute inset-0 bg-emerald-500/15 z-10 flex items-center pl-5" style={{ opacity: swipeOpacity }}>
+          <span className="text-emerald-600 text-sm font-semibold">Util</span>
         </div>
       )}
       {isSwipingLeft && (
-        <div
-          className="absolute inset-0 bg-red-500/20 z-10 flex items-center justify-end pr-6"
-          style={{ opacity: swipeOpacity }}
-        >
-          <div className="flex items-center gap-2 text-red-600">
-            <span className="text-sm font-bold">Descartar</span>
-            <XCircle className="h-8 w-8" />
-          </div>
+        <div className="absolute inset-0 bg-red-500/15 z-10 flex items-center justify-end pr-5" style={{ opacity: swipeOpacity }}>
+          <span className="text-red-600 text-sm font-semibold">Descartar</span>
         </div>
       )}
 
       {/* Card */}
       <div
         className={cn(
-          "relative bg-card border border-border rounded-2xl p-4 transition-colors",
-          !isSeen && "border-primary/30 bg-accent/30",
+          "relative bg-card border rounded-2xl p-4 active:bg-muted/50 transition-colors",
+          !isSeen && "border-primary/20",
           isActing && "opacity-50",
         )}
         style={{
           transform: `translateX(${swipeX}px)`,
-          transition: swipeX === 0 ? "transform 0.2s ease-out" : "none",
+          transition: swipeX === 0 ? "transform 0.15s ease-out" : "none",
         }}
+        onClick={() => onDetail()}
       >
-        {/* Top row: severity + category + time */}
-        <div className="flex items-center gap-1.5 mb-2">
-          <div className={cn("flex h-6 w-6 items-center justify-center rounded-md shrink-0", dc.bg)}>
-            <Icon className={cn("h-3.5 w-3.5", dc.color)} />
-          </div>
-          <SeverityBadge severity={insight.severity ?? "medium"} />
-          {insight.category && (
-            <span className={cn(
-              "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
-              INSIGHT_CATEGORY_COLORS[insight.category] ?? "text-gray-600 bg-gray-50"
-            )}>
-              {INSIGHT_CATEGORY_LABELS[insight.category] ?? insight.category}
-            </span>
-          )}
-          <span className="ml-auto text-[10px] text-muted-foreground">
-            {timeAgo(insight.created_at)}
-          </span>
+        {/* Title with severity dot */}
+        <div className="flex items-start gap-2.5 mb-1.5">
+          <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", sevDot)} />
+          <h3 className={cn("text-[15px] leading-snug", !isSeen ? "font-bold" : "font-medium")}>
+            {insight.title}
+          </h3>
         </div>
 
-        {/* Title */}
-        <h3 className={cn("text-sm leading-snug mb-1.5", !isSeen ? "font-bold" : "font-medium")}>
-          {insight.title}
-        </h3>
-
-        {/* Description (truncated) */}
-        {insight.description && (
-          <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
-            {insight.description}
+        {/* Recommendation / description */}
+        {(insight.recommendation || insight.description) && (
+          <p className="text-[13px] text-muted-foreground leading-snug ml-[18px] mb-2 line-clamp-2">
+            {insight.recommendation ?? insight.description}
           </p>
         )}
 
-        {/* Bottom row: assignee + impact + detail button */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-            {insight.assignee_name && (
-              <span className="truncate max-w-[120px]">→ {insight.assignee_name}</span>
-            )}
-            {insight.business_impact_estimate != null && insight.business_impact_estimate > 0 && (
-              <span className="font-medium text-foreground">
-                {formatCurrency(insight.business_impact_estimate)}
-              </span>
-            )}
-          </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); onDetail(); }}
-            className="flex items-center gap-0.5 text-xs text-primary font-medium"
-          >
-            Ver <ChevronRight className="h-3.5 w-3.5" />
-          </button>
+        {/* Footer: time + detail arrow */}
+        <div className="flex items-center justify-between ml-[18px]">
+          <span className="text-[11px] text-muted-foreground">
+            {timeAgo(insight.created_at)}
+          </span>
+          <ChevronRight className="h-4 w-4 text-muted-foreground/50" />
         </div>
-
-        {/* Unread indicator */}
-        {!isSeen && (
-          <div className="absolute top-3 right-3 h-2 w-2 rounded-full bg-primary" />
-        )}
       </div>
     </div>
   );
 }
 
 export function computeTier(insight: AgentInsight): "urgent" | "important" | "fyi" {
-  const ev = insight.evidence as { priority_tier?: string }[] | null;
-  const evTier = ev?.[0]?.priority_tier;
-  if (evTier === "urgent" || evTier === "important") return evTier;
   if (insight.severity === "critical") return "urgent";
   if (insight.severity === "high") return "important";
   return "fyi";

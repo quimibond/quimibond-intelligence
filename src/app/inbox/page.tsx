@@ -190,19 +190,16 @@ export default function InboxPage() {
   // Empty
   if (insights.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-4">
-        <div className="relative">
-          <PartyPopper className="h-16 w-16 text-success" />
-          <div className="absolute inset-0 animate-ping opacity-20">
-            <PartyPopper className="h-16 w-16 text-success" />
-          </div>
+      <div className="flex flex-col items-center justify-center h-[60vh] gap-5">
+        <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center">
+          <PartyPopper className="h-8 w-8 text-success" />
         </div>
-        <h2 className="text-xl font-bold">Todo al dia</h2>
-        <p className="text-sm text-muted-foreground text-center max-w-xs">
-          No hay insights pendientes. Los directores te notificaran cuando detecten algo.
-        </p>
-        <Button variant="outline" onClick={load} className="gap-2">
-          <RefreshCw className="h-4 w-4" /> Actualizar
+        <div className="text-center">
+          <h2 className="text-xl font-black">Todo al dia</h2>
+          <p className="text-sm text-muted-foreground mt-1">Sin insights pendientes</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={load}>
+          <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Actualizar
         </Button>
       </div>
     );

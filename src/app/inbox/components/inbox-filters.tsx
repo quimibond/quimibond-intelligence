@@ -1,15 +1,10 @@
 "use client";
 
 import { RefreshCw } from "lucide-react";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { INSIGHT_CATEGORY_LABELS } from "@/lib/constants";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { SelectNative as Select } from "@/components/ui/select-native";
-
-function isRecent(dateStr: string, hoursThreshold: number): boolean {
-  return (Date.now() - new Date(dateStr).getTime()) < hoursThreshold * 3600_000;
-}
 
 interface InboxFiltersProps {
   totalCount: number;
@@ -27,61 +22,43 @@ interface InboxFiltersProps {
 }
 
 export function InboxFilters({
-  totalCount,
-  filteredCount,
-  tierCounts,
-  filterMode,
-  setFilterMode,
-  assigneeFilter,
-  setAssigneeFilter,
-  allAssignees,
-  categoryFilter,
-  setCategoryFilter,
-  freshness,
+  totalCount, filteredCount, tierCounts,
+  filterMode, setFilterMode,
+  assigneeFilter, setAssigneeFilter, allAssignees,
+  categoryFilter, setCategoryFilter,
   onRefresh,
 }: InboxFiltersProps) {
   return (
-    <div className="px-3 py-2 md:px-0 md:py-0 md:mb-4 space-y-2">
+    <div className="px-3 py-2 md:px-0 md:mb-4 space-y-3">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-black">Inbox</h1>
-          <p className="text-xs md:text-sm text-muted-foreground">
+          <h1 className="text-2xl font-black">Inbox</h1>
+          <p className="text-xs text-muted-foreground">
+            {tierCounts.urgent > 0 && <span className="text-danger font-medium">{tierCounts.urgent} urgente{tierCounts.urgent !== 1 ? "s" : ""}</span>}
+            {tierCounts.urgent > 0 && " · "}
             {totalCount} pendiente{totalCount !== 1 ? "s" : ""}
-            {filteredCount !== totalCount && ` · ${filteredCount} filtrado${filteredCount !== 1 ? "s" : ""}`}
           </p>
         </div>
-        <Button variant="ghost" size="icon" onClick={onRefresh} title="Actualizar" className="h-9 w-9">
+        <Button variant="ghost" size="icon" onClick={onRefresh} className="h-9 w-9">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
 
-      {/* Freshness indicators */}
-      <div className="flex flex-wrap gap-3 text-[11px] text-muted-foreground">
-        {freshness.lastSync && (
-          <span className="flex items-center gap-1">
-            <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastSync, 2) ? "bg-success" : isRecent(freshness.lastSync, 6) ? "bg-warning" : "bg-danger")} />
-            Odoo: {timeAgo(freshness.lastSync)}
-          </span>
-        )}
-        {freshness.lastAnalyze && (
-          <span className="flex items-center gap-1">
-            <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAnalyze, 1) ? "bg-success" : isRecent(freshness.lastAnalyze, 4) ? "bg-warning" : "bg-danger")} />
-            Emails: {timeAgo(freshness.lastAnalyze)}
-          </span>
-        )}
-        {freshness.lastAgents && (
-          <span className="flex items-center gap-1">
-            <span className={cn("h-1.5 w-1.5 rounded-full", isRecent(freshness.lastAgents, 6) ? "bg-success" : isRecent(freshness.lastAgents, 12) ? "bg-warning" : "bg-danger")} />
-            Agentes: {timeAgo(freshness.lastAgents)}
-          </span>
-        )}
+      {/* Mobile: 3 simple buttons */}
+      <div className="flex gap-1.5 md:hidden">
+        <FilterPill active={filterMode === "urgent"} count={tierCounts.urgent} label="Urgentes" variant="danger"
+          onClick={() => setFilterMode(filterMode === "urgent" ? "all" : "urgent")} />
+        <FilterPill active={filterMode === "important"} count={tierCounts.important} label="Importantes" variant="warning"
+          onClick={() => setFilterMode(filterMode === "important" ? "all" : "important")} />
+        <FilterPill active={filterMode === "all"} count={totalCount} label="Todos"
+          onClick={() => setFilterMode("all")} />
       </div>
 
-      {/* Filter tabs */}
-      <div className="flex items-center gap-2 overflow-x-auto pb-1 -mb-1">
+      {/* Desktop: full filter bar */}
+      <div className="hidden md:flex items-center gap-2 overflow-x-auto pb-1">
         <button
           onClick={() => setFilterMode("all")}
-          aria-pressed={filterMode === "all"}
           className={cn(
             "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
             filterMode === "all" ? "bg-foreground text-background" : "bg-muted text-muted-foreground hover:bg-muted/80"
@@ -92,7 +69,6 @@ export function InboxFilters({
         {tierCounts.urgent > 0 && (
           <button
             onClick={() => setFilterMode(filterMode === "urgent" ? "all" : "urgent")}
-            aria-pressed={filterMode === "urgent"}
             className={cn(
               "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
               filterMode === "urgent" ? "bg-danger text-destructive-foreground" : "bg-danger/10 text-danger-foreground hover:bg-danger/20"
@@ -104,7 +80,6 @@ export function InboxFilters({
         {tierCounts.important > 0 && (
           <button
             onClick={() => setFilterMode(filterMode === "important" ? "all" : "important")}
-            aria-pressed={filterMode === "important"}
             className={cn(
               "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
               filterMode === "important" ? "bg-warning text-warning-foreground" : "bg-warning/10 text-warning-foreground hover:bg-warning/20"
@@ -113,28 +88,14 @@ export function InboxFilters({
             Importante ({tierCounts.important})
           </button>
         )}
-        {tierCounts.fyi > 0 && (
-          <button
-            onClick={() => setFilterMode(filterMode === "fyi" ? "all" : "fyi")}
-            aria-pressed={filterMode === "fyi"}
-            className={cn(
-              "shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors",
-              filterMode === "fyi" ? "bg-info text-info-foreground" : "bg-info/10 text-info-foreground hover:bg-info/20"
-            )}
-          >
-            FYI ({tierCounts.fyi})
-          </button>
-        )}
 
-        {/* Category + Assignee filters */}
         <div className="h-4 w-px bg-border shrink-0 mx-1" />
         <Select
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
           className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
-          aria-label="Filtrar por categoria"
         >
-          <option value="all">Todas las categorias</option>
+          <option value="all">Categorias</option>
           {Object.entries(INSIGHT_CATEGORY_LABELS).map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
           ))}
@@ -144,9 +105,8 @@ export function InboxFilters({
             value={assigneeFilter}
             onChange={(e) => setAssigneeFilter(e.target.value)}
             className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
-            aria-label="Filtrar por responsable"
           >
-            <option value="all">Todos los responsables</option>
+            <option value="all">Responsables</option>
             {allAssignees.sort().map(name => (
               <option key={name} value={name}>{name}</option>
             ))}
@@ -154,5 +114,27 @@ export function InboxFilters({
         )}
       </div>
     </div>
+  );
+}
+
+function FilterPill({ active, count, label, variant, onClick }: {
+  active: boolean; count: number; label: string; variant?: "danger" | "warning"; onClick: () => void;
+}) {
+  if (count === 0 && !active) return null;
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "flex-1 rounded-xl py-2 text-center text-xs font-semibold transition-all",
+        active
+          ? variant === "danger" ? "bg-danger text-white"
+            : variant === "warning" ? "bg-warning text-white"
+            : "bg-foreground text-background"
+          : "bg-muted text-muted-foreground"
+      )}
+    >
+      {count > 0 && <span className="block text-lg font-black">{count}</span>}
+      {label}
+    </button>
   );
 }
