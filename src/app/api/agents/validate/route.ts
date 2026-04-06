@@ -63,14 +63,14 @@ export async function POST() {
 
     // ── 2b. Archive old resolved insights (>30 days) ────────────────────
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString();
-    const { count: archivedCount } = await supabase
+    const { data: archivedData } = await supabase
       .from("agent_insights")
       .update({ state: "archived" })
       .in("state", ["acted_on", "dismissed", "expired"])
       .lt("created_at", thirtyDaysAgo)
-      .select("id", { count: "exact", head: true });
+      .select("id");
 
-    const archived = archivedCount ?? 0;
+    const archived = archivedData?.length ?? 0;
 
     // ── 3. Validate payment-related insights ────────────────────────────
     const paymentInsights = activeInsights.filter(i =>

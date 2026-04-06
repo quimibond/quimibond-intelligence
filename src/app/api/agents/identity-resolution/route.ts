@@ -86,12 +86,14 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("[identity-resolution] Error:", err);
 
-    await supabase.from("pipeline_logs").insert({
-      level: "error",
-      phase: "identity_resolution",
-      message: `Identity resolution failed: ${String(err)}`,
-      details: { error: String(err) },
-    }).catch(() => {});
+    try {
+      await supabase.from("pipeline_logs").insert({
+        level: "error",
+        phase: "identity_resolution",
+        message: `Identity resolution failed: ${String(err)}`,
+        details: { error: String(err) },
+      });
+    } catch { /* ignore logging errors */ }
 
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }

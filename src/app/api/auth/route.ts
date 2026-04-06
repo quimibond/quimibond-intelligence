@@ -11,7 +11,7 @@ async function deriveToken(password: string): Promise<string> {
 }
 
 export async function POST(request: NextRequest) {
-  const limited = rateLimitResponse(request, { limit: 5, windowMinutes: 15 });
+  const limited = rateLimitResponse(request, 5, 15 * 60_000, "auth");
   if (limited) return limited;
 
   const authPassword = process.env.AUTH_PASSWORD;
@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
 
 // Keep GET for backwards compatibility but redirect to POST
 export async function GET(request: NextRequest) {
-  const limited = rateLimitResponse(request, { limit: 5, windowMinutes: 15 });
+  const limited = rateLimitResponse(request, 5, 15 * 60_000, "auth");
   if (limited) return limited;
 
   const authPassword = process.env.AUTH_PASSWORD;

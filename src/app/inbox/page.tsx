@@ -122,7 +122,7 @@ export default function InboxPage() {
     if (data?.length) {
       setInsights(prev => {
         const existingIds = new Set(prev.map(i => i.id));
-        const newItems = data.filter(i => !existingIds.has(i.id));
+        const newItems = (data as AgentInsight[]).filter(i => !existingIds.has(i.id));
         const merged = [...prev, ...newItems];
         return merged.sort((a, b) => {
           const tierOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
