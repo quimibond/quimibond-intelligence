@@ -74,7 +74,7 @@ export function AgentsBar({ agents, briefing }: AgentsBarProps) {
               <Icon className={cn("h-4 w-4", dc.color)} />
               <div className="text-center sm:text-left">
                 <p className="text-[10px] sm:text-xs font-medium leading-tight">
-                  {a.name?.replace("Agente de ", "").replace("Agente ", "")}
+                  {a.name?.replace("Director de ", "").replace("Director ", "")}
                 </p>
                 <p className="text-[9px] sm:text-[11px] text-muted-foreground leading-tight">
                   {a.new_insights > 0 ? (

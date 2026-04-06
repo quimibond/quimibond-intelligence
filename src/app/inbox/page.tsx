@@ -59,9 +59,9 @@ export default function InboxPage() {
   const load = useCallback(async () => {
     const [insightsRes, agentsRes, freshnessRes, assigneesRes, profilesRes] = await Promise.all([
       supabase
-        .from("agent_insights").select("*")
+        .from("agent_insights").select("id, agent_id, title, description, category, severity, confidence, state, assignee_name, assignee_department, company_id, contact_id, business_impact_estimate, evidence, created_at")
         .in("state", ["new", "seen"]).gte("confidence", 0.80)
-        .order("created_at", { ascending: false }).limit(200),
+        .order("created_at", { ascending: false }).limit(100),
       supabase.from("ai_agents").select("id, slug, name, domain"),
       Promise.all([
         supabase.from("odoo_users").select("updated_at").order("updated_at", { ascending: false }).limit(1),
@@ -72,7 +72,9 @@ export default function InboxPage() {
         .in("state", ["new", "seen"]).gte("confidence", 0.80).not("assignee_name", "is", null),
       supabase.from("company_profile")
         .select("company_id, name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level")
-        .order("total_revenue", { ascending: false }),
+        .in("tier", ["strategic", "important", "key_supplier"])
+        .order("total_revenue", { ascending: false })
+        .limit(50),
     ]);
 
     const [odooFresh, emailFresh, agentFresh] = freshnessRes;
@@ -113,7 +115,7 @@ export default function InboxPage() {
         const ni = payload.new as AgentInsight;
         if ((ni.confidence ?? 0) >= 0.80 && ["new", "seen"].includes(ni.state ?? "")) {
           setInsights(prev => prev.find(i => i.id === ni.id) ? prev : [ni, ...prev]);
-          toast("Nuevo insight de tus agentes", { description: ni.title, duration: 5000 });
+          toast("Nuevo insight", { description: ni.title, duration: 5000 });
         }
       })
       .subscribe();
@@ -141,7 +143,7 @@ export default function InboxPage() {
       const { error } = await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", id);
       if (error) { toast.error("Error al marcar insight: " + error.message); return; }
       setInsights(prev => prev.filter(i => i.id !== id));
-      toast.success("Marcado como util — el sistema aprendera de esto");
+      toast.success("Marcado como util");
     } finally { setActing(null); }
   }, []);
 
@@ -149,7 +151,7 @@ export default function InboxPage() {
     const { error } = await supabase.from("agent_insights").update({ state: "dismissed", was_useful: false }).eq("id", id);
     if (error) { toast.error("Error al descartar insight: " + error.message); return; }
     setInsights(prev => prev.filter(i => i.id !== id));
-    toast("Descartado — el sistema ajustara sus prioridades");
+    toast("Descartado");
   }, []);
 
   const goToDetail = useCallback((id: number) => {
@@ -197,7 +199,7 @@ export default function InboxPage() {
         </div>
         <h2 className="text-xl font-bold">Todo al dia</h2>
         <p className="text-sm text-muted-foreground text-center max-w-xs">
-          No hay insights pendientes. Los agentes te notificaran cuando detecten algo relevante.
+          No hay insights pendientes. Los directores te notificaran cuando detecten algo.
         </p>
         <Button variant="outline" onClick={load} className="gap-2">
           <RefreshCw className="h-4 w-4" /> Actualizar

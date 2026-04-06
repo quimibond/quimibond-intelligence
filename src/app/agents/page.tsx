@@ -83,7 +83,7 @@ export default function AgentsPage() {
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        toast.error(`Error ejecutando agente: ${data.error ?? res.statusText}`);
+        toast.error(`Error: ${data.error ?? res.statusText}`);
         return;
       }
       await load();
@@ -108,7 +108,7 @@ export default function AgentsPage() {
   if (loading) {
     return (
       <div className="space-y-6">
-        <PageHeader title="Agentes de IA" description="Sistema multi-agente de inteligencia" />
+        <PageHeader title="Directores IA" description="Sistema de inteligencia ejecutiva" />
         <LoadingGrid rows={6} rowHeight="h-[160px]" />
       </div>
     );
@@ -232,7 +232,7 @@ export default function AgentsPage() {
             onClick={() => setShowInactive(!showInactive)}
             className="text-xs text-muted-foreground hover:text-foreground transition-colors"
           >
-            {showInactive ? "Ocultar" : "Mostrar"} {inactiveAgents.length} agentes inactivos
+            {showInactive ? "Ocultar" : "Mostrar"} {inactiveAgents.length} inactivos
           </button>
           {showInactive && (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mt-3 opacity-50">

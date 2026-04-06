@@ -244,7 +244,7 @@ export default function ChatPage() {
     <div className="flex flex-col h-[calc(100vh-4rem)] md:h-[calc(100vh-8rem)]">
       <PageHeader
         title="Chat IA"
-        description="Asistente de inteligencia comercial"
+        description="Asistente de inteligencia ejecutiva"
       />
 
       <Card className="flex-1 flex flex-col overflow-hidden">
