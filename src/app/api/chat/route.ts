@@ -149,16 +149,8 @@ async function gatherContext(
       .or(`name.ilike.${q},email.ilike.${q}`)
       .limit(5),
 
-    // Overdue invoices for mentioned companies
-    supabase
-      .from("odoo_invoices")
-      .select("name, amount_total, amount_residual, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
-      .eq("move_type", "out_invoice")
-      .in("payment_state", ["not_paid", "partial"])
-      .eq("state", "posted")
-      .gt("days_overdue", 0)
-      .order("days_overdue", { ascending: false })
-      .limit(20),
+    // Placeholder — invoices loaded separately below with company-aware logic
+    Promise.resolve({ data: null }),
 
     // Accounting anomalies
     supabase
@@ -234,11 +226,58 @@ async function gatherContext(
     }
   }
 
+  // Smart invoice loading: find companies mentioned in the query, fetch their invoices
+  let invoiceData: Record<string, unknown>[] = [];
+  {
+    // Try to resolve company from query
+    const { data: matchedCompanies } = await supabase
+      .from("companies")
+      .select("id, canonical_name")
+      .or(`canonical_name.ilike.${q},name.ilike.${q}`)
+      .limit(3);
+
+    if (matchedCompanies?.length) {
+      // Fetch invoices for the specific companies mentioned
+      const companyIds = matchedCompanies.map(c => c.id);
+      const { data: companyInvoices } = await supabase
+        .from("odoo_invoices")
+        .select("name, amount_total, amount_residual, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
+        .eq("move_type", "out_invoice")
+        .eq("state", "posted")
+        .in("company_id", companyIds)
+        .order("days_overdue", { ascending: false })
+        .limit(20);
+      invoiceData = (companyInvoices ?? []) as Record<string, unknown>[];
+
+      // Add company name to each invoice
+      const nameMap = new Map(matchedCompanies.map(c => [c.id, c.canonical_name]));
+      for (const inv of invoiceData) {
+        inv._company_name = nameMap.get(inv.company_id as number) ?? "";
+      }
+    }
+
+    // If no company match or no invoices found, get general top overdue
+    if (invoiceData.length === 0) {
+      const { data: topOverdue } = await supabase
+        .from("odoo_invoices")
+        .select("name, amount_total, amount_residual, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
+        .eq("move_type", "out_invoice")
+        .in("payment_state", ["not_paid", "partial"])
+        .eq("state", "posted")
+        .gt("days_overdue", 0)
+        .order("days_overdue", { ascending: false })
+        .limit(15);
+      invoiceData = (topOverdue ?? []) as Record<string, unknown>[];
+    }
+  }
+
   // Format overdue invoices
-  const overdueInvoices = (invoicesRes.data ?? []).length > 0
-    ? (invoicesRes.data ?? []).map((inv: Record<string, unknown>) =>
-        `- ${inv.name}: $${Number(inv.amount_residual ?? 0).toLocaleString()} ${inv.currency} vencida ${inv.days_overdue}d (total $${Number(inv.amount_total ?? 0).toLocaleString()}, pagado $${Number(inv.amount_paid ?? 0).toLocaleString()}, vence ${inv.due_date}, terminos: ${inv.payment_term ?? "?"})`
-      ).join("\n")
+  const overdueInvoices = invoiceData.length > 0
+    ? invoiceData.map((inv) => {
+        const co = inv._company_name ? `[${inv._company_name}] ` : "";
+        const status = Number(inv.days_overdue ?? 0) > 0 ? `vencida ${inv.days_overdue}d` : (inv.payment_state === "paid" ? "PAGADA" : "vigente");
+        return `- ${co}${inv.name}: $${Number(inv.amount_residual ?? 0).toLocaleString()} ${inv.currency} ${status} (total $${Number(inv.amount_total ?? 0).toLocaleString()}, pagado $${Number(inv.amount_paid ?? 0).toLocaleString()}, vence ${inv.due_date ?? "?"}, terminos: ${inv.payment_term ?? "?"})`;
+      }).join("\n")
     : "";
 
   // Format anomalies
