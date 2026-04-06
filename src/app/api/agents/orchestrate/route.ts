@@ -784,13 +784,16 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## ENTREGAS ATRASADAS\n${safeJSON(deliveries.data)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
     }
     case "compras": {
-      const [singleSource, supplierDep, recentPOs, priceChanges] = await Promise.all([
+      const [singleSource, supplierDep, recentPOs, priceChanges, priceAnomalies] = await Promise.all([
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(15),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
         sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15),
         sb.from("odoo_order_lines").select("company_id, product_ref, product_name, price_unit, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20),
+        sb.from("purchase_price_intelligence").select("product_ref, product_name, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, price_change_pct, qty_vs_avg_pct, avg_qty, last_qty, total_purchases, total_spent, price_flag, qty_flag, last_order_name").in("price_flag", ["price_above_avg", "price_below_avg"]).order("total_spent", { ascending: false }).limit(25),
       ]);
-      return `${profileSection}## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
+      const aboveAvg = ((priceAnomalies.data ?? []) as Record<string, unknown>[]).filter(r => r.price_flag === "price_above_avg");
+      const belowAvg = ((priceAnomalies.data ?? []) as Record<string, unknown>[]).filter(r => r.price_flag === "price_below_avg");
+      return `${profileSection}## ALERTA PRECIOS: comprando MAS CARO que el promedio historico\n${safeJSON(aboveAvg.slice(0, 15))}\n## Comprando MAS BARATO que el promedio (posibles ahorros logrados)\n${safeJSON(belowAvg.slice(0, 10))}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
     }
     case "riesgo_dir": {
       const [narrativesRisk, payRisk, singleSource, churning, trends, unanswered] = await Promise.all([
