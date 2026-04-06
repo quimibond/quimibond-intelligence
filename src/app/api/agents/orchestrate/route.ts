@@ -312,6 +312,15 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           if (ct) { contactId = ct.id; if (!companyId && ct.company_id) companyId = ct.company_id; }
         }
         const confidence = Math.min(1, Math.max(0, Number(i.confidence) || 0.5));
+
+        // Filter out meta/system noise that shouldn't reach the CEO
+        const titleStr = String(i.title || "");
+        const isMeta = META_TITLE_PATTERNS.some(p => p.test(titleStr));
+        if (isMeta) {
+          duplicatesSkipped++;
+          continue;
+        }
+
         rows.push({
           agent_id: agent.id, run_id: runId,
           insight_type: String(i.insight_type || "recommendation"),
@@ -434,7 +443,23 @@ const CATEGORY_MAP: Record<string, string> = {
   // datos
   data_quality: "datos", data_completeness: "datos", datos: "datos", calidad_datos: "datos",
   integridad_datos: "datos", pipeline_blocker: "datos",
+  // meta categories → normalize to datos (internal system concerns)
+  agent_calibration: "datos", process_improvement: "datos", efficiency: "datos",
+  team_performance: "equipo", calibracion: "datos", meta: "datos",
 };
+
+/** Categories that are internal system noise — should NOT reach the CEO inbox */
+const META_TITLE_PATTERNS = [
+  /sesgo\s+(sistem|hacia)/i,
+  /calibraci[oó]n\s+(de|imposible)/i,
+  /director\s+\w+\s+(ausente|fantasma)/i,
+  /frecuencia\s+de\s+activaci/i,
+  /aceptaci[oó]n/i,
+  /diversificar\s+hacia/i,
+  /sin\s+datos\s+(de|para)\s+(clientes|cartera|productos|empresas)/i,
+  /agentes?\s+con\s+\d+%/i,
+  /validaci[oó]n\s+prematura/i,
+];
 
 function normalizeCategory(raw: string): string {
   const key = raw.toLowerCase().trim()

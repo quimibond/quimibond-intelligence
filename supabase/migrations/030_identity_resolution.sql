@@ -229,3 +229,34 @@ CREATE INDEX IF NOT EXISTS idx_action_items_state_due ON action_items(state, due
 CREATE INDEX IF NOT EXISTS idx_companies_entity_null ON companies(id) WHERE entity_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_contacts_company_null ON contacts(id) WHERE company_id IS NULL;
 CREATE INDEX IF NOT EXISTS idx_emails_company_null ON emails(id) WHERE company_id IS NULL AND sender_contact_id IS NOT NULL;
+
+-- ============================================================================
+-- Trigger: normalize insight categories to 8 fixed values on insert/update
+-- ============================================================================
+CREATE OR REPLACE FUNCTION normalize_insight_category()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+DECLARE
+  valid_cats text[] := ARRAY['cobranza','ventas','entregas','operaciones','proveedores','riesgo','equipo','datos'];
+  cat text;
+BEGIN
+  cat := lower(coalesce(NEW.category, 'operaciones'));
+  IF cat IN ('payment','cash_flow','finance','financiero') THEN NEW.category := 'cobranza';
+  ELSIF cat IN ('sales','crm','churn') THEN NEW.category := 'ventas';
+  ELSIF cat IN ('delivery','logistics') THEN NEW.category := 'entregas';
+  ELSIF cat IN ('operations','inventory','manufacturing','quality') THEN NEW.category := 'operaciones';
+  ELSIF cat IN ('procurement','supplier_concentration','supply_chain','compras') THEN NEW.category := 'proveedores';
+  ELSIF cat IN ('risk','escalation') THEN NEW.category := 'riesgo';
+  ELSIF cat IN ('team_performance','communication','hr') THEN NEW.category := 'equipo';
+  ELSIF cat IN ('data_quality','data_completeness','agent_calibration','process_improvement','efficiency','meta') THEN NEW.category := 'datos';
+  ELSIF NOT (cat = ANY(valid_cats)) THEN NEW.category := 'operaciones';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS trg_normalize_insight_category ON agent_insights;
+CREATE TRIGGER trg_normalize_insight_category
+  BEFORE INSERT OR UPDATE OF category ON agent_insights
+  FOR EACH ROW EXECUTE FUNCTION normalize_insight_category();
