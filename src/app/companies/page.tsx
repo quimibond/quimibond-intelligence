@@ -72,6 +72,7 @@ export default function CompaniesPage() {
   const [sortField, setSortField] = useState<SortField>("name");
   const [sortDir, setSortDir] = useState<SortDirection>("asc");
   const [extras, setExtras] = useState<Record<number, CompanyExtras>>({});
+  const [profiles, setProfiles] = useState<Map<number, { tier: string; risk_level: string; overdue_amount: number; late_deliveries: number }>>(new Map());
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const [globalStats, setGlobalStats] = useState<{ customers: number; suppliers: number; ltv: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -85,19 +86,23 @@ export default function CompaniesPage() {
     if (type === "customer") countQuery.eq("is_customer", true);
     if (type === "supplier") countQuery.eq("is_supplier", true);
 
-    const [{ data }, { count }, customersCount, suppliersCount, ltvRes] = await Promise.all([
+    const [{ data }, { count }, profilesRes] = await Promise.all([
       buildCompanyQuery(searchVal, type, sf, sd).range(0, PAGE_SIZE - 1),
       countQuery,
-      supabase.from("companies").select("id", { count: "exact", head: true }).eq("is_customer", true),
-      supabase.from("companies").select("id", { count: "exact", head: true }).eq("is_supplier", true),
-      supabase.from("companies").select("lifetime_value").not("lifetime_value", "is", null).gt("lifetime_value", 0),
+      supabase.from("company_profile")
+        .select("company_id, tier, risk_level, overdue_amount, late_deliveries, revenue_90d")
+        .order("total_revenue", { ascending: false })
+        .limit(200),
     ]);
 
-    setGlobalStats({
-      customers: customersCount.count ?? 0,
-      suppliers: suppliersCount.count ?? 0,
-      ltv: (ltvRes.data ?? []).reduce((sum: number, c: { lifetime_value: number }) => sum + (c.lifetime_value ?? 0), 0),
-    });
+    setGlobalStats({ customers: 0, suppliers: 0, ltv: 0 });
+
+    // Build profile map for mobile cards
+    const profileMap = new Map<number, { tier: string; risk_level: string; overdue_amount: number; late_deliveries: number }>();
+    for (const p of profilesRes.data ?? []) {
+      profileMap.set(p.company_id, p as { tier: string; risk_level: string; overdue_amount: number; late_deliveries: number });
+    }
+    setProfiles(profileMap);
 
     const results = (data ?? []) as Company[];
     setCompanies(results);
@@ -235,34 +240,48 @@ export default function CompaniesPage() {
       {/* MOBILE: Card layout                                          */}
       {/* ══════════════════════════════════════════════════════════════ */}
       {!loading && companies.length > 0 && (
-        <div className="space-y-1.5 md:hidden">
+        <div className="space-y-2 md:hidden">
           {companies.map((company) => {
-            const health = getHealthIndicator(company);
-            const riskDot = health.variant === "critical" ? "bg-red-500" : health.variant === "warning" ? "bg-orange-400" : "bg-emerald-500";
-            // Pick the most relevant secondary metric
-            const secondaryMetric = company.total_pending && company.total_pending > 10000
-              ? `${formatCurrency(company.total_pending)} vencido`
-              : company.trend_pct != null && company.trend_pct !== 0
-              ? `${company.trend_pct > 0 ? "+" : ""}${Number(company.trend_pct).toFixed(0)}% tendencia`
-              : company.industry ?? (company.is_customer ? "Cliente" : "Proveedor");
+            const profile = profiles.get(company.id);
+            const overdue = profile?.overdue_amount ?? 0;
+            const lateDeliveries = profile?.late_deliveries ?? 0;
+            const hasProblems = overdue > 0 || lateDeliveries > 0;
+
+            // Build status line
+            const statusParts: string[] = [];
+            if (overdue > 0) statusParts.push(`${formatCurrency(overdue)} vencido`);
+            if (lateDeliveries > 0) statusParts.push(`${lateDeliveries} entrega${lateDeliveries !== 1 ? "s" : ""} tarde`);
+            const statusLine = statusParts.length > 0 ? statusParts.join(" · ") : "Sin alertas";
+
+            const tierColors: Record<string, string> = {
+              strategic: "text-domain-relationships bg-domain-relationships/10",
+              important: "text-info-foreground bg-info/10",
+              key_supplier: "text-warning-foreground bg-warning/10",
+            };
 
             return (
               <Link key={company.id} href={`/companies/${company.id}`} className="block">
-                <div className="rounded-2xl border bg-card p-3.5 active:bg-muted/50 transition-colors">
-                  <div className="flex items-start gap-2.5">
-                    <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", riskDot)} />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-[15px] font-bold truncate">{company.name}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        {company.lifetime_value != null && company.lifetime_value > 0
-                          ? formatCurrency(company.lifetime_value)
-                          : "—"}
-                        {" · "}
-                        {secondaryMetric}
-                      </p>
-                    </div>
-                    <ChevronRight className="h-4 w-4 text-muted-foreground/40 mt-1 shrink-0" />
+                <div className={cn(
+                  "rounded-2xl border bg-card p-4 active:bg-muted/50 transition-colors",
+                  hasProblems && "border-l-4 border-l-danger/50"
+                )}>
+                  {/* Row 1: Name + tier */}
+                  <div className="flex items-center justify-between gap-2 mb-1">
+                    <p className="text-[15px] font-bold truncate">{company.name}</p>
+                    {profile?.tier && profile.tier !== "minor" && profile.tier !== "regular" && (
+                      <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0", tierColors[profile.tier] ?? "bg-muted text-muted-foreground")}>
+                        {profile.tier}
+                      </span>
+                    )}
                   </div>
+                  {/* Row 2: Revenue */}
+                  <p className="text-sm font-semibold tabular-nums">
+                    {company.lifetime_value != null && company.lifetime_value > 0 ? formatCurrency(company.lifetime_value) : "—"}
+                  </p>
+                  {/* Row 3: Status */}
+                  <p className={cn("text-xs mt-1", hasProblems ? "text-danger" : "text-muted-foreground")}>
+                    {statusLine}
+                  </p>
                 </div>
               </Link>
             );
