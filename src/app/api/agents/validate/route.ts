@@ -61,6 +61,17 @@ export async function POST() {
       expired += expiredIds.length;
     }
 
+    // ── 2b. Archive old resolved insights (>30 days) ────────────────────
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400_000).toISOString();
+    const { count: archivedCount } = await supabase
+      .from("agent_insights")
+      .update({ state: "archived" })
+      .in("state", ["acted_on", "dismissed", "expired"])
+      .lt("created_at", thirtyDaysAgo)
+      .select("id", { count: "exact", head: true });
+
+    const archived = archivedCount ?? 0;
+
     // ── 3. Validate payment-related insights ────────────────────────────
     const paymentInsights = activeInsights.filter(i =>
       i.title?.toLowerCase().match(/pago|factura|cobr|vencid|cartera|residual|overdue/) ||
@@ -270,7 +281,7 @@ export async function POST() {
         level: "info",
         phase: "insight_validation",
         message: `Validated: ${resolved} auto-resolved, ${expired} auto-expired of ${activeInsights.length} active`,
-        details: { resolved, expired, escalated, linked, deduped, insight_deduped: insightDeduped, total_active: activeInsights.length },
+        details: { resolved, expired, archived, escalated, linked, deduped, insight_deduped: insightDeduped, total_active: activeInsights.length },
       });
     }
 
@@ -279,6 +290,7 @@ export async function POST() {
       active_insights: activeInsights.length,
       resolved,
       expired,
+      archived,
       escalated,
       insight_deduped: insightDeduped,
       linked_to_companies: linked,

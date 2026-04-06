@@ -10,6 +10,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { callClaudeJSON, logTokenUsage } from "@/lib/claude";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
+import { sanitizeEmailForClaude } from "@/lib/sanitize";
 
 export const maxDuration = 300;
 
@@ -135,6 +136,19 @@ export async function POST(request: NextRequest) {
       details: summary,
     });
   } catch (err) {
+    console.error("[orchestrate] Fatal error:", err);
+    try {
+      const sb = createClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+        process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+      );
+      await sb.from("pipeline_logs").insert({
+        level: "error",
+        phase: "agent_orchestration",
+        message: `Fatal orchestration error: ${err instanceof Error ? err.message : String(err)}`,
+        details: { stack: err instanceof Error ? err.stack : undefined },
+      });
+    } catch { /* don't let logging failure mask original error */ }
     return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }
@@ -561,7 +575,7 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
   if (emailFacts.data?.length) {
     sections.push(`## SEÑALES DE EMAILS (citas textuales de comunicaciones)\n${
       (emailFacts.data as Record<string, unknown>[]).map(f =>
-        `- [${f.fact_type}] ${f.company_name}: "${String(f.fact_text).slice(0, 200)}"`
+        `- [${f.fact_type}] ${f.company_name}: "${sanitizeEmailForClaude(String(f.fact_text), 200)}"`
       ).join("\n")
     }`);
   }
@@ -627,7 +641,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 
     if (facts?.length) {
       sections.push(`## Inteligencia de emails (hechos extraidos)\n${facts.map((f: { fact_type: string; fact_text: string }) =>
-        `- [${f.fact_type}] ${f.fact_text}`
+        `- [${f.fact_type}] ${sanitizeEmailForClaude(f.fact_text, 300)}`
       ).join("\n")}`);
     }
   }
@@ -644,7 +658,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 
     if (actions?.length) {
       sections.push(`## Acciones pendientes (extraidas de emails)\n${actions.map((a: { action_type: string; description: string; priority: string; contact_name: string; assignee_name: string; due_date: string }) =>
-        `- [${a.priority}] ${a.action_type}: ${a.description.slice(0, 150)}${a.contact_name ? ` (${a.contact_name})` : ""}${a.assignee_name ? ` → ${a.assignee_name}` : ""}${a.due_date ? ` vence: ${a.due_date}` : ""}`
+        `- [${a.priority}] ${a.action_type}: ${sanitizeEmailForClaude(a.description, 150)}${a.contact_name ? ` (${a.contact_name})` : ""}${a.assignee_name ? ` → ${a.assignee_name}` : ""}${a.due_date ? ` vence: ${a.due_date}` : ""}`
       ).join("\n")}`);
     }
   }
@@ -661,7 +675,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 
   if (overdue?.length) {
     sections.push(`## Acciones VENCIDAS de alta prioridad\n${overdue.map((a: { description: string; assignee_name: string; due_date: string }) =>
-      `- VENCIDA ${a.due_date}: ${a.description.slice(0, 120)} → ${a.assignee_name || "sin asignar"}`
+      `- VENCIDA ${a.due_date}: ${sanitizeEmailForClaude(a.description, 120)} → ${a.assignee_name || "sin asignar"}`
     ).join("\n")}`);
   }
 
@@ -677,7 +691,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 
     if (complaints?.length && !sections.some(s => s.includes("complaint"))) {
       sections.push(`## Quejas/problemas detectados en emails\n${complaints.map((c: { fact_text: string }) =>
-        `- ${c.fact_text}`
+        `- ${sanitizeEmailForClaude(c.fact_text, 300)}`
       ).join("\n")}`);
     }
   }

@@ -13,6 +13,8 @@ import { InboxDesktop } from "./components/inbox-desktop";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Card, CardContent } from "@/components/ui/card";
 
+const PAGE_SIZE = 50;
+
 function computeTier(insight: AgentInsight): string {
   const ev = insight.evidence as { priority_tier?: string }[] | null;
   const evTier = ev?.[0]?.priority_tier ?? "fyi";
@@ -35,6 +37,7 @@ export default function InboxPage() {
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [allAssignees, setAllAssignees] = useState<string[]>([]);
   const [companyProfiles, setCompanyProfiles] = useState<Map<number, CompanyProfile>>(new Map());
+  const [hasMore, setHasMore] = useState(true);
 
   // Load seen IDs from localStorage
   useEffect(() => {
@@ -61,7 +64,7 @@ export default function InboxPage() {
       supabase
         .from("agent_insights").select("id, agent_id, title, description, category, severity, confidence, state, assignee_name, assignee_department, company_id, contact_id, business_impact_estimate, evidence, created_at")
         .in("state", ["new", "seen"]).gte("confidence", 0.80)
-        .order("created_at", { ascending: false }).limit(100),
+        .order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1),
       supabase.from("ai_agents").select("id, slug, name, domain"),
       Promise.all([
         supabase.from("odoo_users").select("updated_at").order("updated_at", { ascending: false }).limit(1),
@@ -102,8 +105,35 @@ export default function InboxPage() {
       return (tierOrder[a.severity ?? ""] ?? 5) - (tierOrder[b.severity ?? ""] ?? 5);
     });
     setInsights(sorted as AgentInsight[]);
+    setHasMore((insightsRes.data ?? []).length === PAGE_SIZE);
     setLoading(false);
   }, []);
+
+  const loadMore = useCallback(async () => {
+    const offset = insights.length;
+    const { data } = await supabase
+      .from("agent_insights")
+      .select("id, agent_id, title, description, category, severity, confidence, state, assignee_name, assignee_department, company_id, contact_id, business_impact_estimate, evidence, created_at")
+      .in("state", ["new", "seen"])
+      .gte("confidence", 0.80)
+      .order("created_at", { ascending: false })
+      .range(offset, offset + PAGE_SIZE - 1);
+
+    if (data?.length) {
+      setInsights(prev => {
+        const existingIds = new Set(prev.map(i => i.id));
+        const newItems = data.filter(i => !existingIds.has(i.id));
+        const merged = [...prev, ...newItems];
+        return merged.sort((a, b) => {
+          const tierOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+          return (tierOrder[a.severity ?? ""] ?? 5) - (tierOrder[b.severity ?? ""] ?? 5);
+        });
+      });
+      setHasMore(data.length === PAGE_SIZE);
+    } else {
+      setHasMore(false);
+    }
+  }, [insights.length]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -261,6 +291,14 @@ export default function InboxPage() {
             onDismiss={dismissInsight}
             onDetail={goToDetail}
           />
+        </div>
+      )}
+
+      {hasMore && insights.length > 0 && (
+        <div className="flex justify-center py-6">
+          <Button variant="outline" size="sm" onClick={loadMore}>
+            Cargar mas insights
+          </Button>
         </div>
       )}
     </div>
