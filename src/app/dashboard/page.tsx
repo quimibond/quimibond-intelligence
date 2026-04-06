@@ -10,14 +10,12 @@ import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
-  AlertTriangle, Bot, Building2, DollarSign, FileText, Heart,
+  Bot, DollarSign, FileText,
   RefreshCw, Truck,
 } from "lucide-react";
 
 import { KPICard } from "./components/kpi-card";
-import { SectionHeader } from "./components/section-header";
 import { UrgentInsights } from "./components/urgent-insights";
-import { ContactsRisk } from "./components/contacts-risk";
 import Link from "next/link";
 
 // ── Types for dashboard state ──
@@ -409,55 +407,33 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-5">
-      <PageHeader
-        title="Centro de Control"
-        description="Inteligencia ejecutiva — Quimibond"
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] sm:text-xs text-muted-foreground whitespace-nowrap hidden sm:inline">
-            {timeAgo(data.lastUpdated)}
-          </span>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            className="h-8 px-2 sm:px-3"
-          >
-            <RefreshCw
-              className={`h-3.5 w-3.5 ${refreshing ? "animate-spin" : ""}`}
-            />
-            <span className="hidden sm:inline ml-1">Actualizar</span>
-          </Button>
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl md:text-2xl font-black">Dashboard</h1>
+          <p className="text-xs text-muted-foreground">{timeAgo(data.lastUpdated)}</p>
         </div>
-      </PageHeader>
+        <Button
+          size="icon"
+          variant="ghost"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="h-9 w-9"
+        >
+          <RefreshCw className={`h-4 w-4 ${refreshing ? "animate-spin" : ""}`} />
+        </Button>
+      </div>
 
-      {/* ═══════════════════════════════════════════════════════════ */}
-      {/* SECTION 1: ATENCION INMEDIATA                              */}
-      {/* ═══════════════════════════════════════════════════════════ */}
-      <SectionHeader
-        title="Atencion Inmediata"
-        icon={AlertTriangle}
-        color="text-danger"
-      />
-
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
+      {/* ═══════ KPIs — 4 cards, always 2 columns ═══════ */}
+      <div className="grid gap-2 grid-cols-2">
         <KPICard
-          title="Insights Pendientes"
+          title="Insights"
           value={data.insightsPending}
-          subtitle="requieren tu atencion"
+          subtitle="pendientes"
           icon={Bot}
           href="/inbox"
           variant={data.insightsPending > 0 ? "danger" : "default"}
-        />
-        <KPICard
-          title="Revenue en Riesgo"
-          value={formatCurrency(data.revenueAtRisk)}
-          subtitle="impacto estimado"
-          icon={DollarSign}
-          href="/inbox"
-          variant={data.revenueAtRisk > 0 ? "danger" : "default"}
         />
         <KPICard
           title="Cartera Vencida"
@@ -468,107 +444,61 @@ export default function DashboardPage() {
           variant={data.overdueAmount > 0 ? "danger" : "default"}
         />
         <KPICard
-          title="Entregas Atrasadas"
+          title="Entregas Tarde"
           value={data.lateDeliveries}
-          subtitle="pendientes de envio"
+          subtitle="pendientes"
           icon={Truck}
           href="/companies"
           variant={data.lateDeliveries > 0 ? "warning" : "default"}
         />
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-2">
-        <UrgentInsights
-          insights={data.urgentInsights}
-          agents={data.agents}
-          totalPending={data.insightsPending}
-        />
-        <ContactsRisk
-          contacts={data.contactsAtRisk}
-          totalContacts={data.totalContacts}
-        />
-      </div>
-
-      {/* ═══════════════════════════════════════════════════════════ */}
-      {/* SECTION 2: SALUD DEL NEGOCIO                               */}
-      {/* ═══════════════════════════════════════════════════════════ */}
-      <SectionHeader
-        title="Salud del Negocio"
-        icon={Heart}
-        color="text-success"
-      />
-
-      <div className="grid gap-3 grid-cols-2 lg:grid-cols-4">
         <KPICard
-          title="Pipeline CRM"
-          value={formatCurrency(data.pipelineValue)}
-          subtitle="oportunidades activas"
-          icon={DollarSign}
-          href="/companies"
-          variant="info"
-        />
-        <KPICard
-          title="Entregas OTD"
+          title="OTD"
           value={data.otdRate !== null ? `${data.otdRate}%` : "--"}
           subtitle="on-time delivery"
           icon={Truck}
           href="/companies"
-          variant={
-            data.otdRate === null
-              ? "default"
-              : data.otdRate >= 90
-                ? "success"
-                : "warning"
-          }
-        />
-        <KPICard
-          title="Empresas Activas"
-          value={data.totalContacts.toLocaleString("es-MX")}
-          subtitle="contactos con empresa"
-          icon={Building2}
-          href="/companies"
-          variant="info"
-        />
-        <KPICard
-          title="Actividades Vencidas"
-          value={data.factsCount.toLocaleString("es-MX")}
-          subtitle="en Odoo sin completar"
-          icon={AlertTriangle}
-          href="/agents"
-          variant={data.factsCount > 100 ? "warning" : "default"}
+          variant={data.otdRate === null ? "default" : data.otdRate >= 90 ? "success" : "warning"}
         />
       </div>
 
+      {/* ═══════ Urgent Insights (full width) ═══════ */}
+      <UrgentInsights
+        insights={data.urgentInsights}
+        agents={data.agents}
+        totalPending={data.insightsPending}
+      />
+
+      {/* ═══════ Aging chart (desktop only — too wide for mobile) ═══════ */}
       {data.globalAging && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-domain-finance" />
-              <CardTitle className="text-sm sm:text-base">
-                Antiguedad de Saldos
-              </CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <AgingChart data={data.globalAging} />
-          </CardContent>
-        </Card>
+        <div className="hidden md:block">
+          <Card>
+            <CardHeader className="pb-3">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-domain-finance" />
+                <CardTitle className="text-sm sm:text-base">Antiguedad de Saldos</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <AgingChart data={data.globalAging} />
+            </CardContent>
+          </Card>
+        </div>
       )}
 
-      {/* Briefing diario (if available) */}
+      {/* ═══════ Briefing (if available) ═══════ */}
       {data.briefing && (
         <Card>
-          <CardHeader className="pb-3">
+          <CardHeader className="pb-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <FileText className="h-4 w-4 text-domain-meta" />
-                <CardTitle className="text-sm sm:text-base">Briefing del Dia</CardTitle>
+                <CardTitle className="text-sm">Briefing</CardTitle>
               </div>
-              <Link href="/briefings" className="text-xs text-muted-foreground hover:underline">Ver todos</Link>
+              <Link href="/briefings" className="text-xs text-primary font-medium">Ver todos</Link>
             </div>
           </CardHeader>
           <CardContent>
-            <p className="text-sm text-muted-foreground leading-relaxed">
+            <p className="text-sm text-muted-foreground leading-relaxed line-clamp-4 md:line-clamp-none">
               {data.briefing.summary_text ?? "Sin briefing disponible"}
             </p>
           </CardContent>
