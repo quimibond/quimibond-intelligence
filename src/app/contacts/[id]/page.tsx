@@ -209,101 +209,40 @@ export default function ContactDetailPage() {
 
   const totalEmails = (contact.total_sent ?? 0) + (contact.total_received ?? 0);
 
+  const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-red-500" : contact.risk_level === "medium" ? "bg-orange-400" : "bg-emerald-500";
+
   return (
-    <div className="space-y-6">
-      <Breadcrumbs items={[
-        { label: "Dashboard", href: "/" },
-        ...(contact.company_id
-          ? [{ label: "Empresas", href: "/companies" },
-             { label: "Empresa", href: `/companies/${contact.company_id}` }]
-          : [{ label: "Contactos", href: "/contacts" }]),
-        { label: contact.name ?? contact.email },
-      ]} />
-
+    <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center gap-4">
-        <Avatar className="h-16 w-16">
-          <AvatarFallback className="text-lg">{getInitials(contact.name)}</AvatarFallback>
-        </Avatar>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold tracking-tight">{contact.name ?? "Sin nombre"}</h1>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            {contact.email && <span>{contact.email}</span>}
-            {contact.company_id && (
-              <>
-                <span>·</span>
-                <Link href={`/companies/${contact.company_id}`} className="text-primary hover:underline">Ver empresa</Link>
-              </>
-            )}
-            {contact.role && (
-              <>
-                <span>·</span>
-                <span>{contact.role}</span>
-              </>
-            )}
-          </div>
-        </div>
-        <EnrichButton type="contact" id={contactId} name={contact.name ?? "contacto"} />
+      <div>
+        <button onClick={() => router.push("/contacts")} className="text-xs text-muted-foreground hover:text-foreground mb-1 flex items-center gap-1">
+          ← Contactos
+        </button>
+        <h1 className="text-xl font-black">{contact.name ?? "Sin nombre"}</h1>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          {contact.role ?? contact.department ?? ""}
+          {contact.email && <> · {contact.email}</>}
+          {contact.company_id && (
+            <> · <Link href={`/companies/${contact.company_id}`} className="text-primary">Ver empresa</Link></>
+          )}
+        </p>
       </div>
 
-      {/* Key metrics */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Riesgo</p>
-            <div className="mt-1"><RiskBadge level={contact.risk_level} /></div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Sentimiento</p>
-            <p className={cn("mt-1 text-2xl font-bold tabular-nums", sentimentColor(contact.sentiment_score))}>
-              {contact.sentiment_score != null ? contact.sentiment_score.toFixed(2) : "—"}
-            </p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Relacion</p>
-            <div className="mt-2 flex items-center gap-2">
-              <Progress value={scoreToPercent(contact.relationship_score)} className="flex-1" />
-              <span className="text-sm font-medium tabular-nums">
-                {contact.relationship_score != null ? `${Math.round(scoreToPercent(contact.relationship_score))}%` : "—"}
-              </span>
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-4">
-            <p className="text-xs text-muted-foreground">Total emails</p>
-            <p className="mt-1 text-2xl font-bold tabular-nums">{totalEmails}</p>
-            <p className="text-xs text-muted-foreground">{contact.total_sent ?? 0} env / {contact.total_received ?? 0} rec</p>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Intelligence KPIs */}
-      {intelKpis && (intelKpis.open_alerts > 0 || intelKpis.pending_actions > 0) && (
-        <div className="flex flex-wrap items-center gap-3">
-          {intelKpis.open_alerts > 0 && (
-            <Badge variant="warning" className="gap-1.5 px-3 py-1">
-              <Bell className="h-3.5 w-3.5" />
-              {intelKpis.open_alerts} alerta{intelKpis.open_alerts !== 1 ? "s" : ""} abierta{intelKpis.open_alerts !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {intelKpis.pending_actions > 0 && (
-            <Badge variant="info" className="gap-1.5 px-3 py-1">
-              <CheckSquare className="h-3.5 w-3.5" />
-              {intelKpis.pending_actions} accion{intelKpis.pending_actions !== 1 ? "es" : ""} pendiente{intelKpis.pending_actions !== 1 ? "s" : ""}
-            </Badge>
-          )}
-          {intelKpis.overdue_actions > 0 && (
-            <Badge variant="critical" className="gap-1.5 px-3 py-1">
-              {intelKpis.overdue_actions} vencida{intelKpis.overdue_actions !== 1 ? "s" : ""}
-            </Badge>
-          )}
+      {/* 3 inline stats */}
+      <div className="grid grid-cols-3 gap-2 text-center">
+        <div className="rounded-xl bg-muted/50 p-2.5">
+          <div className={cn("h-2 w-2 rounded-full mx-auto mb-1", riskDot)} />
+          <p className="text-[10px] text-muted-foreground">riesgo {contact.risk_level ?? "—"}</p>
         </div>
-      )}
+        <div className="rounded-xl bg-muted/50 p-2.5">
+          <p className="text-lg font-black tabular-nums">{contact.current_health_score ?? "—"}</p>
+          <p className="text-[10px] text-muted-foreground">health</p>
+        </div>
+        <div className="rounded-xl bg-muted/50 p-2.5">
+          <p className="text-lg font-black tabular-nums">{totalEmails}</p>
+          <p className="text-[10px] text-muted-foreground">emails</p>
+        </div>
+      </div>
 
       {/* Tabs */}
       <Tabs defaultValue="perfil">
@@ -311,26 +250,23 @@ export default function ContactDetailPage() {
           <TabsList className="inline-flex w-auto min-w-full md:min-w-0 gap-0.5 h-9">
             <TabsTrigger value="perfil" className="text-xs px-3">Perfil</TabsTrigger>
             <TabsTrigger value="comercial" className="text-xs px-3">Comercial</TabsTrigger>
-            <TabsTrigger value="salud" className="text-xs px-3">Salud</TabsTrigger>
-            <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
             <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
+            <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="perfil" className="space-y-6">
           <TabPerfil contact={contact} personProfile={personProfile} />
+          <TabSalud healthScores={healthScores} />
         </TabsContent>
         <TabsContent value="comercial" className="space-y-6">
           <TabComercial contact={contact} />
         </TabsContent>
-        <TabsContent value="salud" className="space-y-6">
-          <TabSalud healthScores={healthScores} />
+        <TabsContent value="inteligencia">
+          <TabInteligencia facts={facts} />
         </TabsContent>
         <TabsContent value="emails" className="space-y-6">
           <TabEmails emails={emails} contactComms={contactComms} />
-        </TabsContent>
-        <TabsContent value="inteligencia">
-          <TabInteligencia facts={facts} />
         </TabsContent>
       </Tabs>
     </div>
