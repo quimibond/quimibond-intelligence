@@ -281,22 +281,24 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         // for the same company + same category, skip it
         const companyName = String(insight.company_name || "").trim().toLowerCase();
         const category = normalizeCategory(String(insight.category || agent.domain));
+        // Title word overlap check (works for ALL insights, with or without company)
+        const titleWords = norm.split(" ").filter(w => w.length > 3);
+        if (titleWords.length >= 3) {
+          const hasSimilar = [...existingTitles].some(existing => {
+            const overlap = titleWords.filter(w => existing.includes(w)).length;
+            return overlap >= Math.min(3, titleWords.length * 0.5);
+          });
+          if (hasSimilar) { duplicatesSkipped++; continue; }
+        }
+
+        // Company+category dedup (only if we have a company name)
         if (companyName && companyName !== "null") {
-          // Try to resolve company_id for dedup check
           const { data: co } = await supabase.from("companies").select("id")
             .ilike("canonical_name", companyName).limit(1).single();
           if (co && existingCompanyCat.has(`${co.id}:${category}`)) {
             duplicatesSkipped++;
             continue;
           }
-
-          // Also check by title word overlap (fallback)
-          const titleWords = norm.split(" ").filter(w => w.length > 3);
-          const hasSimilar = [...existingTitles].some(existing => {
-            const overlap = titleWords.filter(w => existing.includes(w)).length;
-            return overlap >= Math.min(3, titleWords.length * 0.5);
-          });
-          if (hasSimilar) { duplicatesSkipped++; continue; }
         }
 
         existingTitles.add(norm);

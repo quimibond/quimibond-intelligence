@@ -32,7 +32,14 @@ const NOISE_PATTERNS = [
 
 const NOISE_SENDERS = [
   "noreply@", "no-reply@", "notifications@", "notification@",
-  "mailer-daemon@", "postmaster@",
+  "mailer-daemon@", "postmaster@", "clic@", "marketing@",
+  "promo@", "newsletter@", "info@zacson", "ventas@zacson",
+];
+
+/** Spam/marketing domains — auto-skip without Claude */
+const NOISE_DOMAINS = [
+  "zacson-cursos.com", "mailchimp.com", "sendgrid.net",
+  "constantcontact.com", "hubspot.com",
 ];
 
 export async function GET(request: NextRequest) {
@@ -174,6 +181,12 @@ function isNoise(email: { sender: string | null; body: string | null; subject: s
 
   // Known noise senders
   if (NOISE_SENDERS.some(p => sender.includes(p))) return true;
+
+  // Known spam/marketing domains
+  if (NOISE_DOMAINS.some(d => sender.includes(d))) return true;
+
+  // Auto-replies
+  if (subject.toLowerCase().startsWith("respuesta automática") || subject.toLowerCase().startsWith("automatic reply") || subject.toLowerCase().startsWith("out of office")) return true;
 
   // Known noise body patterns
   if (NOISE_PATTERNS.some(p => p.test(cleanBody) || p.test(subject))) return true;
