@@ -507,21 +507,73 @@ Responde con un JSON array. Cada elemento debe tener EXACTAMENTE estos campos:
 // ── Context builders ──────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildAgentContext(supabase: any, domain: string): Promise<string> {
-  // Get recent email analysis summaries (all agents benefit from this)
-  const { data: recentAnalysis } = await supabase
-    .from("pipeline_logs").select("details")
-    .eq("phase", "account_analysis")
-    .order("created_at", { ascending: false }).limit(5);
+  // Load 3 cross-cutting intelligence layers (all directors get these)
+  const [crossSignals, emailFacts, insightHistory, emailIntel] = await Promise.all([
+    // Gap 1: What OTHER directors are saying (cross-director signals)
+    supabase
+      .from("cross_director_signals")
+      .select("company_name, director_name, category, severity, title")
+      .in("severity", ["critical", "high"])
+      .limit(15),
 
-  const analysisBrief = recentAnalysis?.length
-    ? `## Analisis recientes de email\n${recentAnalysis.map((a: { details: Record<string, unknown> }) => `- ${a.details?.account}: ${a.details?.summary_text ?? ""}`).join("\n")}\n\n`
-    : "";
+    // Gap 2: Actual email facts per company (complaints, commitments, requests)
+    supabase
+      .from("company_email_intelligence")
+      .select("company_name, fact_type, fact_text")
+      .in("fact_type", ["complaint", "commitment", "request", "price"])
+      .limit(15),
 
-  // Load email intelligence (facts + action_items) relevant to this domain
-  const emailIntel = await getEmailIntelligence(supabase, domain);
+    // Gap 5: How many times each company was flagged + CEO response
+    supabase
+      .from("company_insight_history")
+      .select("company_name, total_insights_30d, times_acted, times_dismissed, directors_flagging, which_directors, categories_flagged")
+      .gte("total_insights_30d", 2)
+      .order("total_insights_30d", { ascending: false })
+      .limit(10),
+
+    // Existing: domain-specific email facts
+    getEmailIntelligence(supabase, domain),
+  ]);
+
+  const sections: string[] = [];
+
+  // Cross-director signals: what are OTHER directors saying?
+  if (crossSignals.data?.length) {
+    // Group by company for readability
+    const byCompany = new Map<string, string[]>();
+    for (const s of crossSignals.data as Record<string, unknown>[]) {
+      const co = String(s.company_name ?? "?");
+      if (!byCompany.has(co)) byCompany.set(co, []);
+      byCompany.get(co)!.push(`[${s.director_name}/${s.severity}] ${s.title}`);
+    }
+    const lines = [...byCompany.entries()].map(([co, signals]) =>
+      `  ${co.toUpperCase()}:\n${signals.map(s => `    ${s}`).join("\n")}`
+    );
+    sections.push(`## QUE DICEN OTROS DIRECTORES (no repitas, complementa)\n${lines.join("\n")}`);
+  }
+
+  // Email intelligence: actual quotes from communications
+  if (emailFacts.data?.length) {
+    sections.push(`## SEÑALES DE EMAILS (citas textuales de comunicaciones)\n${
+      (emailFacts.data as Record<string, unknown>[]).map(f =>
+        `- [${f.fact_type}] ${f.company_name}: "${String(f.fact_text).slice(0, 200)}"`
+      ).join("\n")
+    }`);
+  }
+
+  // Temporal memory: companies flagged multiple times
+  if (insightHistory.data?.length) {
+    sections.push(`## HISTORIAL: empresas flaggeadas multiples veces (30 dias)\n${
+      (insightHistory.data as Record<string, unknown>[]).map(h =>
+        `- ${h.company_name}: ${h.total_insights_30d} veces (CEO actuo ${h.times_acted}, descarto ${h.times_dismissed}) — directores: ${h.which_directors}`
+      ).join("\n")
+    }`);
+  }
+
+  const crossIntel = sections.length ? sections.join("\n\n") + "\n\n" : "";
 
   const domainData = await getDomainData(supabase, domain);
-  return analysisBrief + emailIntel + domainData;
+  return crossIntel + emailIntel + domainData;
 }
 
 /**

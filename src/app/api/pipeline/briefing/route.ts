@@ -39,18 +39,18 @@ export async function POST(request: NextRequest) {
 
     // ── Gather ALL intelligence sources in parallel ─────────────────────
     const [
-      // PRIMARY: Company narratives with risk signals (the core intelligence)
+      // PRIMARY: Company narratives with risk signals
       narrativesRes,
-      // Agent insights from last 24h
+      // Director insights from last 24h (the MAIN content)
       insightsRes,
-      // Insight HISTORY: what was acted on / dismissed recently (continuity)
+      // Cross-director: companies flagged by multiple directors
+      multiSignalRes,
+      // Insight HISTORY: what CEO acted on / dismissed recently
       insightHistoryRes,
+      // Email facts: actual quotes
+      emailFactsRes,
       // Recent payments (good news)
       recentPaymentsRes,
-      // Email intelligence facts
-      factsRes,
-      // Pending actions
-      actionsPendingRes,
       // Email volume
       emailVolumeRes,
       // Previous briefing
@@ -75,7 +75,15 @@ export async function POST(request: NextRequest) {
         .order("created_at", { ascending: false })
         .limit(10),
 
-      // 3. Insight history: what was the CEO's feedback recently?
+      // 3. Companies flagged by MULTIPLE directors (convergent signals)
+      supabase
+        .from("company_insight_history")
+        .select("company_name, total_insights_30d, times_acted, times_dismissed, directors_flagging, which_directors, categories_flagged")
+        .gte("directors_flagging", 2)
+        .order("total_insights_30d", { ascending: false })
+        .limit(10),
+
+      // 4. CEO feedback history
       supabase
         .from("agent_insights")
         .select("title, severity, category, state, assignee_name")
@@ -84,31 +92,20 @@ export async function POST(request: NextRequest) {
         .order("updated_at", { ascending: false })
         .limit(10),
 
-      // 4. Recent payments
+      // 5. Email facts: actual complaints, commitments, requests
+      supabase
+        .from("company_email_intelligence")
+        .select("company_name, fact_type, fact_text")
+        .in("fact_type", ["complaint", "commitment", "request"])
+        .order("created_at", { ascending: false })
+        .limit(10),
+
+      // 6. Recent payments
       supabase
         .from("odoo_payments")
         .select("company_id, amount, payment_date")
         .gte("payment_date", new Date(Date.now() - 3 * 24 * 3600_000).toISOString().split("T")[0])
         .order("amount", { ascending: false })
-        .limit(5),
-
-      // 5. Email facts
-      supabase
-        .from("facts")
-        .select("fact_type, fact_text, confidence")
-        .in("fact_type", ["commitment", "complaint", "request"])
-        .gte("confidence", 0.9)
-        .gte("created_at", weekAgo)
-        .order("created_at", { ascending: false })
-        .limit(10),
-
-      // 6. Pending high-priority actions
-      supabase
-        .from("action_items")
-        .select("description, priority, assignee_name, due_date")
-        .eq("state", "pending")
-        .in("priority", ["high"])
-        .order("due_date", { ascending: true })
         .limit(5),
 
       // 7. Email volume
@@ -128,10 +125,10 @@ export async function POST(request: NextRequest) {
 
     const narratives = narrativesRes.data ?? [];
     const insights = insightsRes.data ?? [];
+    const multiSignals = multiSignalRes.data ?? [];
     const insightHistory = insightHistoryRes.data ?? [];
+    const emailFacts = emailFactsRes.data ?? [];
     const payments = recentPaymentsRes.data ?? [];
-    const facts = factsRes.data ?? [];
-    const pendingActions = actionsPendingRes.data ?? [];
     const previousSummary = previousRes.data?.[0]?.summary_text ?? "";
 
     // ── Build the consolidated data package ─────────────────────────────
@@ -139,10 +136,10 @@ export async function POST(request: NextRequest) {
       today,
       narratives,
       insights,
+      multiSignals,
       insightHistory,
+      emailFacts,
       payments,
-      facts,
-      pendingActions,
       emailCount: emailVolumeRes.count ?? 0,
       previousSummary,
     });
@@ -245,10 +242,10 @@ REGLAS:
       sources: {
         companies_at_risk: narratives.length,
         insights: insights.length,
+        multi_signal_companies: multiSignals.length,
         insight_history: insightHistory.length,
+        email_facts: emailFacts.length,
         recent_payments: payments.length,
-        email_facts: facts.length,
-        pending_actions: pendingActions.length,
       },
     });
   } catch (err) {
@@ -271,10 +268,10 @@ interface BriefingData {
   today: string;
   narratives: Record<string, unknown>[];
   insights: Record<string, unknown>[];
+  multiSignals: Record<string, unknown>[];
   insightHistory: Record<string, unknown>[];
+  emailFacts: Record<string, unknown>[];
   payments: Record<string, unknown>[];
-  facts: Record<string, unknown>[];
-  pendingActions: Record<string, unknown>[];
   emailCount: number;
   previousSummary: string;
 }
@@ -331,29 +328,30 @@ function buildConsolidatedPackage(data: BriefingData): string {
     }
   }
 
-  // ── 4. PAYMENTS received (good news) ───────────────────────────────────
+  // ── 4. CONVERGENT SIGNALS: companies flagged by MULTIPLE directors ────
+  if (data.multiSignals.length) {
+    lines.push(`--- EMPRESAS CON SEÑALES CONVERGENTES (multiples directores) ---`);
+    for (const s of data.multiSignals) {
+      lines.push(`  ${String(s.company_name).toUpperCase()}: flaggeada ${s.total_insights_30d} veces por ${s.directors_flagging} directores (${s.which_directors})`);
+      lines.push(`    CEO actuo ${s.times_acted} veces, descarto ${s.times_dismissed} | Categorias: ${String(s.categories_flagged)}`);
+    }
+    lines.push("");
+  }
+
+  // ── 5. EMAIL FACTS: actual quotes from communications ──────────────────
+  if (data.emailFacts.length) {
+    lines.push(`--- SEÑALES DETECTADAS EN EMAILS ---`);
+    for (const f of data.emailFacts) {
+      lines.push(`  [${f.fact_type}] ${f.company_name}: "${String(f.fact_text).slice(0, 150)}"`);
+    }
+    lines.push("");
+  }
+
+  // ── 6. PAYMENTS received (good news) ───────────────────────────────────
   if (data.payments.length) {
     lines.push(`--- PAGOS RECIBIDOS (ultimos 3 dias) ---`);
     for (const p of data.payments) {
       lines.push(`  $${Number(p.amount).toLocaleString()} MXN — ${p.payment_date}`);
-    }
-    lines.push("");
-  }
-
-  // ── 5. PENDING ACTIONS (high priority) ──────────────────────────────────
-  if (data.pendingActions.length) {
-    lines.push(`--- ACCIONES PENDIENTES (alta prioridad) ---`);
-    for (const a of data.pendingActions) {
-      lines.push(`  ${a.due_date}: ${String(a.description).slice(0, 120)} → ${a.assignee_name || "sin asignar"}`);
-    }
-    lines.push("");
-  }
-
-  // ── 6. EMAIL INTELLIGENCE (high-signal facts) ──────────────────────────
-  if (data.facts.length) {
-    lines.push(`--- SEÑALES DETECTADAS EN EMAILS ---`);
-    for (const f of data.facts) {
-      lines.push(`  [${f.fact_type}] ${f.fact_text}`);
     }
     lines.push("");
   }
