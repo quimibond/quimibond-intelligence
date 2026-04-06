@@ -119,7 +119,7 @@ export default function DashboardPage() {
           .from("agent_insights")
           .select("id", { count: "exact", head: true })
           .in("state", ["new", "seen"])
-          .gte("confidence", 0.65),
+          .gte("confidence", 0.80),
 
         // S1: Revenue at risk (SUM business_impact_estimate for critical/high)
         supabase
@@ -127,7 +127,7 @@ export default function DashboardPage() {
           .select("business_impact_estimate")
           .in("state", ["new", "seen"])
           .in("severity", ["critical", "high"])
-          .gte("confidence", 0.65),
+          .gte("confidence", 0.80),
 
         // S1: Overdue invoices
         supabase
@@ -149,7 +149,7 @@ export default function DashboardPage() {
           .select("*")
           .in("state", ["new", "seen"])
           .in("severity", ["critical", "high"])
-          .gte("confidence", 0.65)
+          .gte("confidence", 0.80)
           .order("created_at", { ascending: false })
           .limit(5),
 
@@ -221,7 +221,7 @@ export default function DashboardPage() {
         supabase
           .from("agent_insights")
           .select("assignee_department, state")
-          .gte("confidence", 0.65),
+          .gte("confidence", 0.80),
 
         // S4: Agents overview (RPC with last_run_at and counts)
         supabase.rpc("get_agents_overview"),

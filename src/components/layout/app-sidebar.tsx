@@ -110,8 +110,7 @@ export function AppSidebar() {
           <nav aria-label="Navegacion principal" className={cn("flex-1 space-y-1 overflow-y-auto px-3", collapsed && "md:px-2")}>
             {navItems.map(({ href, label, icon: Icon }) => {
               const badge =
-                href === "/alerts" && counts.alerts > 0 ? counts.alerts :
-                href === "/actions" && counts.actions > 0 ? counts.actions :
+                href === "/inbox" && counts.alerts > 0 ? counts.alerts :
                 null;
               return (
                 <Link

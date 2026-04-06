@@ -64,7 +64,7 @@ export default function InsightDetailPage() {
         .from("agent_insights")
         .select("id")
         .in("state", ["new", "seen"])
-        .gte("confidence", 0.65)
+        .gte("confidence", 0.80)
         .order("created_at", { ascending: false })
         .limit(50);
       if (navData) setNavIds(navData.map(n => n.id));
