@@ -37,7 +37,7 @@ export default function ActionsPage() {
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
-  const [stateFilter, setStateFilter] = useState<string>("all");
+  const [stateFilter, setStateFilter] = useState<string>("active");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [assigneeFilter, setAssigneeFilter] = useState<string>("all");
   const [searchText, setSearchText] = useState("");
@@ -99,7 +99,8 @@ export default function ActionsPage() {
   const filtered = useMemo(() => {
     const q = searchText.trim().toLowerCase();
     return actions.filter((a) => {
-      if (stateFilter !== "all" && a.state !== stateFilter) return false;
+      if (stateFilter === "active" && a.state === "dismissed") return false;
+      if (stateFilter !== "all" && stateFilter !== "active" && a.state !== stateFilter) return false;
       if (priorityFilter !== "all" && a.priority !== priorityFilter) return false;
       if (assigneeFilter !== "all" && a.assignee_email !== assigneeFilter) return false;
       if (q && !a.description.toLowerCase().includes(q) && !(a.contact_name ?? "").toLowerCase().includes(q) && !(a.contact_company ?? "").toLowerCase().includes(q)) return false;
@@ -305,6 +306,7 @@ export default function ActionsPage() {
           className="min-w-[160px] shrink-0"
           aria-label="Filtrar por estado"
         >
+          <option value="active">Activas (sin descartadas)</option>
           <option value="all">Todos los estados</option>
           <option value="pending">Pendientes</option>
           <option value="in_progress">En progreso</option>

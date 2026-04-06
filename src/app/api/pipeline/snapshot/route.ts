@@ -29,15 +29,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Also refresh revenue_metrics
+    let revenueRows = 0;
+    try {
+      const { data: revResult } = await supabase.rpc("populate_revenue_metrics");
+      revenueRows = revResult?.rows_inserted ?? 0;
+    } catch { /* RPC may not exist yet */ }
+
     // Log it
     await supabase.from("pipeline_logs").insert({
       level: "info",
       phase: "daily_snapshot",
-      message: `Snapshot: ${data?.companies_snapshotted ?? 0} companies captured`,
-      details: data,
+      message: `Snapshot: ${data?.companies_snapshotted ?? 0} companies, ${revenueRows} revenue metrics`,
+      details: { ...data, revenue_metrics_rows: revenueRows },
     });
 
-    return NextResponse.json({ success: true, ...data });
+    return NextResponse.json({ success: true, ...data, revenue_metrics_rows: revenueRows });
   } catch (err) {
     console.error("[snapshot] Error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });

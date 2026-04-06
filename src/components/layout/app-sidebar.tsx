@@ -41,6 +41,8 @@ const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/contacts", label: "Contactos", icon: Users },
+  { href: "/emails", label: "Emails", icon: Mail },
+  { href: "/threads", label: "Hilos", icon: MessagesSquare },
   { href: "/briefings", label: "Briefings", icon: FileText },
   { href: "/chat", label: "Chat IA", icon: MessageSquare },
   { href: "/agents", label: "Directores IA", icon: Bot },

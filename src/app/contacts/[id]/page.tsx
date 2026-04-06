@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-  Bell,
+
   CheckSquare,
   ShoppingCart,
   User,
@@ -21,7 +21,7 @@ import type {
   Contact,
   Fact,
   Email,
-  Alert,
+
   ActionItem,
 } from "@/lib/types";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
@@ -42,7 +42,7 @@ import {
   TabSalud,
   TabEmails,
   TabInteligencia,
-  TabAlertas,
+
   TabAcciones,
 } from "./components";
 
@@ -55,7 +55,7 @@ export default function ContactDetailPage() {
   const [contact, setContact] = useState<Contact | null>(null);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [emails, setEmails] = useState<Email[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+
   const [actions, setActions] = useState<ActionItem[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [healthScores, setHealthScores] = useState<any[]>([]);
@@ -133,12 +133,6 @@ export default function ContactDetailPage() {
             .then(({ data }) => setFacts((data as Fact[] | null) ?? []))
         );
       }
-
-      promises.push(
-        supabase.from("alerts").select("*").eq("contact_id", contactId)
-          .order("created_at", { ascending: false })
-          .then(({ data }) => setAlerts((data as Alert[] | null) ?? []))
-      );
 
       promises.push(
         supabase.from("action_items").select("*").eq("contact_id", contactId)

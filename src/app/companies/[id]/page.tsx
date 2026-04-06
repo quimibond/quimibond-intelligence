@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import {
   ArrowLeft,
-  Bell,
+
   Building2,
   CreditCard,
   DollarSign,
@@ -27,7 +27,7 @@ import type {
   Fact,
   EntityRelationship,
   Entity,
-  Alert,
+
   ActionItem,
   HealthScore,
   CompanyFinancials,
@@ -50,7 +50,7 @@ import {
   TabContactos,
   TabInteligencia,
   TabFinanzas,
-  TabAlertas,
+
   TabAcciones,
   TabEmails,
   TabProductos,
@@ -74,7 +74,7 @@ export default function CompanyDetailPage() {
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [facts, setFacts] = useState<Fact[]>([]);
   const [relationships, setRelationships] = useState<ResolvedRelationship[]>([]);
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
   const [healthScores, setHealthScores] = useState<HealthScore[]>([]);
@@ -106,7 +106,7 @@ export default function CompanyDetailPage() {
         setCompany(comp);
         setContacts((ctx.contacts as Contact[] | null) ?? []);
         setFacts((ctx.facts as Fact[] | null) ?? []);
-        setAlerts((ctx.alerts as Alert[] | null) ?? []);
+
         setActions((ctx.actions as ActionItem[] | null) ?? []);
         setHealthScores((ctx.health_scores as HealthScore[] | null) ?? []);
         setRevenueRows((ctx.revenue as RevenueRow[] | null) ?? []);
@@ -139,14 +139,13 @@ export default function CompanyDetailPage() {
 
       // Parallel fetches
       const [
-        contactsRes, factsRes, alertsRes, actionsRes,
+        contactsRes, factsRes, actionsRes,
         revenueRes, healthRes, snapshotsRes, emailsRes,
       ] = await Promise.all([
         supabase.from("contacts").select("*").eq("company_id", comp.id).order("name"),
         comp.entity_id
           ? supabase.from("facts").select("*").eq("entity_id", comp.entity_id).order("created_at", { ascending: false }).limit(100)
           : Promise.resolve({ data: [], error: null }),
-        supabase.from("alerts").select("*").eq("company_id", comp.id).order("created_at", { ascending: false }),
         supabase.from("action_items").select("*").eq("company_id", comp.id).order("created_at", { ascending: false }),
         supabase.from("revenue_metrics").select("*").eq("company_id", comp.id).order("period_start", { ascending: false }).limit(12),
         supabase.from("health_scores").select("*").eq("company_id", comp.id).order("score_date", { ascending: false }).limit(30),
@@ -156,7 +155,7 @@ export default function CompanyDetailPage() {
 
       setContacts((contactsRes.data as Contact[] | null) ?? []);
       setFacts((factsRes.data as Fact[] | null) ?? []);
-      setAlerts((alertsRes.data as Alert[] | null) ?? []);
+
       setActions((actionsRes.data as ActionItem[] | null) ?? []);
       setRevenueRows((revenueRes.data as RevenueRow[] | null) ?? []);
       setOdooSnapshots(snapshotsRes.data ?? []);
