@@ -6,34 +6,28 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
-  MessageSquare, ThumbsDown, ThumbsUp, XCircle,
+  MessageSquare, ThumbsDown, ThumbsUp,
 } from "lucide-react";
-import type { AgentInsight, AIAgent, AgentRun, Company, Contact } from "@/lib/types";
+import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
-import { cn } from "@/lib/utils";
-import { useSidebar } from "@/components/layout/sidebar-context";
+import { cn, timeAgo } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { InsightCard } from "./components/insight-card";
-import { InsightContext } from "./components/insight-context";
+import { CompanyIntelCards } from "@/app/companies/[id]/components/company-intel-cards";
 
-// Partial selects — only the columns we fetch
-type AgentPartial = Pick<AIAgent, "id" | "slug" | "name" | "domain">;
-type CompanyPartial = Pick<Company, "id" | "name" | "canonical_name" | "lifetime_value" | "is_customer" | "is_supplier" | "total_pending" | "delivery_otd_rate" | "entity_id">;
-type ContactPartial = Pick<Contact, "id" | "name" | "email" | "role" | "current_health_score" | "risk_level" | "sentiment_score" | "last_activity" | "company_id">;
-type RunPartial = Pick<AgentRun, "id" | "started_at" | "completed_at" | "duration_seconds" | "insights_generated" | "status">;
+const SEV_DOTS: Record<string, string> = {
+  critical: "bg-red-500", high: "bg-orange-400", medium: "bg-yellow-400",
+};
 
 export default function InsightDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { collapsed } = useSidebar();
 
   const [insight, setInsight] = useState<AgentInsight | null>(null);
-  const [agent, setAgent] = useState<AgentPartial | null>(null);
-  const [agentRun, setAgentRun] = useState<RunPartial | null>(null);
-  const [company, setCompany] = useState<CompanyPartial | null>(null);
-  const [contact, setContact] = useState<ContactPartial | null>(null);
+  const [company, setCompany] = useState<Company | null>(null);
+  const [crossSignals, setCrossSignals] = useState<{ director_name: string; title: string; severity: string }[]>([]);
+  const [insightHistory, setInsightHistory] = useState<{ total_insights_30d: number; times_acted: number; times_dismissed: number; which_directors: string } | null>(null);
   const [navIds, setNavIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -44,13 +38,8 @@ export default function InsightDetailPage() {
     async function load() {
       setLoading(true);
 
-      // Load insight
       const { data: ins } = await supabase
-        .from("agent_insights")
-        .select("*")
-        .eq("id", insightId)
-        .single();
-
+        .from("agent_insights").select("*").eq("id", insightId).single();
       if (!ins) { setLoading(false); return; }
       setInsight(ins as AgentInsight);
 
@@ -59,85 +48,51 @@ export default function InsightDetailPage() {
         supabase.from("agent_insights").update({ state: "seen" }).eq("id", insightId).then(() => {});
       }
 
-      // Load nav IDs (all active insights for next/prev)
-      const { data: navData } = await supabase
-        .from("agent_insights")
-        .select("id")
-        .in("state", ["new", "seen"])
-        .gte("confidence", 0.80)
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (navData) setNavIds(navData.map(n => n.id));
-
-      // Load agent + company + contact + run in parallel
-      const [agentRes, companyRes, contactRes, runRes] = await Promise.all([
-        supabase.from("ai_agents").select("id, slug, name, domain").eq("id", ins.agent_id).single(),
-        ins.company_id
-          ? supabase.from("companies").select("id, name, canonical_name, lifetime_value, is_customer, is_supplier, total_pending, delivery_otd_rate, entity_id").eq("id", ins.company_id).single()
-          : Promise.resolve({ data: null }),
-        ins.contact_id
-          ? supabase.from("contacts").select("id, name, email, role, current_health_score, risk_level, sentiment_score, last_activity, company_id").eq("id", ins.contact_id).single()
-          : Promise.resolve({ data: null }),
-        ins.run_id
-          ? supabase.from("agent_runs").select("id, started_at, completed_at, duration_seconds, insights_generated, status").eq("id", ins.run_id).single()
-          : Promise.resolve({ data: null }),
+      // Load all context in parallel
+      const [navRes, companyRes, crossRes, historyRes] = await Promise.all([
+        supabase.from("agent_insights").select("id").in("state", ["new", "seen"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(50),
+        ins.company_id ? supabase.from("companies").select("id, name, canonical_name").eq("id", ins.company_id).single() : Promise.resolve({ data: null }),
+        ins.company_id ? supabase.from("cross_director_signals").select("director_name, title, severity").eq("company_id", ins.company_id).neq("title", ins.title).limit(5) : Promise.resolve({ data: null }),
+        ins.company_id ? supabase.from("company_insight_history").select("total_insights_30d, times_acted, times_dismissed, which_directors").eq("company_id", ins.company_id).single() : Promise.resolve({ data: null }),
       ]);
 
-      if (agentRes.data) setAgent(agentRes.data as AgentPartial);
-      if (companyRes.data) setCompany(companyRes.data as CompanyPartial);
-      if (contactRes.data) setContact(contactRes.data as ContactPartial);
-      if (runRes.data) setAgentRun(runRes.data as RunPartial);
+      if (navRes.data) setNavIds(navRes.data.map((n: { id: number }) => n.id));
+      if (companyRes.data) setCompany(companyRes.data as Company);
+      if (crossRes.data) setCrossSignals(crossRes.data as typeof crossSignals);
+      if (historyRes.data) setInsightHistory(historyRes.data as typeof insightHistory);
 
       setLoading(false);
     }
     load();
   }, [insightId]);
 
-  // ── Navigation ──
+  // Navigation
   const currentNavIndex = navIds.indexOf(insightId);
   const prevId = currentNavIndex > 0 ? navIds[currentNavIndex - 1] : null;
   const nextId = currentNavIndex < navIds.length - 1 ? navIds[currentNavIndex + 1] : null;
 
-  // ── Actions with error handling ──
+  // Actions
   const handleAct = useCallback(async () => {
     if (!insight) return;
     setActing(true);
     try {
-      const { error } = await supabase
-        .from("agent_insights")
-        .update({ state: "acted_on", was_useful: true })
-        .eq("id", insight.id);
-      if (error) {
-        toast.error("Error al marcar insight: " + error.message);
-        return;
-      }
+      const { error } = await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
+      if (error) { toast.error("Error: " + error.message); return; }
       setInsight({ ...insight, state: "acted_on" });
-      toast.success("Marcado como util — el sistema aprendera de esto");
-    } finally {
-      setActing(false);
-    }
+      toast.success("Marcado como util");
+    } finally { setActing(false); }
   }, [insight]);
 
   const handleDismiss = useCallback(async () => {
     if (!insight) return;
-    try {
-      const { error } = await supabase
-        .from("agent_insights")
-        .update({ state: "dismissed", was_useful: false })
-        .eq("id", insight.id);
-      if (error) {
-        toast.error("Error al descartar insight: " + error.message);
-        return;
-      }
-      toast("Descartado — el sistema ajustara sus prioridades");
-      if (nextId) router.push(`/inbox/insight/${nextId}`);
-      else router.push("/inbox");
-    } catch {
-      toast.error("Error de conexion al descartar insight");
-    }
+    const { error } = await supabase.from("agent_insights").update({ state: "dismissed", was_useful: false }).eq("id", insight.id);
+    if (error) { toast.error("Error: " + error.message); return; }
+    toast("Descartado");
+    if (nextId) router.push(`/inbox/insight/${nextId}`);
+    else router.push("/inbox");
   }, [insight, router, nextId]);
 
-  // ── Keyboard shortcuts ──
+  // Keyboard shortcuts
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -149,152 +104,165 @@ export default function InsightDetailPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [router, prevId, nextId]);
 
-  // ── Loading skeleton ──
+  // Loading
   if (loading) {
     return (
-      <div className="max-w-2xl mx-auto space-y-4">
-        <div className="flex items-center justify-between">
-          <Skeleton className="h-5 w-16" />
-          <div className="flex gap-2"><Skeleton className="h-8 w-8 rounded" /><Skeleton className="h-8 w-8 rounded" /></div>
-        </div>
-        <Card><CardContent className="pt-5 space-y-4">
-          <div className="flex items-center gap-2"><Skeleton className="h-8 w-8 rounded-full" /><Skeleton className="h-4 w-32" /></div>
-          <Skeleton className="h-7 w-3/4" />
-          <Skeleton className="h-16 w-full" />
-          <Skeleton className="h-20 w-full rounded-lg" />
-        </CardContent></Card>
-        <Skeleton className="h-16 w-full rounded-lg" />
-        <Skeleton className="h-32 w-full rounded-lg" />
+      <div className="max-w-xl mx-auto space-y-4 pt-2">
+        <Skeleton className="h-5 w-20" />
+        <Skeleton className="h-8 w-full" />
+        <Skeleton className="h-24 w-full rounded-2xl" />
+        <Skeleton className="h-10 w-full" />
       </div>
     );
   }
 
-  // ── Not found ──
   if (!insight) {
     return (
-      <div className="flex flex-col items-center justify-center py-20">
-        <XCircle className="h-12 w-12 text-muted-foreground mb-4" />
-        <p className="text-lg font-medium">Insight no encontrado</p>
-        <p className="text-sm text-muted-foreground mt-1">Puede que haya expirado o sido resuelto</p>
-        <Button variant="ghost" onClick={() => router.push("/inbox")} className="mt-4">
-          <ArrowLeft className="h-4 w-4 mr-2" /> Volver al Inbox
-        </Button>
+      <div className="max-w-xl mx-auto text-center py-20">
+        <p className="text-muted-foreground mb-4">Insight no encontrado</p>
+        <Button variant="outline" onClick={() => router.push("/inbox")}>Volver al Inbox</Button>
       </div>
     );
   }
 
   const isDone = ["acted_on", "dismissed", "expired"].includes(insight.state ?? "");
+  const evidence = Array.isArray(insight.evidence) ? insight.evidence as { text?: string; fact?: string }[] : [];
+  const sevDot = SEV_DOTS[insight.severity ?? "medium"] ?? "bg-gray-400";
 
   return (
-    <div className="max-w-2xl mx-auto space-y-4 pb-28 md:pb-24">
-      {/* ── Top bar: back + nav ── */}
+    <div className="max-w-xl mx-auto space-y-4 pb-24 md:pb-8">
+      {/* ── Nav bar ── */}
       <div className="flex items-center justify-between">
-        <button onClick={() => router.push("/inbox")} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground group">
-          <ArrowLeft className="h-4 w-4 group-hover:-translate-x-0.5 transition-transform" />
-          <span className="hidden sm:inline">Inbox</span>
+        <button onClick={() => router.push("/inbox")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-4 w-4" /> Inbox
         </button>
-
         {navIds.length > 1 && (
           <div className="flex items-center gap-1">
-            <span className="text-[10px] text-muted-foreground mr-2 hidden sm:inline">
-              {currentNavIndex + 1}/{navIds.length}
-            </span>
-            <Button
-              size="sm" variant="ghost"
-              className="h-8 w-8 p-0"
-              disabled={!prevId}
-              onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}
-              title="Anterior (←)"
-            >
+            <span className="text-[11px] text-muted-foreground mr-1">{currentNavIndex + 1}/{navIds.length}</span>
+            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!prevId}
+              onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}>
               <ChevronLeft className="h-4 w-4" />
             </Button>
-            <Button
-              size="sm" variant="ghost"
-              className="h-8 w-8 p-0"
-              disabled={!nextId}
-              onClick={() => nextId && router.push(`/inbox/insight/${nextId}`)}
-              title="Siguiente (→)"
-            >
+            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!nextId}
+              onClick={() => nextId && router.push(`/inbox/insight/${nextId}`)}>
               <ChevronRight className="h-4 w-4" />
             </Button>
           </div>
         )}
       </div>
 
-      {/* ── Main insight card + company + contact ── */}
-      <InsightCard
-        insight={insight}
-        agent={agent as AIAgent | null}
-        agentRun={agentRun as AgentRun | null}
-        company={company as Company | null}
-        contact={contact as Contact | null}
-      />
+      {/* ── Title ── */}
+      <div className="flex items-start gap-2.5">
+        <div className={cn("h-2.5 w-2.5 rounded-full mt-2 shrink-0", sevDot)} />
+        <h1 className="text-lg font-black leading-snug">{insight.title}</h1>
+      </div>
 
-      {/* ── Follow-up banner (if CEO acted) ── */}
-      <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
-
-      {/* ── Contextual data panel ── */}
-      <InsightContext
-        insight={insight}
-        agent={agent as AIAgent | null}
-        companyId={insight.company_id}
-        companyName={company?.name ?? null}
-        contactName={contact?.name ?? null}
-        contactEmail={contact?.email ?? null}
-        entityId={company?.entity_id ?? null}
-      />
-
-      {/* ── Ask AI button ── */}
-      {company && (
-        <Link
-          href={`/chat?q=${encodeURIComponent(`Dime más sobre ${company.name} en relación a: ${insight.title}`)}`}
-          className="block"
-        >
-          <Card className="hover:border-primary/20 transition-colors border-dashed">
-            <CardContent className="py-3">
-              <div className="flex items-center gap-3">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10">
-                  <MessageSquare className="h-4 w-4 text-primary" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-sm font-medium">Preguntar a IA sobre esto</p>
-                  <p className="text-xs text-muted-foreground truncate">Chat con Claude sobre {company.name}</p>
-                </div>
-                <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0 ml-auto" />
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+      {/* ── Recommendation (the most important thing) ── */}
+      {insight.recommendation && (
+        <Card className="border-primary/20 bg-primary/5">
+          <CardContent className="p-4">
+            <p className="text-sm font-medium leading-relaxed">{insight.recommendation}</p>
+            {insight.assignee_name && (
+              <p className="text-xs text-muted-foreground mt-2">→ {insight.assignee_name}</p>
+            )}
+          </CardContent>
+        </Card>
       )}
 
-      {/* ── Sticky action bar ── */}
+      {/* ── Evidence bullets ── */}
+      {evidence.length > 0 && (
+        <div className="space-y-1 px-1">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Evidencia</p>
+          <ul className="space-y-1">
+            {evidence.slice(0, 4).map((e, i) => (
+              <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                <span className="text-muted-foreground/50 mt-0.5">•</span>
+                {String(e.text ?? e.fact ?? e)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* ── Description (if no recommendation) ── */}
+      {!insight.recommendation && insight.description && (
+        <p className="text-sm text-muted-foreground leading-relaxed">{insight.description}</p>
+      )}
+
+      {/* ── Actions (inline, not fixed bar) ── */}
       {!isDone && (
+        <div className="flex gap-2">
+          <Button variant="outline" className="flex-1 h-11" onClick={handleDismiss}>
+            <ThumbsDown className="h-4 w-4 mr-2" /> Descartar
+          </Button>
+          <Button className="flex-1 h-11" onClick={handleAct} disabled={acting}>
+            {acting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ThumbsUp className="h-4 w-4 mr-2" />}
+            Util
+          </Button>
+        </div>
+      )}
+
+      {isDone && (
         <div className={cn(
-          "fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur border-t p-3 md:p-4",
-          collapsed ? "md:pl-20" : "md:pl-68"
+          "rounded-xl px-4 py-2.5 text-sm font-medium text-center",
+          insight.state === "acted_on" ? "bg-emerald-50 text-emerald-700" : "bg-muted text-muted-foreground"
         )}>
-          <div className="max-w-2xl mx-auto flex gap-3">
-            <Button
-              variant="outline"
-              className="flex-1 h-11 text-danger border-danger/30 hover:bg-danger/10"
-              onClick={handleDismiss}
-            >
-              <ThumbsDown className="h-4 w-4 mr-2" />
-              <span className="hidden sm:inline">No util</span>
-              <span className="sm:hidden">No</span>
-            </Button>
-            <Button
-              className="flex-1 h-11 bg-success hover:bg-success/90 text-white"
-              onClick={handleAct}
-              disabled={acting}
-            >
-              {acting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <ThumbsUp className="h-4 w-4 mr-2" />}
-              <span className="hidden sm:inline">Util — Actuar</span>
-              <span className="sm:hidden">Util</span>
-            </Button>
+          {insight.state === "acted_on" ? "Marcado como util" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
+        </div>
+      )}
+
+      {/* ── Follow-up banner ── */}
+      <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
+
+      {/* ── Company Intel Cards (payment, reorder, risk) ── */}
+      {insight.company_id && (
+        <div className="space-y-2">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium px-1">
+            {company?.name ?? "Empresa"}
+          </p>
+          <CompanyIntelCards companyId={insight.company_id} companyName={company?.name ?? ""} />
+        </div>
+      )}
+
+      {/* ── Cross-director signals ── */}
+      {crossSignals.length > 0 && (
+        <div className="space-y-2">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium px-1">Otros directores</p>
+          <div className="space-y-1.5">
+            {crossSignals.map((s, i) => (
+              <div key={i} className="rounded-xl border p-3 text-sm">
+                <span className="font-medium">{s.director_name}</span>
+                <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{s.title}</p>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      {/* ── Insight history for this company ── */}
+      {insightHistory && insightHistory.total_insights_30d > 1 && (
+        <div className="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
+          Empresa flaggeada <span className="font-semibold text-foreground">{insightHistory.total_insights_30d} veces</span> en 30 días
+          {insightHistory.times_acted > 0 && <> · CEO actuó {insightHistory.times_acted}x</>}
+          {insightHistory.times_dismissed > 0 && <> · descartó {insightHistory.times_dismissed}x</>}
+        </div>
+      )}
+
+      {/* ── Ask AI ── */}
+      {company && (
+        <Link
+          href={`/chat?q=${encodeURIComponent(`Como va ${company.name}?`)}`}
+          className="flex items-center gap-2 rounded-xl border p-3 text-sm hover:bg-muted/50 transition-colors"
+        >
+          <MessageSquare className="h-4 w-4 text-primary" />
+          <span>Preguntar al Chat sobre {company.name}</span>
+        </Link>
+      )}
+
+      {/* ── Meta ── */}
+      <p className="text-[10px] text-muted-foreground/50 text-center">
+        {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
+      </p>
     </div>
   );
 }
@@ -302,47 +270,39 @@ export default function InsightDetailPage() {
 // ── Follow-up Banner ──
 function FollowUpBanner({ insightId, state }: { insightId: number; state: string }) {
   const [followUp, setFollowUp] = useState<{
-    status: string;
-    follow_up_date: string;
-    resolution_note: string | null;
-    created_at: string;
+    status: string; follow_up_date: string; resolution_note: string | null;
   } | null>(null);
 
   useEffect(() => {
     if (state !== "acted_on") return;
-    supabase
-      .from("insight_follow_ups")
-      .select("status, follow_up_date, resolution_note, created_at")
-      .eq("insight_id", insightId)
-      .limit(1)
-      .single()
+    supabase.from("insight_follow_ups")
+      .select("status, follow_up_date, resolution_note")
+      .eq("insight_id", insightId).limit(1).single()
       .then(({ data }) => { if (data) setFollowUp(data); });
   }, [insightId, state]);
 
   if (!followUp) return null;
 
   const colors: Record<string, string> = {
-    pending: "bg-blue-50 border-blue-200 text-blue-800",
-    improved: "bg-green-50 border-green-200 text-green-800",
-    unchanged: "bg-yellow-50 border-yellow-200 text-yellow-800",
-    worsened: "bg-red-50 border-red-200 text-red-800",
+    pending: "bg-blue-50 text-blue-800",
+    improved: "bg-emerald-50 text-emerald-800",
+    unchanged: "bg-yellow-50 text-yellow-800",
+    worsened: "bg-red-50 text-red-800",
   };
   const labels: Record<string, string> = {
     pending: "Seguimiento programado",
-    improved: "Situacion mejoro",
+    improved: "Mejoro",
     unchanged: "Sin cambio",
-    worsened: "Situacion empeoro",
+    worsened: "Empeoro",
   };
 
   return (
-    <div className={cn("rounded-xl border p-3 text-sm", colors[followUp.status] ?? "bg-muted")}>
+    <div className={cn("rounded-xl p-3 text-sm", colors[followUp.status] ?? "bg-muted")}>
       <div className="flex items-center justify-between">
         <span className="font-semibold">{labels[followUp.status] ?? followUp.status}</span>
-        <span className="text-xs opacity-70">verificar: {followUp.follow_up_date}</span>
+        <span className="text-xs opacity-70">{followUp.follow_up_date}</span>
       </div>
-      {followUp.resolution_note && (
-        <p className="text-xs mt-1 opacity-80">{followUp.resolution_note}</p>
-      )}
+      {followUp.resolution_note && <p className="text-xs mt-1 opacity-80">{followUp.resolution_note}</p>}
     </div>
   );
 }
