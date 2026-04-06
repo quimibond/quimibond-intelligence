@@ -267,19 +267,27 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         .order("created_at", { ascending: false }).limit(200);
 
       const existingTitles = new Set<string>((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
-      // Track company+category combos for cross-director dedup
       const existingCompanyCat = new Set<string>(
         (existing ?? []).filter((i: { company_id: number | null }) => i.company_id)
           .map((i: { company_id: number; category: string }) => `${i.company_id}:${i.category}`)
       );
+      // Track semantic themes for cross-director dedup
+      const existingThemes = new Set<string>();
+      for (const i of (existing ?? []) as { title: string; company_id: number | null }[]) {
+        const theme = extractTheme(i.title, null); // company name not available, use title only
+        if (theme) existingThemes.add(theme);
+      }
 
       for (const insight of insights) {
         const norm = normalizeForDedup(String(insight.title || ""));
         if (existingTitles.has(norm)) { duplicatesSkipped++; continue; }
 
-        // Cross-director dedup: if another director already has an active insight
-        // for the same company + same category, skip it
+        // Semantic theme dedup: "inventario muerto" = "dead stock" regardless of wording
         const companyName = String(insight.company_name || "").trim().toLowerCase();
+        const theme = extractTheme(String(insight.title || ""), companyName);
+        if (theme && existingThemes.has(theme)) { duplicatesSkipped++; continue; }
+
+        // Cross-director dedup by company+category
         const category = normalizeCategory(String(insight.category || agent.domain));
         // Title word overlap check (works for ALL insights, with or without company)
         const titleWords = norm.split(" ").filter(w => w.length > 3);
@@ -302,6 +310,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         }
 
         existingTitles.add(norm);
+        if (theme) existingThemes.add(theme);
         // Track for cross-director dedup within this run
         if (companyName && companyName !== "null") {
           const { data: co2 } = await supabase.from("companies").select("id")
@@ -532,6 +541,27 @@ function normalizeForDedup(title: string): string {
     .replace(/\d+/g, "N")              // normalize numbers
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/** Extract a semantic theme from an insight title for cross-director dedup.
+ *  Two insights with the same theme are duplicates even if worded differently. */
+function extractTheme(title: string, companyName: string | null): string | null {
+  const t = title.toLowerCase();
+  // Generic themes (no company needed)
+  if (t.includes("inventario muerto") || t.includes("dead stock")) return "theme:dead_stock";
+  if (t.includes("entregas atrasadas") || t.includes("acumulación crítica")) return "theme:entregas_atrasadas";
+  // Company-specific themes
+  const co = (companyName ?? "").toLowerCase().trim();
+  if (!co || co === "null") return null;
+  if (t.includes("actividades vencidas")) return `theme:${co}:actividades_vencidas`;
+  if (t.includes("material bloqueado") || t.includes("rechazado")) return `theme:${co}:material_bloqueado`;
+  if (t.includes("desabasto") || t.includes("pronóstico negativo")) return `theme:${co}:desabasto`;
+  if (t.includes("sin respuesta") || t.includes("sin acción")) return `theme:${co}:sin_respuesta`;
+  if (t.includes("vencid") || t.includes("overdue")) return `theme:${co}:vencido`;
+  if (t.includes("churn") || t.includes("revenue_90d")) return `theme:${co}:churn`;
+  if (t.includes("margen") || t.includes("margin")) return `theme:${co}:margen`;
+  if (t.includes("proveedor único") || t.includes("concentración")) return `theme:${co}:concentracion`;
+  return null;
 }
 
 // ── Structured prompt for agents ────────────────────────────────────────
