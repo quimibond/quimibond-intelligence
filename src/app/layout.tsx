@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { AppSidebar } from "@/components/layout/app-sidebar";
 import { SidebarProvider } from "@/components/layout/sidebar-context";
 import { MainContent } from "@/components/layout/main-content";
+import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 import { RealtimeAlerts } from "@/components/shared/realtime-alerts";
 import { SearchCommand } from "@/components/shared/search-command";
 import { TooltipProvider } from "@/components/ui/tooltip";
@@ -24,6 +25,9 @@ export default function RootLayout({
   return (
     <html lang="es" suppressHydrationWarning>
       <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
         {/* Prevent flash: apply theme before paint */}
         <script
           dangerouslySetInnerHTML={{
@@ -39,6 +43,7 @@ export default function RootLayout({
         <SidebarProvider>
           <AppSidebar />
           <MainContent>{children}</MainContent>
+          <MobileTabBar />
           <SearchCommand />
           <RealtimeAlerts />
           <Toaster

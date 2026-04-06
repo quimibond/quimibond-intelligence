@@ -80,34 +80,14 @@ export function AppSidebar() {
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button
-        onClick={toggleMobile}
-        className="fixed left-4 top-4 z-50 flex h-10 w-10 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground md:hidden"
-        aria-label="Toggle menu"
-      >
-        {open ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
-      </button>
-
-      {/* Backdrop */}
-      {open && (
-        <div
-          className="fixed inset-0 z-40 bg-black/50 md:hidden"
-          onClick={() => setOpen(false)}
-          role="button"
-          aria-label="Cerrar menu"
-          tabIndex={-1}
-        />
-      )}
-
-      {/* Sidebar */}
+      {/* Sidebar (desktop only — mobile uses MobileTabBar) */}
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-50 flex flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ease-in-out",
-          // Mobile: always w-64, slide in/out
-          open ? "translate-x-0" : "-translate-x-full",
+          "fixed inset-y-0 left-0 z-50 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ease-in-out",
+          // Mobile: hidden (bottom tab bar replaces sidebar)
+          "hidden md:flex",
           // Desktop: always visible, width depends on collapsed state
-          collapsed ? "md:w-16 md:translate-x-0" : "md:w-64 md:translate-x-0"
+          collapsed ? "md:w-16" : "md:w-64"
         )}
       >
         {/* Mobile always gets full width */}

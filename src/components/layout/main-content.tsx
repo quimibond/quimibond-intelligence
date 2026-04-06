@@ -21,7 +21,7 @@ export function MainContent({ children }: { children: React.ReactNode }) {
         collapsed ? "md:pl-16" : "md:pl-64"
       )}
     >
-      <div className="min-h-screen p-4 pt-16 md:p-6 md:pt-6">{children}</div>
+      <div className="min-h-screen p-4 pb-20 md:p-6 md:pb-6">{children}</div>
     </main>
   );
 }

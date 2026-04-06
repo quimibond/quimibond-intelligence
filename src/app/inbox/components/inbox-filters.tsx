@@ -41,18 +41,16 @@ export function InboxFilters({
   onRefresh,
 }: InboxFiltersProps) {
   return (
-    <div className="px-4 py-3 md:px-0 md:py-0 md:mb-4 space-y-3">
-      <div className="flex items-center justify-between">
+    <div className="px-1 py-2 md:px-0 md:py-0 md:mb-4 space-y-2">
+      <div className="flex items-center justify-between px-2">
         <div>
-          <h1 className="text-lg md:text-2xl font-bold">Inbox</h1>
-          <p className="text-xs md:text-sm text-muted-foreground">
-            {totalCount} insight{totalCount !== 1 ? "s" : ""} pendiente{totalCount !== 1 ? "s" : ""}
-            {filteredCount !== totalCount && (
-              <span className="ml-1">({filteredCount} filtrado{filteredCount !== 1 ? "s" : ""})</span>
-            )}
+          <h1 className="text-xl md:text-2xl font-black">Inbox</h1>
+          <p className="text-[11px] md:text-sm text-muted-foreground">
+            {totalCount} pendiente{totalCount !== 1 ? "s" : ""}
+            {filteredCount !== totalCount && ` · ${filteredCount} filtrado${filteredCount !== 1 ? "s" : ""}`}
           </p>
         </div>
-        <Button variant="ghost" size="sm" onClick={onRefresh} title="Actualizar">
+        <Button variant="ghost" size="icon" onClick={onRefresh} title="Actualizar" className="h-8 w-8">
           <RefreshCw className="h-4 w-4" />
         </Button>
       </div>
