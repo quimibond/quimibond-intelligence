@@ -6,7 +6,7 @@ import Link from "next/link";
 import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
-  Mail, MessageSquare, ThumbsDown, ThumbsUp,
+  Mail, MessageSquare, Share2, ThumbsDown, ThumbsUp,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
@@ -245,6 +245,9 @@ export default function InsightDetailPage() {
         </div>
       )}
 
+      {/* ── Share via WhatsApp ── */}
+      <ShareWhatsApp insight={insight} companyName={company?.name} />
+
       {isDone && (
         <div className={cn(
           "rounded-xl px-4 py-2.5 text-sm font-medium text-center",
@@ -341,6 +344,41 @@ export default function InsightDetailPage() {
         {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
       </p>
     </div>
+  );
+}
+
+// ── Share via WhatsApp ──
+function ShareWhatsApp({ insight, companyName }: { insight: AgentInsight; companyName?: string | null }) {
+  const handleShare = useCallback(() => {
+    const sevIcon = insight.severity === "critical" ? "🔴" : insight.severity === "high" ? "🟠" : "🟡";
+    const lines: string[] = [];
+    lines.push(`${sevIcon} *${insight.title}*`);
+    if (insight.recommendation) {
+      lines.push("");
+      lines.push(`→ ${insight.recommendation.slice(0, 200)}`);
+    }
+    if (insight.assignee_name) {
+      lines.push("");
+      lines.push(`📋 Responsable: ${insight.assignee_name}`);
+    }
+    if (insight.business_impact_estimate) {
+      lines.push(`💰 Impacto: $${Number(insight.business_impact_estimate).toLocaleString()} MXN`);
+    }
+    const appUrl = typeof window !== "undefined" ? window.location.href : "";
+    if (appUrl) lines.push("", `👉 ${appUrl}`);
+
+    const text = encodeURIComponent(lines.join("\n"));
+    window.open(`https://wa.me/?text=${text}`, "_blank");
+  }, [insight, companyName]);
+
+  return (
+    <button
+      onClick={handleShare}
+      className="flex items-center justify-center gap-2 w-full rounded-xl border p-2.5 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
+    >
+      <Share2 className="h-4 w-4" />
+      Compartir por WhatsApp
+    </button>
   );
 }
 
