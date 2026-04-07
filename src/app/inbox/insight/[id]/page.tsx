@@ -215,6 +215,11 @@ export default function InsightDetailPage() {
         <h1 className="text-lg font-black leading-snug">{insight.title}</h1>
       </div>
 
+      {/* ── Description (context for the insight) ── */}
+      {insight.description && (
+        <p className="text-sm text-muted-foreground leading-relaxed">{insight.description}</p>
+      )}
+
       {/* ── Actions per responsible (new) or legacy recommendation ── */}
       {actionItems.length > 0 ? (
         <div className="space-y-2">
@@ -316,11 +321,6 @@ export default function InsightDetailPage() {
             })}
           </ul>
         </div>
-      )}
-
-      {/* ── Description (if no recommendation) ── */}
-      {!insight.recommendation && insight.description && (
-        <p className="text-sm text-muted-foreground leading-relaxed">{insight.description}</p>
       )}
 
       {/* ── Actions ── */}

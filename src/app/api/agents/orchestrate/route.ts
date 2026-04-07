@@ -957,6 +957,13 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function getDomainData(sb: any, domain: string): Promise<string> {
+  // Load company name map for resolving IDs to names in JSON output
+  const { data: companyNames } = await sb.from("companies").select("id, canonical_name").limit(2000);
+  _companyNameMap = new Map<number, string>();
+  for (const c of companyNames ?? []) {
+    if (c.id && c.canonical_name) _companyNameMap.set(c.id, c.canonical_name);
+  }
+
   // Load company narratives — consolidated intelligence per company
   // Replaces flat profiles with connected narratives (sales + finance + delivery + email + complaints)
   const needsNarratives = ["sales", "finance", "risk", "growth", "relationships", "suppliers", "predictive"];
@@ -1248,9 +1255,19 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
 }
 
 /** Safe JSON stringify that handles null/undefined and limits size */
+/** Company name cache — loaded once per getDomainData call */
+let _companyNameMap: Map<number, string> | null = null;
+
 function safeJSON(data: unknown): string {
   if (!data) return "[]";
-  const str = JSON.stringify(data);
+  let str = JSON.stringify(data);
+  // Replace company_id with company name for readability
+  if (_companyNameMap && str.includes("company_id")) {
+    str = str.replace(/"company_id"\s*:\s*(\d+)/g, (match, id) => {
+      const name = _companyNameMap?.get(Number(id));
+      return name ? `"empresa":"${name}"` : match;
+    });
+  }
   if (str.length > 8000) return str.slice(0, 8000) + "...truncado]";
   return str;
 }
