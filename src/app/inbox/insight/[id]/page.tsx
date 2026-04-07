@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
   Mail, MessageSquare, Share2, ThumbsDown, ThumbsUp,
+  Send, Clock, Check, CalendarClock,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
@@ -29,9 +30,11 @@ export default function InsightDetailPage() {
   const [crossSignals, setCrossSignals] = useState<{ director_name: string; title: string; severity: string }[]>([]);
   const [insightHistory, setInsightHistory] = useState<{ total_insights_30d: number; times_acted: number; times_dismissed: number; which_directors: string } | null>(null);
   const [relatedEmails, setRelatedEmails] = useState<{ id: number; subject: string | null; sender: string | null; email_date: string | null; snippet: string | null }[]>([]);
+  const [companyContacts, setCompanyContacts] = useState<{ name: string | null; email: string; role: string | null }[]>([]);
   const [navIds, setNavIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
+  const [showActions, setShowActions] = useState(false);
 
   const insightId = parseInt(params.id);
 
@@ -102,6 +105,15 @@ export default function InsightDetailPage() {
         }
 
         setRelatedEmails(emails as typeof relatedEmails);
+
+        // Load company contacts for action panel
+        const { data: contacts } = await supabase
+          .from("contacts")
+          .select("name, email, role")
+          .eq("company_id", ins.company_id)
+          .not("email", "is", null)
+          .limit(5);
+        if (contacts) setCompanyContacts(contacts as typeof companyContacts);
       }
 
       setLoading(false);
@@ -232,21 +244,45 @@ export default function InsightDetailPage() {
         <p className="text-sm text-muted-foreground leading-relaxed">{insight.description}</p>
       )}
 
-      {/* ── Actions (inline, not fixed bar) ── */}
-      {!isDone && (
+      {/* ── Actions ── */}
+      {!isDone && !showActions && (
         <div className="flex gap-2">
           <Button variant="outline" className="flex-1 h-11" onClick={handleDismiss}>
             <ThumbsDown className="h-4 w-4 mr-2" /> Descartar
           </Button>
-          <Button className="flex-1 h-11" onClick={handleAct} disabled={acting}>
-            {acting ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <ThumbsUp className="h-4 w-4 mr-2" />}
-            Util
+          <Button className="flex-1 h-11" onClick={() => setShowActions(true)}>
+            <ThumbsUp className="h-4 w-4 mr-2" /> Actuar
           </Button>
         </div>
       )}
 
-      {/* ── Share via WhatsApp ── */}
-      <ShareWhatsApp insight={insight} companyName={company?.name} />
+      {/* ── Action Panel (appears after tapping Actuar) ── */}
+      {!isDone && showActions && (
+        <QuickActions
+          insight={insight}
+          company={company}
+          companyContacts={companyContacts}
+          onDone={async (followUpDays?: number) => {
+            setActing(true);
+            try {
+              await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
+              if (followUpDays) {
+                const followUpDate = new Date(Date.now() + followUpDays * 86400_000).toISOString().split("T")[0];
+                await supabase.from("insight_follow_ups").insert({
+                  insight_id: insight.id,
+                  company_id: insight.company_id,
+                  follow_up_date: followUpDate,
+                  status: "pending",
+                });
+              }
+              setInsight({ ...insight, state: "acted_on" });
+              toast.success("Marcado como útil");
+            } finally { setActing(false); }
+          }}
+          onCancel={() => setShowActions(false)}
+          acting={acting}
+        />
+      )}
 
       {isDone && (
         <div className={cn(
@@ -256,6 +292,9 @@ export default function InsightDetailPage() {
           {insight.state === "acted_on" ? "Marcado como util" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
         </div>
       )}
+
+      {/* ── Share (always visible) ── */}
+      {isDone && <ShareWhatsApp insight={insight} companyName={company?.name} />}
 
       {/* ── Follow-up banner ── */}
       <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
@@ -343,6 +382,135 @@ export default function InsightDetailPage() {
       <p className="text-[10px] text-muted-foreground/50 text-center">
         {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
       </p>
+    </div>
+  );
+}
+
+// ── Quick Actions Panel ──
+function QuickActions({ insight, company, companyContacts, onDone, onCancel, acting }: {
+  insight: AgentInsight;
+  company: Company | null;
+  companyContacts: { name: string | null; email: string; role: string | null }[];
+  onDone: (followUpDays?: number) => void;
+  onCancel: () => void;
+  acting: boolean;
+}) {
+  const assigneeEmail = insight.assignee_email ?? "";
+  const assigneeName = insight.assignee_name ?? "Responsable";
+  const companyName = company?.name ?? "la empresa";
+  const title = insight.title ?? "";
+  const recommendation = insight.recommendation ?? "";
+  const impact = insight.business_impact_estimate
+    ? `$${Number(insight.business_impact_estimate).toLocaleString()} MXN`
+    : "";
+
+  // Build email to assignee (internal instruction)
+  const assigneeSubject = `Acción requerida: ${title.slice(0, 80)}`;
+  const assigneeBody = [
+    `Hola ${assigneeName.split(" ")[0]},`,
+    "",
+    `Te comparto un tema que requiere acción inmediata:`,
+    "",
+    `📌 ${title}`,
+    "",
+    `Recomendación: ${recommendation.slice(0, 300)}`,
+    impact ? `\nImpacto estimado: ${impact}` : "",
+    "",
+    "Por favor confirma que acciones vas a tomar y en qué plazo.",
+    "",
+    "Saludos",
+  ].filter(Boolean).join("\n");
+
+  // Build email to company contact (external)
+  const mainContact = companyContacts[0];
+  const contactSubject = `Seguimiento — ${companyName}`;
+  const contactBody = [
+    `Estimado${mainContact?.name ? ` ${mainContact.name.split(" ")[0]}` : ""},`,
+    "",
+    `Le escribo respecto a un tema pendiente con ${companyName}.`,
+    "",
+    recommendation.includes("pago") || recommendation.includes("cobr")
+      ? `Nos gustaría confirmar el estatus de los pagos pendientes y acordar una fecha de regularización.`
+      : recommendation.includes("entrega") || recommendation.includes("envío")
+        ? `Queremos confirmar las fechas de entrega pendientes y asegurar que todo esté en orden.`
+        : `Nos gustaría agendar una llamada para dar seguimiento a temas pendientes.`,
+    "",
+    "Quedo atento a su respuesta.",
+    "",
+    "Saludos cordiales",
+  ].join("\n");
+
+  return (
+    <div className="space-y-2 rounded-2xl border-2 border-primary/20 bg-primary/5 p-4">
+      <p className="text-xs font-semibold text-primary uppercase tracking-wider">¿Qué acción tomar?</p>
+
+      {/* Email to assignee */}
+      {assigneeEmail && (
+        <a
+          href={`mailto:${assigneeEmail}?subject=${encodeURIComponent(assigneeSubject)}&body=${encodeURIComponent(assigneeBody)}`}
+          onClick={() => onDone(3)}
+          className="flex items-center gap-3 rounded-xl border p-3 hover:bg-background transition-colors"
+        >
+          <Send className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Instruir a {assigneeName.split(" ")[0]}</p>
+            <p className="text-xs text-muted-foreground truncate">Email con instrucciones + recordatorio 3 días</p>
+          </div>
+        </a>
+      )}
+
+      {/* Email to company contact */}
+      {mainContact && (
+        <a
+          href={`mailto:${mainContact.email}?subject=${encodeURIComponent(contactSubject)}&body=${encodeURIComponent(contactBody)}`}
+          onClick={() => onDone(5)}
+          className="flex items-center gap-3 rounded-xl border p-3 hover:bg-background transition-colors"
+        >
+          <Mail className="h-4 w-4 text-primary shrink-0" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-medium">Contactar a {companyName}</p>
+            <p className="text-xs text-muted-foreground truncate">
+              {mainContact.name ?? mainContact.email} + recordatorio 5 días
+            </p>
+          </div>
+        </a>
+      )}
+
+      {/* WhatsApp share */}
+      <ShareWhatsApp insight={insight} companyName={company?.name} />
+
+      {/* Follow-up reminder only */}
+      <button
+        onClick={() => onDone(3)}
+        className="flex items-center gap-3 w-full rounded-xl border p-3 hover:bg-background transition-colors text-left"
+      >
+        <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">Recordatorio en 3 días</p>
+          <p className="text-xs text-muted-foreground">El sistema verifica si se resolvió</p>
+        </div>
+      </button>
+
+      {/* Just mark as done */}
+      <button
+        onClick={() => onDone()}
+        disabled={acting}
+        className="flex items-center gap-3 w-full rounded-xl border p-3 hover:bg-background transition-colors text-left"
+      >
+        {acting ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <Check className="h-4 w-4 text-muted-foreground shrink-0" />}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium">Ya lo resolví</p>
+          <p className="text-xs text-muted-foreground">Solo marcar como útil</p>
+        </div>
+      </button>
+
+      {/* Cancel */}
+      <button
+        onClick={onCancel}
+        className="w-full text-center text-xs text-muted-foreground py-1 hover:text-foreground transition-colors"
+      >
+        Cancelar
+      </button>
     </div>
   );
 }
