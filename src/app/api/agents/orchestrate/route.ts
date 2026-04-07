@@ -647,7 +647,11 @@ Reglas ESTRICTAS:
 1. MAXIMO 3 insights por respuesta. Si no hay nada importante, devuelve []
 2. Solo genera insights que requieran ACCION CONCRETA del CEO o su equipo
 3. NO repitas insights sobre el mismo tema/empresa — si otro director ya lo reportó en "QUE DICEN OTROS DIRECTORES", NO lo repitas
-4. Cada insight DEBE tener evidencia CONCRETA: numeros, fechas, nombres, montos
+4. Cada evidencia DEBE ser un DATO VERIFICABLE con fuente. Ejemplos buenos:
+   - "Factura INV/2026/03/0173 por $47,005 vencida 40 dias (proveedor: Khafitex)"
+   - "Email de ventas@blantex.com.mx del 2-abr asunto 'Aumento precios abril' sin respuesta 117h"
+   - "OC-06993-26: HILO POLYESTER 75/36 a $2.18 USD (promedio historico: $1.72, +26.7%)"
+   Ejemplos MALOS: "hay facturas vencidas", "un email sin respuesta", "precios altos"
 5. NO generes insights genericos o vagos ("mejorar comunicacion", "revisar proceso")
 6. category DEBE ser exactamente uno de: cobranza, ventas, entregas, operaciones, proveedores, riesgo, equipo, datos
 7. severity: solo "high" o "critical" para cosas urgentes. "medium" para lo demas. NUNCA uses "info" o "low"
@@ -691,7 +695,7 @@ Responde con un JSON array. Cada elemento debe tener EXACTAMENTE estos campos:
     }
   ],
   "business_impact_estimate": number|null (MXN),
-  "evidence": ["dato concreto: cifra, fecha, o nombre"],
+  "evidence": ["string — DATO VERIFICABLE con fuente: 'Factura INV/2026/03/0173 $47K vencida 40d' o 'Email de user@domain.com del 2-abr sin respuesta' o 'OC-06993 a $2.18 vs promedio $1.72'"],
   "company_name": "string exacto como aparece en datos|null",
   "contact_email": "string|null"
 }
@@ -708,7 +712,7 @@ REGLAS para actions:
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildAgentContext(supabase: any, domain: string): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
-  const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets] = await Promise.all([
+  const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets, recentKGFacts] = await Promise.all([
     // What OTHER directors are saying
     supabase
       .from("cross_director_signals")
@@ -750,6 +754,15 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
       .eq("status", "pending")
       .order("created_at", { ascending: false })
       .limit(10),
+
+    // FASE 4: Recent high-confidence facts from knowledge graph
+    supabase
+      .from("facts")
+      .select("fact_text, fact_type, confidence, fact_date")
+      .gte("confidence", 0.85)
+      .eq("expired", false)
+      .order("fact_date", { ascending: false, nullsFirst: false })
+      .limit(20),
   ]);
 
   const sections: string[] = [];
@@ -785,6 +798,20 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
         `- ${h.company_name}: ${h.total_insights_30d} veces (CEO actuo ${h.times_acted}, descarto ${h.times_dismissed}) — directores: ${h.which_directors}`
       ).join("\n")
     }`);
+  }
+
+  // FASE 4: Knowledge graph facts (verified intel from emails)
+  if (recentKGFacts.data?.length) {
+    const factsByType = new Map<string, string[]>();
+    for (const f of (recentKGFacts.data ?? []) as Record<string, unknown>[]) {
+      const type = String(f.fact_type ?? "info");
+      if (!factsByType.has(type)) factsByType.set(type, []);
+      factsByType.get(type)!.push(`${sanitizeEmailForClaude(String(f.fact_text), 150)}${f.fact_date ? ` (${f.fact_date})` : ""}`);
+    }
+    const factLines = [...factsByType.entries()]
+      .map(([type, facts]) => `  [${type}]: ${facts.slice(0, 3).join(" | ")}`)
+      .join("\n");
+    sections.push(`## HECHOS VERIFICADOS del Knowledge Graph (extraidos de emails)\n${factLines}`);
   }
 
   // FASE 2: Recent CEO feedback (immediate loop)

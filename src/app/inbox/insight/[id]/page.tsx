@@ -284,13 +284,21 @@ export default function InsightDetailPage() {
       {evidence.length > 0 && (
         <div className="space-y-1 px-1">
           <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Evidencia</p>
-          <ul className="space-y-1">
-            {evidence.slice(0, 4).map((e, i) => (
-              <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                <span className="text-muted-foreground/50 mt-0.5">•</span>
-                {String(e.text ?? e.fact ?? e)}
-              </li>
-            ))}
+          <ul className="space-y-1.5">
+            {evidence.slice(0, 5).map((e, i) => {
+              const text = String(e.text ?? e.fact ?? e);
+              // Highlight amounts, invoice numbers, and dates
+              const highlighted = text
+                .replace(/(\$[\d,.]+[KkMm]?\s*(?:MXN|USD|mxn|usd)?)/g, '<strong>$1</strong>')
+                .replace(/((?:INV|FACTU|OC|PV|TL)\/?\-?[\w\/\-]+)/g, '<code>$1</code>')
+                .replace(/(\d+\s*(?:dias?|days?|hrs?|horas?))/gi, '<em>$1</em>');
+              return (
+                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                  <span className="text-muted-foreground/50 mt-0.5 shrink-0">•</span>
+                  <span dangerouslySetInnerHTML={{ __html: highlighted }} className="[&>strong]:text-foreground [&>strong]:font-semibold [&>code]:text-primary [&>code]:text-xs [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:rounded [&>em]:text-foreground" />
+                </li>
+              );
+            })}
           </ul>
         </div>
       )}
