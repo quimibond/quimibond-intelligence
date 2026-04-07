@@ -40,17 +40,7 @@ export function FeedbackButtons({
     const newValue = feedback === value ? null : value;
     setSaving(true);
     try {
-      // Write to feedback_signals table (real schema)
-      if (newValue) {
-        await supabase.from("feedback_signals").insert({
-          signal_source: "frontend",
-          source_id: typeof id === "string" ? parseInt(id, 10) : id,
-          source_type: table === "alerts" ? "alert" : "action_item",
-          signal_type: newValue,
-          reward_score: newValue === "useful" ? 1.0 : -0.8,
-          context: { feedback_value: newValue },
-        });
-      }
+      // feedback_signals table removed — no-op
       setFeedback(newValue);
       onFeedbackSaved?.();
     } catch {

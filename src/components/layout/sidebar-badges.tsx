@@ -23,7 +23,7 @@ export function useSidebarCounts(): SidebarCounts {
       }
 
       const [alertsRes, actionsRes] = await Promise.all([
-        supabase.from("alerts").select("id", { count: "exact", head: true }).eq("state", "new"),
+        supabase.from("agent_insights").select("id", { count: "exact", head: true }).in("state", ["new", "seen"]).gte("confidence", 0.80),
         supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"),
       ]);
 

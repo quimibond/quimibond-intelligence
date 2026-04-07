@@ -113,15 +113,8 @@ export default function DepartmentsPage() {
         Array.from(deptMap.values()).sort((a, b) => b.employee_count - a.employee_count)
       );
 
-      // Fetch department metrics
-      const deptMetricsRes = await supabase
-        .from("department_metrics")
-        .select("*")
-        .order("period_end", { ascending: false })
-        .limit(20);
-      if (deptMetricsRes.data && deptMetricsRes.data.length > 0) {
-        setDeptMetrics(deptMetricsRes.data);
-      }
+      // department_metrics table removed
+      setDeptMetrics([]);
 
       setLoading(false);
     }

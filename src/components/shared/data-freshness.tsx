@@ -17,16 +17,15 @@ export function DataFreshness({ className }: DataFreshnessProps) {
   useEffect(() => {
     async function fetch() {
       const { data } = await supabase
-        .from("pipeline_runs")
-        .select("started_at, status")
-        .eq("status", "completed")
-        .order("started_at", { ascending: false })
+        .from("pipeline_logs")
+        .select("created_at")
+        .order("created_at", { ascending: false })
         .limit(1)
         .single();
 
-      if (data?.started_at) {
-        setLastSync(data.started_at);
-        const hoursAgo = (Date.now() - new Date(data.started_at).getTime()) / 3600000;
+      if (data?.created_at) {
+        setLastSync(data.created_at);
+        const hoursAgo = (Date.now() - new Date(data.created_at).getTime()) / 3600000;
         setFreshness(hoursAgo < 2 ? "fresh" : hoursAgo < 6 ? "stale" : "old");
       }
     }

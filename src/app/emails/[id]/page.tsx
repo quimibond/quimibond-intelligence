@@ -60,30 +60,8 @@ export default function EmailDetailPage() {
       setEmail(emailData);
 
       if (emailData) {
-        // Fetch resolved recipients
-        supabase
-          .from("email_recipients")
-          .select("contact_id, recipient_email, recipient_name")
-          .eq("email_id", emailData.id)
-          .then(({ data: recs }) => {
-            if (recs && recs.length > 0) {
-              // Fetch contact names
-              const contactIds = recs.map((r) => r.contact_id);
-              supabase
-                .from("contacts")
-                .select("id, name")
-                .in("id", contactIds)
-                .then(({ data: contacts }) => {
-                  const contactMap = new Map((contacts ?? []).map((c) => [c.id, c.name]));
-                  setRecipients(
-                    recs.map((r) => ({
-                      ...r,
-                      contact_name: contactMap.get(r.contact_id) ?? r.recipient_name ?? r.recipient_email,
-                    }))
-                  );
-                });
-            }
-          });
+        // email_recipients table removed — recipients not available
+        setRecipients([]);
 
         // Fetch sender contact name
         if (emailData.sender_contact_id) {

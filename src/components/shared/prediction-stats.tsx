@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { BarChart3 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
 import {
   Card,
   CardContent,
@@ -22,33 +21,9 @@ export function PredictionStats() {
 
   useEffect(() => {
     async function fetchStats() {
-      try {
-        // Read feedback from feedback_signals table (real schema)
-        const [usefulRes, fpRes, nuRes] = await Promise.all([
-          supabase
-            .from("feedback_signals")
-            .select("id", { count: "exact", head: true })
-            .eq("signal_type", "useful"),
-          supabase
-            .from("feedback_signals")
-            .select("id", { count: "exact", head: true })
-            .eq("signal_type", "false_positive"),
-          supabase
-            .from("feedback_signals")
-            .select("id", { count: "exact", head: true })
-            .eq("signal_type", "not_useful"),
-        ]);
-
-        setStats({
-          useful: usefulRes.count ?? 0,
-          falsePositive: fpRes.count ?? 0,
-          notUseful: nuRes.count ?? 0,
-        });
-      } catch {
-        // Table may not exist yet
-      } finally {
-        setLoading(false);
-      }
+      // feedback_signals table removed — return zeros
+      setStats({ useful: 0, falsePositive: 0, notUseful: 0 });
+      setLoading(false);
     }
     fetchStats();
   }, []);

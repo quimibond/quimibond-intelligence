@@ -82,21 +82,15 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     async function fetchData() {
-      const [metricsRes, summariesRes] = await Promise.all([
-        supabase
-          .from("communication_metrics")
-          .select("*")
-          .order("metric_date", { ascending: false })
-          .limit(90),
-        supabase
+      // communication_metrics table removed — only load briefings
+      const summariesRes = await supabase
           .from("briefings")
           .select("*")
           .eq("scope", "account")
           .order("briefing_date", { ascending: false })
-          .limit(60),
-      ]);
+          .limit(60);
 
-      if (metricsRes.data) setMetrics(metricsRes.data as CommunicationMetric[]);
+      setMetrics([]);
       if (summariesRes.data) setSummaries(summariesRes.data as Briefing[]);
       setLoading(false);
     }

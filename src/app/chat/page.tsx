@@ -213,21 +213,7 @@ export default function ChatPage() {
       }
     }
 
-    // Save feedback signal (real schema: signal_source, source_type, reward_score, context)
-    try {
-      await supabase.from("feedback_signals").insert({
-        signal_source: "frontend_chat",
-        source_type: "chat_response",
-        signal_type: newRating ?? "neutral",
-        reward_score: newRating === "positive" ? 1.0 : newRating === "negative" ? -1.0 : 0,
-        context: {
-          question: questionMsg.content,
-          answer_preview: msg.content.slice(0, 200),
-        },
-      });
-    } catch {
-      // Table columns may differ
-    }
+    // feedback_signals table removed
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

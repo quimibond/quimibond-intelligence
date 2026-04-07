@@ -18,17 +18,17 @@ export function PipelineStatus({ collapsed }: { collapsed: boolean }) {
   useEffect(() => {
     async function fetch() {
       const { data } = await supabase
-        .from("pipeline_runs")
-        .select("status, started_at, run_type")
-        .order("started_at", { ascending: false })
+        .from("pipeline_logs")
+        .select("level, created_at, phase")
+        .order("created_at", { ascending: false })
         .limit(1)
         .single();
 
       if (data) {
         setInfo({
-          status: data.status === "running" ? "running" : data.status === "completed" ? "success" : data.status === "error" ? "error" : "unknown",
-          lastRun: data.started_at,
-          runType: data.run_type,
+          status: data.level === "error" ? "error" : "success",
+          lastRun: data.created_at,
+          runType: data.phase,
         });
       }
     }

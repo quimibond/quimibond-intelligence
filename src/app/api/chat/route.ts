@@ -33,11 +33,10 @@ async function getStaticContext(
 
   const [alertsRes, briefingRes, memoryRes] = await Promise.all([
     supabase
-      .from("alerts")
-      .select(
-        "title, severity, alert_type, contact_name, description, state, created_at"
-      )
-      .eq("state", "new")
+      .from("agent_insights")
+      .select("title, severity, category, assignee_name, description, state, created_at")
+      .in("state", ["new", "seen"])
+      .gte("confidence", 0.80)
       .order("created_at", { ascending: false })
       .limit(15),
 
@@ -61,7 +60,7 @@ async function getStaticContext(
       ? alertsRes.data
           .map(
             (a) =>
-              `- [${a.severity}] ${a.title} (${a.alert_type}) — ${a.contact_name ?? "general"}: ${a.description ?? ""}`
+              `- [${a.severity}] ${a.title} (${a.category}) — ${a.assignee_name ?? "general"}: ${a.description ?? ""}`
           )
           .join("\n")
       : "No hay alertas abiertas.";

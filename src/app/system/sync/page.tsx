@@ -63,13 +63,13 @@ export default function SyncPage() {
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
-        .from("pipeline_runs")
-        .select("*")
-        .order("started_at", { ascending: false })
+        .from("pipeline_logs")
+        .select("phase, level, message, created_at")
+        .order("created_at", { ascending: false })
         .limit(20),
     ]);
     setCommands((cmdRes.data ?? []) as SyncCommand[]);
-    setPipelineRuns((runRes.data ?? []) as PipelineRun[]);
+    setPipelineRuns((runRes.data ?? []) as unknown as PipelineRun[]);
     setLoading(false);
   }, []);
 

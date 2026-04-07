@@ -113,7 +113,7 @@ export default function SystemPage() {
         safeCount("odoo_payments"), safeCount("odoo_products"),
         safeCount("odoo_order_lines"), safeCount("odoo_crm_leads"),
         safeCount("odoo_activities"), safeCount("odoo_users"),
-        supabase.from("pipeline_runs").select("*").order("started_at", { ascending: false }).limit(10),
+        supabase.from("pipeline_logs").select("phase, level, message, created_at").order("created_at", { ascending: false }).limit(10),
         supabase.from("sync_commands").select("*").order("created_at", { ascending: false }).limit(10),
       ]);
 
@@ -125,7 +125,7 @@ export default function SystemPage() {
         totalOdooProducts, totalOdooOrderLines, totalOdooCrmLeads,
         totalOdooActivities, totalOdooUsers,
       });
-      setPipelineRuns((pipelineRes.data ?? []) as PipelineRun[]);
+      setPipelineRuns((pipelineRes.data ?? []) as unknown as PipelineRun[]);
       setSyncCommands((cmdRes.data ?? []) as SyncCommand[]);
       } catch (err) {
         console.error("[system] Failed to load:", err);
