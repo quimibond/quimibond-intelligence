@@ -31,6 +31,7 @@ export default function InsightDetailPage() {
   const [insightHistory, setInsightHistory] = useState<{ total_insights_30d: number; times_acted: number; times_dismissed: number; which_directors: string } | null>(null);
   const [relatedEmails, setRelatedEmails] = useState<{ id: number; subject: string | null; sender: string | null; email_date: string | null; snippet: string | null }[]>([]);
   const [companyContacts, setCompanyContacts] = useState<{ name: string | null; email: string; role: string | null }[]>([]);
+  const [actionItems, setActionItems] = useState<{ id: number; description: string; assignee_name: string | null; assignee_email: string | null; priority: string; state: string; due_date: string | null }[]>([]);
   const [navIds, setNavIds] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
@@ -53,18 +54,20 @@ export default function InsightDetailPage() {
       }
 
       // Load all context in parallel
-      const [navRes, companyRes, crossRes, historyRes, emailsRes] = await Promise.all([
+      const [navRes, companyRes, crossRes, historyRes, emailsRes, actionsRes] = await Promise.all([
         supabase.from("agent_insights").select("id").in("state", ["new", "seen"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(50),
         ins.company_id ? supabase.from("companies").select("id, name, canonical_name").eq("id", ins.company_id).single() : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("cross_director_signals").select("director_name, title, severity").eq("company_id", ins.company_id).neq("title", ins.title).limit(5) : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("company_insight_history").select("total_insights_30d, times_acted, times_dismissed, which_directors").eq("company_id", ins.company_id).single() : Promise.resolve({ data: null }),
         Promise.resolve({ data: null }), // emails loaded separately below
+        supabase.from("action_items").select("id, description, assignee_name, assignee_email, priority, state, due_date").eq("alert_id", insightId).order("priority", { ascending: true }),
       ]);
 
       if (navRes.data) setNavIds(navRes.data.map((n: { id: number }) => n.id));
       if (companyRes.data) setCompany(companyRes.data as Company);
       if (crossRes.data) setCrossSignals(crossRes.data as typeof crossSignals);
       if (historyRes.data) setInsightHistory(historyRes.data as typeof insightHistory);
+      if (actionsRes.data) setActionItems(actionsRes.data as typeof actionItems);
 
       // Smart email search: find emails related to this insight
       if (ins.company_id) {
@@ -212,8 +215,53 @@ export default function InsightDetailPage() {
         <h1 className="text-lg font-black leading-snug">{insight.title}</h1>
       </div>
 
-      {/* ── Recommendation (the most important thing) ── */}
-      {insight.recommendation && (
+      {/* ── Actions per responsible (new) or legacy recommendation ── */}
+      {actionItems.length > 0 ? (
+        <div className="space-y-2">
+          {actionItems.map((action) => (
+            <Card key={action.id} className={cn(
+              "border-primary/20",
+              action.state === "completed" ? "opacity-50" : "bg-primary/5"
+            )}>
+              <CardContent className="p-3">
+                <p className="text-sm font-medium leading-relaxed">{action.description}</p>
+                <div className="flex items-center justify-between mt-2">
+                  <div className="flex items-center gap-2">
+                    {action.assignee_name && action.assignee_email ? (
+                      <a
+                        href={`mailto:${action.assignee_email}?subject=${encodeURIComponent(`Acción: ${action.description.slice(0, 60)}`)}&body=${encodeURIComponent(`Hola ${action.assignee_name.split(" ")[0]},\n\n${action.description}\n\nContexto: ${insight.title}\n\nSaludos`)}`}
+                        className="flex items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <Send className="h-3 w-3" />
+                        {action.assignee_name}
+                      </a>
+                    ) : (
+                      <span className="text-xs text-muted-foreground">{action.assignee_name ?? "Sin asignar"}</span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {action.due_date && (
+                      <span className="text-[10px] text-muted-foreground">{action.due_date}</span>
+                    )}
+                    {action.state === "pending" && (
+                      <button
+                        onClick={async () => {
+                          await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
+                          setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
+                          toast.success("Acción completada");
+                        }}
+                        className="text-[10px] text-primary font-medium hover:underline"
+                      >
+                        ✓ Hecho
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      ) : insight.recommendation ? (
         <Card className="border-primary/20 bg-primary/5">
           <CardContent className="p-4">
             <p className="text-sm font-medium leading-relaxed">{insight.recommendation}</p>
@@ -230,7 +278,7 @@ export default function InsightDetailPage() {
             )}
           </CardContent>
         </Card>
-      )}
+      ) : null}
 
       {/* ── Evidence bullets ── */}
       {evidence.length > 0 && (

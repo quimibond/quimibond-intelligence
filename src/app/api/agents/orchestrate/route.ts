@@ -379,6 +379,17 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           continue;
         }
 
+        // Build recommendation from actions (backward compat) or use legacy field
+        const actions = Array.isArray(i.actions) ? i.actions : [];
+        const recommendation = actions.length > 0
+          ? actions.map((a: { description?: string; assignee_name?: string }) =>
+              `${a.assignee_name ?? "?"}: ${a.description ?? ""}`
+            ).join(" | ")
+          : (i.recommendation ? String(i.recommendation) : null);
+
+        // Pick first action's assignee as the insight's primary assignee
+        const primaryAction = actions[0] as { assignee_name?: string; assignee_role?: string } | undefined;
+
         rows.push({
           agent_id: agent.id, run_id: runId,
           insight_type: String(i.insight_type || "recommendation"),
@@ -386,14 +397,58 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           severity: String(i.severity || "medium"),
           title: String(i.title || ""), description: String(i.description || ""),
           evidence: i.evidence || [],
-          recommendation: i.recommendation ? String(i.recommendation) : null,
+          recommendation,
           confidence,
           business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
           company_id: companyId, contact_id: contactId,
           state: confidence < confidenceThreshold ? "archived" : "new",
+          // Store actions in evidence for frontend access
         });
       }
-      await supabase.from("agent_insights").insert(rows);
+      const { data: savedInsights } = await supabase.from("agent_insights").insert(rows).select("id");
+
+      // Save action_items linked to each insight
+      if (savedInsights?.length) {
+        const actionRows: Record<string, unknown>[] = [];
+        for (let idx = 0; idx < cappedInsights.length && idx < savedInsights.length; idx++) {
+          const insight = cappedInsights[idx];
+          const insightId = savedInsights[idx].id;
+          const actions = Array.isArray(insight.actions) ? insight.actions : [];
+
+          for (const action of actions) {
+            // Resolve assignee email from name
+            let assigneeEmail: string | null = null;
+            const aName = String(action.assignee_name ?? "").trim();
+            if (aName) {
+              const { data: user } = await supabase.from("odoo_users")
+                .select("email, department")
+                .ilike("name", `%${aName}%`)
+                .limit(1).single();
+              if (user) assigneeEmail = user.email;
+            }
+
+            actionRows.push({
+              action_type: "follow_up",
+              action_category: insight.category ?? "operaciones",
+              description: String(action.description ?? ""),
+              reason: String(insight.title ?? ""),
+              priority: String(action.priority ?? "medium"),
+              company_id: rows[idx]?.company_id ?? null,
+              contact_name: String(insight.company_name ?? ""),
+              assignee_name: aName || null,
+              assignee_email: assigneeEmail,
+              alert_id: insightId,
+              state: "pending",
+              due_date: action.due_days
+                ? new Date(Date.now() + Number(action.due_days) * 86400_000).toISOString().split("T")[0]
+                : null,
+            });
+          }
+        }
+        if (actionRows.length > 0) {
+          await supabase.from("action_items").insert(actionRows);
+        }
+      }
     }
 
     const activeInsights = cappedInsights.filter(i => (Number(i.confidence) || 0.5) >= confidenceThreshold).length;
@@ -626,12 +681,27 @@ Responde con un JSON array. Cada elemento debe tener EXACTAMENTE estos campos:
   "category": "cobranza|ventas|entregas|operaciones|proveedores|riesgo|equipo|datos",
   "severity": "medium|high|critical",
   "confidence": number 0.8-1.0,
-  "recommendation": "string — QUE hacer especificamente (no 'revisar' sino 'llamar a X para cobrar Y')",
+  "actions": [
+    {
+      "description": "string — QUE hacer especificamente (verbo + objeto + plazo)",
+      "assignee_name": "string — nombre EXACTO del responsable como aparece en los datos",
+      "assignee_role": "string — rol/departamento del responsable",
+      "priority": "high|medium|low",
+      "due_days": number (1-7, en cuantos dias debe estar hecho)
+    }
+  ],
   "business_impact_estimate": number|null (MXN),
   "evidence": ["dato concreto: cifra, fecha, o nombre"],
   "company_name": "string exacto como aparece en datos|null",
   "contact_email": "string|null"
-}`;
+}
+
+REGLAS para actions:
+- Cada accion es para UNA persona especifica — nunca "el equipo" o "alguien"
+- Si un insight requiere acciones de 2+ personas, pon CADA UNA como accion separada
+- El nombre del responsable debe ser EXACTO como aparece en los datos (ej: "Elena Delgado Ruiz", "Dario Manriquez")
+- Si no sabes quien es el responsable, pon al jefe del area relevante
+- MINIMO 1 accion por insight, MAXIMO 3 acciones por insight`;
 }
 
 // ── Context builders ──────────────────────────────────────────────────
