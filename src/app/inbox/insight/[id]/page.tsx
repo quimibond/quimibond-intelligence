@@ -8,12 +8,16 @@ import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
   Mail, MessageSquare, Share2, ThumbsDown, ThumbsUp,
   Send, Clock, Check, CalendarClock, UserCheck,
+  FileText, Building2, Users,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CompanyIntelCards } from "@/app/companies/[id]/components/company-intel-cards";
 
@@ -186,90 +190,92 @@ export default function InsightDetailPage() {
   const isDone = ["acted_on", "dismissed", "expired"].includes(insight.state ?? "");
   const evidence = Array.isArray(insight.evidence) ? insight.evidence as { text?: string; fact?: string }[] : [];
   const sevDot = SEV_DOTS[insight.severity ?? "medium"] ?? "bg-gray-400";
+  const sevLabel = insight.severity === "critical" ? "Crítico" : insight.severity === "high" ? "Alto" : "Medio";
+  const sevVariant = insight.severity === "critical" ? "critical" as const : insight.severity === "high" ? "warning" as const : "secondary" as const;
+
+  const hasContext = evidence.length > 0 || relatedEmails.length > 0 || !!insight.company_id || crossSignals.length > 0;
 
   return (
-    <div className="max-w-xl mx-auto space-y-4 pb-24 md:pb-8">
-      {/* ── Nav bar ── */}
-      <div className="flex items-center justify-between">
-        <button onClick={() => router.push("/inbox")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Inbox
-        </button>
-        {navIds.length > 1 && (
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] text-muted-foreground mr-1">{currentNavIndex + 1}/{navIds.length}</span>
-            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!prevId}
-              onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}>
-              <ChevronLeft className="h-4 w-4" />
-            </Button>
-            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!nextId}
-              onClick={() => nextId && router.push(`/inbox/insight/${nextId}`)}>
-              <ChevronRight className="h-4 w-4" />
-            </Button>
-          </div>
-        )}
-      </div>
-
-      {/* ── Title ── */}
-      <div className="flex items-start gap-2.5">
-        <div className={cn("h-2.5 w-2.5 rounded-full mt-2 shrink-0", sevDot)} />
-        <h1 className="text-lg font-black leading-snug">{insight.title}</h1>
-      </div>
-
-      {/* ── Description (context for the insight) ── */}
-      {insight.description && (
-        <p className="text-sm text-muted-foreground leading-relaxed">{insight.description}</p>
-      )}
-
-      {/* ── Actions per responsible (new) or legacy recommendation ── */}
-      {actionItems.length > 0 ? (
-        <div className="space-y-2">
-          {actionItems.map((action) => (
-            <Card key={action.id} className={cn(
-              "border-primary/20",
-              action.state === "completed" ? "opacity-50" : "bg-primary/5"
-            )}>
-              <CardContent className="p-3">
-                <p className="text-sm font-medium leading-relaxed">{action.description}</p>
-                <div className="flex items-center justify-between mt-2">
-                  <div className="flex items-center gap-2">
-                    {action.assignee_name && action.assignee_email ? (
-                      <a
-                        href={`mailto:${action.assignee_email}?subject=${encodeURIComponent(`Acción: ${action.description.slice(0, 60)}`)}&body=${encodeURIComponent(`Hola ${action.assignee_name.split(" ")[0]},\n\n${action.description}\n\nContexto: ${insight.title}\n\nSaludos`)}`}
-                        className="flex items-center gap-1 text-xs text-primary hover:underline"
-                      >
-                        <Send className="h-3 w-3" />
-                        {action.assignee_name}
-                      </a>
-                    ) : (
-                      <span className="text-xs text-muted-foreground">{action.assignee_name ?? "Sin asignar"}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {action.due_date && (
-                      <span className="text-[10px] text-muted-foreground">{action.due_date}</span>
-                    )}
-                    {action.state === "pending" && (
-                      <button
-                        onClick={async () => {
-                          await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
-                          setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
-                          toast.success("Acción completada");
-                        }}
-                        className="text-[10px] text-primary font-medium hover:underline"
-                      >
-                        ✓ Hecho
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+    <div className="max-w-xl mx-auto pb-24 md:pb-8">
+      {/* ════════════════════════════════════════════════════════════
+          PANTALLA 1 — Decisión rápida (sin scroll)
+          ════════════════════════════════════════════════════════════ */}
+      <div className="space-y-3">
+        {/* ── Nav bar: ← Inbox | 1/8 | < > ── */}
+        <div className="flex items-center justify-between">
+          <button onClick={() => router.push("/inbox")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
+            <ArrowLeft className="h-4 w-4" /> Inbox
+          </button>
+          {navIds.length > 1 && (
+            <div className="flex items-center gap-1">
+              <span className="text-[11px] text-muted-foreground mr-1">{currentNavIndex + 1}/{navIds.length}</span>
+              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!prevId}
+                onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}>
+                <ChevronLeft className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!nextId}
+                onClick={() => nextId && router.push(`/inbox/insight/${nextId}`)}>
+                <ChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          )}
         </div>
-      ) : insight.recommendation ? (
-        <Card className="border-primary/20 bg-primary/5">
-          <CardContent className="p-4">
-            <p className="text-sm font-medium leading-relaxed">{insight.recommendation}</p>
+
+        {/* ── Título + severity badge ── */}
+        <div className="flex items-start gap-2.5">
+          <div className={cn("h-2.5 w-2.5 rounded-full mt-2 shrink-0", sevDot)} />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg font-black leading-snug">{insight.title}</h1>
+              <Badge variant={sevVariant} className="text-[10px] shrink-0">{sevLabel}</Badge>
+            </div>
+            {insight.description && (
+              <p className="text-sm text-muted-foreground leading-relaxed mt-1">{insight.description}</p>
+            )}
+          </div>
+        </div>
+
+        {/* ── Acciones compactas (1 línea por acción) ── */}
+        {actionItems.length > 0 ? (
+          <div className="space-y-1">
+            {actionItems.map((action) => (
+              <div
+                key={action.id}
+                className={cn(
+                  "flex items-center gap-2 rounded-lg border px-3 py-2",
+                  action.state === "completed" ? "opacity-50 bg-muted/30" : "bg-primary/5 border-primary/20"
+                )}
+              >
+                <p className="text-sm flex-1 min-w-0 truncate">{action.description}</p>
+                {action.assignee_name && action.assignee_email ? (
+                  <a
+                    href={`mailto:${action.assignee_email}?subject=${encodeURIComponent(`Acción: ${action.description.slice(0, 60)}`)}&body=${encodeURIComponent(`Hola ${action.assignee_name.split(" ")[0]},\n\n${action.description}\n\nContexto: ${insight.title}\n\nSaludos`)}`}
+                    className="flex items-center gap-1 text-xs text-primary hover:underline shrink-0"
+                  >
+                    <Send className="h-3 w-3" />
+                    {action.assignee_name.split(" ")[0]}
+                  </a>
+                ) : (
+                  <span className="text-xs text-muted-foreground shrink-0">{action.assignee_name ?? "Sin asignar"}</span>
+                )}
+                {action.state === "pending" && (
+                  <button
+                    onClick={async () => {
+                      await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
+                      setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
+                      toast.success("Acción completada");
+                    }}
+                    className="text-[10px] text-primary font-semibold hover:underline shrink-0"
+                  >
+                    ✓ Hecho
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : insight.recommendation ? (
+          <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
+            <p className="text-sm leading-relaxed">{insight.recommendation}</p>
             {insight.assignee_name && (
               <AssigneeSelector
                 insightId={insight.id}
@@ -281,186 +287,222 @@ export default function InsightDetailPage() {
                 }}
               />
             )}
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        ) : null}
 
-      {/* ── Evidence bullets ── */}
-      {evidence.length > 0 && (
-        <div className="space-y-1 px-1">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">Evidencia</p>
-          <ul className="space-y-1.5">
-            {evidence.slice(0, 5).map((e, i) => {
-              const text = String(e.text ?? e.fact ?? e);
-              // Highlight amounts, invoice numbers, and dates
-              // Make invoice/order numbers clickable links
-              const companyId = insight.company_id;
-              const highlighted = text
-                .replace(/(\$[\d,.]+[KkMm]?\s*(?:MXN|USD|mxn|usd)?)/g, '<strong>$1</strong>')
-                .replace(/((?:INV|FACTU)\/[\w\/\-]+)/g, companyId
-                  ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
-                  : '<code>$1</code>')
-                .replace(/((?:OC|PO)\-?[\w\-]+)/g, companyId
-                  ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
-                  : '<code>$1</code>')
-                .replace(/((?:PV|SO)[\w\/\-]+)/g, companyId
-                  ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
-                  : '<code>$1</code>')
-                .replace(/((?:TL\/OUT|TL\/IN)\/[\w\/]+)/g, companyId
-                  ? `<a href="/companies/${companyId}?tab=operaciones" class="text-primary underline">$1</a>`
-                  : '<code>$1</code>')
-                .replace(/((?:WM|WP|WN|ZN|XJ|HP|PET|K\d)\w{3,})/g,
-                  '<a href="/companies/' + (companyId ?? '') + '?tab=operaciones" class="text-primary underline">$1</a>')
-                .replace(/(\d+\s*(?:dias?|days?|hrs?|horas?))/gi, '<em>$1</em>');
-              return (
-                <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                  <span className="text-muted-foreground/50 mt-0.5 shrink-0">•</span>
-                  <span dangerouslySetInnerHTML={{ __html: highlighted }} className="[&>strong]:text-foreground [&>strong]:font-semibold [&>code]:text-primary [&>code]:text-xs [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:rounded [&>em]:text-foreground [&>a]:no-underline [&>a]:font-medium [&>a]:text-xs [&>a]:bg-primary/10 [&>a]:px-1 [&>a]:py-0.5 [&>a]:rounded" />
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      )}
+        {/* ── Botones [Descartar] [Actuar] ── */}
+        {!isDone && !showActions && (
+          <div className="flex gap-2">
+            <Button variant="outline" className="flex-1 h-11" onClick={handleDismiss}>
+              <ThumbsDown className="h-4 w-4 mr-2" /> Descartar
+            </Button>
+            <Button className="flex-1 h-11" onClick={() => setShowActions(true)}>
+              <ThumbsUp className="h-4 w-4 mr-2" /> Actuar
+            </Button>
+          </div>
+        )}
 
-      {/* ── Actions ── */}
-      {!isDone && !showActions && (
-        <div className="flex gap-2">
-          <Button variant="outline" className="flex-1 h-11" onClick={handleDismiss}>
-            <ThumbsDown className="h-4 w-4 mr-2" /> Descartar
-          </Button>
-          <Button className="flex-1 h-11" onClick={() => setShowActions(true)}>
-            <ThumbsUp className="h-4 w-4 mr-2" /> Actuar
-          </Button>
-        </div>
-      )}
+        {/* ── Quick Actions Panel (appears after tapping Actuar) ── */}
+        {!isDone && showActions && (
+          <QuickActions
+            insight={insight}
+            company={company}
+            companyContacts={companyContacts}
+            onDone={async (followUpDays?: number) => {
+              setActing(true);
+              try {
+                await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
+                if (followUpDays) {
+                  const followUpDate = new Date(Date.now() + followUpDays * 86400_000).toISOString().split("T")[0];
+                  await supabase.from("insight_follow_ups").insert({
+                    insight_id: insight.id,
+                    company_id: insight.company_id,
+                    follow_up_date: followUpDate,
+                    status: "pending",
+                  });
+                }
+                setInsight({ ...insight, state: "acted_on" });
+                toast.success("Marcado como útil");
+              } finally { setActing(false); }
+            }}
+            onCancel={() => setShowActions(false)}
+            acting={acting}
+          />
+        )}
 
-      {/* ── Action Panel (appears after tapping Actuar) ── */}
-      {!isDone && showActions && (
-        <QuickActions
-          insight={insight}
-          company={company}
-          companyContacts={companyContacts}
-          onDone={async (followUpDays?: number) => {
-            setActing(true);
-            try {
-              await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
-              if (followUpDays) {
-                const followUpDate = new Date(Date.now() + followUpDays * 86400_000).toISOString().split("T")[0];
-                await supabase.from("insight_follow_ups").insert({
-                  insight_id: insight.id,
-                  company_id: insight.company_id,
-                  follow_up_date: followUpDate,
-                  status: "pending",
-                });
-              }
-              setInsight({ ...insight, state: "acted_on" });
-              toast.success("Marcado como útil");
-            } finally { setActing(false); }
-          }}
-          onCancel={() => setShowActions(false)}
-          acting={acting}
-        />
-      )}
+        {/* ── Status banner (when done) ── */}
+        {isDone && (
+          <div className={cn(
+            "rounded-xl px-4 py-2.5 text-sm font-medium text-center",
+            insight.state === "acted_on" ? "bg-success/10 text-success-foreground" : "bg-muted text-muted-foreground"
+          )}>
+            {insight.state === "acted_on" ? "Marcado como util" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
+          </div>
+        )}
 
-      {isDone && (
-        <div className={cn(
-          "rounded-xl px-4 py-2.5 text-sm font-medium text-center",
-          insight.state === "acted_on" ? "bg-success/10 text-success-foreground" : "bg-muted text-muted-foreground"
-        )}>
-          {insight.state === "acted_on" ? "Marcado como util" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
-        </div>
-      )}
+        {isDone && <ShareWhatsApp insight={insight} companyName={company?.name} />}
 
-      {/* ── Share (always visible) ── */}
-      {isDone && <ShareWhatsApp insight={insight} companyName={company?.name} />}
+        <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
 
-      {/* ── Follow-up banner ── */}
-      <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
+        {/* ── Meta (tiempo + confianza) ── */}
+        <p className="text-[10px] text-muted-foreground/50 text-center">
+          {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
+        </p>
+      </div>
 
-      {/* ── Company Intel Cards (payment, reorder, risk) ── */}
-      {insight.company_id && (
-        <div className="space-y-2">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium px-1">
-            {company?.name ?? "Empresa"}
-          </p>
-          <CompanyIntelCards companyId={insight.company_id} companyName={company?.name ?? ""} />
-        </div>
-      )}
+      {/* ════════════════════════════════════════════════════════════
+          PANTALLA 2 — Contexto (scroll)
+          ════════════════════════════════════════════════════════════ */}
+      {hasContext && (
+        <>
+          <Separator className="my-4" />
 
-      {/* ── Related emails ── */}
-      {relatedEmails.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium px-1">
-            Emails recientes{company?.name ? ` — ${company.name}` : ""}
-          </p>
-          <div className="space-y-1.5">
-            {relatedEmails.map((email) => {
-              const senderName = (email.sender ?? "").replace(/<[^>]+>/, "").trim() || "Desconocido";
-              const dateStr = email.email_date ? new Date(email.email_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" }) : "";
-              return (
-                <Link
-                  key={email.id}
-                  href={`/emails/${email.id}`}
-                  className="flex items-start gap-3 rounded-xl border p-3 hover:bg-muted/50 transition-colors"
-                >
-                  <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <p className="text-sm font-medium truncate">{email.subject ?? "(sin asunto)"}</p>
-                      <span className="text-[10px] text-muted-foreground shrink-0">{dateStr}</span>
-                    </div>
-                    <p className="text-xs text-muted-foreground truncate">{senderName}</p>
-                    {email.snippet && (
-                      <p className="text-xs text-muted-foreground/70 line-clamp-1 mt-0.5">{email.snippet.slice(0, 120)}</p>
+          <Accordion type="multiple" defaultValue={["evidencia"]} className="w-full">
+            {/* ── 1. Evidencia ── */}
+            {evidence.length > 0 && (
+              <AccordionItem value="evidencia">
+                <AccordionTrigger>
+                  <span className="flex items-center gap-2">
+                    <FileText className="h-4 w-4 text-muted-foreground" />
+                    Evidencia
+                    <Badge variant="secondary" className="text-[10px] ml-1">{evidence.length}</Badge>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <ul className="space-y-1.5">
+                    {evidence.slice(0, 5).map((e, i) => {
+                      const text = String(e.text ?? e.fact ?? e);
+                      const companyId = insight.company_id;
+                      const highlighted = text
+                        .replace(/(\$[\d,.]+[KkMm]?\s*(?:MXN|USD|mxn|usd)?)/g, '<strong>$1</strong>')
+                        .replace(/((?:INV|FACTU)\/[\w\/\-]+)/g, companyId
+                          ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+                          : '<code>$1</code>')
+                        .replace(/((?:OC|PO)\-?[\w\-]+)/g, companyId
+                          ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+                          : '<code>$1</code>')
+                        .replace(/((?:PV|SO)[\w\/\-]+)/g, companyId
+                          ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+                          : '<code>$1</code>')
+                        .replace(/((?:TL\/OUT|TL\/IN)\/[\w\/]+)/g, companyId
+                          ? `<a href="/companies/${companyId}?tab=operaciones" class="text-primary underline">$1</a>`
+                          : '<code>$1</code>')
+                        .replace(/((?:WM|WP|WN|ZN|XJ|HP|PET|K\d)\w{3,})/g,
+                          '<a href="/companies/' + (companyId ?? '') + '?tab=operaciones" class="text-primary underline">$1</a>')
+                        .replace(/(\d+\s*(?:dias?|days?|hrs?|horas?))/gi, '<em>$1</em>');
+                      return (
+                        <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+                          <span className="text-muted-foreground/50 mt-0.5 shrink-0">•</span>
+                          <span dangerouslySetInnerHTML={{ __html: highlighted }} className="[&>strong]:text-foreground [&>strong]:font-semibold [&>code]:text-primary [&>code]:text-xs [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:rounded [&>em]:text-foreground [&>a]:no-underline [&>a]:font-medium [&>a]:text-xs [&>a]:bg-primary/10 [&>a]:px-1 [&>a]:py-0.5 [&>a]:rounded" />
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+
+            {/* ── 2. Emails relacionados ── */}
+            {relatedEmails.length > 0 && (
+              <AccordionItem value="emails">
+                <AccordionTrigger>
+                  <span className="flex items-center gap-2">
+                    <Mail className="h-4 w-4 text-muted-foreground" />
+                    Emails relacionados
+                    <Badge variant="secondary" className="text-[10px] ml-1">{relatedEmails.length}</Badge>
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-1.5">
+                    {relatedEmails.map((email) => {
+                      const senderName = (email.sender ?? "").replace(/<[^>]+>/, "").trim() || "Desconocido";
+                      const dateStr = email.email_date ? new Date(email.email_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" }) : "";
+                      return (
+                        <Link
+                          key={email.id}
+                          href={`/emails/${email.id}`}
+                          className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
+                        >
+                          <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-baseline justify-between gap-2">
+                              <p className="text-sm font-medium truncate">{email.subject ?? "(sin asunto)"}</p>
+                              <span className="text-[10px] text-muted-foreground shrink-0">{dateStr}</span>
+                            </div>
+                            <p className="text-xs text-muted-foreground truncate">{senderName}</p>
+                            {email.snippet && (
+                              <p className="text-xs text-muted-foreground/70 line-clamp-1 mt-0.5">{email.snippet.slice(0, 120)}</p>
+                            )}
+                          </div>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+
+            {/* ── 3. Intel de empresa ── */}
+            {insight.company_id && (
+              <AccordionItem value="intel">
+                <AccordionTrigger>
+                  <span className="flex items-center gap-2">
+                    <Building2 className="h-4 w-4 text-muted-foreground" />
+                    {company?.name ?? "Empresa"}
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-3">
+                    <CompanyIntelCards companyId={insight.company_id} companyName={company?.name ?? ""} />
+                    {company && (
+                      <Link
+                        href={`/chat?q=${encodeURIComponent(`Como va ${company.name}?`)}`}
+                        className="flex items-center gap-2 rounded-lg border p-3 text-sm hover:bg-muted/50 transition-colors"
+                      >
+                        <MessageSquare className="h-4 w-4 text-primary" />
+                        <span>Preguntar al Chat sobre {company.name}</span>
+                      </Link>
                     )}
                   </div>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      )}
+                </AccordionContent>
+              </AccordionItem>
+            )}
 
-      {/* ── Cross-director signals ── */}
-      {crossSignals.length > 0 && (
-        <div className="space-y-2">
-          <p className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium px-1">Otros directores</p>
-          <div className="space-y-1.5">
-            {crossSignals.map((s, i) => (
-              <div key={i} className="rounded-xl border p-3 text-sm">
-                <span className="font-medium">{s.director_name}</span>
-                <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{s.title}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+            {/* ── 4. Otros directores + historial ── */}
+            {(crossSignals.length > 0 || (insightHistory && insightHistory.total_insights_30d > 1)) && (
+              <AccordionItem value="directores">
+                <AccordionTrigger>
+                  <span className="flex items-center gap-2">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    Otros directores e historial
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="space-y-3">
+                    {crossSignals.length > 0 && (
+                      <div className="space-y-1.5">
+                        {crossSignals.map((s, i) => (
+                          <div key={i} className="rounded-lg border p-3 text-sm">
+                            <span className="font-medium">{s.director_name}</span>
+                            <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{s.title}</p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {insightHistory && insightHistory.total_insights_30d > 1 && (
+                      <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
+                        Empresa flaggeada <span className="font-semibold text-foreground">{insightHistory.total_insights_30d} veces</span> en 30 días
+                        {insightHistory.times_acted > 0 && <> · CEO actuó {insightHistory.times_acted}x</>}
+                        {insightHistory.times_dismissed > 0 && <> · descartó {insightHistory.times_dismissed}x</>}
+                      </div>
+                    )}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+          </Accordion>
+        </>
       )}
-
-      {/* ── Insight history for this company ── */}
-      {insightHistory && insightHistory.total_insights_30d > 1 && (
-        <div className="rounded-xl bg-muted/50 p-3 text-xs text-muted-foreground">
-          Empresa flaggeada <span className="font-semibold text-foreground">{insightHistory.total_insights_30d} veces</span> en 30 días
-          {insightHistory.times_acted > 0 && <> · CEO actuó {insightHistory.times_acted}x</>}
-          {insightHistory.times_dismissed > 0 && <> · descartó {insightHistory.times_dismissed}x</>}
-        </div>
-      )}
-
-      {/* ── Ask AI ── */}
-      {company && (
-        <Link
-          href={`/chat?q=${encodeURIComponent(`Como va ${company.name}?`)}`}
-          className="flex items-center gap-2 rounded-xl border p-3 text-sm hover:bg-muted/50 transition-colors"
-        >
-          <MessageSquare className="h-4 w-4 text-primary" />
-          <span>Preguntar al Chat sobre {company.name}</span>
-        </Link>
-      )}
-
-      {/* ── Meta ── */}
-      <p className="text-[10px] text-muted-foreground/50 text-center">
-        {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
-      </p>
     </div>
   );
 }
