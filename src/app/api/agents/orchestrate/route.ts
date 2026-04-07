@@ -563,21 +563,32 @@ const CATEGORY_MAP: Record<string, string> = {
 
 /** Categories that are internal system noise — should NOT reach the CEO inbox */
 const META_TITLE_PATTERNS = [
+  // Agent self-reflection / calibration (NEVER show to CEO)
   /sesgo\s+(sistem|hacia|cr[ií]tico)/i,
-  /calibraci[oó]n\s+(de|imposible)/i,
-  /director\s+\w+\s+(ausente|fantasma)/i,
+  /calibraci[oó]n\s+(de|imposible|cr[ií]tica|requerida)/i,
+  /director\s+\w+\s+(ausente|fantasma|subactivad)/i,
   /frecuencia\s+de\s+activaci/i,
   /aceptaci[oó]n/i,
-  /diversificar\s+hacia/i,
-  /sin\s+datos\s+(de|para)\s+(clientes|cartera|productos|empresas)/i,
-  /agentes?\s+con\s+\d+%/i,
-  /validaci[oó]n\s+prematura/i,
   /tasa\s+de\s+aceptaci/i,
+  /\d+%\s+de?\s+aceptaci/i,
+  // System meta-analysis
+  /diversificar\s+hacia/i,
   /diversificaci[oó]n\s+de\s+tipos/i,
   /patr[oó]n\s+(de\s+)?(desalineaci|rechazo)/i,
   /identificar\s+patr[oó]n\s+en\s+rechazos/i,
-  /\d+%\s+de?\s+aceptaci/i,
-  /volumen\s+bajo.*validaci/i,
+  /volumen\s+(bajo|insuficiente)/i,
+  /validaci[oó]n\s+(prematura|estad[ií]stica|insuficiente)/i,
+  /falsa\s+(confianza|calibraci)/i,
+  /agentes?\s+con\s+\d+%/i,
+  // "No data" false positives
+  /sin\s+datos\s+(de|para|financier)/i,
+  /no\s+incluye\s+(ning[uú]n\s+)?dataset/i,
+  /prompt\s+(de\s+)?an[aá]lisis\s+no\s+contiene/i,
+  // Agent talking about other agents
+  /director\s+(de\s+)?\w+\s*:\s*\d+%\s+de\s+aceptaci/i,
+  /fuga\s+de\s+valor/i,
+  /punto\s+ciego/i,
+  /alertas.*no\s+accionable/i,
 ];
 
 function normalizeCategory(raw: string): string {
@@ -661,6 +672,7 @@ Reglas ESTRICTAS:
 11. IGNORA empresas con nombre "quimibond" o "productora de no tejidos" — son la propia empresa
 12. Si ves margenes de -80% a -95% o precios de venta que son 3x+ MENORES que el costo, es casi seguro error de unidades (costo por kg vs precio por metro). NO los reportes. Si la diferencia es >3x entre costo y precio, IGNORALO completamente
 13. Si ves un problema que OTRO director ya reporto (ver seccion "QUE DICEN OTROS DIRECTORES"), NO generes un insight duplicado — devuelve [] en su lugar
+14. PROHIBIDO generar insights sobre el SISTEMA o los AGENTES. NO hables de: tasas de aceptacion, calibracion, subactivacion, validacion estadistica, falsa confianza, sesgo, volumen de interacciones. Esos son problemas INTERNOS que el CEO no debe ver. Si quieres mejorar el sistema, usa el campo "evidence" para documentar datos faltantes — pero el TITULO del insight debe ser sobre el NEGOCIO, no sobre los agentes
 13. NO reportes datos viejos (entregas de >6 meses, ordenes de >1 año)
 14. Si otro director ya reporto el mismo tema (ver seccion "QUE DICEN OTROS DIRECTORES"), NO lo repitas — en su lugar, agrega contexto nuevo que el otro director no tenia`;
 
