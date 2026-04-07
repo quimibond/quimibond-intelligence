@@ -29,12 +29,18 @@ CEO INBOX (web + mobile)
 
 ### Flujo de datos
 
-1. **Odoo → Supabase** (qb19 addon, cada 1h)
-   - res.partner → contacts + companies
+1. **Odoo → Supabase** (qb19 addon, cada 1h, 20 modelos)
+   - res.partner → contacts + companies (con financials: receivable, payable, invoiced)
    - product.product → odoo_products
    - sale.order.line + purchase.order.line → odoo_order_lines
-   - account.move → odoo_invoices
+   - account.move → odoo_invoices + odoo_invoice_lines
+   - account.move (pagos proxy) → odoo_payments
+   - account.payment → odoo_account_payments (pagos reales con banco/método)
+   - account.account → odoo_chart_of_accounts (plan de cuentas)
+   - account.move.line (agregado) → odoo_account_balances (P&L mensual)
+   - account.journal → odoo_bank_balances (saldos bancarios)
    - stock.picking → odoo_deliveries
+   - stock.warehouse.orderpoint → odoo_orderpoints
    - crm.lead → odoo_crm_leads
    - mail.activity → odoo_activities
    - mrp.production → odoo_manufacturing
@@ -438,10 +444,11 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 
 **Odoo:**
 - `odoo_users`, `odoo_employees`, `odoo_departments`
-- `odoo_products`, `odoo_invoices`, `odoo_payments`
+- `odoo_products`, `odoo_invoices`, `odoo_invoice_lines`, `odoo_payments`
+- `odoo_account_payments`, `odoo_chart_of_accounts`, `odoo_account_balances`, `odoo_bank_balances`
 - `odoo_order_lines`, `odoo_sale_orders`, `odoo_purchase_orders`
 - `odoo_deliveries`, `odoo_crm_leads`, `odoo_activities`
-- `odoo_manufacturing`
+- `odoo_manufacturing`, `odoo_orderpoints`
 
 **Metrics:**
 - `health_scores` — Scores calculados por contacto
@@ -541,7 +548,7 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 
 | Archivo | LOC | Descripcion |
 |---|---|---|
-| `models/sync_push.py` | ~800 | Push Odoo → Supabase (13 modelos) |
+| `models/sync_push.py` | ~1500 | Push Odoo → Supabase (20 modelos) |
 | `models/sync_pull.py` | ~200 | Pull Supabase → Odoo (comandos, contactos) |
 | `models/supabase_client.py` | ~110 | REST client para Supabase |
 | `models/sync_log.py` | ~25 | Modelo de log de sync |
@@ -550,20 +557,24 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 
 | Frecuencia | Que hace |
 |---|---|
-| Cada 1 hora | Push completo a Supabase (13 tablas) |
+| Cada 1 hora | Push completo a Supabase (20 tablas) |
 | Cada 5 minutos | Pull comandos + contactos nuevos |
 
-### Modelos sincronizados (13)
+### Modelos sincronizados (20)
 
 | Odoo Model | Supabase Table | Status |
 |---|---|---|
 | res.partner | contacts + companies | Synced |
 | product.product | odoo_products | Synced |
-| sale.order.line | odoo_order_lines | Synced |
-| purchase.order.line | odoo_order_lines | Synced |
-| res.users | odoo_users | Synced |
-| account.move | odoo_invoices | Synced |
-| account.move (pagos) | odoo_payments | Synced |
+| sale.order.line + purchase.order.line | odoo_order_lines | Synced |
+| res.users + hr.employee | odoo_users | Synced |
+| account.move (facturas) | odoo_invoices | Synced |
+| account.move.line (líneas factura) | odoo_invoice_lines | Synced |
+| account.move (pagos proxy) | odoo_payments | Synced |
+| account.payment (pagos reales) | odoo_account_payments | Synced |
+| account.account | odoo_chart_of_accounts | Synced |
+| account.move.line (balances agregados) | odoo_account_balances | Synced |
+| account.journal (banco/caja) | odoo_bank_balances | Synced |
 | stock.picking | odoo_deliveries | Synced |
 | crm.lead | odoo_crm_leads | Synced |
 | mail.activity | odoo_activities | Synced |
@@ -572,17 +583,28 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | hr.department | odoo_departments | Synced |
 | sale.order | odoo_sale_orders | Synced |
 | purchase.order | odoo_purchase_orders | Synced |
+| stock.warehouse.orderpoint | odoo_orderpoints | Synced |
 
-### Modelos pendientes (7)
+### Vistas financieras (SQL views)
+
+| Vista | Que muestra |
+|---|---|
+| `pl_estado_resultados` | P&L mensual: ingresos, costo ventas, gastos, utilidad bruta/operativa |
+| `cash_position` | Saldos bancarios (solo cuentas con movimiento) |
+| `expense_breakdown` | Desglose de gastos por cuenta y periodo |
+| `payment_analysis` | Pagos con empresa, banco, método, conciliación |
+| `cfo_dashboard` | Resumen ejecutivo: efectivo, deuda tarjetas, CxC, CxP, 30d metrics |
+| `cash_flow_aging` | Aging de cartera por empresa (1-30, 31-60, 61-90, 90+) |
+| `monthly_revenue_trend` | Tendencia de revenue mensual con MoM% |
+| `margin_analysis` | Análisis de márgenes por producto y cliente |
+
+### Modelos pendientes
 
 | Odoo Model | Prioridad | Valor |
 |---|---|---|
-| stock.warehouse.orderpoint | High | Deteccion de desabasto |
 | account.payment.term | Medium | Prediccion de pago |
 | res.partner.category | Medium | Segmentacion de clientes |
-| mail.message | Medium | Comunicacion interna |
 | mrp.bom | Medium | Costos de produccion |
-| quality.check | Medium | Tracking de calidad |
 | product.pricelist | Low | Analisis de precios |
 
 ---
