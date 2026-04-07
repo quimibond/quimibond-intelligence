@@ -288,14 +288,29 @@ export default function InsightDetailPage() {
             {evidence.slice(0, 5).map((e, i) => {
               const text = String(e.text ?? e.fact ?? e);
               // Highlight amounts, invoice numbers, and dates
+              // Make invoice/order numbers clickable links
+              const companyId = insight.company_id;
               const highlighted = text
                 .replace(/(\$[\d,.]+[KkMm]?\s*(?:MXN|USD|mxn|usd)?)/g, '<strong>$1</strong>')
-                .replace(/((?:INV|FACTU|OC|PV|TL)\/?\-?[\w\/\-]+)/g, '<code>$1</code>')
+                .replace(/((?:INV|FACTU)\/[\w\/\-]+)/g, companyId
+                  ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+                  : '<code>$1</code>')
+                .replace(/((?:OC|PO)\-?[\w\-]+)/g, companyId
+                  ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+                  : '<code>$1</code>')
+                .replace(/((?:PV|SO)[\w\/\-]+)/g, companyId
+                  ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+                  : '<code>$1</code>')
+                .replace(/((?:TL\/OUT|TL\/IN)\/[\w\/]+)/g, companyId
+                  ? `<a href="/companies/${companyId}?tab=operaciones" class="text-primary underline">$1</a>`
+                  : '<code>$1</code>')
+                .replace(/((?:WM|WP|WN|ZN|XJ|HP|PET|K\d)\w{3,})/g,
+                  '<a href="/companies/' + (companyId ?? '') + '?tab=operaciones" class="text-primary underline">$1</a>')
                 .replace(/(\d+\s*(?:dias?|days?|hrs?|horas?))/gi, '<em>$1</em>');
               return (
                 <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
                   <span className="text-muted-foreground/50 mt-0.5 shrink-0">•</span>
-                  <span dangerouslySetInnerHTML={{ __html: highlighted }} className="[&>strong]:text-foreground [&>strong]:font-semibold [&>code]:text-primary [&>code]:text-xs [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:rounded [&>em]:text-foreground" />
+                  <span dangerouslySetInnerHTML={{ __html: highlighted }} className="[&>strong]:text-foreground [&>strong]:font-semibold [&>code]:text-primary [&>code]:text-xs [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:rounded [&>em]:text-foreground [&>a]:no-underline [&>a]:font-medium [&>a]:text-xs [&>a]:bg-primary/10 [&>a]:px-1 [&>a]:py-0.5 [&>a]:rounded" />
                 </li>
               );
             })}
