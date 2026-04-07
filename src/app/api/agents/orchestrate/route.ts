@@ -285,7 +285,26 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         // Semantic theme dedup: "inventario muerto" = "dead stock" regardless of wording
         const companyName = String(insight.company_name || "").trim().toLowerCase();
         const theme = extractTheme(String(insight.title || ""), companyName);
-        if (theme && existingThemes.has(theme)) { duplicatesSkipped++; continue; }
+        if (theme && existingThemes.has(theme)) {
+          // FASE 3: Instead of just skipping, create a ticket to enrich the existing insight
+          try {
+            const existingInsight = (existing ?? []).find((e: { title: string }) => {
+              const eTheme = extractTheme(e.title, null);
+              return eTheme === theme;
+            }) as { id?: number } | undefined;
+            if (existingInsight?.id && insight.description) {
+              await supabase.from("agent_tickets").insert({
+                from_agent_id: agent.id,
+                to_agent_id: null, // will be resolved
+                insight_id: existingInsight.id,
+                ticket_type: "enrich",
+                message: `${agent.name} agrega contexto: ${String(insight.title).slice(0, 100)} — ${String(insight.description).slice(0, 200)}`,
+              });
+            }
+          } catch { /* don't break dedup on ticket error */ }
+          duplicatesSkipped++;
+          continue;
+        }
 
         // Cross-director dedup by company+category
         const category = normalizeCategory(String(insight.category || agent.domain));
@@ -619,22 +638,22 @@ Responde con un JSON array. Cada elemento debe tener EXACTAMENTE estos campos:
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildAgentContext(supabase: any, domain: string): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
-  const [crossSignals, emailFacts, insightHistory, emailIntel] = await Promise.all([
-    // Gap 1: What OTHER directors are saying (cross-director signals)
+  const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets] = await Promise.all([
+    // What OTHER directors are saying
     supabase
       .from("cross_director_signals")
       .select("company_name, director_name, category, severity, title")
       .in("severity", ["critical", "high"])
       .limit(15),
 
-    // Gap 2: Actual email facts per company (complaints, commitments, requests)
+    // Email facts per company
     supabase
       .from("company_email_intelligence")
       .select("company_name, fact_type, fact_text")
       .in("fact_type", ["complaint", "commitment", "request", "price"])
       .limit(15),
 
-    // Gap 5: How many times each company was flagged + CEO response
+    // Companies flagged multiple times + CEO response
     supabase
       .from("company_insight_history")
       .select("company_name, total_insights_30d, times_acted, times_dismissed, directors_flagging, which_directors, categories_flagged")
@@ -642,8 +661,25 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
       .order("total_insights_30d", { ascending: false })
       .limit(10),
 
-    // Existing: domain-specific email facts
+    // Domain-specific email facts
     getEmailIntelligence(supabase, domain),
+
+    // FASE 2: CEO feedback from last 48h (immediate feedback loop)
+    supabase
+      .from("agent_insights")
+      .select("title, state, category, severity, user_feedback")
+      .in("state", ["acted_on", "dismissed"])
+      .gte("updated_at", new Date(Date.now() - 48 * 3600_000).toISOString())
+      .order("updated_at", { ascending: false })
+      .limit(15),
+
+    // FASE 3: Tickets from other directors for this agent
+    supabase
+      .from("agent_tickets")
+      .select("from_agent_id, insight_id, ticket_type, message, created_at")
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(10),
   ]);
 
   const sections: string[] = [];
@@ -677,6 +713,25 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
     sections.push(`## HISTORIAL: empresas flaggeadas multiples veces (30 dias)\n${
       (insightHistory.data as Record<string, unknown>[]).map(h =>
         `- ${h.company_name}: ${h.total_insights_30d} veces (CEO actuo ${h.times_acted}, descarto ${h.times_dismissed}) — directores: ${h.which_directors}`
+      ).join("\n")
+    }`);
+  }
+
+  // FASE 2: Recent CEO feedback (immediate loop)
+  const acted = ((recentFeedback.data ?? []) as Record<string, unknown>[]).filter(i => i.state === "acted_on");
+  const dismissed = ((recentFeedback.data ?? []) as Record<string, unknown>[]).filter(i => i.state === "dismissed");
+  if (acted.length || dismissed.length) {
+    const lines: string[] = [];
+    for (const i of acted.slice(0, 5)) lines.push(`  ✅ "${i.title}" → CEO ACTUO (util)`);
+    for (const i of dismissed.slice(0, 5)) lines.push(`  ❌ "${i.title}" → CEO DESCARTO${i.user_feedback ? ` (${i.user_feedback})` : ""}`);
+    sections.push(`## FEEDBACK DEL CEO (ultimas 48h) — NO repitas los descartados\n${lines.join("\n")}`);
+  }
+
+  // FASE 3: Tickets from other directors
+  if (pendingTickets.data?.length) {
+    sections.push(`## TICKETS DE OTROS DIRECTORES (requieren tu atencion)\n${
+      (pendingTickets.data as Record<string, unknown>[]).map(t =>
+        `- [${t.ticket_type}] ${sanitizeEmailForClaude(String(t.message), 200)}`
       ).join("\n")
     }`);
   }
