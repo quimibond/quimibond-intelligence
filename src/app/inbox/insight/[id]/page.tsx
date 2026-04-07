@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import {
   ArrowLeft, ChevronLeft, ChevronRight, Loader2,
   Mail, MessageSquare, Share2, ThumbsDown, ThumbsUp,
-  Send, Clock, Check, CalendarClock,
+  Send, Clock, Check, CalendarClock, UserCheck,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
@@ -218,7 +218,15 @@ export default function InsightDetailPage() {
           <CardContent className="p-4">
             <p className="text-sm font-medium leading-relaxed">{insight.recommendation}</p>
             {insight.assignee_name && (
-              <p className="text-xs text-muted-foreground mt-2">→ {insight.assignee_name}</p>
+              <AssigneeSelector
+                insightId={insight.id}
+                currentName={insight.assignee_name}
+                currentEmail={insight.assignee_email ?? ""}
+                onChanged={(name, email, dept) => {
+                  setInsight({ ...insight, assignee_name: name, assignee_email: email, assignee_department: dept });
+                  toast.success(`Reasignado a ${name}`);
+                }}
+              />
             )}
           </CardContent>
         </Card>
@@ -382,6 +390,70 @@ export default function InsightDetailPage() {
       <p className="text-[10px] text-muted-foreground/50 text-center">
         {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
       </p>
+    </div>
+  );
+}
+
+// ── Assignee Selector ──
+function AssigneeSelector({ insightId, currentName, currentEmail, onChanged }: {
+  insightId: number;
+  currentName: string;
+  currentEmail: string;
+  onChanged: (name: string, email: string, dept: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [users, setUsers] = useState<{ name: string; email: string; department: string | null }[]>([]);
+
+  const loadUsers = useCallback(async () => {
+    if (users.length > 0) { setOpen(!open); return; }
+    const { data } = await supabase
+      .from("odoo_users")
+      .select("name, email, department")
+      .not("email", "is", null)
+      .order("name")
+      .limit(50);
+    setUsers((data ?? []) as typeof users);
+    setOpen(true);
+  }, [users, open]);
+
+  const assign = useCallback(async (user: { name: string; email: string; department: string | null }) => {
+    await supabase.from("agent_insights").update({
+      assignee_name: user.name,
+      assignee_email: user.email,
+      assignee_department: user.department ?? "",
+    }).eq("id", insightId);
+    onChanged(user.name, user.email, user.department ?? "");
+    setOpen(false);
+  }, [insightId, onChanged]);
+
+  return (
+    <div className="mt-2">
+      <button
+        onClick={loadUsers}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
+      >
+        <UserCheck className="h-3 w-3" />
+        <span>→ {currentName}</span>
+        <span className="text-[10px] opacity-50">(cambiar)</span>
+      </button>
+
+      {open && (
+        <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border bg-background shadow-lg">
+          {users.map((u) => (
+            <button
+              key={u.email}
+              onClick={() => assign(u)}
+              className={cn(
+                "flex items-center justify-between w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors",
+                u.email === currentEmail && "bg-primary/10 font-medium"
+              )}
+            >
+              <span className="truncate">{u.name}</span>
+              <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{u.department ?? ""}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
