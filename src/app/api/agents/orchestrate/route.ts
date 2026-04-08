@@ -1030,7 +1030,7 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
         // Working capital: liquidity position
         sb.from("working_capital").select("*").limit(1),
         // Cash flow runway: days until payroll shortfall
-        sb.rpc("cashflow_runway"),
+        sb.rpc("cashflow_runway").then(r => r).catch(() => ({ data: null, error: "rpc_failed" })),
       ]);
       const receivables = ((cashflow.data ?? []) as Record<string, unknown>[]).filter(r => r.flow_type === "receivable");
       const cashSummary = ((cashflow.data ?? []) as Record<string, unknown>[]).find(r => r.flow_type === "summary");
