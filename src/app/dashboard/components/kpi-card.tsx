@@ -10,7 +10,7 @@ export interface KPICardProps {
   subtitle?: string;
   icon: React.ElementType;
   href: string;
-  variant?: "default" | "danger" | "warning" | "success" | "info";
+  variant?: "default" | "danger" | "warning" | "success" | "info" | "primary";
   className?: string;
 }
 
@@ -20,6 +20,7 @@ const colors = {
   warning: "border-warning/30 bg-warning/5 hover:bg-warning/10",
   success: "border-success/30 bg-success/5 hover:bg-success/10",
   info: "border-info/30 bg-info/5 hover:bg-info/10",
+  primary: "border-primary/30 bg-primary/5 hover:bg-primary/10",
 };
 
 const iconColors = {
@@ -28,6 +29,7 @@ const iconColors = {
   warning: "text-warning",
   success: "text-success",
   info: "text-info",
+  primary: "text-primary",
 };
 
 const valueColors = {
@@ -36,6 +38,7 @@ const valueColors = {
   warning: "text-warning",
   success: "text-success",
   info: "text-info",
+  primary: "text-primary",
 };
 
 export function KPICard({
@@ -49,7 +52,7 @@ export function KPICard({
             <Icon className={cn("h-4 w-4 shrink-0", iconColors[variant])} />
             <span className="truncate leading-tight">{title}</span>
           </div>
-          <p className={cn("text-xl sm:text-2xl font-black tabular-nums truncate", valueColors[variant])}>
+          <p className={cn("text-xl font-bold tabular-nums truncate sm:text-2xl lg:text-3xl", valueColors[variant])}>
             {value}
           </p>
           {subtitle && (

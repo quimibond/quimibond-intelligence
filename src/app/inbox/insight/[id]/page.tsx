@@ -158,7 +158,7 @@ export default function InsightDetailPage() {
   /* ── loading skeleton ── */
   if (loading) {
     return (
-      <div className="mx-auto max-w-xl space-y-4">
+      <div className="mx-auto max-w-xl space-y-4 lg:max-w-5xl">
         <div className="flex items-center justify-between">
           <Skeleton className="h-5 w-16" />
           <Skeleton className="h-5 w-20" />
@@ -179,7 +179,7 @@ export default function InsightDetailPage() {
   /* ── not found ── */
   if (!insight) {
     return (
-      <div className="mx-auto max-w-xl py-20 text-center">
+      <div className="mx-auto max-w-xl py-20 text-center lg:max-w-5xl">
         <p className="mb-4 text-muted-foreground">Insight no encontrado</p>
         <Button variant="outline" onClick={() => router.push("/inbox")}>
           <ArrowLeft className="mr-2 h-4 w-4" /> Volver al Inbox
@@ -200,50 +200,53 @@ export default function InsightDetailPage() {
      RENDER
      ════════════════════════════════════════════════════════════════ */
   return (
-    <div className="mx-auto w-full max-w-xl">
+    <div className="mx-auto w-full max-w-xl lg:max-w-5xl">
 
-      {/* ═══ PANTALLA 1 — Decisión rápida (sin scroll) ═══ */}
-      <section className="flex min-h-[calc(100dvh-7rem)] flex-col md:min-h-[calc(100dvh-4rem)]">
+      {/* Nav (full width) */}
+      <nav className="mb-3 flex items-center justify-between">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 gap-1.5 text-muted-foreground"
+          onClick={() => router.push("/inbox")}
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Inbox
+        </Button>
 
-        {/* ── Nav: ← Inbox | 1/8 | < > ── */}
-        <nav className="flex items-center justify-between">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="-ml-2 gap-1.5 text-muted-foreground"
-            onClick={() => router.push("/inbox")}
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Inbox
-          </Button>
+        {navIds.length > 1 && (
+          <div className="flex items-center gap-1">
+            <span className="mr-1 text-xs tabular-nums text-muted-foreground">
+              {currentNavIndex + 1}/{navIds.length}
+            </span>
+            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!prevId}
+              onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}>
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
+            <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!nextId}
+              onClick={() => nextId && router.push(`/inbox/insight/${nextId}`)}>
+              <ChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        )}
+      </nav>
 
-          {navIds.length > 1 && (
-            <div className="flex items-center gap-1">
-              <span className="mr-1 text-xs tabular-nums text-muted-foreground">
-                {currentNavIndex + 1}/{navIds.length}
-              </span>
-              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!prevId}
-                onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}>
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!nextId}
-                onClick={() => nextId && router.push(`/inbox/insight/${nextId}`)}>
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
-          )}
-        </nav>
+      {/* Mobile: stacked | Desktop: side-by-side */}
+      <div className="lg:grid lg:grid-cols-5 lg:gap-8">
+
+      {/* ═══ PANTALLA 1 — Decisión rápida ═══ */}
+      <section className="flex min-h-[calc(100dvh-10rem)] flex-col lg:col-span-3 lg:min-h-0">
 
         {/* ── Título + severity dot ── */}
-        <div className="mt-3 flex items-start gap-3">
+        <div className="flex items-start gap-3">
           <span className={cn("mt-2 h-2.5 w-2.5 shrink-0 rounded-full", sevDot)} />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-lg font-bold leading-tight">{insight.title}</h1>
+              <h1 className="text-lg font-bold leading-tight lg:text-xl">{insight.title}</h1>
               <Badge variant={sevVariant} className="text-[10px]">{sevLabel}</Badge>
             </div>
             {insight.description && (
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground lg:text-base">
                 {insight.description}
               </p>
             )}
@@ -320,10 +323,10 @@ export default function InsightDetailPage() {
           {/* Botones [Descartar] [Actuar] */}
           {!isDone && !showActions && (
             <div className="grid grid-cols-2 gap-3">
-              <Button variant="outline" size="lg" className="h-12 w-full" onClick={handleDismiss}>
+              <Button variant="outline" size="lg" className="h-12 w-full lg:h-11" onClick={handleDismiss}>
                 <ThumbsDown className="mr-2 h-4 w-4" /> Descartar
               </Button>
-              <Button size="lg" className="h-12 w-full" onClick={() => setShowActions(true)}>
+              <Button size="lg" className="h-12 w-full lg:h-11" onClick={() => setShowActions(true)}>
                 <ThumbsUp className="mr-2 h-4 w-4" /> Actuar
               </Button>
             </div>
@@ -381,10 +384,10 @@ export default function InsightDetailPage() {
         </div>
       </section>
 
-      {/* ═══ PANTALLA 2 — Contexto (scroll) ═══ */}
-      {hasContext && (
-        <section className="pb-4">
-          <Separator className="my-5" />
+      {/* ═══ PANTALLA 2 — Contexto (scroll / sidebar on desktop) ═══ */}
+      {hasContext ? (
+        <section className="pb-4 lg:col-span-2">
+          <Separator className="my-5 lg:hidden" />
 
           <Accordion type="multiple" defaultValue={["evidencia"]} className="w-full">
 
@@ -512,7 +515,9 @@ export default function InsightDetailPage() {
             )}
           </Accordion>
         </section>
-      )}
+      ) : null}
+
+      </div>{/* /lg:grid */}
     </div>
   );
 }
