@@ -96,7 +96,7 @@ export default function DashboardPage() {
         revenueR, invoicedR, cashflowR, anomalyR, briefingR,
       ] = await Promise.all([
         sq(supabase.from("odoo_sale_orders").select("date_order, amount_untaxed, salesperson_name").gte("date_order", rangeStr).in("state", ["sale", "done"]).limit(1000)),
-        sq(supabase.from("odoo_payments").select("payment_date, amount").gte("payment_date", monthStr).eq("payment_type", "inbound").limit(1000)),
+        sq(supabase.from("odoo_account_payments").select("date, amount").gte("date", monthStr).eq("payment_type", "inbound").limit(1000)),
         sq(supabase.from("odoo_invoices").select("amount_residual, days_overdue").eq("move_type", "out_invoice").in("payment_state", ["not_paid", "partial"]).gt("days_overdue", 0)),
         sq(supabase.from("odoo_deliveries").select("state, date_done, scheduled_date, is_late").limit(1000)),
         sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", todayStr).lt("email_date", tomorrowStr)),
@@ -133,10 +133,10 @@ export default function DashboardPage() {
       const vendedoresMes = [...vMap.entries()].map(([name, s]) => ({ name, ...s })).sort((a, b) => b.total - a.total).slice(0, 5);
 
       // Payments
-      const payments = (paymentsR ?? []) as { payment_date: string; amount: number }[];
-      const pToday = payments.filter(r => r.payment_date >= todayStr && r.payment_date < tomorrowStr);
+      const payments = (paymentsR ?? []) as { date: string; amount: number }[];
+      const pToday = payments.filter(r => r.date >= todayStr && r.date < tomorrowStr);
       const cobrosHoy = pToday.reduce((s, r) => s + Number(r.amount ?? 0), 0);
-      const cobrosEstaSemana = payments.filter(r => r.payment_date >= thisWeekStr).reduce((s, r) => s + Number(r.amount ?? 0), 0);
+      const cobrosEstaSemana = payments.filter(r => r.date >= thisWeekStr).reduce((s, r) => s + Number(r.amount ?? 0), 0);
 
       // Overdue + aging
       const overdue = (overdueR ?? []) as { amount_residual: number; days_overdue: number }[];

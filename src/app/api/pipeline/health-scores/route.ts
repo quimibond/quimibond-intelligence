@@ -54,8 +54,8 @@ export async function POST(request: NextRequest) {
         .not("company_id", "is", null)
         .gte("email_date", new Date(Date.now() - 90 * 86400_000).toISOString()),
 
-      supabase.from("odoo_payments")
-        .select("company_id, amount, payment_date")
+      supabase.from("odoo_account_payments")
+        .select("company_id, amount, date")
         .eq("payment_type", "inbound"),
     ]);
 

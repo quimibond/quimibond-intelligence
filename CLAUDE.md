@@ -449,6 +449,8 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 - `odoo_order_lines`, `odoo_sale_orders`, `odoo_purchase_orders`
 - `odoo_deliveries`, `odoo_crm_leads`, `odoo_activities`
 - `odoo_manufacturing`, `odoo_orderpoints`
+- `cfdi_documents` — CFDIs parseados de email XML (tipo I/N/P, con UUID para cruce)
+- `budgets` — Presupuestos mensuales por cuenta contable (entrada manual)
 
 **Metrics:**
 - `health_scores` — Scores calculados por contacto
@@ -489,6 +491,7 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | `get_agents_overview()` | Dashboard de agentes |
 | `get_employee_dashboard()` | Metricas de empleados |
 | `get_department_comparison()` | Comparacion de departamentos |
+| `cashflow_runway()` | Alerta de cash flow: dias hasta que no alcanza para nomina |
 
 ---
 
@@ -597,6 +600,9 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | `cash_flow_aging` | Aging de cartera por empresa (1-30, 31-60, 61-90, 90+) |
 | `monthly_revenue_trend` | Tendencia de revenue mensual con MoM% |
 | `margin_analysis` | Análisis de márgenes por producto y cliente |
+| `working_capital` | Capital de trabajo: efectivo + CxC - CxP, ratios de liquidez |
+| `budget_vs_actual` | Presupuesto vs real por cuenta contable y periodo |
+| `cfdi_invoice_match` | Cruce CFDI ↔ factura via UUID (matched/unmatched/no_uuid) |
 
 ### Modelos pendientes
 

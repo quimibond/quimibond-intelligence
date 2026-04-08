@@ -152,17 +152,41 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Backfill: re-extract UUID from existing records with null uuid ──
+    let backfilled = 0;
+    const { data: nullUuids } = await supabase
+      .from("cfdi_documents")
+      .select("id, raw_xml")
+      .is("uuid", null)
+      .not("raw_xml", "is", null)
+      .limit(200);
+
+    for (const doc of nullUuids ?? []) {
+      const rawXml = doc.raw_xml as string;
+      // Try the improved TimbreFiscalDigital extraction
+      const timbre = rawXml.match(/<(?:tfd:)?TimbreFiscalDigital\s([\s\S]+?)\/?>/);
+      let docUuid = extractAttr(timbre?.[1], "UUID");
+      if (!docUuid) {
+        const direct = rawXml.match(/UUID="([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"/i);
+        docUuid = direct?.[1] ?? null;
+      }
+      if (docUuid) {
+        await supabase.from("cfdi_documents").update({ uuid: docUuid }).eq("id", doc.id);
+        backfilled++;
+      }
+    }
+
     // Log results
-    if (parsed > 0 || errors > 0) {
+    if (parsed > 0 || errors > 0 || backfilled > 0) {
       await supabase.from("pipeline_logs").insert({
         level: errors > 0 ? "warning" : "info",
         phase: "cfdi_parse",
-        message: `CFDI: ${parsed} parsed, ${errors} errors from ${xmlEmails.length} emails`,
-        details: { parsed, errors, emails_checked: xmlEmails.length },
+        message: `CFDI: ${parsed} parsed, ${backfilled} UUIDs backfilled, ${errors} errors from ${xmlEmails.length} emails`,
+        details: { parsed, backfilled, errors, emails_checked: xmlEmails.length },
       });
     }
 
-    return NextResponse.json({ success: true, parsed, errors, emails_with_xml: xmlEmails.length });
+    return NextResponse.json({ success: true, parsed, backfilled, errors, emails_with_xml: xmlEmails.length });
   } catch (err) {
     console.error("[cfdi] Error:", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
@@ -252,8 +276,16 @@ function parseCFDI(xml: string): CFDIData | null {
     if (!emisorRfc && !receptorRfc) return null; // Not a valid CFDI
 
     // Extract UUID from TimbreFiscalDigital
-    const timbre = xml.match(/<(?:tfd:)?TimbreFiscalDigital\s([^/>]+)\/?>/);
-    const uuid = extractAttr(timbre?.[1], "UUID");
+    // Note: [\s\S]+? instead of [^/>]+ because attributes contain URLs with /
+    // (xsi:schemaLocation) and base64 with / (SelloCFD, SelloSAT) before UUID
+    const timbre = xml.match(/<(?:tfd:)?TimbreFiscalDigital\s([\s\S]+?)\/?>/);
+    let uuid = extractAttr(timbre?.[1], "UUID");
+
+    // Fallback: direct UUID pattern match (robust against namespace variations)
+    if (!uuid) {
+      const directUuid = xml.match(/UUID="([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})"/i);
+      uuid = directUuid?.[1] ?? null;
+    }
 
     // Extract Conceptos
     const conceptos: CFDIData["conceptos"] = [];

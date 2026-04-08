@@ -37,7 +37,8 @@ function paymentTypeLabel(type: string | null): { label: string; variant: "succe
 function stateLabel(state: string | null): { label: string; variant: "success" | "warning" | "secondary" | "critical" | "info" } {
   switch (state) {
     case "posted":
-      return { label: "Publicado", variant: "success" };
+    case "paid":
+      return { label: "Pagado", variant: "success" };
     case "draft":
       return { label: "Borrador", variant: "secondary" };
     case "sent":
@@ -59,10 +60,10 @@ export function TabPagos({ companyId }: TabPagosProps) {
   useEffect(() => {
     async function fetchPayments() {
       const { data } = await supabase
-        .from("odoo_payments")
+        .from("odoo_account_payments")
         .select("*")
         .eq("company_id", companyId)
-        .order("payment_date", { ascending: false })
+        .order("date", { ascending: false })
         .limit(100);
 
       setPayments(data ?? []);
@@ -124,7 +125,7 @@ export function TabPagos({ companyId }: TabPagosProps) {
                   {p.currency ?? "—"}
                 </TableCell>
                 <TableCell className="text-sm tabular-nums text-muted-foreground whitespace-nowrap">
-                  {formatDate(p.payment_date)}
+                  {formatDate(p.date)}
                 </TableCell>
                 <TableCell>
                   <Badge variant={stateInfo.variant}>{stateInfo.label}</Badge>

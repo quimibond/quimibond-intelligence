@@ -100,11 +100,11 @@ export async function POST(request: NextRequest) {
         .order("created_at", { ascending: false })
         .limit(10),
 
-      // 6. Recent payments
+      // 6. Recent payments (real payments with bank/method detail)
       supabase
-        .from("odoo_payments")
-        .select("company_id, amount, payment_date")
-        .gte("payment_date", new Date(Date.now() - 3 * 24 * 3600_000).toISOString().split("T")[0])
+        .from("odoo_account_payments")
+        .select("company_id, amount, date, journal_name, payment_method")
+        .gte("date", new Date(Date.now() - 3 * 24 * 3600_000).toISOString().split("T")[0])
         .order("amount", { ascending: false })
         .limit(5),
 

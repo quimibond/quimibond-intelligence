@@ -62,10 +62,10 @@ export async function buildOdooContext(
 
       partnerIds.length
         ? supabase
-            .from("odoo_payments")
+            .from("odoo_account_payments")
             .select("*")
             .in("odoo_partner_id", partnerIds)
-            .order("payment_date", { ascending: false })
+            .order("date", { ascending: false })
         : Promise.resolve({ data: [] }),
 
       partnerIds.length
@@ -158,7 +158,7 @@ export async function buildOdooContext(
 
     const recentPayments = payments.slice(0, 10).map(p => ({
       name: p.name,
-      date: p.payment_date ?? "",
+      date: p.date ?? "",
       amount: p.amount ?? 0,
       payment_type: p.payment_type ?? "inbound",
     }));
