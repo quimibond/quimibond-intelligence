@@ -5,22 +5,28 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { toast } from "sonner";
 import {
-  ArrowLeft, ChevronLeft, ChevronRight, Loader2,
-  Mail, MessageSquare, Share2, ThumbsDown, ThumbsUp,
-  Send, Clock, Check, CalendarClock, UserCheck,
-  FileText, Building2, Users,
+  ArrowLeft, ChevronLeft, ChevronRight,
+  Mail, MessageSquare, ThumbsDown, ThumbsUp,
+  Send, FileText, Building2, Users,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import {
+  Accordion, AccordionContent, AccordionItem, AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CompanyIntelCards } from "@/app/companies/[id]/components/company-intel-cards";
+import { QuickActions } from "./components/quick-actions";
+import { ShareWhatsApp } from "./components/share-whatsapp";
+import { FollowUpBanner } from "./components/follow-up-banner";
+import { AssigneeSelector } from "./components/assignee-selector";
 
+/* ── severity helpers ── */
 const SEV_DOTS: Record<string, string> = {
   critical: "bg-danger", high: "bg-warning", medium: "bg-warning/60",
 };
@@ -29,6 +35,7 @@ export default function InsightDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
 
+  /* ── state ── */
   const [insight, setInsight] = useState<AgentInsight | null>(null);
   const [company, setCompany] = useState<Company | null>(null);
   const [crossSignals, setCrossSignals] = useState<{ director_name: string; title: string; severity: string }[]>([]);
@@ -43,6 +50,7 @@ export default function InsightDetailPage() {
 
   const insightId = parseInt(params.id);
 
+  /* ── data loading ── */
   useEffect(() => {
     async function load() {
       setLoading(true);
@@ -52,18 +60,16 @@ export default function InsightDetailPage() {
       if (!ins) { setLoading(false); return; }
       setInsight(ins as AgentInsight);
 
-      // Mark as seen
       if (ins.state === "new") {
         supabase.from("agent_insights").update({ state: "seen" }).eq("id", insightId).then(() => {});
       }
 
-      // Load all context in parallel
-      const [navRes, companyRes, crossRes, historyRes, emailsRes, actionsRes] = await Promise.all([
+      const [navRes, companyRes, crossRes, historyRes, , actionsRes] = await Promise.all([
         supabase.from("agent_insights").select("id").in("state", ["new", "seen"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(50),
         ins.company_id ? supabase.from("companies").select("id, name, canonical_name").eq("id", ins.company_id).single() : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("cross_director_signals").select("director_name, title, severity").eq("company_id", ins.company_id).neq("title", ins.title).limit(5) : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("company_insight_history").select("total_insights_30d, times_acted, times_dismissed, which_directors").eq("company_id", ins.company_id).single() : Promise.resolve({ data: null }),
-        Promise.resolve({ data: null }), // emails loaded separately below
+        Promise.resolve({ data: null }),
         supabase.from("action_items").select("id, description, assignee_name, assignee_email, priority, state, due_date").eq("alert_id", insightId).order("priority", { ascending: true }),
       ]);
 
@@ -73,7 +79,6 @@ export default function InsightDetailPage() {
       if (historyRes.data) setInsightHistory(historyRes.data as typeof insightHistory);
       if (actionsRes.data) setActionItems(actionsRes.data as typeof actionItems);
 
-      // Smart email search: find emails related to this insight
       if (ins.company_id) {
         const stopwords = new Set(["de","del","la","el","en","sin","por","con","para","los","las","un","una","que","no","se","su","al","es","y","o","a","e","mas","como","esta","esto"]);
         const keywords = (ins.title ?? "").split(/[\s—–\-:,.|()\/\$]+/)
@@ -83,10 +88,8 @@ export default function InsightDetailPage() {
 
         let emails: typeof relatedEmails = [];
 
-        // Try keyword search: use textSearch on subject if we have good keywords
         if (keywords.length >= 1) {
-          // Search each keyword individually, intersect results
-          const topKeyword = keywords[0]; // most distinctive word (usually company name)
+          const topKeyword = keywords[0];
           try {
             const { data } = await supabase.from("emails")
               .select("id, subject, sender, email_date, snippet")
@@ -96,12 +99,10 @@ export default function InsightDetailPage() {
               .limit(5);
             emails = data ?? [];
           } catch {
-            // Fallback on any query error
             emails = [];
           }
         }
 
-        // Fallback: most recent from company
         if (emails.length === 0) {
           const { data } = await supabase.from("emails")
             .select("id, subject, sender, email_date, snippet")
@@ -113,7 +114,6 @@ export default function InsightDetailPage() {
 
         setRelatedEmails(emails as typeof relatedEmails);
 
-        // Load company contacts for action panel
         const { data: contacts } = await supabase
           .from("contacts")
           .select("name, email, role")
@@ -128,23 +128,12 @@ export default function InsightDetailPage() {
     load();
   }, [insightId]);
 
-  // Navigation
+  /* ── navigation ── */
   const currentNavIndex = navIds.indexOf(insightId);
   const prevId = currentNavIndex > 0 ? navIds[currentNavIndex - 1] : null;
   const nextId = currentNavIndex < navIds.length - 1 ? navIds[currentNavIndex + 1] : null;
 
-  // Actions
-  const handleAct = useCallback(async () => {
-    if (!insight) return;
-    setActing(true);
-    try {
-      const { error } = await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
-      if (error) { toast.error("Error: " + error.message); return; }
-      setInsight({ ...insight, state: "acted_on" });
-      toast.success("Marcado como util");
-    } finally { setActing(false); }
-  }, [insight]);
-
+  /* ── actions ── */
   const handleDismiss = useCallback(async () => {
     if (!insight) return;
     const { error } = await supabase.from("agent_insights").update({ state: "dismissed", was_useful: false }).eq("id", insight.id);
@@ -154,7 +143,7 @@ export default function InsightDetailPage() {
     else router.push("/inbox");
   }, [insight, router, nextId]);
 
-  // Keyboard shortcuts
+  /* ── keyboard shortcuts ── */
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -166,49 +155,73 @@ export default function InsightDetailPage() {
     return () => document.removeEventListener("keydown", onKey);
   }, [router, prevId, nextId]);
 
-  // Loading
+  /* ── loading skeleton ── */
   if (loading) {
     return (
-      <div className="max-w-xl mx-auto space-y-4 pt-2">
-        <Skeleton className="h-5 w-20" />
-        <Skeleton className="h-8 w-full" />
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <Skeleton className="h-10 w-full" />
+      <div className="mx-auto max-w-xl space-y-4">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-5 w-16" />
+          <Skeleton className="h-5 w-20" />
+        </div>
+        <div className="space-y-2">
+          <Skeleton className="h-6 w-3/4" />
+          <Skeleton className="h-4 w-full" />
+        </div>
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <div className="flex gap-3">
+          <Skeleton className="h-11 flex-1 rounded-lg" />
+          <Skeleton className="h-11 flex-1 rounded-lg" />
+        </div>
       </div>
     );
   }
 
+  /* ── not found ── */
   if (!insight) {
     return (
-      <div className="max-w-xl mx-auto text-center py-20">
-        <p className="text-muted-foreground mb-4">Insight no encontrado</p>
-        <Button variant="outline" onClick={() => router.push("/inbox")}>Volver al Inbox</Button>
+      <div className="mx-auto max-w-xl py-20 text-center">
+        <p className="mb-4 text-muted-foreground">Insight no encontrado</p>
+        <Button variant="outline" onClick={() => router.push("/inbox")}>
+          <ArrowLeft className="mr-2 h-4 w-4" /> Volver al Inbox
+        </Button>
       </div>
     );
   }
 
+  /* ── computed ── */
   const isDone = ["acted_on", "dismissed", "expired"].includes(insight.state ?? "");
   const evidence = Array.isArray(insight.evidence) ? insight.evidence as { text?: string; fact?: string }[] : [];
   const sevDot = SEV_DOTS[insight.severity ?? "medium"] ?? "bg-gray-400";
   const sevLabel = insight.severity === "critical" ? "Crítico" : insight.severity === "high" ? "Alto" : "Medio";
   const sevVariant = insight.severity === "critical" ? "critical" as const : insight.severity === "high" ? "warning" as const : "secondary" as const;
-
   const hasContext = evidence.length > 0 || relatedEmails.length > 0 || !!insight.company_id || crossSignals.length > 0;
 
+  /* ════════════════════════════════════════════════════════════════
+     RENDER
+     ════════════════════════════════════════════════════════════════ */
   return (
-    <div className="max-w-xl mx-auto pb-24 md:pb-8">
-      {/* ════════════════════════════════════════════════════════════
-          PANTALLA 1 — Decisión rápida (sin scroll)
-          ════════════════════════════════════════════════════════════ */}
-      <div className="space-y-3">
-        {/* ── Nav bar: ← Inbox | 1/8 | < > ── */}
-        <div className="flex items-center justify-between">
-          <button onClick={() => router.push("/inbox")} className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-4 w-4" /> Inbox
-          </button>
+    <div className="mx-auto w-full max-w-xl">
+
+      {/* ═══ PANTALLA 1 — Decisión rápida (sin scroll) ═══ */}
+      <section className="flex min-h-[calc(100dvh-7rem)] flex-col md:min-h-[calc(100dvh-4rem)]">
+
+        {/* ── Nav: ← Inbox | 1/8 | < > ── */}
+        <nav className="flex items-center justify-between">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="-ml-2 gap-1.5 text-muted-foreground"
+            onClick={() => router.push("/inbox")}
+          >
+            <ArrowLeft className="h-4 w-4" />
+            Inbox
+          </Button>
+
           {navIds.length > 1 && (
             <div className="flex items-center gap-1">
-              <span className="text-[11px] text-muted-foreground mr-1">{currentNavIndex + 1}/{navIds.length}</span>
+              <span className="mr-1 text-xs tabular-nums text-muted-foreground">
+                {currentNavIndex + 1}/{navIds.length}
+              </span>
               <Button size="icon" variant="ghost" className="h-8 w-8" disabled={!prevId}
                 onClick={() => prevId && router.push(`/inbox/insight/${prevId}`)}>
                 <ChevronLeft className="h-4 w-4" />
@@ -219,185 +232,174 @@ export default function InsightDetailPage() {
               </Button>
             </div>
           )}
-        </div>
+        </nav>
 
-        {/* ── Título + severity badge ── */}
-        <div className="flex items-start gap-2.5">
-          <div className={cn("h-2.5 w-2.5 rounded-full mt-2 shrink-0", sevDot)} />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg font-black leading-snug">{insight.title}</h1>
-              <Badge variant={sevVariant} className="text-[10px] shrink-0">{sevLabel}</Badge>
+        {/* ── Título + severity dot ── */}
+        <div className="mt-3 flex items-start gap-3">
+          <span className={cn("mt-2 h-2.5 w-2.5 shrink-0 rounded-full", sevDot)} />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-lg font-bold leading-tight">{insight.title}</h1>
+              <Badge variant={sevVariant} className="text-[10px]">{sevLabel}</Badge>
             </div>
             {insight.description && (
-              <p className="text-sm text-muted-foreground leading-relaxed mt-1">{insight.description}</p>
+              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
+                {insight.description}
+              </p>
             )}
           </div>
         </div>
 
         {/* ── Acciones compactas (1 línea por acción) ── */}
-        {actionItems.length > 0 ? (
-          <div className="space-y-1">
-            {actionItems.map((action) => (
-              <div
-                key={action.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-lg border px-3 py-2",
-                  action.state === "completed" ? "opacity-50 bg-muted/30" : "bg-primary/5 border-primary/20"
-                )}
-              >
-                <p className="text-sm flex-1 min-w-0 truncate">{action.description}</p>
-                {action.assignee_name && action.assignee_email ? (
-                  <a
-                    href={`mailto:${action.assignee_email}?subject=${encodeURIComponent(`Acción: ${action.description.slice(0, 60)}`)}&body=${encodeURIComponent(`Hola ${action.assignee_name.split(" ")[0]},\n\n${action.description}\n\nContexto: ${insight.title}\n\nSaludos`)}`}
-                    className="flex items-center gap-1 text-xs text-primary hover:underline shrink-0"
+        <div className="mt-3 flex-1 space-y-2">
+          {actionItems.length > 0 ? (
+            <Card>
+              <CardContent className="divide-y p-0">
+                {actionItems.map((action) => (
+                  <div
+                    key={action.id}
+                    className={cn(
+                      "flex items-center gap-3 px-4 py-2.5",
+                      action.state === "completed" && "opacity-50",
+                    )}
                   >
-                    <Send className="h-3 w-3" />
-                    {action.assignee_name.split(" ")[0]}
-                  </a>
-                ) : (
-                  <span className="text-xs text-muted-foreground shrink-0">{action.assignee_name ?? "Sin asignar"}</span>
-                )}
-                {action.state === "pending" && (
-                  <button
-                    onClick={async () => {
-                      await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
-                      setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
-                      toast.success("Acción completada");
+                    <p className="min-w-0 flex-1 truncate text-sm">{action.description}</p>
+
+                    {action.assignee_name && action.assignee_email ? (
+                      <a
+                        href={`mailto:${action.assignee_email}?subject=${encodeURIComponent(`Acción: ${action.description.slice(0, 60)}`)}&body=${encodeURIComponent(`Hola ${action.assignee_name.split(" ")[0]},\n\n${action.description}\n\nContexto: ${insight.title}\n\nSaludos`)}`}
+                        className="inline-flex shrink-0 items-center gap-1 text-xs text-primary hover:underline"
+                      >
+                        <Send className="h-3 w-3" />
+                        {action.assignee_name.split(" ")[0]}
+                      </a>
+                    ) : (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {action.assignee_name ?? "Sin asignar"}
+                      </span>
+                    )}
+
+                    {action.state === "pending" && (
+                      <button
+                        onClick={async () => {
+                          await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
+                          setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
+                          toast.success("Acción completada");
+                        }}
+                        className="shrink-0 text-xs font-semibold text-primary hover:underline"
+                      >
+                        ✓ Hecho
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          ) : insight.recommendation ? (
+            <Card className="border-primary/20 bg-primary/5">
+              <CardContent className="px-4 py-3">
+                <p className="text-sm leading-relaxed">{insight.recommendation}</p>
+                {insight.assignee_name && (
+                  <AssigneeSelector
+                    insightId={insight.id}
+                    currentName={insight.assignee_name}
+                    currentEmail={insight.assignee_email ?? ""}
+                    onChanged={(name, email, dept) => {
+                      setInsight({ ...insight, assignee_name: name, assignee_email: email, assignee_department: dept });
+                      toast.success(`Reasignado a ${name}`);
                     }}
-                    className="text-[10px] text-primary font-semibold hover:underline shrink-0"
-                  >
-                    ✓ Hecho
-                  </button>
+                  />
                 )}
-              </div>
-            ))}
-          </div>
-        ) : insight.recommendation ? (
-          <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2">
-            <p className="text-sm leading-relaxed">{insight.recommendation}</p>
-            {insight.assignee_name && (
-              <AssigneeSelector
-                insightId={insight.id}
-                currentName={insight.assignee_name}
-                currentEmail={insight.assignee_email ?? ""}
-                onChanged={(name, email, dept) => {
-                  setInsight({ ...insight, assignee_name: name, assignee_email: email, assignee_department: dept });
-                  toast.success(`Reasignado a ${name}`);
-                }}
-              />
-            )}
-          </div>
-        ) : null}
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
 
-        {/* ── Botones [Descartar] [Actuar] ── */}
-        {!isDone && !showActions && (
-          <div className="flex gap-2">
-            <Button variant="outline" className="flex-1 h-11" onClick={handleDismiss}>
-              <ThumbsDown className="h-4 w-4 mr-2" /> Descartar
-            </Button>
-            <Button className="flex-1 h-11" onClick={() => setShowActions(true)}>
-              <ThumbsUp className="h-4 w-4 mr-2" /> Actuar
-            </Button>
-          </div>
-        )}
+        {/* ── Footer: botones + status + meta ── */}
+        <div className="mt-auto space-y-3 pt-4">
+          {/* Botones [Descartar] [Actuar] */}
+          {!isDone && !showActions && (
+            <div className="grid grid-cols-2 gap-3">
+              <Button variant="outline" size="lg" className="h-12 w-full" onClick={handleDismiss}>
+                <ThumbsDown className="mr-2 h-4 w-4" /> Descartar
+              </Button>
+              <Button size="lg" className="h-12 w-full" onClick={() => setShowActions(true)}>
+                <ThumbsUp className="mr-2 h-4 w-4" /> Actuar
+              </Button>
+            </div>
+          )}
 
-        {/* ── Quick Actions Panel (appears after tapping Actuar) ── */}
-        {!isDone && showActions && (
-          <QuickActions
-            insight={insight}
-            company={company}
-            companyContacts={companyContacts}
-            onDone={async (followUpDays?: number) => {
-              setActing(true);
-              try {
-                await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
-                if (followUpDays) {
-                  const followUpDate = new Date(Date.now() + followUpDays * 86400_000).toISOString().split("T")[0];
-                  await supabase.from("insight_follow_ups").insert({
-                    insight_id: insight.id,
-                    company_id: insight.company_id,
-                    follow_up_date: followUpDate,
-                    status: "pending",
-                  });
-                }
-                setInsight({ ...insight, state: "acted_on" });
-                toast.success("Marcado como útil");
-              } finally { setActing(false); }
-            }}
-            onCancel={() => setShowActions(false)}
-            acting={acting}
-          />
-        )}
+          {/* Quick Actions Panel */}
+          {!isDone && showActions && (
+            <QuickActions
+              insight={insight}
+              company={company}
+              companyContacts={companyContacts}
+              onDone={async (followUpDays?: number) => {
+                setActing(true);
+                try {
+                  await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", insight.id);
+                  if (followUpDays) {
+                    const followUpDate = new Date(Date.now() + followUpDays * 86400_000).toISOString().split("T")[0];
+                    await supabase.from("insight_follow_ups").insert({
+                      insight_id: insight.id,
+                      company_id: insight.company_id,
+                      follow_up_date: followUpDate,
+                      status: "pending",
+                    });
+                  }
+                  setInsight({ ...insight, state: "acted_on" });
+                  toast.success("Marcado como útil");
+                } finally { setActing(false); }
+              }}
+              onCancel={() => setShowActions(false)}
+              acting={acting}
+            />
+          )}
 
-        {/* ── Status banner (when done) ── */}
-        {isDone && (
-          <div className={cn(
-            "rounded-xl px-4 py-2.5 text-sm font-medium text-center",
-            insight.state === "acted_on" ? "bg-success/10 text-success-foreground" : "bg-muted text-muted-foreground"
-          )}>
-            {insight.state === "acted_on" ? "Marcado como util" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
-          </div>
-        )}
+          {/* Status banner */}
+          {isDone && (
+            <Card className={cn(
+              insight.state === "acted_on"
+                ? "border-success/30 bg-success/10"
+                : "bg-muted",
+            )}>
+              <CardContent className="py-3 text-center text-sm font-medium">
+                {insight.state === "acted_on" ? "Marcado como útil" : insight.state === "dismissed" ? "Descartado" : "Expirado"}
+              </CardContent>
+            </Card>
+          )}
 
-        {isDone && <ShareWhatsApp insight={insight} companyName={company?.name} />}
+          {isDone && <ShareWhatsApp insight={insight} companyName={company?.name} />}
 
-        <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
+          <FollowUpBanner insightId={insight.id} state={insight.state ?? ""} />
 
-        {/* ── Meta (tiempo + confianza) ── */}
-        <p className="text-[10px] text-muted-foreground/50 text-center">
-          {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
-        </p>
-      </div>
+          {/* Meta */}
+          <p className="text-center text-[10px] text-muted-foreground/60">
+            {timeAgo(insight.created_at)} · {((insight.confidence ?? 0) * 100).toFixed(0)}% confianza
+          </p>
+        </div>
+      </section>
 
-      {/* ════════════════════════════════════════════════════════════
-          PANTALLA 2 — Contexto (scroll)
-          ════════════════════════════════════════════════════════════ */}
+      {/* ═══ PANTALLA 2 — Contexto (scroll) ═══ */}
       {hasContext && (
-        <>
-          <Separator className="my-4" />
+        <section className="pb-4">
+          <Separator className="my-5" />
 
           <Accordion type="multiple" defaultValue={["evidencia"]} className="w-full">
+
             {/* ── 1. Evidencia ── */}
             {evidence.length > 0 && (
               <AccordionItem value="evidencia">
-                <AccordionTrigger>
+                <AccordionTrigger className="gap-2">
                   <span className="flex items-center gap-2">
                     <FileText className="h-4 w-4 text-muted-foreground" />
                     Evidencia
-                    <Badge variant="secondary" className="text-[10px] ml-1">{evidence.length}</Badge>
+                    <Badge variant="secondary" className="text-[10px]">{evidence.length}</Badge>
                   </span>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <ul className="space-y-1.5">
-                    {evidence.slice(0, 5).map((e, i) => {
-                      const text = String(e.text ?? e.fact ?? e);
-                      const companyId = insight.company_id;
-                      const highlighted = text
-                        .replace(/(\$[\d,.]+[KkMm]?\s*(?:MXN|USD|mxn|usd)?)/g, '<strong>$1</strong>')
-                        .replace(/((?:INV|FACTU)\/[\w\/\-]+)/g, companyId
-                          ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
-                          : '<code>$1</code>')
-                        .replace(/((?:OC|PO)\-?[\w\-]+)/g, companyId
-                          ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
-                          : '<code>$1</code>')
-                        .replace(/((?:PV|SO)[\w\/\-]+)/g, companyId
-                          ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
-                          : '<code>$1</code>')
-                        .replace(/((?:TL\/OUT|TL\/IN)\/[\w\/]+)/g, companyId
-                          ? `<a href="/companies/${companyId}?tab=operaciones" class="text-primary underline">$1</a>`
-                          : '<code>$1</code>')
-                        .replace(/((?:WM|WP|WN|ZN|XJ|HP|PET|K\d)\w{3,})/g,
-                          '<a href="/companies/' + (companyId ?? '') + '?tab=operaciones" class="text-primary underline">$1</a>')
-                        .replace(/(\d+\s*(?:dias?|days?|hrs?|horas?))/gi, '<em>$1</em>');
-                      return (
-                        <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                          <span className="text-muted-foreground/50 mt-0.5 shrink-0">•</span>
-                          <span dangerouslySetInnerHTML={{ __html: highlighted }} className="[&>strong]:text-foreground [&>strong]:font-semibold [&>code]:text-primary [&>code]:text-xs [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:rounded [&>em]:text-foreground [&>a]:no-underline [&>a]:font-medium [&>a]:text-xs [&>a]:bg-primary/10 [&>a]:px-1 [&>a]:py-0.5 [&>a]:rounded" />
-                        </li>
-                      );
-                    })}
-                  </ul>
+                  <EvidenceList evidence={evidence} companyId={insight.company_id} />
                 </AccordionContent>
               </AccordionItem>
             )}
@@ -405,33 +407,37 @@ export default function InsightDetailPage() {
             {/* ── 2. Emails relacionados ── */}
             {relatedEmails.length > 0 && (
               <AccordionItem value="emails">
-                <AccordionTrigger>
+                <AccordionTrigger className="gap-2">
                   <span className="flex items-center gap-2">
                     <Mail className="h-4 w-4 text-muted-foreground" />
                     Emails relacionados
-                    <Badge variant="secondary" className="text-[10px] ml-1">{relatedEmails.length}</Badge>
+                    <Badge variant="secondary" className="text-[10px]">{relatedEmails.length}</Badge>
                   </span>
                 </AccordionTrigger>
                 <AccordionContent>
                   <div className="space-y-1.5">
                     {relatedEmails.map((email) => {
                       const senderName = (email.sender ?? "").replace(/<[^>]+>/, "").trim() || "Desconocido";
-                      const dateStr = email.email_date ? new Date(email.email_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" }) : "";
+                      const dateStr = email.email_date
+                        ? new Date(email.email_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" })
+                        : "";
                       return (
                         <Link
                           key={email.id}
                           href={`/emails/${email.id}`}
-                          className="flex items-start gap-3 rounded-lg border p-3 hover:bg-muted/50 transition-colors"
+                          className="flex items-start gap-3 rounded-lg border p-3 transition-colors hover:bg-muted/50"
                         >
-                          <Mail className="h-4 w-4 text-muted-foreground mt-0.5 shrink-0" />
-                          <div className="flex-1 min-w-0">
+                          <Mail className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
                             <div className="flex items-baseline justify-between gap-2">
-                              <p className="text-sm font-medium truncate">{email.subject ?? "(sin asunto)"}</p>
-                              <span className="text-[10px] text-muted-foreground shrink-0">{dateStr}</span>
+                              <p className="truncate text-sm font-medium">{email.subject ?? "(sin asunto)"}</p>
+                              <span className="shrink-0 text-[10px] text-muted-foreground">{dateStr}</span>
                             </div>
-                            <p className="text-xs text-muted-foreground truncate">{senderName}</p>
+                            <p className="truncate text-xs text-muted-foreground">{senderName}</p>
                             {email.snippet && (
-                              <p className="text-xs text-muted-foreground/70 line-clamp-1 mt-0.5">{email.snippet.slice(0, 120)}</p>
+                              <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground/70">
+                                {email.snippet.slice(0, 120)}
+                              </p>
                             )}
                           </div>
                         </Link>
@@ -445,7 +451,7 @@ export default function InsightDetailPage() {
             {/* ── 3. Intel de empresa ── */}
             {insight.company_id && (
               <AccordionItem value="intel">
-                <AccordionTrigger>
+                <AccordionTrigger className="gap-2">
                   <span className="flex items-center gap-2">
                     <Building2 className="h-4 w-4 text-muted-foreground" />
                     {company?.name ?? "Empresa"}
@@ -457,7 +463,7 @@ export default function InsightDetailPage() {
                     {company && (
                       <Link
                         href={`/chat?q=${encodeURIComponent(`Como va ${company.name}?`)}`}
-                        className="flex items-center gap-2 rounded-lg border p-3 text-sm hover:bg-muted/50 transition-colors"
+                        className="flex items-center gap-2 rounded-lg border p-3 text-sm transition-colors hover:bg-muted/50"
                       >
                         <MessageSquare className="h-4 w-4 text-primary" />
                         <span>Preguntar al Chat sobre {company.name}</span>
@@ -471,7 +477,7 @@ export default function InsightDetailPage() {
             {/* ── 4. Otros directores + historial ── */}
             {(crossSignals.length > 0 || (insightHistory && insightHistory.total_insights_30d > 1)) && (
               <AccordionItem value="directores">
-                <AccordionTrigger>
+                <AccordionTrigger className="gap-2">
                   <span className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-muted-foreground" />
                     Otros directores e historial
@@ -484,14 +490,18 @@ export default function InsightDetailPage() {
                         {crossSignals.map((s, i) => (
                           <div key={i} className="rounded-lg border p-3 text-sm">
                             <span className="font-medium">{s.director_name}</span>
-                            <p className="text-muted-foreground text-xs mt-0.5 line-clamp-2">{s.title}</p>
+                            <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{s.title}</p>
                           </div>
                         ))}
                       </div>
                     )}
                     {insightHistory && insightHistory.total_insights_30d > 1 && (
                       <div className="rounded-lg bg-muted/50 p-3 text-xs text-muted-foreground">
-                        Empresa flaggeada <span className="font-semibold text-foreground">{insightHistory.total_insights_30d} veces</span> en 30 días
+                        Empresa flaggeada{" "}
+                        <span className="font-semibold text-foreground">
+                          {insightHistory.total_insights_30d} veces
+                        </span>{" "}
+                        en 30 días
                         {insightHistory.times_acted > 0 && <> · CEO actuó {insightHistory.times_acted}x</>}
                         {insightHistory.times_dismissed > 0 && <> · descartó {insightHistory.times_dismissed}x</>}
                       </div>
@@ -501,276 +511,49 @@ export default function InsightDetailPage() {
               </AccordionItem>
             )}
           </Accordion>
-        </>
+        </section>
       )}
     </div>
   );
 }
 
-// ── Assignee Selector ──
-function AssigneeSelector({ insightId, currentName, currentEmail, onChanged }: {
-  insightId: number;
-  currentName: string;
-  currentEmail: string;
-  onChanged: (name: string, email: string, dept: string) => void;
+/* ── Evidence bullets (with highlighted links) ── */
+function EvidenceList({ evidence, companyId }: {
+  evidence: { text?: string; fact?: string }[];
+  companyId: number | null;
 }) {
-  const [open, setOpen] = useState(false);
-  const [users, setUsers] = useState<{ name: string; email: string; department: string | null }[]>([]);
-
-  const loadUsers = useCallback(async () => {
-    if (users.length > 0) { setOpen(!open); return; }
-    const { data } = await supabase
-      .from("odoo_users")
-      .select("name, email, department")
-      .not("email", "is", null)
-      .order("name")
-      .limit(50);
-    setUsers((data ?? []) as typeof users);
-    setOpen(true);
-  }, [users, open]);
-
-  const assign = useCallback(async (user: { name: string; email: string; department: string | null }) => {
-    await supabase.from("agent_insights").update({
-      assignee_name: user.name,
-      assignee_email: user.email,
-      assignee_department: user.department ?? "",
-    }).eq("id", insightId);
-    onChanged(user.name, user.email, user.department ?? "");
-    setOpen(false);
-  }, [insightId, onChanged]);
-
   return (
-    <div className="mt-2">
-      <button
-        onClick={loadUsers}
-        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-primary transition-colors"
-      >
-        <UserCheck className="h-3 w-3" />
-        <span>→ {currentName}</span>
-        <span className="text-[10px] opacity-50">(cambiar)</span>
-      </button>
+    <ul className="space-y-1.5">
+      {evidence.slice(0, 5).map((e, i) => {
+        const text = String(e.text ?? e.fact ?? e);
+        const highlighted = text
+          .replace(/(\$[\d,.]+[KkMm]?\s*(?:MXN|USD|mxn|usd)?)/g, '<strong>$1</strong>')
+          .replace(/((?:INV|FACTU)\/[\w\/\-]+)/g, companyId
+            ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+            : '<code>$1</code>')
+          .replace(/((?:OC|PO)\-?[\w\-]+)/g, companyId
+            ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+            : '<code>$1</code>')
+          .replace(/((?:PV|SO)[\w\/\-]+)/g, companyId
+            ? `<a href="/companies/${companyId}?tab=finanzas" class="text-primary underline">$1</a>`
+            : '<code>$1</code>')
+          .replace(/((?:TL\/OUT|TL\/IN)\/[\w\/]+)/g, companyId
+            ? `<a href="/companies/${companyId}?tab=operaciones" class="text-primary underline">$1</a>`
+            : '<code>$1</code>')
+          .replace(/((?:WM|WP|WN|ZN|XJ|HP|PET|K\d)\w{3,})/g,
+            '<a href="/companies/' + (companyId ?? '') + '?tab=operaciones" class="text-primary underline">$1</a>')
+          .replace(/(\d+\s*(?:dias?|days?|hrs?|horas?))/gi, '<em>$1</em>');
 
-      {open && (
-        <div className="mt-2 max-h-48 overflow-y-auto rounded-xl border bg-background shadow-lg">
-          {users.map((u) => (
-            <button
-              key={u.email}
-              onClick={() => assign(u)}
-              className={cn(
-                "flex items-center justify-between w-full px-3 py-2 text-left text-sm hover:bg-muted/50 transition-colors",
-                u.email === currentEmail && "bg-primary/10 font-medium"
-              )}
-            >
-              <span className="truncate">{u.name}</span>
-              <span className="text-[10px] text-muted-foreground shrink-0 ml-2">{u.department ?? ""}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Quick Actions Panel ──
-function QuickActions({ insight, company, companyContacts, onDone, onCancel, acting }: {
-  insight: AgentInsight;
-  company: Company | null;
-  companyContacts: { name: string | null; email: string; role: string | null }[];
-  onDone: (followUpDays?: number) => void;
-  onCancel: () => void;
-  acting: boolean;
-}) {
-  const assigneeEmail = insight.assignee_email ?? "";
-  const assigneeName = insight.assignee_name ?? "Responsable";
-  const companyName = company?.name ?? "la empresa";
-  const title = insight.title ?? "";
-  const recommendation = insight.recommendation ?? "";
-  const impact = insight.business_impact_estimate
-    ? `$${Number(insight.business_impact_estimate).toLocaleString()} MXN`
-    : "";
-
-  // Build email to assignee (internal instruction)
-  const assigneeSubject = `Acción requerida: ${title.slice(0, 80)}`;
-  const assigneeBody = [
-    `Hola ${assigneeName.split(" ")[0]},`,
-    "",
-    `Te comparto un tema que requiere acción inmediata:`,
-    "",
-    `📌 ${title}`,
-    "",
-    `Recomendación: ${recommendation.slice(0, 300)}`,
-    impact ? `\nImpacto estimado: ${impact}` : "",
-    "",
-    "Por favor confirma que acciones vas a tomar y en qué plazo.",
-    "",
-    "Saludos",
-  ].filter(Boolean).join("\n");
-
-  // Build email to company contact (external)
-  const mainContact = companyContacts[0];
-  const contactSubject = `Seguimiento — ${companyName}`;
-  const contactBody = [
-    `Estimado${mainContact?.name ? ` ${mainContact.name.split(" ")[0]}` : ""},`,
-    "",
-    `Le escribo respecto a un tema pendiente con ${companyName}.`,
-    "",
-    recommendation.includes("pago") || recommendation.includes("cobr")
-      ? `Nos gustaría confirmar el estatus de los pagos pendientes y acordar una fecha de regularización.`
-      : recommendation.includes("entrega") || recommendation.includes("envío")
-        ? `Queremos confirmar las fechas de entrega pendientes y asegurar que todo esté en orden.`
-        : `Nos gustaría agendar una llamada para dar seguimiento a temas pendientes.`,
-    "",
-    "Quedo atento a su respuesta.",
-    "",
-    "Saludos cordiales",
-  ].join("\n");
-
-  return (
-    <div className="space-y-2 rounded-2xl border-2 border-primary/20 bg-primary/5 p-4">
-      <p className="text-xs font-semibold text-primary uppercase tracking-wider">¿Qué acción tomar?</p>
-
-      {/* Email to assignee */}
-      {assigneeEmail && (
-        <a
-          href={`mailto:${assigneeEmail}?subject=${encodeURIComponent(assigneeSubject)}&body=${encodeURIComponent(assigneeBody)}`}
-          onClick={() => onDone(3)}
-          className="flex items-center gap-3 rounded-xl border p-3 hover:bg-background transition-colors"
-        >
-          <Send className="h-4 w-4 text-primary shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Instruir a {assigneeName.split(" ")[0]}</p>
-            <p className="text-xs text-muted-foreground truncate">Email con instrucciones + recordatorio 3 días</p>
-          </div>
-        </a>
-      )}
-
-      {/* Email to company contact */}
-      {mainContact && (
-        <a
-          href={`mailto:${mainContact.email}?subject=${encodeURIComponent(contactSubject)}&body=${encodeURIComponent(contactBody)}`}
-          onClick={() => onDone(5)}
-          className="flex items-center gap-3 rounded-xl border p-3 hover:bg-background transition-colors"
-        >
-          <Mail className="h-4 w-4 text-primary shrink-0" />
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-medium">Contactar a {companyName}</p>
-            <p className="text-xs text-muted-foreground truncate">
-              {mainContact.name ?? mainContact.email} + recordatorio 5 días
-            </p>
-          </div>
-        </a>
-      )}
-
-      {/* WhatsApp share */}
-      <ShareWhatsApp insight={insight} companyName={company?.name} />
-
-      {/* Follow-up reminder only */}
-      <button
-        onClick={() => onDone(3)}
-        className="flex items-center gap-3 w-full rounded-xl border p-3 hover:bg-background transition-colors text-left"
-      >
-        <CalendarClock className="h-4 w-4 text-muted-foreground shrink-0" />
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">Recordatorio en 3 días</p>
-          <p className="text-xs text-muted-foreground">El sistema verifica si se resolvió</p>
-        </div>
-      </button>
-
-      {/* Just mark as done */}
-      <button
-        onClick={() => onDone()}
-        disabled={acting}
-        className="flex items-center gap-3 w-full rounded-xl border p-3 hover:bg-background transition-colors text-left"
-      >
-        {acting ? <Loader2 className="h-4 w-4 animate-spin shrink-0" /> : <Check className="h-4 w-4 text-muted-foreground shrink-0" />}
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium">Ya lo resolví</p>
-          <p className="text-xs text-muted-foreground">Solo marcar como útil</p>
-        </div>
-      </button>
-
-      {/* Cancel */}
-      <button
-        onClick={onCancel}
-        className="w-full text-center text-xs text-muted-foreground py-1 hover:text-foreground transition-colors"
-      >
-        Cancelar
-      </button>
-    </div>
-  );
-}
-
-// ── Share via WhatsApp ──
-function ShareWhatsApp({ insight, companyName }: { insight: AgentInsight; companyName?: string | null }) {
-  const handleShare = useCallback(() => {
-    const sevIcon = insight.severity === "critical" ? "🔴" : insight.severity === "high" ? "🟠" : "🟡";
-    const lines: string[] = [];
-    lines.push(`${sevIcon} *${insight.title}*`);
-    if (insight.recommendation) {
-      lines.push("");
-      lines.push(`→ ${insight.recommendation.slice(0, 200)}`);
-    }
-    if (insight.assignee_name) {
-      lines.push("");
-      lines.push(`📋 Responsable: ${insight.assignee_name}`);
-    }
-    if (insight.business_impact_estimate) {
-      lines.push(`💰 Impacto: $${Number(insight.business_impact_estimate).toLocaleString()} MXN`);
-    }
-    const appUrl = typeof window !== "undefined" ? window.location.href : "";
-    if (appUrl) lines.push("", `👉 ${appUrl}`);
-
-    const text = encodeURIComponent(lines.join("\n"));
-    window.open(`https://wa.me/?text=${text}`, "_blank");
-  }, [insight, companyName]);
-
-  return (
-    <button
-      onClick={handleShare}
-      className="flex items-center justify-center gap-2 w-full rounded-xl border p-2.5 text-sm text-muted-foreground hover:bg-muted/50 transition-colors"
-    >
-      <Share2 className="h-4 w-4" />
-      Compartir por WhatsApp
-    </button>
-  );
-}
-
-// ── Follow-up Banner ──
-function FollowUpBanner({ insightId, state }: { insightId: number; state: string }) {
-  const [followUp, setFollowUp] = useState<{
-    status: string; follow_up_date: string; resolution_note: string | null;
-  } | null>(null);
-
-  useEffect(() => {
-    if (state !== "acted_on") return;
-    supabase.from("insight_follow_ups")
-      .select("status, follow_up_date, resolution_note")
-      .eq("insight_id", insightId).limit(1).single()
-      .then(({ data }) => { if (data) setFollowUp(data); });
-  }, [insightId, state]);
-
-  if (!followUp) return null;
-
-  const colors: Record<string, string> = {
-    pending: "bg-info/10 text-info-foreground",
-    improved: "bg-success/10 text-success-foreground",
-    unchanged: "bg-warning/10 text-warning-foreground",
-    worsened: "bg-danger/10 text-danger-foreground",
-  };
-  const labels: Record<string, string> = {
-    pending: "Seguimiento programado",
-    improved: "Mejoro",
-    unchanged: "Sin cambio",
-    worsened: "Empeoro",
-  };
-
-  return (
-    <div className={cn("rounded-xl p-3 text-sm", colors[followUp.status] ?? "bg-muted")}>
-      <div className="flex items-center justify-between">
-        <span className="font-semibold">{labels[followUp.status] ?? followUp.status}</span>
-        <span className="text-xs opacity-70">{followUp.follow_up_date}</span>
-      </div>
-      {followUp.resolution_note && <p className="text-xs mt-1 opacity-80">{followUp.resolution_note}</p>}
-    </div>
+        return (
+          <li key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
+            <span className="mt-0.5 shrink-0 text-muted-foreground/50">•</span>
+            <span
+              dangerouslySetInnerHTML={{ __html: highlighted }}
+              className="[&>a]:rounded [&>a]:bg-primary/10 [&>a]:px-1 [&>a]:py-0.5 [&>a]:text-xs [&>a]:font-medium [&>a]:no-underline [&>code]:rounded [&>code]:bg-primary/10 [&>code]:px-1 [&>code]:text-xs [&>code]:text-primary [&>em]:text-foreground [&>strong]:font-semibold [&>strong]:text-foreground"
+            />
+          </li>
+        );
+      })}
+    </ul>
   );
 }
