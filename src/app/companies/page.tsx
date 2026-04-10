@@ -5,171 +5,106 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { cn, timeAgo, formatCurrency } from "@/lib/utils";
-import type { Company } from "@/lib/types";
+import type { CompanyProfile } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
-import { MiniStatCard } from "@/components/shared/mini-stat-card";
 import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select-native";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
-  Building2, Sparkles, Users, DollarSign,
-  TrendingUp, ChevronDown, ChevronRight,
+  Building2, Sparkles, ChevronDown, TrendingUp, TrendingDown, AlertTriangle,
 } from "lucide-react";
 
 const PAGE_SIZE = 60;
 
-type SortField = "name" | "lifetime_value" | "total_pending";
+type SortField = "name" | "total_revenue" | "overdue_amount" | "revenue_90d" | "trend_pct";
 type SortDirection = "asc" | "desc";
 
-interface CompanyExtras {
-  contactCount: number;
-  insightCount: number;
-  lastEmailAt: string | null;
-}
+const TIER_CONFIG: Record<string, { label: string; variant: "info" | "success" | "warning" | "secondary" }> = {
+  strategic: { label: "Strategic", variant: "info" },
+  important: { label: "Important", variant: "success" },
+  key_supplier: { label: "Proveedor clave", variant: "warning" },
+  regular: { label: "Regular", variant: "secondary" },
+  minor: { label: "Minor", variant: "secondary" },
+};
 
-function buildCompanyQuery(search: string, typeFilter: string, sortField: SortField, sortDir: SortDirection) {
-  let q = supabase.from("companies").select("*");
-
-  if (search.trim()) {
-    q = q.ilike("name", `%${search.trim()}%`);
-  }
-  if (typeFilter === "customer") q = q.eq("is_customer", true);
-  if (typeFilter === "supplier") q = q.eq("is_supplier", true);
-
-  q = q.order(sortField, { ascending: sortDir === "asc", nullsFirst: false });
-  return q;
-}
-
-function getHealthIndicator(company: Company): { label: string; variant: "success" | "warning" | "critical" | "secondary" } {
-  const riskCount = Array.isArray(company.risk_signals) ? company.risk_signals.length : 0;
-  const trend = company.trend_pct;
-  const pending = company.total_pending ?? 0;
-
-  if (riskCount >= 3 || (trend != null && trend < -20) || pending > 500000) {
-    return { label: "Critico", variant: "critical" };
-  }
-  if (riskCount >= 1 || (trend != null && trend < -5) || pending > 100000) {
-    return { label: "Atencion", variant: "warning" };
-  }
-  return { label: "Sano", variant: "success" };
+function fmtCompact(v: number | null): string {
+  if (v == null) return "—";
+  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
+  if (Math.abs(v) >= 1_000) return `$${Math.round(v / 1_000)}K`;
+  return `$${Math.round(v)}`;
 }
 
 export default function CompaniesPage() {
   const router = useRouter();
-  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companies, setCompanies] = useState<CompanyProfile[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
-  const [sortField, setSortField] = useState<SortField>("name");
-  const [sortDir, setSortDir] = useState<SortDirection>("asc");
-  const [extras, setExtras] = useState<Record<number, CompanyExtras>>({});
-  const [profiles, setProfiles] = useState<Map<number, { tier: string; risk_level: string; overdue_amount: number; late_deliveries: number }>>(new Map());
+  const [tierFilter, setTierFilter] = useState("all");
+  const [sortField, setSortField] = useState<SortField>("total_revenue");
+  const [sortDir, setSortDir] = useState<SortDirection>("desc");
   const [totalCount, setTotalCount] = useState<number | null>(null);
-  const [globalStats, setGlobalStats] = useState<{ customers: number; suppliers: number; ltv: number } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const fetchCompanies = useCallback(async (searchVal: string, type: string, sf: SortField, sd: SortDirection) => {
+  function buildQuery(searchVal: string, type: string, tier: string, sf: SortField, sd: SortDirection) {
+    let q = supabase.from("company_profile")
+      .select("company_id, name, is_customer, is_supplier, industry, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_deliveries, late_deliveries, otd_rate, email_count, last_email_date, contact_count, risk_level, tier, revenue_share_pct, total_orders, last_order_date");
+
+    if (searchVal.trim()) q = q.ilike("name", `%${searchVal.trim()}%`);
+    if (type === "customer") q = q.eq("is_customer", true);
+    if (type === "supplier") q = q.eq("is_supplier", true);
+    if (tier !== "all") q = q.eq("tier", tier);
+
+    q = q.order(sf, { ascending: sd === "asc", nullsFirst: false });
+    return q;
+  }
+
+  const fetchCompanies = useCallback(async (searchVal: string, type: string, tier: string, sf: SortField, sd: SortDirection) => {
     setLoading(true);
 
-    // Get total count and first page in parallel
-    const countQuery = supabase.from("companies").select("id", { count: "exact", head: true });
+    const countQuery = supabase.from("company_profile").select("company_id", { count: "exact", head: true });
     if (searchVal.trim()) countQuery.ilike("name", `%${searchVal.trim()}%`);
     if (type === "customer") countQuery.eq("is_customer", true);
     if (type === "supplier") countQuery.eq("is_supplier", true);
+    if (tier !== "all") countQuery.eq("tier", tier);
 
-    const [{ data }, { count }, profilesRes] = await Promise.all([
-      buildCompanyQuery(searchVal, type, sf, sd).range(0, PAGE_SIZE - 1),
+    const [{ data }, { count }] = await Promise.all([
+      buildQuery(searchVal, type, tier, sf, sd).range(0, PAGE_SIZE - 1),
       countQuery,
-      supabase.from("company_profile")
-        .select("company_id, tier, risk_level, overdue_amount, late_deliveries, revenue_90d")
-        .order("total_revenue", { ascending: false })
-        .limit(200),
     ]);
 
-    setGlobalStats({ customers: 0, suppliers: 0, ltv: 0 });
-
-    // Build profile map for mobile cards
-    const profileMap = new Map<number, { tier: string; risk_level: string; overdue_amount: number; late_deliveries: number }>();
-    for (const p of profilesRes.data ?? []) {
-      profileMap.set(p.company_id, p as { tier: string; risk_level: string; overdue_amount: number; late_deliveries: number });
-    }
-    setProfiles(profileMap);
-
-    const results = (data ?? []) as Company[];
-    setCompanies(results);
+    setCompanies((data ?? []) as CompanyProfile[]);
     setTotalCount(count);
-    setHasMore(results.length === PAGE_SIZE);
+    setHasMore((data ?? []).length === PAGE_SIZE);
     setLoading(false);
   }, []);
 
-  const fetchExtras = useCallback(async (companyIds: number[]) => {
-    if (companyIds.length === 0) return;
-
-    const [contactsRes, insightsRes, emailsRes] = await Promise.all([
-      supabase.from("contacts").select("company_id").in("company_id", companyIds),
-      supabase.from("agent_insights").select("company_id")
-        .in("company_id", companyIds).in("state", ["new", "seen"]),
-      supabase.from("emails").select("company_id, email_date")
-        .in("company_id", companyIds).order("email_date", { ascending: false }),
-    ]);
-
-    const newExtras: Record<number, CompanyExtras> = {};
-    for (const id of companyIds) {
-      newExtras[id] = { contactCount: 0, insightCount: 0, lastEmailAt: null };
-    }
-
-    if (contactsRes.data) {
-      for (const row of contactsRes.data) {
-        if (row.company_id && newExtras[row.company_id]) newExtras[row.company_id].contactCount++;
-      }
-    }
-    if (insightsRes.data) {
-      for (const row of insightsRes.data) {
-        if (row.company_id && newExtras[row.company_id]) newExtras[row.company_id].insightCount++;
-      }
-    }
-    if (emailsRes.data) {
-      for (const row of emailsRes.data) {
-        if (row.company_id && newExtras[row.company_id] && !newExtras[row.company_id].lastEmailAt) {
-          newExtras[row.company_id].lastEmailAt = row.email_date;
-        }
-      }
-    }
-
-    setExtras((prev) => ({ ...prev, ...newExtras }));
-  }, []);
-
-  useEffect(() => { fetchCompanies("", "all", "name", "asc"); }, [fetchCompanies]);
-
-  useEffect(() => {
-    if (companies.length > 0) fetchExtras(companies.map((c) => c.id));
-  }, [companies, fetchExtras]);
+  useEffect(() => { fetchCompanies("", "all", "all", "total_revenue", "desc"); }, [fetchCompanies]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchCompanies(search, typeFilter, sortField, sortDir), 300);
+    debounceRef.current = setTimeout(() => fetchCompanies(search, typeFilter, tierFilter, sortField, sortDir), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search, typeFilter, sortField, sortDir, fetchCompanies]);
+  }, [search, typeFilter, tierFilter, sortField, sortDir, fetchCompanies]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await buildCompanyQuery(search, typeFilter, sortField, sortDir)
+    const { data } = await buildQuery(search, typeFilter, tierFilter, sortField, sortDir)
       .range(companies.length, companies.length + PAGE_SIZE - 1);
     if (data) {
-      const newCompanies = data as Company[];
-      setCompanies((prev) => [...prev, ...newCompanies]);
+      setCompanies((prev) => [...prev, ...(data as CompanyProfile[])]);
       setHasMore(data.length === PAGE_SIZE);
-      fetchExtras(newCompanies.map((c) => c.id));
     }
     setLoadingMore(false);
   }
@@ -183,105 +118,128 @@ export default function CompaniesPage() {
     }
   }
 
-  const stats = {
-    total: totalCount ?? companies.length,
-    customers: globalStats?.customers ?? companies.filter((c) => c.is_customer).length,
-    suppliers: globalStats?.suppliers ?? companies.filter((c) => c.is_supplier).length,
-    ltv: globalStats?.ltv ?? companies.reduce((sum, c) => sum + (c.lifetime_value ?? 0), 0),
-  };
+  // Stats from current data
+  const overdueTotal = companies.reduce((s, c) => s + (c.overdue_amount ?? 0), 0);
+  const revenueTotal = companies.reduce((s, c) => s + (c.total_revenue ?? 0), 0);
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black">Empresas</h1>
-          <p className="text-xs text-muted-foreground">{stats.total} empresas</p>
+          <p className="text-xs text-muted-foreground">
+            {totalCount ?? companies.length} empresas
+            {overdueTotal > 0 && <> · <span className="text-danger font-medium">{fmtCompact(overdueTotal)} vencido</span></>}
+          </p>
         </div>
         <div className="hidden md:block"><BatchEnrichButton type="companies" /></div>
       </div>
 
-      {/* Search + Filters */}
-      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar...">
+      {/* Filters */}
+      <FilterBar search={search} onSearchChange={setSearch} searchPlaceholder="Buscar empresa...">
         <Select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)} className="w-28 shrink-0" aria-label="Tipo">
           <option value="all">Todas</option>
           <option value="customer">Clientes</option>
           <option value="supplier">Proveedores</option>
         </Select>
+        <Select value={tierFilter} onChange={(e) => setTierFilter(e.target.value)} className="w-32 shrink-0" aria-label="Tier">
+          <option value="all">Todos los tiers</option>
+          <option value="strategic">Strategic</option>
+          <option value="important">Important</option>
+          <option value="key_supplier">Proveedor clave</option>
+          <option value="regular">Regular</option>
+        </Select>
         <Select
           value={`${sortField}-${sortDir}`}
           onChange={(e) => {
             const [f, d] = e.target.value.split("-") as [SortField, SortDirection];
-            setSortField(f);
-            setSortDir(d);
+            setSortField(f); setSortDir(d);
           }}
-          className="w-36 shrink-0 hidden md:block"
+          className="w-40 shrink-0 hidden md:block"
           aria-label="Ordenar"
         >
+          <option value="total_revenue-desc">Mayor revenue</option>
+          <option value="revenue_90d-desc">Mayor 90d</option>
+          <option value="overdue_amount-desc">Mayor vencido</option>
+          <option value="trend_pct-desc">Mejor tendencia</option>
+          <option value="trend_pct-asc">Peor tendencia</option>
           <option value="name-asc">Nombre A-Z</option>
-          <option value="lifetime_value-desc">Mayor valor</option>
-          <option value="total_pending-desc">Mayor pendiente</option>
         </Select>
       </FilterBar>
 
       {/* Loading */}
-      {loading && <LoadingGrid stats={4} rows={6} />}
+      {loading && <LoadingGrid rows={8} />}
 
-      {/* Empty state */}
+      {/* Empty */}
       {!loading && companies.length === 0 && (
-        <EmptyState
-          icon={Building2}
-          title="Sin empresas"
-          description={search ? "No se encontraron empresas con ese nombre." : "Aun no hay empresas en el sistema."}
-        />
+        <EmptyState icon={Building2} title="Sin empresas"
+          description={search ? "No se encontraron empresas con ese nombre." : "Aun no hay empresas en el sistema."} />
       )}
 
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {/* MOBILE: Card layout                                          */}
-      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* ══════════ MOBILE ══════════ */}
       {!loading && companies.length > 0 && (
         <div className="space-y-2 md:hidden">
-          {companies.map((company) => {
-            const profile = profiles.get(company.id);
-            const overdue = profile?.overdue_amount ?? 0;
-            const lateDeliveries = profile?.late_deliveries ?? 0;
-            const hasProblems = overdue > 0 || lateDeliveries > 0;
-
-            // Build status line
-            const statusParts: string[] = [];
-            if (overdue > 0) statusParts.push(`${formatCurrency(overdue)} vencido`);
-            if (lateDeliveries > 0) statusParts.push(`${lateDeliveries} entrega${lateDeliveries !== 1 ? "s" : ""} tarde`);
-            const statusLine = statusParts.length > 0 ? statusParts.join(" · ") : "Sin alertas";
-
-            const tierColors: Record<string, string> = {
-              strategic: "text-domain-relationships bg-domain-relationships/10",
-              important: "text-info-foreground bg-info/10",
-              key_supplier: "text-warning-foreground bg-warning/10",
-            };
+          {companies.map((c) => {
+            const hasOverdue = (c.overdue_amount ?? 0) > 0;
+            const hasLate = (c.late_deliveries ?? 0) > 0;
+            const tierCfg = TIER_CONFIG[c.tier ?? ""] ?? null;
 
             return (
-              <Link key={company.id} href={`/companies/${company.id}`} className="block">
+              <Link key={c.company_id} href={`/companies/${c.company_id}`} className="block">
                 <div className={cn(
-                  "rounded-2xl border bg-card p-4 active:bg-muted/50 transition-colors",
-                  hasProblems && "border-l-4 border-l-danger/50"
+                  "rounded-xl border bg-card p-3.5 active:bg-muted/50 transition-colors",
+                  (hasOverdue || hasLate) && "border-l-4 border-l-danger/50"
                 )}>
-                  {/* Row 1: Name + tier */}
-                  <div className="flex items-center justify-between gap-2 mb-1">
-                    <p className="text-[15px] font-bold truncate">{company.name}</p>
-                    {profile?.tier && profile.tier !== "minor" && profile.tier !== "regular" && (
-                      <span className={cn("text-[10px] font-semibold px-1.5 py-0.5 rounded shrink-0", tierColors[profile.tier] ?? "bg-muted text-muted-foreground")}>
-                        {profile.tier}
-                      </span>
+                  {/* Row 1: Name + tier + risk */}
+                  <div className="flex items-center gap-2 mb-1.5">
+                    <p className="text-[15px] font-bold truncate flex-1">{c.name}</p>
+                    {tierCfg && c.tier !== "minor" && c.tier !== "regular" && (
+                      <Badge variant={tierCfg.variant} className="text-[10px] shrink-0">{tierCfg.label}</Badge>
+                    )}
+                    {c.risk_level && c.risk_level !== "low" && (
+                      <Badge variant={c.risk_level === "critical" ? "critical" : "warning"} className="text-[10px] shrink-0">
+                        {c.risk_level}
+                      </Badge>
                     )}
                   </div>
-                  {/* Row 2: Revenue */}
-                  <p className="text-sm font-semibold tabular-nums">
-                    {company.lifetime_value != null && company.lifetime_value > 0 ? formatCurrency(company.lifetime_value) : "—"}
-                  </p>
-                  {/* Row 3: Status */}
-                  <p className={cn("text-xs mt-1", hasProblems ? "text-danger" : "text-muted-foreground")}>
-                    {statusLine}
-                  </p>
+
+                  {/* Row 2: Revenue stats */}
+                  <div className="grid grid-cols-3 gap-2 text-center mb-2">
+                    <div>
+                      <p className="text-sm font-bold tabular-nums">{fmtCompact(c.total_revenue)}</p>
+                      <p className="text-[10px] text-muted-foreground">total</p>
+                    </div>
+                    <div>
+                      <p className="text-sm font-bold tabular-nums">{fmtCompact(c.revenue_90d)}</p>
+                      <p className="text-[10px] text-muted-foreground">90d</p>
+                    </div>
+                    <div>
+                      <p className={cn("text-sm font-bold tabular-nums",
+                        (c.trend_pct ?? 0) > 0 ? "text-success" : (c.trend_pct ?? 0) < -5 ? "text-danger" : ""
+                      )}>
+                        {c.trend_pct != null ? `${c.trend_pct > 0 ? "+" : ""}${Math.round(c.trend_pct)}%` : "—"}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">tendencia</p>
+                    </div>
+                  </div>
+
+                  {/* Row 3: Alerts line */}
+                  <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                    {hasOverdue && (
+                      <span className="text-danger font-medium">{fmtCompact(c.overdue_amount)} vencido</span>
+                    )}
+                    {hasLate && (
+                      <span className="text-danger">{c.late_deliveries} entrega{(c.late_deliveries ?? 0) !== 1 ? "s" : ""} tarde</span>
+                    )}
+                    {c.otd_rate != null && (
+                      <span>OTD {Math.round(c.otd_rate)}%</span>
+                    )}
+                    {c.contact_count != null && c.contact_count > 0 && (
+                      <span>{c.contact_count} contactos</span>
+                    )}
+                    {!hasOverdue && !hasLate && <span>Sin alertas</span>}
+                  </div>
                 </div>
               </Link>
             );
@@ -289,9 +247,7 @@ export default function CompaniesPage() {
         </div>
       )}
 
-      {/* ══════════════════════════════════════════════════════════════ */}
-      {/* DESKTOP: Table layout (simplified columns)                   */}
-      {/* ══════════════════════════════════════════════════════════════ */}
+      {/* ══════════ DESKTOP ══════════ */}
       {!loading && companies.length > 0 && (
         <div className="hidden md:block">
           <div className="rounded-lg border">
@@ -300,80 +256,109 @@ export default function CompaniesPage() {
                 <TableRow>
                   <TableHead>
                     <button onClick={() => toggleSort("name")} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Empresa
-                      {sortField === "name" && <ChevronDown className={cn("h-3 w-3 transition-transform", sortDir === "asc" && "rotate-180")} />}
+                      Empresa {sortField === "name" && <ChevronDown className={cn("h-3 w-3", sortDir === "asc" && "rotate-180")} />}
                     </button>
                   </TableHead>
-                  <TableHead>Tipo</TableHead>
+                  <TableHead>Tier</TableHead>
                   <TableHead>
-                    <button onClick={() => toggleSort("lifetime_value")} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Valor
-                      {sortField === "lifetime_value" && <ChevronDown className={cn("h-3 w-3 transition-transform", sortDir === "asc" && "rotate-180")} />}
+                    <button onClick={() => toggleSort("total_revenue")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Revenue {sortField === "total_revenue" && <ChevronDown className={cn("h-3 w-3", sortDir === "asc" && "rotate-180")} />}
                     </button>
                   </TableHead>
                   <TableHead>
-                    <button onClick={() => toggleSort("total_pending")} className="flex items-center gap-1 hover:text-foreground transition-colors">
-                      Pendiente
-                      {sortField === "total_pending" && <ChevronDown className={cn("h-3 w-3 transition-transform", sortDir === "asc" && "rotate-180")} />}
+                    <button onClick={() => toggleSort("revenue_90d")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      90d {sortField === "revenue_90d" && <ChevronDown className={cn("h-3 w-3", sortDir === "asc" && "rotate-180")} />}
                     </button>
                   </TableHead>
-                  <TableHead>Salud</TableHead>
-                  <TableHead className="text-center">Contactos</TableHead>
-                  <TableHead className="text-center">Insights</TableHead>
-                  <TableHead>Ultimo email</TableHead>
+                  <TableHead>
+                    <button onClick={() => toggleSort("trend_pct")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Trend {sortField === "trend_pct" && <ChevronDown className={cn("h-3 w-3", sortDir === "asc" && "rotate-180")} />}
+                    </button>
+                  </TableHead>
+                  <TableHead>
+                    <button onClick={() => toggleSort("overdue_amount")} className="flex items-center gap-1 hover:text-foreground transition-colors">
+                      Vencido {sortField === "overdue_amount" && <ChevronDown className={cn("h-3 w-3", sortDir === "asc" && "rotate-180")} />}
+                    </button>
+                  </TableHead>
+                  <TableHead>OTD</TableHead>
+                  <TableHead>Riesgo</TableHead>
+                  <TableHead className="text-right">Contactos</TableHead>
+                  <TableHead>Email</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {companies.map((company) => {
-                  const health = getHealthIndicator(company);
-                  const ext = extras[company.id];
+                {companies.map((c) => {
+                  const tierCfg = TIER_CONFIG[c.tier ?? ""] ?? null;
                   return (
-                    <TableRow
-                      key={company.id}
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => router.push(`/companies/${company.id}`)}
-                    >
+                    <TableRow key={c.company_id} className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => router.push(`/companies/${c.company_id}`)}>
                       <TableCell>
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                             <Building2 className="h-4 w-4 text-primary" />
                           </div>
                           <div className="min-w-0">
-                            <p className="font-medium truncate">{company.name}</p>
-                            {company.city && <p className="text-[10px] text-muted-foreground truncate">{company.city}</p>}
+                            <p className="font-medium truncate max-w-[200px]">{c.name}</p>
+                            <div className="flex gap-1">
+                              {c.is_customer && <span className="text-[9px] text-success">Cliente</span>}
+                              {c.is_supplier && <span className="text-[9px] text-info-foreground">Proveedor</span>}
+                            </div>
                           </div>
-                          {company.enriched_at && <Sparkles className="h-3 w-3 text-warning shrink-0" />}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {company.is_customer && <Badge variant="success" className="text-[10px]">Cliente</Badge>}
-                          {company.is_supplier && <Badge variant="info" className="text-[10px]">Proveedor</Badge>}
-                        </div>
+                        {tierCfg && c.tier !== "minor" ? (
+                          <Badge variant={tierCfg.variant} className="text-[10px]">{tierCfg.label}</Badge>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
+                      </TableCell>
+                      <TableCell className="tabular-nums font-medium text-sm">
+                        {fmtCompact(c.total_revenue)}
+                      </TableCell>
+                      <TableCell className="tabular-nums text-sm">
+                        {fmtCompact(c.revenue_90d)}
                       </TableCell>
                       <TableCell>
-                        {company.lifetime_value != null && company.lifetime_value > 0 ? (
-                          <span className="font-semibold tabular-nums text-success-foreground text-sm">
-                            {formatCurrency(company.lifetime_value)}
+                        {c.trend_pct != null ? (
+                          <span className={cn("text-sm tabular-nums font-medium flex items-center gap-1",
+                            c.trend_pct > 0 ? "text-success" : c.trend_pct < -5 ? "text-danger" : "text-muted-foreground"
+                          )}>
+                            {c.trend_pct > 0 ? <TrendingUp className="h-3 w-3" /> : c.trend_pct < -5 ? <TrendingDown className="h-3 w-3" /> : null}
+                            {c.trend_pct > 0 ? "+" : ""}{Math.round(c.trend_pct)}%
                           </span>
                         ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
                       <TableCell>
-                        {company.total_pending != null && company.total_pending > 0 ? (
-                          <span className="font-semibold tabular-nums text-danger-foreground text-sm">
-                            {formatCurrency(company.total_pending)}
-                          </span>
+                        {(c.overdue_amount ?? 0) > 0 ? (
+                          <div>
+                            <span className="text-sm font-medium tabular-nums text-danger">{fmtCompact(c.overdue_amount)}</span>
+                            {c.max_days_overdue != null && c.max_days_overdue > 30 && (
+                              <p className="text-[10px] text-danger">{c.max_days_overdue}d max</p>
+                            )}
+                          </div>
                         ) : <span className="text-muted-foreground">—</span>}
                       </TableCell>
-                      <TableCell><Badge variant={health.variant}>{health.label}</Badge></TableCell>
-                      <TableCell className="text-center tabular-nums text-muted-foreground">{ext?.contactCount ?? "—"}</TableCell>
-                      <TableCell className="text-center">
-                        {ext && ext.insightCount > 0 ? (
-                          <Badge variant="warning" className="text-[10px]">{ext.insightCount}</Badge>
-                        ) : <span className="text-muted-foreground tabular-nums">{ext ? "0" : "—"}</span>}
+                      <TableCell>
+                        {c.otd_rate != null ? (
+                          <div className="flex items-center gap-1.5">
+                            <Progress value={c.otd_rate} className="h-1.5 w-10" />
+                            <span className={cn("text-xs tabular-nums", c.otd_rate >= 90 ? "text-success" : c.otd_rate < 70 ? "text-danger" : "")}>
+                              {Math.round(c.otd_rate)}%
+                            </span>
+                          </div>
+                        ) : <span className="text-muted-foreground text-xs">—</span>}
                       </TableCell>
-                      <TableCell className="text-muted-foreground whitespace-nowrap text-sm">
-                        {ext?.lastEmailAt ? timeAgo(ext.lastEmailAt) : "—"}
+                      <TableCell>
+                        {c.risk_level && c.risk_level !== "low" ? (
+                          <Badge variant={c.risk_level === "critical" ? "critical" : "warning"} className="text-[10px]">
+                            {c.risk_level}
+                          </Badge>
+                        ) : <span className="text-[10px] text-success">bajo</span>}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums text-muted-foreground text-sm">
+                        {c.contact_count ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground whitespace-nowrap text-xs">
+                        {c.last_email_date ? timeAgo(c.last_email_date) : "—"}
                       </TableCell>
                     </TableRow>
                   );
@@ -388,7 +373,7 @@ export default function CompaniesPage() {
       {hasMore && companies.length > 0 && !loading && (
         <div className="flex justify-center pt-2">
           <Button variant="outline" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore ? "Cargando..." : "Cargar mas empresas"}
+            {loadingMore ? "Cargando..." : "Cargar mas"}
           </Button>
         </div>
       )}
