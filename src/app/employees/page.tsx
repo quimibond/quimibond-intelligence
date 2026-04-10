@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { supabase } from "@/lib/supabase";
 import { cn, formatDate } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
@@ -270,7 +271,8 @@ export default function EmployeesPage() {
             const hasIssues = emp.overdue_activities > 0;
 
             return (
-              <Card key={emp.id} className={cn(hasIssues && "border-danger/20")}>
+              <Link key={emp.id} href={`/employees/${emp.id}`}>
+              <Card className={cn(hasIssues && "border-danger/20", "hover:bg-muted/50 transition-colors cursor-pointer")}>
                 <CardContent className="py-3">
                   <div className="flex items-center gap-3">
                     {/* Avatar */}
@@ -305,6 +307,7 @@ export default function EmployeesPage() {
                   </div>
                 </CardContent>
               </Card>
+              </Link>
             );
           })}
         </div>
@@ -333,7 +336,7 @@ export default function EmployeesPage() {
                 {sorted.map((emp) => {
                   const hasIssues = emp.overdue_activities > 0;
                   return (
-                    <TableRow key={emp.id}>
+                    <TableRow key={emp.id} className="cursor-pointer hover:bg-muted/50" onClick={() => window.location.href = `/employees/${emp.id}`}>
                       <TableCell>
                         <div className="flex items-center gap-2.5 min-w-0">
                           <div className={cn(

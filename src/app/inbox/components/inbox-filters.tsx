@@ -17,6 +17,8 @@ interface InboxFiltersProps {
   allAssignees: string[];
   categoryFilter: string;
   setCategoryFilter: (cat: string) => void;
+  dateFilter: string;
+  setDateFilter: (d: string) => void;
   freshness: { lastSync: string | null; lastAnalyze: string | null; lastAgents: string | null };
   onRefresh: () => void;
 }
@@ -26,6 +28,7 @@ export function InboxFilters({
   filterMode, setFilterMode,
   assigneeFilter, setAssigneeFilter, allAssignees,
   categoryFilter, setCategoryFilter,
+  dateFilter, setDateFilter,
   onRefresh,
 }: InboxFiltersProps) {
   return (
@@ -112,6 +115,16 @@ export function InboxFilters({
             ))}
           </Select>
         )}
+        <Select
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+          className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
+        >
+          <option value="all">Cualquier fecha</option>
+          <option value="today">Hoy</option>
+          <option value="7d">Ultimos 7 dias</option>
+          <option value="30d">Ultimos 30 dias</option>
+        </Select>
       </div>
     </div>
   );

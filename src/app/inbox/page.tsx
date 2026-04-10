@@ -35,6 +35,7 @@ export default function InboxPage() {
   const [filterMode, setFilterMode] = useState<"all" | "urgent" | "important" | "fyi">("all");
   const [assigneeFilter, setAssigneeFilter] = useState("all");
   const [categoryFilter, setCategoryFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
   const [allAssignees, setAllAssignees] = useState<string[]>([]);
   const [companyProfiles, setCompanyProfiles] = useState<Map<number, CompanyProfile>>(new Map());
   const [hasMore, setHasMore] = useState(true);
@@ -149,6 +150,13 @@ export default function InboxPage() {
     if (filterMode !== "all" && computeTier(insight) !== filterMode) return false;
     if (assigneeFilter !== "all" && insight.assignee_name !== assigneeFilter) return false;
     if (categoryFilter !== "all" && insight.category !== categoryFilter) return false;
+    if (dateFilter !== "all") {
+      const created = new Date(insight.created_at).getTime();
+      const now = Date.now();
+      if (dateFilter === "today" && now - created > 86400_000) return false;
+      if (dateFilter === "7d" && now - created > 7 * 86400_000) return false;
+      if (dateFilter === "30d" && now - created > 30 * 86400_000) return false;
+    }
     return true;
   });
 
@@ -240,6 +248,8 @@ export default function InboxPage() {
         allAssignees={allAssignees}
         categoryFilter={categoryFilter}
         setCategoryFilter={setCategoryFilter}
+        dateFilter={dateFilter}
+        setDateFilter={setDateFilter}
         freshness={freshness}
         onRefresh={load}
       />
@@ -248,7 +258,7 @@ export default function InboxPage() {
       {filteredInsights.length === 0 && insights.length > 0 && (
         <div className="flex flex-col items-center justify-center py-16 gap-3">
           <p className="text-sm text-muted-foreground">No hay insights con este filtro</p>
-          <Button variant="ghost" size="sm" onClick={() => { setFilterMode("all"); setAssigneeFilter("all"); setCategoryFilter("all"); }}>
+          <Button variant="ghost" size="sm" onClick={() => { setFilterMode("all"); setAssigneeFilter("all"); setCategoryFilter("all"); setDateFilter("all"); }}>
             Limpiar filtros
           </Button>
         </div>
