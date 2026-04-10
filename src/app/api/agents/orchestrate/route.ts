@@ -260,11 +260,13 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
     let duplicatesSkipped = 0;
     const filteredInsights = [];
     if (insights.length > 0) {
-      // Check ALL active insights (not just this agent's) to prevent cross-agent dupes
+      // Check ALL recent insights (including expired) to prevent re-generating same insight
+      // Previously only checked 'new'/'seen' — but insights expire in hours and get regenerated
       const { data: existing } = await supabase
         .from("agent_insights").select("title, company_id, category")
-        .in("state", ["new", "seen"])
-        .order("created_at", { ascending: false }).limit(200);
+        .in("state", ["new", "seen", "expired"])
+        .gte("created_at", new Date(Date.now() - 72 * 3600_000).toISOString()) // last 72h
+        .order("created_at", { ascending: false }).limit(500);
 
       const existingTitles = new Set<string>((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
       const existingCompanyCat = new Set<string>(
