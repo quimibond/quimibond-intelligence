@@ -35,7 +35,7 @@ export { typeConfig };
 // ── Link map ──
 
 const linkMap: Record<string, (rawId: number) => string> = {
-  alert: (id) => `/alerts/${id}`,
+  alert: (id) => `/inbox/insight/${id}`,
   email: (id) => `/emails/${id}`,
   action: () => `/actions`,
   fact: () => `/knowledge`,

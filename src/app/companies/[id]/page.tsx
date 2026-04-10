@@ -27,7 +27,7 @@ import type {
   Fact,
   EntityRelationship,
   Entity,
-
+  Alert,
   ActionItem,
   HealthScore,
   CompanyFinancials,
@@ -50,7 +50,7 @@ import {
   TabContactos,
   TabInteligencia,
   TabFinanzas,
-
+  TabAlertas,
   TabAcciones,
   TabEmails,
   TabProductos,
@@ -76,6 +76,7 @@ export default function CompanyDetailPage() {
   const [relationships, setRelationships] = useState<ResolvedRelationship[]>([]);
 
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [companyAlerts, setCompanyAlerts] = useState<Alert[]>([]);
   const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
   const [healthScores, setHealthScores] = useState<HealthScore[]>([]);
   const [financials, setFinancials] = useState<CompanyFinancials | null>(null);
@@ -181,6 +182,12 @@ export default function CompanyDetailPage() {
       supabase.from("client_reorder_predictions").select("*").eq("company_id", cid).single().then(({ data }) => {
         if (data) setReorderPrediction(data);
       });
+
+      // Alerts (insights for this company)
+      supabase.from("agent_insights").select("*").eq("company_id", cid)
+        .in("state", ["new", "seen"]).gte("confidence", 0.80)
+        .order("created_at", { ascending: false }).limit(50)
+        .then(({ data }) => { if (data) setCompanyAlerts(data as Alert[]); });
 
       // Products
       Promise.resolve(supabase.rpc("get_company_products", { p_company_id: cid })).then(({ data }) => {
@@ -350,6 +357,9 @@ export default function CompanyDetailPage() {
             <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
             <TabsTrigger value="finanzas" className="text-xs px-3">Finanzas</TabsTrigger>
             <TabsTrigger value="operaciones" className="text-xs px-3">Operaciones</TabsTrigger>
+            <TabsTrigger value="salud" className="text-xs px-3">Salud</TabsTrigger>
+            <TabsTrigger value="alertas" className="text-xs px-3">Alertas{companyAlerts.length > 0 ? ` (${companyAlerts.length})` : ""}</TabsTrigger>
+            <TabsTrigger value="acciones" className="text-xs px-3">Acciones{actions.length > 0 ? ` (${actions.length})` : ""}</TabsTrigger>
             <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
           </TabsList>
         </div>
@@ -372,6 +382,15 @@ export default function CompanyDetailPage() {
           <TabOperaciones logistics={logistics} pipeline={pipeline} />
           <TabProductos companyProducts={companyProducts} />
           <TabManufactura companyId={company.id} />
+        </TabsContent>
+        <TabsContent value="salud" className="space-y-6">
+          <TabSalud healthScores={healthScores} />
+        </TabsContent>
+        <TabsContent value="alertas">
+          <TabAlertas alerts={companyAlerts} />
+        </TabsContent>
+        <TabsContent value="acciones">
+          <TabAcciones actions={actions} />
         </TabsContent>
         <TabsContent value="emails">
           <TabEmails recentEmails={recentEmails} />
