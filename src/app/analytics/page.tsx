@@ -147,6 +147,7 @@ export default function AnalyticsPage() {
           .from("weekly_trends")
           .select("company_name, tier, overdue_now, overdue_delta, pending_delta, late_delta, trend_signal")
           .not("trend_signal", "is", null)
+          .neq("trend_signal", "estable")
           .order("overdue_delta", { ascending: false })
           .limit(20),
         supabase
