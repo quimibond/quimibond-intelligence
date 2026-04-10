@@ -100,11 +100,7 @@ export default function InboxPage() {
     )) as string[];
     setAllAssignees(assigneeNames.sort());
 
-    const sorted = (insightsRes.data ?? []).sort((a, b) => {
-      const tierOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-      return (tierOrder[a.severity ?? ""] ?? 5) - (tierOrder[b.severity ?? ""] ?? 5);
-    });
-    setInsights(sorted as AgentInsight[]);
+    setInsights((insightsRes.data ?? []) as AgentInsight[]);
     setHasMore((insightsRes.data ?? []).length === PAGE_SIZE);
     setLoading(false);
   }, []);
@@ -123,11 +119,7 @@ export default function InboxPage() {
       setInsights(prev => {
         const existingIds = new Set(prev.map(i => i.id));
         const newItems = (data as AgentInsight[]).filter(i => !existingIds.has(i.id));
-        const merged = [...prev, ...newItems];
-        return merged.sort((a, b) => {
-          const tierOrder: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
-          return (tierOrder[a.severity ?? ""] ?? 5) - (tierOrder[b.severity ?? ""] ?? 5);
-        });
+        return [...prev, ...newItems];
       });
       setHasMore(data.length === PAGE_SIZE);
     } else {
