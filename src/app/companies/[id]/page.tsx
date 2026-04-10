@@ -305,33 +305,30 @@ export default function CompanyDetailPage() {
 
   return (
     <div className="space-y-4">
-      {/* Header: compact */}
+      <Breadcrumbs items={[
+        { label: "Empresas", href: "/companies" },
+        { label: company.name },
+      ]} />
+
+      {/* Header */}
       <div>
-        <button onClick={() => router.push("/companies")} className="text-xs text-muted-foreground hover:text-foreground mb-1 flex items-center gap-1">
-          ← Empresas
-        </button>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <h1 className="text-xl font-black truncate">{company.name}</h1>
           {profile?.tier && (
-            <span className={cn(
-              "text-[10px] font-semibold px-1.5 py-0.5 rounded",
-              profile.tier === "strategic" ? "bg-domain-relationships/15 text-domain-relationships" :
-              profile.tier === "important" ? "bg-info/15 text-info-foreground" :
-              "bg-muted text-muted-foreground"
-            )}>{profile.tier}</span>
+            <Badge variant={profile.tier === "strategic" ? "info" : profile.tier === "important" ? "success" : "secondary"} className="text-[10px]">
+              {profile.tier}
+            </Badge>
           )}
-        </div>
-        <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-          <span className="text-xs text-muted-foreground">
-            {company.industry ?? (company.is_customer ? "Cliente" : "Proveedor")}
-            {handler?.sales_handler_name && <> · {handler.sales_handler_name}</>}
-          </span>
           {profile?.risk_level && profile.risk_level !== "low" && (
             <Badge variant={profile.risk_level === "critical" ? "critical" : "warning"} className="text-[10px]">
               Riesgo: {profile.risk_level}
             </Badge>
           )}
         </div>
+        <p className="text-sm text-muted-foreground mt-1">
+          {company.industry ?? (company.is_customer ? "Cliente" : company.is_supplier ? "Proveedor" : "")}
+          {handler?.sales_handler_name && <> · {handler.sales_handler_name}</>}
+        </p>
       </div>
 
       {/* 4 inline stats */}

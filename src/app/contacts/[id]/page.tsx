@@ -5,7 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
-
+  Building2,
   CheckSquare,
   ShoppingCart,
   User,
@@ -215,34 +215,47 @@ export default function ContactDetailPage() {
 
   return (
     <div className="space-y-4">
+      <Breadcrumbs items={[
+        { label: "Contactos", href: "/contacts" },
+        { label: contact.name ?? "Sin nombre" },
+      ]} />
+
       {/* Header */}
       <div>
-        <button onClick={() => router.push("/contacts")} className="text-xs text-muted-foreground hover:text-foreground mb-1 flex items-center gap-1">
-          ← Contactos
-        </button>
         <h1 className="text-xl font-black">{contact.name ?? "Sin nombre"}</h1>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {contact.role ?? contact.department ?? ""}
-          {contact.email && <> · {contact.email}</>}
-          {contact.company_id && (
-            <> · <Link href={`/companies/${contact.company_id}`} className="text-primary">Ver empresa</Link></>
+        <div className="flex flex-wrap items-center gap-2 mt-1">
+          <span className="text-sm text-muted-foreground">
+            {contact.role ?? contact.department ?? ""}
+          </span>
+          {contact.email && (
+            <a href={`mailto:${contact.email}`} className="text-xs text-primary hover:underline">{contact.email}</a>
           )}
-        </p>
+          {contact.company_id && (
+            <Link href={`/companies/${contact.company_id}`} className="text-xs text-primary hover:underline flex items-center gap-1">
+              <Building2 className="h-3 w-3" /> Ver empresa
+            </Link>
+          )}
+          {contact.risk_level && contact.risk_level !== "low" && (
+            <Badge variant={contact.risk_level === "critical" ? "critical" : "warning"} className="text-[10px]">
+              Riesgo: {contact.risk_level}
+            </Badge>
+          )}
+        </div>
       </div>
 
-      {/* 3 inline stats */}
-      <div className="grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <div className={cn("h-2 w-2 rounded-full mx-auto mb-1", riskDot)} />
-          <p className="text-[10px] text-muted-foreground">riesgo {contact.risk_level ?? "—"}</p>
+      {/* Stats */}
+      <div className="grid grid-cols-3 gap-3 text-center">
+        <div className="rounded-xl bg-muted/50 p-3">
+          <div className={cn("h-2.5 w-2.5 rounded-full mx-auto mb-1.5", riskDot)} />
+          <p className="text-xs text-muted-foreground">{contact.risk_level ?? "—"}</p>
         </div>
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <p className="text-lg font-black tabular-nums">{contact.current_health_score ?? "—"}</p>
-          <p className="text-[10px] text-muted-foreground">health</p>
+        <div className="rounded-xl bg-muted/50 p-3">
+          <p className="text-xl font-black tabular-nums">{contact.current_health_score ?? "—"}</p>
+          <p className="text-xs text-muted-foreground">health</p>
         </div>
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <p className="text-lg font-black tabular-nums">{totalEmails}</p>
-          <p className="text-[10px] text-muted-foreground">emails</p>
+        <div className="rounded-xl bg-muted/50 p-3">
+          <p className="text-xl font-black tabular-nums">{totalEmails}</p>
+          <p className="text-xs text-muted-foreground">emails</p>
         </div>
       </div>
 

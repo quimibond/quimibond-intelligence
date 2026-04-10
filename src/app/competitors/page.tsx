@@ -256,7 +256,7 @@ export default function CompetitorsPage() {
               </p>
             </div>
 
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               {grouped.map((group) => (
                 <Card key={group.name}>
                   <CardHeader className="flex flex-row items-center gap-2 pb-3">

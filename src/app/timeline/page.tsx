@@ -367,7 +367,7 @@ export default function TimelinePage() {
       {/* Timeline */}
       {!loading && filtered.length > 0 && (
         <>
-          <div className="relative ml-2 border-l-2 border-border pl-4 sm:ml-4 sm:pl-6">
+          <div className="relative ml-3 border-l-2 border-border pl-5 sm:ml-4 sm:pl-6">
             {filtered.map((item) => (
               <TimelineCard key={item.id} item={item} />
             ))}
