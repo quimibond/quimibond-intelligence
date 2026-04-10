@@ -46,21 +46,22 @@ export default function EmailDetailPage() {
   const [email, setEmail] = useState<Email | null>(null);
   const [recipients, setRecipients] = useState<RecipientContact[]>([]);
   const [senderContact, setSenderContact] = useState<{ id: number; name: string } | null>(null);
+  const [companyName, setCompanyName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchEmail() {
       const { data } = await supabase
         .from("emails")
-        .select("*")
+        .select("*, companies:company_id(id, name)")
         .eq("id", emailId)
         .single();
 
-      const emailData = (data as Email | null) ?? null;
+      const emailData = (data as (Email & { companies?: { id: number; name: string } | null }) | null) ?? null;
       setEmail(emailData);
 
       if (emailData) {
-        // email_recipients table removed — recipients not available
+        if (emailData.companies?.name) setCompanyName(emailData.companies.name);
         setRecipients([]);
 
         // Fetch sender contact name
@@ -191,7 +192,7 @@ export default function EmailDetailPage() {
               <EntityLink type="contact" id={email.sender_contact_id} label="Perfil del remitente" />
             )}
             {email.company_id && (
-              <EntityLink type="company" id={email.company_id} label="Ver empresa" />
+              <EntityLink type="company" id={email.company_id} label={companyName ?? "Ver empresa"} />
             )}
             {email.thread_id && (
               <Link href={`/threads/${email.thread_id}`} className="text-xs text-primary hover:underline">

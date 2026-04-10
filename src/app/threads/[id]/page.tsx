@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Clock, Mail, MessageSquare, User } from "lucide-react";
+import { ArrowLeft, Building2, Clock, Mail, MessageSquare, User } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { cn, formatDateTime, timeAgo, truncate } from "@/lib/utils";
 import type { Thread, Email } from "@/lib/types";
@@ -33,7 +33,7 @@ export default function ThreadDetailPage() {
     async function fetchData() {
       const { data: threadData } = await supabase
         .from("threads")
-        .select("*")
+        .select("*, companies:company_id(id, name)")
         .eq("id", params.id)
         .single();
 
@@ -105,6 +105,13 @@ export default function ThreadDetailPage() {
             <span className="flex items-center gap-1">
               <Clock className="h-3.5 w-3.5" /> {Math.round(thread.hours_without_response)}h sin respuesta
             </span>
+          )}
+          {(thread as unknown as { companies?: { id: number; name: string } | null }).companies?.name && (
+            <Link href={`/companies/${(thread as unknown as { companies: { id: number } }).companies.id}`}
+              className="flex items-center gap-1 text-primary hover:underline">
+              <Building2 className="h-3.5 w-3.5" />
+              {(thread as unknown as { companies: { name: string } }).companies.name}
+            </Link>
           )}
           <span>Cuenta: {thread.account ?? "—"}</span>
           {thread.started_at && <span>Inicio: {formatDateTime(thread.started_at)}</span>}

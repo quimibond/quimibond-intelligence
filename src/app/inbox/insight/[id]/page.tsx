@@ -270,6 +270,14 @@ export default function InsightDetailPage() {
                   >
                     <p className="min-w-0 flex-1 truncate text-sm">{action.description}</p>
 
+                    {action.due_date && (
+                      <span className={cn("shrink-0 text-[10px] tabular-nums",
+                        new Date(action.due_date) < new Date() ? "text-danger font-semibold" : "text-muted-foreground"
+                      )}>
+                        {new Date(action.due_date).toLocaleDateString("es-MX", { day: "numeric", month: "short" })}
+                      </span>
+                    )}
+
                     {action.assignee_name && action.assignee_email ? (
                       <a
                         href={`mailto:${action.assignee_email}?subject=${encodeURIComponent(`Acción: ${action.description.slice(0, 60)}`)}&body=${encodeURIComponent(`Hola ${action.assignee_name.split(" ")[0]},\n\n${action.description}\n\nContexto: ${insight.title}\n\nSaludos`)}`}
