@@ -92,26 +92,28 @@ export function CompanyIntelCards({ companyId, companyName }: CompanyIntelProps)
     <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
       {/* Payment Prediction */}
       {payment && (
-        <Card className="border-l-4 border-l-domain-finance">
+        <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <DollarSign className="h-4 w-4 text-domain-finance" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-primary/10">
+                <DollarSign className="h-3.5 w-3.5 text-primary" />
+              </div>
               <CardTitle className="text-sm">Prediccion de Pago</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Promedio</span>
-              <span className="text-sm font-bold">{payment.avg_days_to_pay}d</span>
+              <span className="text-sm font-bold tabular-nums">{payment.avg_days_to_pay}d</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Pendiente</span>
-              <span className="text-sm font-bold">{formatCurrency(payment.total_pending)}</span>
+              <span className="text-sm font-bold tabular-nums">{formatCurrency(payment.total_pending)}</span>
             </div>
             {payment.max_days_overdue > 0 && (
               <div className="flex items-center justify-between">
                 <span className="text-xs text-muted-foreground">Max vencido</span>
-                <span className="text-sm font-bold text-danger">{payment.max_days_overdue}d</span>
+                <span className="text-sm font-bold tabular-nums text-danger">{payment.max_days_overdue}d</span>
               </div>
             )}
             <div className="flex items-center gap-1.5">
@@ -120,7 +122,7 @@ export function CompanyIntelCards({ companyId, companyName }: CompanyIntelProps)
               {payment.payment_trend === "estable" && <Clock className="h-3.5 w-3.5 text-muted-foreground" />}
               <span className="text-xs">{payment.payment_trend}</span>
             </div>
-            <Badge className={cn("text-[10px] w-full justify-center", RISK_COLORS[payment.payment_risk] ?? "bg-muted")}>
+            <Badge variant={payment.payment_risk.startsWith("CRITICO") ? "critical" : payment.payment_risk.startsWith("ALTO") ? "warning" : "success"} className="text-[10px]">
               {payment.payment_risk.split(":")[0]}
             </Badge>
           </CardContent>
@@ -129,25 +131,27 @@ export function CompanyIntelCards({ companyId, companyName }: CompanyIntelProps)
 
       {/* Reorder Prediction */}
       {reorder && (
-        <Card className="border-l-4 border-l-domain-sales">
+        <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <ShoppingCart className="h-4 w-4 text-domain-sales" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-success/10">
+                <ShoppingCart className="h-3.5 w-3.5 text-success" />
+              </div>
               <CardTitle className="text-sm">Prediccion de Reorden</CardTitle>
             </div>
           </CardHeader>
           <CardContent className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Ciclo</span>
-              <span className="text-sm font-bold">cada {reorder.avg_cycle_days}d</span>
+              <span className="text-sm font-bold tabular-nums">cada {reorder.avg_cycle_days}d</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Sin comprar</span>
-              <span className={cn("text-sm font-bold", reorder.days_overdue_reorder > 0 && "text-danger")}>{reorder.days_since_last}d</span>
+              <span className={cn("text-sm font-bold tabular-nums", reorder.days_overdue_reorder > 0 && "text-danger")}>{reorder.days_since_last}d</span>
             </div>
             <div className="flex items-center justify-between">
               <span className="text-xs text-muted-foreground">Orden promedio</span>
-              <span className="text-sm font-bold">{formatCurrency(reorder.avg_order_value)}</span>
+              <span className="text-sm font-bold tabular-nums">{formatCurrency(reorder.avg_order_value)}</span>
             </div>
             {reorder.top_product_ref && (
               <div className="flex items-center justify-between">
@@ -158,7 +162,7 @@ export function CompanyIntelCards({ companyId, companyName }: CompanyIntelProps)
             {reorder.salesperson_name && (
               <div className="text-xs text-muted-foreground">→ {reorder.salesperson_name}</div>
             )}
-            <Badge className={cn("text-[10px] w-full justify-center", REORDER_COLORS[reorder.reorder_status] ?? "bg-muted")}>
+            <Badge variant={reorder.reorder_status === "lost" || reorder.reorder_status === "critical" ? "critical" : reorder.reorder_status === "on_track" ? "success" : "warning"} className="text-[10px]">
               {REORDER_LABELS[reorder.reorder_status] ?? reorder.reorder_status}
             </Badge>
           </CardContent>
@@ -167,10 +171,12 @@ export function CompanyIntelCards({ companyId, companyName }: CompanyIntelProps)
 
       {/* Risk Signal from Narrative */}
       {narrative?.risk_signal && (
-        <Card className="border-l-4 border-l-domain-risk">
+        <Card>
           <CardHeader className="pb-2">
             <div className="flex items-center gap-2">
-              <AlertTriangle className="h-4 w-4 text-domain-risk" />
+              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-danger/10">
+                <AlertTriangle className="h-3.5 w-3.5 text-danger" />
+              </div>
               <CardTitle className="text-sm">Señal de Riesgo</CardTitle>
             </div>
           </CardHeader>
