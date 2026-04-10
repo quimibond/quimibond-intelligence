@@ -70,7 +70,9 @@ export default function InsightDetailPage() {
         ins.company_id ? supabase.from("cross_director_signals").select("director_name, title, severity").eq("company_id", ins.company_id).neq("title", ins.title).limit(5) : Promise.resolve({ data: null }),
         ins.company_id ? supabase.from("company_insight_history").select("total_insights_30d, times_acted, times_dismissed, which_directors").eq("company_id", ins.company_id).single() : Promise.resolve({ data: null }),
         Promise.resolve({ data: null }),
-        supabase.from("action_items").select("id, description, assignee_name, assignee_email, priority, state, due_date").eq("alert_id", insightId).order("priority", { ascending: true }),
+        ins.company_id
+          ? supabase.from("action_items").select("id, description, assignee_name, assignee_email, priority, state, due_date").eq("company_id", ins.company_id).in("state", ["pending", "in_progress"]).order("priority", { ascending: true }).limit(10)
+          : Promise.resolve({ data: [] }),
       ]);
 
       if (navRes.data) setNavIds(navRes.data.map((n: { id: number }) => n.id));

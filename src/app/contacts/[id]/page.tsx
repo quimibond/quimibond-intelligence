@@ -21,7 +21,7 @@ import type {
   Contact,
   Fact,
   Email,
-
+  Alert,
   ActionItem,
 } from "@/lib/types";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
@@ -42,7 +42,7 @@ import {
   TabSalud,
   TabEmails,
   TabInteligencia,
-
+  TabAlertas,
   TabAcciones,
 } from "./components";
 
@@ -57,6 +57,7 @@ export default function ContactDetailPage() {
   const [emails, setEmails] = useState<Email[]>([]);
 
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [alerts, setAlerts] = useState<Alert[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [healthScores, setHealthScores] = useState<any[]>([]);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,6 +139,13 @@ export default function ContactDetailPage() {
         supabase.from("action_items").select("*").eq("contact_id", contactId)
           .order("created_at", { ascending: false })
           .then(({ data }) => setActions((data as ActionItem[] | null) ?? []))
+      );
+
+      promises.push(
+        supabase.from("agent_insights").select("*").eq("contact_id", contactId)
+          .in("state", ["new", "seen"]).gte("confidence", 0.80)
+          .order("created_at", { ascending: false }).limit(50)
+          .then(({ data }) => setAlerts((data as Alert[] | null) ?? []))
       );
 
       promises.push(
@@ -244,20 +252,31 @@ export default function ContactDetailPage() {
           <TabsList className="inline-flex w-auto min-w-full md:min-w-0 gap-0.5 h-9">
             <TabsTrigger value="perfil" className="text-xs px-3">Perfil</TabsTrigger>
             <TabsTrigger value="comercial" className="text-xs px-3">Comercial</TabsTrigger>
+            <TabsTrigger value="salud" className="text-xs px-3">Salud</TabsTrigger>
             <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
+            <TabsTrigger value="alertas" className="text-xs px-3">Alertas{alerts.length > 0 ? ` (${alerts.length})` : ""}</TabsTrigger>
+            <TabsTrigger value="acciones" className="text-xs px-3">Acciones{actions.length > 0 ? ` (${actions.length})` : ""}</TabsTrigger>
             <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
           </TabsList>
         </div>
 
         <TabsContent value="perfil" className="space-y-6">
           <TabPerfil contact={contact} personProfile={personProfile} />
-          <TabSalud healthScores={healthScores} />
         </TabsContent>
         <TabsContent value="comercial" className="space-y-6">
           <TabComercial contact={contact} />
         </TabsContent>
+        <TabsContent value="salud" className="space-y-6">
+          <TabSalud healthScores={healthScores} />
+        </TabsContent>
         <TabsContent value="inteligencia">
           <TabInteligencia facts={facts} />
+        </TabsContent>
+        <TabsContent value="alertas">
+          <TabAlertas alerts={alerts} />
+        </TabsContent>
+        <TabsContent value="acciones">
+          <TabAcciones actions={actions} />
         </TabsContent>
         <TabsContent value="emails" className="space-y-6">
           <TabEmails emails={emails} contactComms={contactComms} />

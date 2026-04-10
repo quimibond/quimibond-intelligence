@@ -192,6 +192,12 @@ export function useDashboardData() {
 
   useEffect(() => { load(); }, [load]);
 
+  // Auto-refresh every 5 minutes
+  useEffect(() => {
+    const interval = setInterval(() => { load(); }, 5 * 60 * 1000);
+    return () => clearInterval(interval);
+  }, [load]);
+
   function handleRefresh() { setRefreshing(true); load(); }
 
   return { data, loading, error, refreshing, handleRefresh };

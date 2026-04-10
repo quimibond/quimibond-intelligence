@@ -7,6 +7,7 @@ import {
   Inbox,
   LayoutDashboard,
   Building2,
+  BarChart3,
   MessageSquare,
   Bot,
 } from "lucide-react";
@@ -15,6 +16,7 @@ const tabs = [
   { href: "/inbox", label: "Inbox", icon: Inbox },
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/companies", label: "Empresas", icon: Building2 },
+  { href: "/analytics", label: "Analitica", icon: BarChart3 },
   { href: "/chat", label: "Chat", icon: MessageSquare },
   { href: "/agents", label: "Directores", icon: Bot },
 ];

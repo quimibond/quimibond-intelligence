@@ -171,7 +171,7 @@ export default function DashboardPage() {
                       style={{ flex: b.total }} title={`${b.bucket}: ${fmtCompact(b.total)}`} />
                   ))}
                 </div>
-                <div className="mt-3 grid grid-cols-5 gap-1">
+                <div className="mt-3 grid grid-cols-2 sm:grid-cols-5 gap-1">
                   {d.agingBuckets.map(b => (
                     <div key={b.bucket} className="text-center">
                       <div className={cn("mx-auto mb-1 h-2 w-2 rounded-full", b.color)} />
