@@ -37,7 +37,7 @@ export function TabAlertas({ alerts }: TabAlertasProps) {
       <div className="space-y-3 md:hidden">
         {alerts.map((alert) => (
           <Link key={alert.id} href={`/alerts/${alert.id}`} className="block">
-            <div className="rounded-lg border bg-card p-3 space-y-2 hover:border-primary/30">
+            <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2 hover:border-primary/30">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium line-clamp-2">{alert.title}</p>
                 <SeverityBadge severity={alert.severity} />

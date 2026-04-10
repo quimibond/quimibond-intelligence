@@ -168,7 +168,7 @@ export default function SystemPage() {
             <Link
               key={link.href}
               href={link.href}
-              className="inline-flex items-center gap-2 rounded-lg border bg-card px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/50"
+              className="inline-flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm px-3 py-2 text-sm font-medium transition-colors hover:bg-muted/50"
             >
               <Icon className="h-4 w-4 text-muted-foreground" />
               {link.label}
@@ -233,7 +233,7 @@ export default function SystemPage() {
                   return (
                     <div
                       key={run.id}
-                      className="rounded-lg border bg-card p-3 space-y-2 cursor-pointer"
+                      className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2 cursor-pointer"
                       onClick={() => toggleRunLogs(run.id)}
                     >
                       <div className="flex items-center justify-between gap-2">
@@ -360,7 +360,7 @@ export default function SystemPage() {
                 const cfg = statusConfig[cmd.status] ?? statusConfig.pending;
                 const StatusIcon = cfg.icon;
                 return (
-                  <div key={cmd.id} className="rounded-lg border bg-card p-3 space-y-2">
+                  <div key={cmd.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-mono text-sm truncate">{cmd.command}</span>
                       <Badge variant={cfg.variant} className="gap-1 shrink-0">

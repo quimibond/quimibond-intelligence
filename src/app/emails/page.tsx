@@ -143,7 +143,7 @@ export default function EmailsPage() {
         {/* Mobile card layout */}
         <div className="space-y-3 md:hidden">
           {emails.map((email) => (
-            <div key={email.id} className="rounded-lg border bg-card p-4 space-y-2">
+            <div key={email.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-4 space-y-2">
               <Link href={`/emails/${email.id}`} className="block">
                 <p className="text-sm font-medium line-clamp-1">{email.subject || "—"}</p>
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">

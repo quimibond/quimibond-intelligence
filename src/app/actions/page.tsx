@@ -257,28 +257,28 @@ export default function ActionsPage() {
 
       {/* Quick stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-lg border bg-card p-3 sm:p-4">
+        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
           <div className="flex items-center gap-2 text-muted-foreground">
             <ClipboardList className="h-4 w-4" />
             <span className="text-xs font-medium">Total</span>
           </div>
           <p className="mt-1 text-2xl font-bold">{counts.pending + counts.overdue + counts.completed}</p>
         </div>
-        <div className="rounded-lg border bg-card p-3 sm:p-4">
+        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
           <div className="flex items-center gap-2 text-warning-foreground">
             <Clock className="h-4 w-4" />
             <span className="text-xs font-medium">Pendientes</span>
           </div>
           <p className="mt-1 text-2xl font-bold">{counts.pending}</p>
         </div>
-        <div className="rounded-lg border bg-card p-3 sm:p-4">
+        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
           <div className="flex items-center gap-2 text-danger-foreground">
             <AlertTriangle className="h-4 w-4" />
             <span className="text-xs font-medium">Vencidas</span>
           </div>
           <p className="mt-1 text-2xl font-bold">{counts.overdue}</p>
         </div>
-        <div className="rounded-lg border bg-card p-3 sm:p-4">
+        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
           <div className="flex items-center gap-2 text-success-foreground">
             <CheckCircle2 className="h-4 w-4" />
             <span className="text-xs font-medium">Completadas</span>
@@ -354,7 +354,7 @@ export default function ActionsPage() {
           {/* Mobile card layout */}
           <div className="space-y-3 md:hidden">
             {/* Select all row for mobile */}
-            <div className="flex items-center gap-2 rounded-lg border bg-card px-4 py-2.5">
+            <div className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm px-4 py-2.5">
               <input
                 type="checkbox"
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}

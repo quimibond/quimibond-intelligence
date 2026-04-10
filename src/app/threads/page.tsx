@@ -273,7 +273,7 @@ export default function ThreadsPage() {
                 <div
                   key={thread.id}
                   className={cn(
-                    "rounded-lg border bg-card p-4 space-y-2",
+                    "rounded-xl border bg-card text-card-foreground shadow-sm p-4 space-y-2",
                     rowBgClass(hours)
                   )}
                 >

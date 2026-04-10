@@ -53,7 +53,7 @@ export function ActionMobileCard({
   const reason = (action as unknown as Record<string, unknown>).reason;
 
   return (
-    <div className="relative overflow-hidden rounded-lg border bg-card">
+    <div className="relative overflow-hidden rounded-xl border bg-card text-card-foreground shadow-sm">
       {/* Priority color bar on left */}
       <div className={`absolute left-0 top-0 bottom-0 w-1 ${priorityBarColor[action.priority] ?? "bg-muted-foreground/40"}`} />
       <div className="p-4 pl-5 space-y-3">

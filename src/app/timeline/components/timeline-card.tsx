@@ -94,7 +94,7 @@ export function TimelineCard({ item }: TimelineCardProps) {
   );
 
   const className =
-    "block rounded-lg border bg-card p-4 shadow-sm transition-colors hover:bg-accent/50";
+    "block rounded-xl border bg-card text-card-foreground shadow-sm p-4 transition-colors hover:bg-accent/50";
 
   return (
     <div className="relative pb-8 last:pb-0">

@@ -210,7 +210,7 @@ export default function CompetitorsPage() {
       {!loading && grouped.length > 0 && (
         <div className="space-y-3 md:hidden">
           {grouped.map((group) => (
-            <div key={group.name} className="rounded-lg border bg-card p-3">
+            <div key={group.name} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3">
               <div className="flex items-center gap-2 mb-2">
                 <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
                   <Building2 className="h-4 w-4 text-primary" />

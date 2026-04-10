@@ -189,7 +189,7 @@ export default function ContactsPage() {
               const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-danger" : contact.risk_level === "medium" ? "bg-warning" : "bg-success";
               return (
                 <Link key={contact.id} href={`/contacts/${contact.id}`} className="block">
-                  <div className="rounded-2xl border bg-card p-3.5 active:bg-muted/50 transition-colors">
+                  <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3.5 active:bg-muted/50 transition-colors">
                     <div className="flex items-start gap-2.5">
                       <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", riskDot)} />
                       <div className="min-w-0 flex-1">

@@ -298,7 +298,7 @@ export default function InsightDetailPage() {
             {assigneeEmail && (
               <a
                 href={`mailto:${assigneeEmail}?subject=${encodeURIComponent(assigneeSubject)}&body=${encodeURIComponent(assigneeBody)}`}
-                className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/50"
+                className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
               >
                 <Send className="h-4 w-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
@@ -311,7 +311,7 @@ export default function InsightDetailPage() {
             {mainContact && (
               <a
                 href={`mailto:${mainContact.email}?subject=${encodeURIComponent(`Seguimiento — ${companyName}`)}&body=${encodeURIComponent(`Estimado${mainContact.name ? ` ${mainContact.name.split(" ")[0]}` : ""},\n\nLe escribo respecto a un tema pendiente con ${companyName}.\n\nQuedo atento a su respuesta.\n\nSaludos cordiales`)}`}
-                className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/50"
+                className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
               >
                 <Mail className="h-4 w-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
@@ -327,7 +327,7 @@ export default function InsightDetailPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <button onClick={() => markDone(3)} disabled={acting}
-                className="flex items-center gap-2 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50">
+                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50">
                 <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Recordatorio 3d</p>
@@ -335,7 +335,7 @@ export default function InsightDetailPage() {
                 </div>
               </button>
               <button onClick={() => markDone()} disabled={acting}
-                className="flex items-center gap-2 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50">
+                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50">
                 {acting ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Check className="h-4 w-4 shrink-0 text-success" />}
                 <div>
                   <p className="text-sm font-medium">Ya lo resolvi</p>

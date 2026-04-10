@@ -47,7 +47,7 @@ export function TabFacts({ facts, loading }: TabFactsProps) {
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {facts.map((fact) => (
-          <div key={fact.id} className="rounded-lg border bg-card p-3 space-y-2">
+          <div key={fact.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
             <p className="text-sm">{truncate(fact.fact_text, 150)}</p>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={factTypeBadgeVariant(fact.fact_type)}>

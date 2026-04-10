@@ -39,7 +39,7 @@ export function TabRelationships({ relationships, loading }: TabRelationshipsPro
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {relationships.map((rel) => (
-          <div key={rel.id} className="rounded-lg border bg-card p-3 space-y-2">
+          <div key={rel.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
             <div className="flex items-center gap-2 text-sm">
               <span className="font-medium truncate">{rel.entity_a_name}</span>
               <Badge variant="secondary" className="shrink-0">{rel.relationship_type}</Badge>

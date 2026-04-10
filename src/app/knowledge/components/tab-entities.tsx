@@ -121,7 +121,7 @@ export function TabEntities({
           {/* Mobile cards */}
           <div className="space-y-3 md:hidden">
             {filteredEntities.map((entity) => (
-              <div key={entity.id} className="rounded-lg border bg-card p-3 space-y-2">
+              <div key={entity.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
                 <div className="flex items-start justify-between gap-2">
                   <div className="min-w-0">
                     <p className="font-medium truncate">{entity.name}</p>

@@ -70,7 +70,7 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
           <a
             href={`mailto:${assigneeEmail}?subject=${encodeURIComponent(assigneeSubject)}&body=${encodeURIComponent(assigneeBody)}`}
             onClick={() => onDone(3)}
-            className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/50"
+            className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
           >
             <Send className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
@@ -86,7 +86,7 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
           <a
             href={`mailto:${mainContact.email}?subject=${encodeURIComponent(contactSubject)}&body=${encodeURIComponent(contactBody)}`}
             onClick={() => onDone(5)}
-            className="flex items-center gap-3 rounded-lg border bg-card p-3 transition-colors hover:bg-muted/50"
+            className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
           >
             <Mail className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
@@ -102,7 +102,7 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
 
         <button
           onClick={() => onDone(3)}
-          className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50"
+          className="flex w-full items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50"
         >
           <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
@@ -114,7 +114,7 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
         <button
           onClick={() => onDone()}
           disabled={acting}
-          className="flex w-full items-center gap-3 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-muted/50"
+          className="flex w-full items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50"
         >
           {acting
             ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
