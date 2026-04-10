@@ -19,6 +19,7 @@ import { StatCard } from "@/components/shared/stat-card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select-native";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   Table,
@@ -51,6 +52,7 @@ export default function ThreadsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<StatusFilter>("all");
+  const [senderTypeFilter, setSenderTypeFilter] = useState("all");
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [threadEmails, setThreadEmails] = useState<Record<number, Email[]>>({});
   const [loadingEmails, setLoadingEmails] = useState<number | null>(null);
@@ -58,7 +60,7 @@ export default function ThreadsPage() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function buildThreadQuery(searchVal: string) {
+  function buildThreadQuery(searchVal: string, senderType: string) {
     let q = supabase
       .from("threads")
       .select("*, companies:company_id(name)")
@@ -67,6 +69,9 @@ export default function ThreadsPage() {
     if (searchVal.trim()) {
       q = q.ilike("subject", `%${searchVal.trim()}%`);
     }
+    if (senderType !== "all") {
+      q = q.eq("last_sender_type", senderType);
+    }
     return q;
   }
 
@@ -74,7 +79,7 @@ export default function ThreadsPage() {
   useEffect(() => {
     async function fetchThreads() {
       const [dataRes, totalRes, s24Res, s72Res] = await Promise.all([
-        buildThreadQuery(""),
+        buildThreadQuery("", "all"),
         supabase.from("threads").select("id", { count: "exact", head: true }),
         supabase.from("threads").select("id", { count: "exact", head: true }).gt("hours_without_response", 24),
         supabase.from("threads").select("id", { count: "exact", head: true }).gt("hours_without_response", 72),
@@ -97,14 +102,14 @@ export default function ThreadsPage() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      const { data } = await buildThreadQuery(search);
+      const { data } = await buildThreadQuery(search, senderTypeFilter);
       const rows = (data as Thread[] | null) ?? [];
       setThreads(rows);
       setHasMore(rows.length >= PAGE_SIZE);
       setLoading(false);
     }, 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search]);
+  }, [search, senderTypeFilter]);
 
   // Load more
   const loadMore = useCallback(async () => {
@@ -116,6 +121,9 @@ export default function ThreadsPage() {
       .range(threads.length, threads.length + PAGE_SIZE - 1);
     if (search.trim()) {
       q = q.ilike("subject", `%${search.trim()}%`);
+    }
+    if (senderTypeFilter !== "all") {
+      q = q.eq("last_sender_type", senderTypeFilter);
     }
     const { data } = await q;
     const rows = (data as Thread[] | null) ?? [];
@@ -219,6 +227,11 @@ export default function ThreadsPage() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
+        <Select value={senderTypeFilter} onChange={(e) => setSenderTypeFilter(e.target.value)} className="w-auto shrink-0" aria-label="Ultimo remitente">
+          <option value="all">Cualquier remitente</option>
+          <option value="external">Externo (cliente)</option>
+          <option value="internal">Interno (nosotros)</option>
+        </Select>
       </div>
 
       {/* Stats row — compact on mobile */}

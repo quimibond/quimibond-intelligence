@@ -35,6 +35,8 @@ export default function BriefingsPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [scopeFilter, setScopeFilter] = useState<string>("daily");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [dateFilter, setDateFilter] = useState("all");
 
   useEffect(() => {
     async function fetchSummaries() {
@@ -76,9 +78,25 @@ export default function BriefingsPage() {
   }, [summaries]);
 
   const filtered = useMemo(() => {
-    if (scopeFilter === "all") return summaries;
-    return summaries.filter((s) => s.scope === scopeFilter);
-  }, [summaries, scopeFilter]);
+    let result = summaries;
+    if (scopeFilter !== "all") result = result.filter((s) => s.scope === scopeFilter);
+    if (searchFilter.trim()) {
+      const q = searchFilter.toLowerCase();
+      result = result.filter((s) =>
+        s.summary_text?.toLowerCase().includes(q) || s.account?.toLowerCase().includes(q)
+      );
+    }
+    if (dateFilter !== "all") {
+      const now = Date.now();
+      result = result.filter((s) => {
+        const d = new Date(s.briefing_date).getTime();
+        if (dateFilter === "7d") return now - d <= 7 * 86400_000;
+        if (dateFilter === "30d") return now - d <= 30 * 86400_000;
+        return true;
+      });
+    }
+    return result;
+  }, [summaries, scopeFilter, searchFilter, dateFilter]);
 
   if (loading) {
     return (
@@ -97,6 +115,15 @@ export default function BriefingsPage() {
       </div>
 
       <div className="flex flex-wrap items-center gap-3">
+        <div className="relative flex-1 min-w-0 sm:max-w-xs">
+          <input
+            type="text"
+            placeholder="Buscar briefings..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className="h-9 w-full rounded-md border bg-background px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+          />
+        </div>
         <Select
           value={scopeFilter}
           onChange={(e) => setScopeFilter(e.target.value)}
@@ -106,6 +133,15 @@ export default function BriefingsPage() {
           {availableScopes.map((s) => (
             <option key={s} value={s}>{SCOPE_LABELS[s] ?? s}</option>
           ))}
+        </Select>
+        <Select
+          value={dateFilter}
+          onChange={(e) => setDateFilter(e.target.value)}
+          aria-label="Filtrar por fecha"
+        >
+          <option value="all">Cualquier fecha</option>
+          <option value="7d">Ultimos 7 dias</option>
+          <option value="30d">Ultimos 30 dias</option>
         </Select>
         <span className="text-sm text-muted-foreground">
           {filtered.length} briefing{filtered.length !== 1 ? "s" : ""}

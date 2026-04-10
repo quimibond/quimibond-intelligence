@@ -43,18 +43,28 @@ export default function EmailsPage() {
   const [hasMore, setHasMore] = useState(true);
   const [search, setSearch] = useState("");
   const [senderTypeFilter, setSenderTypeFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("all");
+  const [attachFilter, setAttachFilter] = useState("all");
   const [accounts, setAccounts] = useState<string[]>([]);
   const [accountFilter, setAccountFilter] = useState("all");
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function buildEmailQuery(searchVal: string, account: string, senderType: string) {
+  function buildEmailQuery(searchVal: string, account: string, senderType: string, date: string, attach: string) {
     let q = supabase
       .from("emails")
       .select("*, companies:company_id(name)")
       .order("email_date", { ascending: false });
     if (account !== "all") q = q.eq("account", account);
     if (senderType !== "all") q = q.eq("sender_type", senderType);
+    if (attach === "yes") q = q.eq("has_attachments", true);
+    if (attach === "no") q = q.eq("has_attachments", false);
+    if (date !== "all") {
+      const now = new Date();
+      if (date === "today") q = q.gte("email_date", now.toISOString().split("T")[0]);
+      else if (date === "7d") q = q.gte("email_date", new Date(now.getTime() - 7 * 86400_000).toISOString().split("T")[0]);
+      else if (date === "30d") q = q.gte("email_date", new Date(now.getTime() - 30 * 86400_000).toISOString().split("T")[0]);
+    }
     if (searchVal.trim()) {
       const pattern = `%${searchVal.trim()}%`;
       q = q.or(`subject.ilike.${pattern},sender.ilike.${pattern},recipient.ilike.${pattern}`);
@@ -64,7 +74,7 @@ export default function EmailsPage() {
 
   useEffect(() => {
     async function fetchEmails() {
-      const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter).limit(PAGE_SIZE);
+      const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter, dateFilter, attachFilter).limit(PAGE_SIZE);
       const rows = (data as Email[] | null) ?? [];
       setEmails(rows);
       setHasMore(rows.length === PAGE_SIZE);
@@ -82,14 +92,14 @@ export default function EmailsPage() {
       setLoading(false);
     }
     fetchEmails();
-  }, [accountFilter, senderTypeFilter]);
+  }, [accountFilter, senderTypeFilter, dateFilter, attachFilter]);
 
   // Debounced search
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLoading(true);
-      const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter).limit(PAGE_SIZE);
+      const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter, dateFilter, attachFilter).limit(PAGE_SIZE);
       setEmails((data ?? []) as Email[]);
       setHasMore((data ?? []).length === PAGE_SIZE);
       setLoading(false);
@@ -100,7 +110,7 @@ export default function EmailsPage() {
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter)
+    const { data } = await buildEmailQuery(search, accountFilter, senderTypeFilter, dateFilter, attachFilter)
       .range(emails.length, emails.length + PAGE_SIZE - 1);
     if (data) {
       setEmails((prev) => [...prev, ...(data as Email[])]);
@@ -127,6 +137,17 @@ export default function EmailsPage() {
           <option value="all">Todos los tipos</option>
           <option value="internal">Enviados</option>
           <option value="external">Recibidos</option>
+        </Select>
+        <Select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} className="w-full sm:w-auto" aria-label="Filtrar por fecha">
+          <option value="all">Cualquier fecha</option>
+          <option value="today">Hoy</option>
+          <option value="7d">Ultimos 7 dias</option>
+          <option value="30d">Ultimos 30 dias</option>
+        </Select>
+        <Select value={attachFilter} onChange={(e) => setAttachFilter(e.target.value)} className="w-full sm:w-auto" aria-label="Adjuntos">
+          <option value="all">Todos</option>
+          <option value="yes">Con adjuntos</option>
+          <option value="no">Sin adjuntos</option>
         </Select>
       </FilterBar>
 

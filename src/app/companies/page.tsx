@@ -52,12 +52,13 @@ export default function CompaniesPage() {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("all");
   const [tierFilter, setTierFilter] = useState("all");
+  const [riskFilter, setRiskFilter] = useState("all");
   const [sortField, setSortField] = useState<SortField>("total_revenue");
   const [sortDir, setSortDir] = useState<SortDirection>("desc");
   const [totalCount, setTotalCount] = useState<number | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function buildQuery(searchVal: string, type: string, tier: string, sf: SortField, sd: SortDirection) {
+  function buildQuery(searchVal: string, type: string, tier: string, risk: string, sf: SortField, sd: SortDirection) {
     let q = supabase.from("company_profile")
       .select("company_id, name, is_customer, is_supplier, industry, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_deliveries, late_deliveries, otd_rate, email_count, last_email_date, contact_count, risk_level, tier, revenue_share_pct, total_orders, last_order_date");
 
@@ -65,12 +66,13 @@ export default function CompaniesPage() {
     if (type === "customer") q = q.eq("is_customer", true);
     if (type === "supplier") q = q.eq("is_supplier", true);
     if (tier !== "all") q = q.eq("tier", tier);
+    if (risk !== "all") q = q.eq("risk_level", risk);
 
     q = q.order(sf, { ascending: sd === "asc", nullsFirst: false });
     return q;
   }
 
-  const fetchCompanies = useCallback(async (searchVal: string, type: string, tier: string, sf: SortField, sd: SortDirection) => {
+  const fetchCompanies = useCallback(async (searchVal: string, type: string, tier: string, risk: string, sf: SortField, sd: SortDirection) => {
     setLoading(true);
 
     const countQuery = supabase.from("company_profile").select("company_id", { count: "exact", head: true });
@@ -78,9 +80,10 @@ export default function CompaniesPage() {
     if (type === "customer") countQuery.eq("is_customer", true);
     if (type === "supplier") countQuery.eq("is_supplier", true);
     if (tier !== "all") countQuery.eq("tier", tier);
+    if (risk !== "all") countQuery.eq("risk_level", risk);
 
     const [{ data }, { count }] = await Promise.all([
-      buildQuery(searchVal, type, tier, sf, sd).range(0, PAGE_SIZE - 1),
+      buildQuery(searchVal, type, tier, risk, sf, sd).range(0, PAGE_SIZE - 1),
       countQuery,
     ]);
 
@@ -90,18 +93,18 @@ export default function CompaniesPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchCompanies("", "all", "all", "total_revenue", "desc"); }, [fetchCompanies]);
+  useEffect(() => { fetchCompanies("", "all", "all", "all", "total_revenue", "desc"); }, [fetchCompanies]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => fetchCompanies(search, typeFilter, tierFilter, sortField, sortDir), 300);
+    debounceRef.current = setTimeout(() => fetchCompanies(search, typeFilter, tierFilter, riskFilter, sortField, sortDir), 300);
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search, typeFilter, tierFilter, sortField, sortDir, fetchCompanies]);
+  }, [search, typeFilter, tierFilter, riskFilter, sortField, sortDir, fetchCompanies]);
 
   async function loadMore() {
     if (loadingMore || !hasMore) return;
     setLoadingMore(true);
-    const { data } = await buildQuery(search, typeFilter, tierFilter, sortField, sortDir)
+    const { data } = await buildQuery(search, typeFilter, tierFilter, riskFilter, sortField, sortDir)
       .range(companies.length, companies.length + PAGE_SIZE - 1);
     if (data) {
       setCompanies((prev) => [...prev, ...(data as CompanyProfile[])]);
@@ -150,6 +153,13 @@ export default function CompaniesPage() {
           <option value="important">Important</option>
           <option value="key_supplier">Proveedor clave</option>
           <option value="regular">Regular</option>
+        </Select>
+        <Select value={riskFilter} onChange={(e) => setRiskFilter(e.target.value)} className="w-28 shrink-0" aria-label="Riesgo">
+          <option value="all">Todo riesgo</option>
+          <option value="critical">Critico</option>
+          <option value="high">Alto</option>
+          <option value="medium">Medio</option>
+          <option value="low">Bajo</option>
         </Select>
         <Select
           value={`${sortField}-${sortDir}`}
