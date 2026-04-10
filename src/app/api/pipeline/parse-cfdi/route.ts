@@ -39,11 +39,13 @@ export async function POST(request: NextRequest) {
 
   try {
     // Find emails with XML attachments that haven't been parsed yet
+    // Exclude emails already marked as cfdi_failed to prevent infinite retry loops
     const { data: emails } = await supabase
       .from("emails")
       .select("id, gmail_message_id, account, attachments")
       .eq("has_attachments", true)
       .not("attachments", "is", null)
+      .neq("enrichment_status", "cfdi_failed")
       .order("email_date", { ascending: false })
       .limit(200);
 
@@ -141,6 +143,11 @@ export async function POST(request: NextRequest) {
             } else {
               console.error(`[cfdi] Insert error for email ${email.id}:`, insertErr.message);
               errors++;
+              // Mark email as cfdi_failed to prevent infinite retry
+              await supabase
+                .from("emails")
+                .update({ enrichment_status: "cfdi_failed" })
+                .eq("id", email.id);
             }
           } else {
             parsed++;

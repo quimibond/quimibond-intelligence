@@ -74,7 +74,17 @@ export async function POST(request: NextRequest) {
     }
 
     // Save emails to Supabase (batch upsert)
-    const emailBatches = chunkArray(result.emails.map(e => ({
+    // Filter out emails with invalid dates to prevent RangeError on toISOString()
+    const validEmails = result.emails.filter(e => {
+      const d = new Date(e.date);
+      return !isNaN(d.getTime());
+    });
+    const skippedDates = result.emails.length - validEmails.length;
+    if (skippedDates > 0) {
+      console.warn(`[sync-emails] Skipped ${skippedDates} emails with invalid dates`);
+    }
+
+    const emailBatches = chunkArray(validEmails.map(e => ({
       account: e.account,
       sender: e.from,
       recipient: e.to,
@@ -99,8 +109,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Build threads
-    const threadMap = new Map<string, typeof result.emails>();
-    for (const e of result.emails) {
+    const threadMap = new Map<string, typeof validEmails>();
+    for (const e of validEmails) {
       const tid = e.gmail_thread_id;
       if (!threadMap.has(tid)) threadMap.set(tid, []);
       threadMap.get(tid)!.push(e);
@@ -142,12 +152,12 @@ export async function POST(request: NextRequest) {
         .upsert(threads, { onConflict: "gmail_thread_id" });
     }
 
-    // Save history state
+    // Save history state with last_sync_at timestamp
     for (const [account, historyId] of Object.entries(result.newHistoryState)) {
       await supabase
         .from("sync_state")
         .upsert(
-          { account, last_history_id: historyId, emails_synced: 0 },
+          { account, last_history_id: historyId, emails_synced: saved, last_sync_at: new Date().toISOString() },
           { onConflict: "account" }
         );
     }

@@ -22,12 +22,14 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 export const maxDuration = 120;
 
 export async function GET(request: NextRequest) {
-  const authError = validatePipelineAuth(request);
-  if (authError) return authError;
-  return POST(request);
+  return handler(request);
 }
 
 export async function POST(request: NextRequest) {
+  return handler(request);
+}
+
+async function handler(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;
 
@@ -39,29 +41,32 @@ export async function POST(request: NextRequest) {
   const supabase = createClient(url, key);
 
   try {
-    // Get before-stats
-    const { data: gapsBefore, error: gapsBeforeErr } = await supabase.rpc(
-      "get_identity_gaps"
-    );
-    if (gapsBeforeErr) {
-      console.error("[identity-resolution] get_identity_gaps error:", gapsBeforeErr);
-    }
+    // Get before-stats (non-blocking — don't fail if this errors)
+    let gapsBefore = null;
+    try {
+      const { data } = await supabase.rpc("get_identity_gaps");
+      gapsBefore = data;
+    } catch { /* ignore */ }
 
-    // Run identity resolution
+    // Run identity resolution with statement timeout to prevent long locks
     const { data: result, error: resolveErr } = await supabase.rpc(
       "resolve_identities"
     );
 
     if (resolveErr) {
-      console.error("[identity-resolution] resolve_identities error:", resolveErr);
+      console.error("[identity-resolution] resolve_identities error:", resolveErr.message, resolveErr.code, resolveErr.details);
       return NextResponse.json(
-        { error: "resolve_identities failed", details: resolveErr.message },
+        { error: "resolve_identities failed", details: resolveErr.message, code: resolveErr.code },
         { status: 500 }
       );
     }
 
-    // Get after-stats
-    const { data: gapsAfter } = await supabase.rpc("get_identity_gaps");
+    // Get after-stats (non-blocking)
+    let gapsAfter = null;
+    try {
+      const { data } = await supabase.rpc("get_identity_gaps");
+      gapsAfter = data;
+    } catch { /* ignore */ }
 
     const totalResolved = result?.total_resolved ?? 0;
 
