@@ -10,8 +10,8 @@ import { Separator } from "@/components/ui/separator";
 import { Progress } from "@/components/ui/progress";
 import {
   ArrowRight, DollarSign, Inbox, RefreshCw, Truck,
-  TrendingUp, FileText, Banknote,
-  Mail, ShoppingCart, Package,
+  TrendingUp, FileText, Banknote, AlertTriangle,
+  Mail, ShoppingCart, Package, Users, Bot, RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell, Tooltip } from "recharts";
@@ -271,6 +271,111 @@ export default function DashboardPage() {
             </CardContent>
           </Card>
         </section>
+      )}
+
+      {/* ════ Inteligencia ════ */}
+      {(d.urgentInsights.length > 0 || d.reorderAlerts.length > 0 || d.riskContacts.length > 0) && (
+        <>
+          <Separator />
+          <section className="space-y-3">
+            <SectionHeader icon={Bot} title="Inteligencia" color="text-primary" />
+            <div className="grid gap-3 md:grid-cols-3">
+
+              {/* Urgent Insights */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <Link href="/inbox" className="flex items-center justify-between group">
+                    <div className="flex items-center gap-2">
+                      <AlertTriangle className="h-4 w-4 text-danger" />
+                      <CardTitle className="text-sm">Insights Urgentes</CardTitle>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  {d.urgentInsights.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">Sin insights criticos</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {d.urgentInsights.map(ins => (
+                        <Link key={ins.id} href={`/inbox/insight/${ins.id}`} className="block rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
+                          <p className="text-sm font-medium line-clamp-2 leading-snug">{ins.title}</p>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <Badge variant={ins.severity === "critical" ? "critical" : "warning"} className="text-[10px]">{ins.severity}</Badge>
+                            {ins.category && <span className="text-[10px] text-muted-foreground">{ins.category}</span>}
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Reorder Alerts */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <Link href="/companies" className="flex items-center justify-between group">
+                    <div className="flex items-center gap-2">
+                      <RotateCcw className="h-4 w-4 text-warning" />
+                      <CardTitle className="text-sm">Recompras Vencidas</CardTitle>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  {d.reorderAlerts.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">Sin alertas de recompra</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {d.reorderAlerts.map((r, i) => (
+                        <div key={i} className="flex items-center justify-between rounded-lg border p-2.5">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-medium truncate">{r.company_name}</p>
+                            <p className="text-[10px] text-muted-foreground">{r.top_product_ref ?? "—"} · +{r.days_overdue_reorder}d vencido</p>
+                          </div>
+                          <Badge variant={r.reorder_status === "critical" || r.reorder_status === "lost" ? "critical" : "warning"} className="text-[10px] shrink-0 ml-2">
+                            {r.reorder_status}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Risk Contacts */}
+              <Card>
+                <CardHeader className="pb-2">
+                  <Link href="/contacts" className="flex items-center justify-between group">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-4 w-4 text-danger" />
+                      <CardTitle className="text-sm">Contactos en Riesgo</CardTitle>
+                    </div>
+                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:translate-x-0.5 transition-transform" />
+                  </Link>
+                </CardHeader>
+                <CardContent>
+                  {d.riskContacts.length === 0 ? (
+                    <p className="text-xs text-muted-foreground py-4 text-center">Sin contactos en riesgo alto</p>
+                  ) : (
+                    <div className="space-y-2">
+                      {d.riskContacts.map(c => (
+                        <Link key={c.id} href={`/contacts/${c.id}`} className="flex items-center justify-between rounded-lg border p-2.5 hover:bg-muted/50 transition-colors">
+                          <span className="text-sm font-medium truncate min-w-0 flex-1">{c.name}</span>
+                          <div className="flex items-center gap-2 shrink-0 ml-2">
+                            <Progress value={c.relationship_score ?? 0} className="h-1.5 w-10" />
+                            <Badge variant={c.risk_level === "critical" ? "critical" : "warning"} className="text-[10px]">{c.risk_level}</Badge>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+            </div>
+          </section>
+        </>
       )}
 
       {/* ════ Briefing ════ */}

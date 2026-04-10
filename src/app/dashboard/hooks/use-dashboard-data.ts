@@ -24,6 +24,10 @@ export interface DashboardData {
   cashflowTotal: { receivable: number; expected: number; probability: number } | null;
   anomalyCount: number; cobrosEstaSemana: number;
   briefingSummary: string | null;
+  // Phase 2: new data
+  reorderAlerts: { company_name: string; reorder_status: string; days_overdue_reorder: number; avg_order_value: number; top_product_ref: string | null }[];
+  riskContacts: { id: number; name: string; risk_level: string; relationship_score: number | null }[];
+  urgentInsights: { id: number; agent_id: number; title: string; severity: string | null; category: string | null; created_at: string }[];
   lastUpdated: string;
 }
 
@@ -74,6 +78,7 @@ export function useDashboardData() {
         emailsTodayR, emailsYesterdayR, insightsR,
         purchasesR, activitiesR, actionsPendR, actionsCompR,
         revenueR, invoicedR, cashflowR, anomalyR, briefingR,
+        reorderR, riskContactsR, urgentInsightsR,
       ] = await Promise.all([
         sq(supabase.from("odoo_sale_orders").select("date_order, amount_untaxed, salesperson_name").gte("date_order", rangeStr).in("state", ["sale", "done"])),
         sq(supabase.from("odoo_payments").select("payment_date, amount").gte("payment_date", monthStr).eq("payment_type", "inbound")),
@@ -91,6 +96,9 @@ export function useDashboardData() {
         sq(supabase.from("cashflow_projection").select("flow_type, period, gross_amount, net_amount, probability").order("sort_order")),
         sc(supabase.from("accounting_anomalies").select("id", { count: "exact", head: true }).in("severity", ["critical", "high"])),
         sq(supabase.from("briefings").select("summary_text").eq("scope", "daily").order("created_at", { ascending: false }).limit(1)),
+        sq(supabase.from("client_reorder_predictions").select("company_name, reorder_status, days_overdue_reorder, avg_order_value, top_product_ref").in("reorder_status", ["overdue", "critical", "lost"]).order("avg_order_value", { ascending: false }).limit(8)),
+        sq(supabase.from("contacts").select("id, name, risk_level, relationship_score").in("risk_level", ["high", "critical"]).order("relationship_score", { ascending: true }).limit(6)),
+        sq(supabase.from("agent_insights").select("id, agent_id, title, severity, category, created_at").in("state", ["new", "seen"]).in("severity", ["critical", "high"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(5)),
       ]);
 
       // Process sales
@@ -184,6 +192,9 @@ export function useDashboardData() {
         cashflow, cashflowTotal: cfSummary ? { receivable: Number(cfSummary.gross_amount ?? 0), expected: Number(cfSummary.net_amount ?? 0), probability: Number(cfSummary.probability ?? 0) } : null,
         anomalyCount: anomalyR, cobrosEstaSemana,
         briefingSummary: (briefingR as { summary_text: string }[] | null)?.[0]?.summary_text ?? null,
+        reorderAlerts: (reorderR ?? []) as DashboardData["reorderAlerts"],
+        riskContacts: (riskContactsR ?? []) as DashboardData["riskContacts"],
+        urgentInsights: (urgentInsightsR ?? []) as DashboardData["urgentInsights"],
         lastUpdated: new Date().toISOString(),
       });
     } catch (err) { setError(String(err)); }

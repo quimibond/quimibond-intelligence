@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Loader2, Mail, Paperclip } from "lucide-react";
+import { Building2, Loader2, Mail, Paperclip } from "lucide-react";
 import { supabase } from "@/lib/supabase";
 import { formatDateTime, truncate } from "@/lib/utils";
 import type { Email } from "@/lib/types";
@@ -51,7 +51,7 @@ export default function EmailsPage() {
   function buildEmailQuery(searchVal: string, account: string, senderType: string) {
     let q = supabase
       .from("emails")
-      .select("*")
+      .select("*, companies:company_id(name)")
       .order("email_date", { ascending: false });
     if (account !== "all") q = q.eq("account", account);
     if (senderType !== "all") q = q.eq("sender_type", senderType);
@@ -159,6 +159,12 @@ export default function EmailsPage() {
                     </Badge>
                   )}
                   {email.has_attachments && <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />}
+                  {(email as unknown as { companies?: { name: string } | null }).companies?.name && (
+                    <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
+                      <Building2 className="h-3 w-3" />
+                      {(email as unknown as { companies: { name: string } }).companies.name}
+                    </span>
+                  )}
                   {email.thread_id && (
                     <Link href={`/threads/${email.thread_id}`} className="text-xs text-primary hover:underline">
                       Ver hilo
@@ -180,6 +186,7 @@ export default function EmailsPage() {
                   <TableHead>Remitente</TableHead>
                   <TableHead>Destinatario</TableHead>
                   <TableHead>Asunto</TableHead>
+                  <TableHead>Empresa</TableHead>
                   <TableHead>Tipo</TableHead>
                   <TableHead className="w-10" />
                 </TableRow>
@@ -202,6 +209,9 @@ export default function EmailsPage() {
                     </TableCell>
                     <TableCell className="font-medium">
                       {truncate(email.subject, 60) || "—"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground max-w-[150px] truncate">
+                      {(email as unknown as { companies?: { name: string } | null }).companies?.name ?? "—"}
                     </TableCell>
                     <TableCell>
                       {email.sender_type && (

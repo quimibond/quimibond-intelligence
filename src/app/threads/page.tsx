@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import {
+  Building2,
   Clock,
   AlertTriangle,
   MessageSquare,
@@ -60,7 +61,7 @@ export default function ThreadsPage() {
   function buildThreadQuery(searchVal: string) {
     let q = supabase
       .from("threads")
-      .select("*")
+      .select("*, companies:company_id(name)")
       .order("hours_without_response", { ascending: false, nullsFirst: false })
       .limit(PAGE_SIZE);
     if (searchVal.trim()) {
@@ -110,7 +111,7 @@ export default function ThreadsPage() {
     setLoadingMore(true);
     let q = supabase
       .from("threads")
-      .select("*")
+      .select("*, companies:company_id(name)")
       .order("hours_without_response", { ascending: false, nullsFirst: false })
       .range(threads.length, threads.length + PAGE_SIZE - 1);
     if (search.trim()) {
@@ -288,6 +289,12 @@ export default function ThreadsPage() {
                         {truncate(thread.last_sender, 30)} &middot;{" "}
                         {thread.message_count} msgs &middot;{" "}
                         {timeAgo(thread.created_at)}
+                        {(thread as unknown as { companies?: { name: string } | null }).companies?.name && (
+                          <span className="inline-flex items-center gap-0.5 ml-1">
+                            <Building2 className="h-3 w-3 inline" />
+                            {(thread as unknown as { companies: { name: string } }).companies.name}
+                          </span>
+                        )}
                       </p>
                     </div>
                     <button
