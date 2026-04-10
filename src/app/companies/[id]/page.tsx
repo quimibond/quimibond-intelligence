@@ -333,28 +333,36 @@ export default function CompanyDetailPage() {
 
       {/* 4 inline stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <p className="text-lg font-black tabular-nums">{formatCurrency(company.lifetime_value)}</p>
-          <p className="text-[10px] text-muted-foreground">revenue total</p>
-        </div>
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <p className="text-lg font-black tabular-nums">{profile?.revenue_90d != null ? formatCurrency(profile.revenue_90d) : "—"}</p>
-          <p className="text-[10px] text-muted-foreground">90 dias</p>
-        </div>
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <p className={cn("text-lg font-black tabular-nums", overdue && overdue > 0 ? "text-danger" : "")}>
-            {overdue != null ? formatCurrency(overdue) : "—"}
-          </p>
-          <p className="text-[10px] text-muted-foreground">vencido</p>
-        </div>
-        <div className="rounded-xl bg-muted/50 p-2.5">
-          <p className={cn("text-lg font-black tabular-nums",
-            profile?.trend_pct > 0 ? "text-success" : profile?.trend_pct < 0 ? "text-danger" : ""
-          )}>
-            {profile?.trend_pct != null ? `${profile.trend_pct > 0 ? "+" : ""}${Number(profile.trend_pct).toFixed(0)}%` : "—"}
-          </p>
-          <p className="text-[10px] text-muted-foreground">tendencia</p>
-        </div>
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-lg font-black tabular-nums">{formatCurrency(company.lifetime_value)}</p>
+            <p className="text-[10px] text-muted-foreground">revenue total</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-lg font-black tabular-nums">{profile?.revenue_90d != null ? formatCurrency(profile.revenue_90d) : "—"}</p>
+            <p className="text-[10px] text-muted-foreground">90 dias</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <p className={cn("text-lg font-black tabular-nums", overdue && overdue > 0 ? "text-danger" : "")}>
+              {overdue != null ? formatCurrency(overdue) : "—"}
+            </p>
+            <p className="text-[10px] text-muted-foreground">vencido</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <p className={cn("text-lg font-black tabular-nums",
+              profile?.trend_pct > 0 ? "text-success" : profile?.trend_pct < 0 ? "text-danger" : ""
+            )}>
+              {profile?.trend_pct != null ? `${profile.trend_pct > 0 ? "+" : ""}${Number(profile.trend_pct).toFixed(0)}%` : "—"}
+            </p>
+            <p className="text-[10px] text-muted-foreground">tendencia</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Tabs */}

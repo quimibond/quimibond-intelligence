@@ -245,18 +245,24 @@ export default function ContactDetailPage() {
 
       {/* Stats */}
       <div className="grid grid-cols-3 gap-3 text-center">
-        <div className="rounded-xl bg-muted/50 p-3">
-          <div className={cn("h-2.5 w-2.5 rounded-full mx-auto mb-1.5", riskDot)} />
-          <p className="text-xs text-muted-foreground">{contact.risk_level ?? "—"}</p>
-        </div>
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-xl font-black tabular-nums">{contact.current_health_score ?? "—"}</p>
-          <p className="text-xs text-muted-foreground">health</p>
-        </div>
-        <div className="rounded-xl bg-muted/50 p-3">
-          <p className="text-xl font-black tabular-nums">{totalEmails}</p>
-          <p className="text-xs text-muted-foreground">emails</p>
-        </div>
+        <Card>
+          <CardContent className="p-3">
+            <div className={cn("h-2.5 w-2.5 rounded-full mx-auto mb-1.5", riskDot)} />
+            <p className="text-xs text-muted-foreground">{contact.risk_level ?? "—"}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-xl font-black tabular-nums">{contact.current_health_score ?? "—"}</p>
+            <p className="text-xs text-muted-foreground">health</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3">
+            <p className="text-xl font-black tabular-nums">{totalEmails}</p>
+            <p className="text-xs text-muted-foreground">emails</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Tabs */}

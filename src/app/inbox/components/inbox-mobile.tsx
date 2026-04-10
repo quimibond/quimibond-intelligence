@@ -91,7 +91,7 @@ function SwipeCard({
   const isSwipingRight = swipeX > 30;
   const isSwipingLeft = swipeX < -30;
   const swipeOpacity = Math.min(Math.abs(swipeX) / 120, 1);
-  const sevDot = SEVERITY_DOTS[insight.severity ?? "medium"] ?? "bg-gray-400";
+  const sevDot = SEVERITY_DOTS[insight.severity ?? "medium"] ?? "bg-muted-foreground";
 
   return (
     <div

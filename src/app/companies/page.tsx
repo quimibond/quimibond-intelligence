@@ -14,6 +14,7 @@ import { BatchEnrichButton } from "@/components/shared/batch-enrich-button";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select-native";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -187,10 +188,11 @@ export default function CompaniesPage() {
 
             return (
               <Link key={c.company_id} href={`/companies/${c.company_id}`} className="block">
-                <div className={cn(
-                  "rounded-xl border bg-card p-3.5 active:bg-muted/50 transition-colors",
+                <Card className={cn(
+                  "active:bg-muted/50 transition-colors",
                   (hasOverdue || hasLate) && "border-l-4 border-l-danger/50"
                 )}>
+                <CardContent className="p-3.5">
                   {/* Row 1: Name + tier + risk */}
                   <div className="flex items-center gap-2 mb-1.5">
                     <p className="text-[15px] font-bold truncate flex-1">{c.name}</p>
@@ -240,7 +242,8 @@ export default function CompaniesPage() {
                     )}
                     {!hasOverdue && !hasLate && <span>Sin alertas</span>}
                   </div>
-                </div>
+                </CardContent>
+                </Card>
               </Link>
             );
           })}

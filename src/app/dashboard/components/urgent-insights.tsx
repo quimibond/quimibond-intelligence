@@ -62,7 +62,7 @@ export function UrgentInsights({ insights, agents, totalPending }: UrgentInsight
                       {ins.category && (
                         <span className={cn(
                           "inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium",
-                          INSIGHT_CATEGORY_COLORS[ins.category] ?? "text-gray-600 bg-gray-50"
+                          INSIGHT_CATEGORY_COLORS[ins.category] ?? "text-muted-foreground bg-muted"
                         )}>
                           {INSIGHT_CATEGORY_LABELS[ins.category] ?? ins.category}
                         </span>

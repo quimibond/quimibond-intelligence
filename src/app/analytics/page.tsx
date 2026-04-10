@@ -491,12 +491,12 @@ export default function AnalyticsPage() {
                           {fmtCompact(row.overdue_now ?? 0)}
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          <span className={(row.overdue_delta ?? 0) > 0 ? "text-red-500" : (row.overdue_delta ?? 0) < 0 ? "text-green-500" : ""}>
+                          <span className={(row.overdue_delta ?? 0) > 0 ? "text-danger" : (row.overdue_delta ?? 0) < 0 ? "text-success" : ""}>
                             {(row.overdue_delta ?? 0) > 0 ? "+" : ""}{fmtCompact(row.overdue_delta ?? 0)}
                           </span>
                         </TableCell>
                         <TableCell className="text-right tabular-nums">
-                          <span className={(row.late_delta ?? 0) > 0 ? "text-red-500" : (row.late_delta ?? 0) < 0 ? "text-green-500" : ""}>
+                          <span className={(row.late_delta ?? 0) > 0 ? "text-danger" : (row.late_delta ?? 0) < 0 ? "text-success" : ""}>
                             {(row.late_delta ?? 0) > 0 ? "+" : ""}{row.late_delta ?? 0}
                           </span>
                         </TableCell>
@@ -557,7 +557,7 @@ export default function AnalyticsPage() {
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {m.price_delta_pct != null ? (
-                          <span className={Number(m.price_delta_pct) > 5 ? "text-red-500" : Number(m.price_delta_pct) < -5 ? "text-green-500" : ""}>
+                          <span className={Number(m.price_delta_pct) > 5 ? "text-danger" : Number(m.price_delta_pct) < -5 ? "text-success" : ""}>
                             {Number(m.price_delta_pct) > 0 ? "+" : ""}{Number(m.price_delta_pct).toFixed(1)}%
                           </span>
                         ) : "—"}

@@ -130,11 +130,11 @@ export function useDashboardData() {
       const overdue = (overdueR ?? []) as { amount_residual: number; days_overdue: number }[];
       const cobranzaVencida = overdue.reduce((s, r) => s + Number(r.amount_residual ?? 0), 0);
       const bDefs = [
-        { label: "1-15d", min: 1, max: 15, color: "bg-yellow-400" },
-        { label: "16-30d", min: 16, max: 30, color: "bg-amber-500" },
-        { label: "31-60d", min: 31, max: 60, color: "bg-orange-500" },
-        { label: "61-90d", min: 61, max: 90, color: "bg-red-400" },
-        { label: "90d+", min: 91, max: 99999, color: "bg-red-600" },
+        { label: "1-15d", min: 1, max: 15, color: "bg-warning/60" },
+        { label: "16-30d", min: 16, max: 30, color: "bg-warning" },
+        { label: "31-60d", min: 31, max: 60, color: "bg-warning/80" },
+        { label: "61-90d", min: 61, max: 90, color: "bg-danger/70" },
+        { label: "90d+", min: 91, max: 99999, color: "bg-danger" },
       ];
       const agingBuckets = bDefs.map(b => {
         const rows = overdue.filter(r => r.days_overdue >= b.min && r.days_overdue <= b.max);
