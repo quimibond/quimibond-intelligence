@@ -75,10 +75,10 @@ export function useDashboardData() {
         purchasesR, activitiesR, actionsPendR, actionsCompR,
         revenueR, invoicedR, cashflowR, anomalyR, briefingR,
       ] = await Promise.all([
-        sq(supabase.from("odoo_sale_orders").select("date_order, amount_untaxed, salesperson_name").gte("date_order", rangeStr).in("state", ["sale", "done"]).limit(1000)),
-        sq(supabase.from("odoo_payments").select("payment_date, amount").gte("payment_date", monthStr).eq("payment_type", "inbound").limit(1000)),
+        sq(supabase.from("odoo_sale_orders").select("date_order, amount_untaxed, salesperson_name").gte("date_order", rangeStr).in("state", ["sale", "done"])),
+        sq(supabase.from("odoo_payments").select("payment_date, amount").gte("payment_date", monthStr).eq("payment_type", "inbound")),
         sq(supabase.from("odoo_invoices").select("amount_residual, days_overdue").eq("move_type", "out_invoice").in("payment_state", ["not_paid", "partial"]).gt("days_overdue", 0)),
-        sq(supabase.from("odoo_deliveries").select("state, date_done, scheduled_date, is_late").limit(1000)),
+        sq(supabase.from("odoo_deliveries").select("state, date_done, scheduled_date, is_late").or(`date_done.gte.${rangeStr},and(state.neq.done,state.neq.cancel)`)),
         sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", todayStr).lt("email_date", tomorrowStr)),
         sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", yesterdayStr).lt("email_date", todayStr)),
         sq(supabase.from("agent_insights").select("state").in("state", ["new", "seen"]).gte("confidence", 0.80)),
