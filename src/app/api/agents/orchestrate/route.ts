@@ -15,6 +15,8 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { computeExpiresAt } from "@/lib/insight-ttl";
 import { computeAdaptiveThreshold } from "@/lib/agents/confidence-threshold";
 import { loadDirectorConfig, filterInsightsByConfig } from "@/lib/agents/director-config";
+import { buildFinancieroContextOperativo, buildFinancieroContextEstrategico } from "@/lib/agents/financiero-context";
+import { advanceMode } from "@/lib/agents/mode-rotation";
 
 export const maxDuration = 300;
 
@@ -188,7 +190,8 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
   }
 
   try {
-    const context = await buildAgentContext(supabase, agent.domain, agent.id);
+    const directorConfig = await loadDirectorConfig(supabase, agent.id);
+    const context = await buildAgentContext(supabase, agent.domain, agent.id, directorConfig);
 
     const { data: memories } = await supabase
       .from("agent_memory")
@@ -219,7 +222,6 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
     }
 
     const confidenceThreshold = await getAgentConfidenceThreshold(supabase, agent.id);
-    const directorConfig = await loadDirectorConfig(supabase, agent.id);
     // Piso adicional desde config (si está seteado)
     const effectiveThreshold = Math.max(confidenceThreshold, directorConfig.min_confidence_floor);
     const model = getModelForAgent(agent.slug);
@@ -809,7 +811,12 @@ REGLAS para actions:
 
 // ── Context builders ──────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function buildAgentContext(supabase: any, domain: string, agentId?: number): Promise<string> {
+async function buildAgentContext(
+  supabase: any,
+  domain: string,
+  agentId?: number,
+  directorConfig?: import("@/lib/agents/director-config").DirectorConfig
+): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
   const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
     // What OTHER directors are saying (reduced from 15 to 10)
@@ -960,7 +967,7 @@ async function buildAgentContext(supabase: any, domain: string, agentId?: number
 
   const crossIntel = sections.length ? sections.join("\n\n") + "\n\n" : "";
 
-  const domainData = await getDomainData(supabase, domain);
+  const domainData = await getDomainData(supabase, domain, agentId, directorConfig);
   return crossIntel + emailIntel + domainData;
 }
 
@@ -1069,7 +1076,7 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getDomainData(sb: any, domain: string): Promise<string> {
+async function getDomainData(sb: any, domain: string, agentId?: number, directorConfig?: import("@/lib/agents/director-config").DirectorConfig): Promise<string> {
   // Load company name map for resolving IDs to names in JSON output
   const { data: companyNames } = await sb.from("companies").select("id, canonical_name").limit(2000);
   _companyNameMap = new Map<number, string>();
@@ -1120,42 +1127,14 @@ async function getDomainData(sb: any, domain: string): Promise<string> {
       return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (riesgo de relacion)\n${safeJSON(clientOverdue.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
-      const [payPredictions, trends, invoices, overdue, payments, anomalies, cashflow, supplierOverdue, supplierPayments, cfoDash, plReport, bankBalances, realPayments, workingCap, runwayRes] = await Promise.all([
-        sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, median_days_to_pay, payment_trend, total_pending, max_days_overdue, predicted_payment_date, payment_risk").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal", "MEDIO: pasado de promedio"]).order("total_pending", { ascending: false }).limit(15),
-        sb.from("weekly_trends").select("company_name, tier, overdue_now, overdue_delta, pending_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(15),
-        sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").gt("days_overdue", 0).order("days_overdue", { ascending: false }).limit(20),
-        sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(15),
-        sb.from("odoo_account_payments").select("company_id, amount, date, journal_name, payment_method").eq("payment_type", "inbound").order("date", { ascending: false }).limit(10),
-        sb.from("accounting_anomalies").select("anomaly_type, severity, description, company_name, amount").order("amount", { ascending: false }).limit(20),
-        sb.from("cashflow_projection").select("flow_type, period, item_count, gross_amount, net_amount, probability").order("sort_order"),
-        // Supplier invoices we owe
-        sb.from("odoo_invoices").select("company_id, name, amount_total, amount_residual, days_overdue, due_date, payment_term").eq("move_type", "in_invoice").in("payment_state", ["not_paid", "partial"]).gt("days_overdue", 0).order("days_overdue", { ascending: false }).limit(15),
-        // Recent payments to suppliers
-        sb.from("odoo_account_payments").select("company_id, amount, date, journal_name, payment_method").eq("payment_type", "outbound").order("date", { ascending: false }).limit(10),
-        // CFO: Executive dashboard (cash, CxC, CxP, overdue, 30d metrics)
-        sb.from("cfo_dashboard").select("*").limit(1),
-        // CFO: P&L by month (income, COGS, expenses, profit)
-        sb.from("pl_estado_resultados").select("*").order("period", { ascending: false }).limit(6),
-        // CFO: Bank balances (current cash position)
-        sb.from("odoo_bank_balances").select("name, journal_type, currency, current_balance, updated_at").order("current_balance", { ascending: false }),
-        // CFO: Real payments with journal/method detail
-        sb.from("odoo_account_payments").select("company_id, name, payment_type, partner_type, amount, currency, date, journal_name, payment_method, state, is_reconciled").eq("state", "paid").order("date", { ascending: false }).limit(15),
-        // Working capital: liquidity position
-        sb.from("working_capital").select("*").limit(1),
-        // Cash flow runway: days until payroll shortfall
-        sb.rpc("cashflow_runway").then((r: { data: unknown; error: unknown }) => r).catch(() => ({ data: null, error: "rpc_failed" })),
-      ]);
-      const receivables = ((cashflow.data ?? []) as Record<string, unknown>[]).filter(r => r.flow_type === "receivable");
-      const cashSummary = ((cashflow.data ?? []) as Record<string, unknown>[]).find(r => r.flow_type === "summary");
-      const anomalyList = (anomalies.data ?? []) as Record<string, unknown>[];
-      const duplicates = anomalyList.filter(a => a.anomaly_type === "duplicate_invoice");
-      const staleReceivables = anomalyList.filter(a => a.anomaly_type === "stale_receivable");
-      const creditNotes = anomalyList.filter(a => a.anomaly_type === "unusual_credit_note");
-      const dash = (cfoDash.data ?? [])[0] as Record<string, unknown> | undefined;
-      const activeBanks = ((bankBalances.data ?? []) as Record<string, unknown>[]).filter(b => Number(b.current_balance ?? 0) !== 0);
-      const wc = ((workingCap.data ?? []) as Record<string, unknown>[])[0];
-      const runway = runwayRes.data as Record<string, unknown> | null;
-      return `${profileSection}## RESUMEN EJECUTIVO CFO\nEfectivo disponible: $${dash?.efectivo_disponible ?? "?"} | Deuda tarjetas: $${dash?.deuda_tarjetas ?? "?"} | Posición neta: $${dash?.posicion_neta ?? "?"} | CxC: $${dash?.cuentas_por_cobrar ?? "?"} | CxP: $${dash?.cuentas_por_pagar ?? "?"} | Cartera vencida: $${dash?.cartera_vencida ?? "?"} | Ventas 30d: $${dash?.ventas_30d ?? "?"} | Cobros 30d: $${dash?.cobros_30d ?? "?"} | Pagos prov 30d: $${dash?.pagos_prov_30d ?? "?"} | Clientes morosos: ${dash?.clientes_morosos ?? "?"}\n## CAPITAL DE TRABAJO\nEfectivo disponible: $${wc?.efectivo_disponible ?? "?"} | Deuda tarjetas: $${wc?.deuda_tarjetas ?? "?"} | Efectivo neto: $${wc?.efectivo_neto ?? "?"} | CxC: $${wc?.cuentas_por_cobrar ?? "?"} | CxP: $${wc?.cuentas_por_pagar ?? "?"} | Capital de trabajo: $${wc?.capital_de_trabajo ?? "?"} | Ratio liquidez: ${wc?.ratio_liquidez ?? "?"} | Ratio prueba acida: ${wc?.ratio_prueba_acida ?? "?"}\n## ALERTA CASH FLOW (runway)\n${runway?.alerta ?? "Sin datos"}\nDias de runway: ${runway?.dias_runway ?? "?"} | Nomina mensual estimada: $${runway?.nomina_mensual_estimada ?? "?"}\nProyeccion 7d: ${safeJSON(runway?.proyeccion_7d)}\nProyeccion 15d: ${safeJSON(runway?.proyeccion_15d)}\nProyeccion 30d: ${safeJSON(runway?.proyeccion_30d)}\n## SALDOS BANCARIOS (solo cuentas con movimiento)\n${safeJSON(activeBanks)}\n## ESTADO DE RESULTADOS (P&L mensual)\n${safeJSON(plReport.data)}\n## PAGOS REALES (con banco y metodo)\n${safeJSON(realPayments.data)}\n## FLUJO DE EFECTIVO PROYECTADO\nResumen: cobrable bruto $${cashSummary?.gross_amount ?? "?"}, neto esperado $${cashSummary?.net_amount ?? "?"} (probabilidad ${cashSummary?.probability ?? "?"}%)\n${safeJSON(receivables)}\n## ANOMALIAS CONTABLES: facturas duplicadas (${duplicates.length})\n${safeJSON(duplicates.slice(0, 10))}\n## Cartera estancada >90 dias (${staleReceivables.length})\n${safeJSON(staleReceivables.slice(0, 10))}\n## Notas de credito inusuales >$50K (${creditNotes.length})\n${safeJSON(creditNotes)}\n## FACTURAS PROVEEDOR VENCIDAS\n${safeJSON(supplierOverdue.data)}\n## PAGOS A PROVEEDORES (recientes)\n${safeJSON(supplierPayments.data)}\n## PREDICCION DE PAGO\n${safeJSON(payPredictions.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Facturas vencidas (clientes)\n${safeJSON(invoices.data)}\n## Cartera vencida por empresa\n${safeJSON(overdue.data)}\n## Cobros recibidos\n${safeJSON(payments.data)}`;
+      const modes = directorConfig?.mode_rotation?.length
+        ? directorConfig.mode_rotation
+        : ["operativo", "estrategico"];
+      const mode = agentId != null ? await advanceMode(sb, agentId, modes) : "operativo";
+      if (mode === "estrategico") {
+        return buildFinancieroContextEstrategico(sb, profileSection);
+      }
+      return buildFinancieroContextOperativo(sb, profileSection);
     }
     case "operaciones_dir": {
       const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries] = await Promise.all([
