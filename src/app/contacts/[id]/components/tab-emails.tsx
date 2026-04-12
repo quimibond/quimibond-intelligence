@@ -2,7 +2,7 @@
 
 import { Mail } from "lucide-react";
 import { formatDateTime, timeAgo, truncate } from "@/lib/utils";
-import type { Email } from "@/lib/types";
+import type { Email, ContactCommunicationsRPC } from "@/lib/types";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -27,8 +27,7 @@ const senderTypeLabel: Record<string, string> = {
 
 interface TabEmailsProps {
   emails: Email[];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  contactComms: any;
+  contactComms: ContactCommunicationsRPC | null;
 }
 
 export function TabEmails({ emails, contactComms }: TabEmailsProps) {

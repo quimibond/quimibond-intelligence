@@ -7,10 +7,10 @@ import { HealthTrendChart } from "@/components/shared/health-trend-chart";
 import { TrendBadge } from "@/components/shared/trend-badge";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import type { HealthScore } from "@/lib/types";
 
 interface TabSaludProps {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  healthScores: any[];
+  healthScores: HealthScore[];
 }
 
 export function TabSalud({ healthScores }: TabSaludProps) {
@@ -27,19 +27,17 @@ export function TabSalud({ healthScores }: TabSaludProps) {
   const latest = healthScores[0];
   const trendData = [...healthScores]
     .reverse()
-    .map((s: Record<string, unknown>) => ({
-      date: s.score_date as string,
-      overall_score: s.overall_score as number,
-      communication: s.communication_score as number | undefined,
-      financial: s.financial_score as number | undefined,
-      sentiment: s.sentiment_score as number | undefined,
-      responsiveness: s.responsiveness_score as number | undefined,
-      engagement: s.engagement_score as number | undefined,
+    .map((s) => ({
+      date: s.score_date,
+      overall_score: s.overall_score ?? 0,
+      communication: s.communication_score ?? undefined,
+      financial: s.financial_score ?? undefined,
+      sentiment: s.sentiment_score ?? undefined,
+      responsiveness: s.responsiveness_score ?? undefined,
+      engagement: s.engagement_score ?? undefined,
     }));
-  const riskSignals: string[] =
-    Array.isArray(latest.risk_signals) ? latest.risk_signals : [];
-  const opportunitySignals: string[] =
-    Array.isArray(latest.opportunity_signals) ? latest.opportunity_signals : [];
+  const riskSignals: string[] = Array.isArray(latest.risk_signals) ? latest.risk_signals : [];
+  const opportunitySignals: string[] = Array.isArray(latest.opportunity_signals) ? latest.opportunity_signals : [];
 
   return (
     <div className="space-y-6">

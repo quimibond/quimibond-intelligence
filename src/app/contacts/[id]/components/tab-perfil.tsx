@@ -1,15 +1,14 @@
 "use client";
 
 import { timeAgo } from "@/lib/utils";
-import type { Contact } from "@/lib/types";
+import type { Contact, PersonProfile } from "@/lib/types";
 import { ProfileCard } from "@/components/shared/profile-card";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 
 interface TabPerfilProps {
   contact: Contact;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  personProfile: any;
+  personProfile: PersonProfile | null;
 }
 
 export function TabPerfil({ contact, personProfile }: TabPerfilProps) {

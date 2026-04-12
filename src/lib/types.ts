@@ -29,11 +29,11 @@ export interface Company {
   delivery_otd_rate: number | null;
   // Intelligence (from Claude)
   description: string | null;
-  key_products: unknown;
+  key_products: string[] | null;
   relationship_summary: string | null;
   relationship_type: string | null;
-  risk_signals: unknown;
-  opportunity_signals: unknown;
+  risk_signals: string[] | null;
+  opportunity_signals: string[] | null;
   strategic_notes: string | null;
   // Odoo context
   odoo_context: Record<string, unknown> | null;
@@ -61,7 +61,7 @@ export interface Contact {
   decision_power: string | null;
   communication_style: string | null;
   language_preference: string | null;
-  key_interests: unknown;
+  key_interests: string[] | null;
   personality_notes: string | null;
   negotiation_style: string | null;
   response_pattern: string | null;
@@ -330,8 +330,8 @@ export interface HealthScore {
   responsiveness_score: number | null;
   engagement_score: number | null;
   payment_compliance_score: number | null;
-  risk_signals: unknown;
-  opportunity_signals: unknown;
+  risk_signals: string[] | null;
+  opportunity_signals: string[] | null;
   created_at: string;
 }
 
@@ -989,4 +989,46 @@ export interface RevenueRow {
   avg_order_value: number | null;
   period_start: string;
   period_type: string | null;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONTACT DETAIL — RPC response shapes
+// ═══════════════════════════════════════════════════════════════
+
+export interface PersonProfile {
+  personality_traits?: string[];
+  decision_factors?: string[];
+  interests?: string[];
+  summary?: string;
+  communication_style?: string;
+  [key: string]: unknown;
+}
+
+export interface ContactIntelligenceKPIs {
+  open_alerts: number;
+  pending_actions: number;
+  overdue_actions: number;
+}
+
+export interface ContactIntelligenceRPC {
+  open_alerts?: number;
+  pending_actions?: number;
+  overdue_actions?: number;
+  person_profile?: PersonProfile | null;
+}
+
+export interface ContactEmailRow {
+  id?: number | string;
+  subject?: string | null;
+  sender?: string | null;
+  recipient?: string | null;
+  email_date?: string | null;
+  [key: string]: unknown;
+}
+
+export interface ContactCommunicationsRPC {
+  emails_sent?: ContactEmailRow[];
+  emails_received?: ContactEmailRow[];
+  facts?: Fact[];
+  [key: string]: unknown;
 }

@@ -23,7 +23,14 @@ import type {
   Email,
   Alert,
   ActionItem,
+  PersonProfile,
+  HealthScore,
+  ContactIntelligenceKPIs,
+  ContactIntelligenceRPC,
+  ContactCommunicationsRPC,
+  ContactEmailRow,
 } from "@/lib/types";
+import { ErrorBoundary } from "@/components/shared/error-boundary";
 import { Breadcrumbs } from "@/components/shared/breadcrumbs";
 import { RiskBadge } from "@/components/shared/risk-badge";
 import { EmptyState } from "@/components/shared/empty-state";
@@ -58,13 +65,10 @@ export default function ContactDetailPage() {
 
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [alerts, setAlerts] = useState<Alert[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [healthScores, setHealthScores] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [personProfile, setPersonProfile] = useState<any>(null);
-  const [intelKpis, setIntelKpis] = useState<{ open_alerts: number; pending_actions: number; overdue_actions: number } | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [contactComms, setContactComms] = useState<any>(null);
+  const [healthScores, setHealthScores] = useState<HealthScore[]>([]);
+  const [personProfile, setPersonProfile] = useState<PersonProfile | null>(null);
+  const [intelKpis, setIntelKpis] = useState<ContactIntelligenceKPIs | null>(null);
+  const [contactComms, setContactComms] = useState<ContactCommunicationsRPC | null>(null);
 
   useEffect(() => {
     async function fetchAll() {
@@ -85,7 +89,8 @@ export default function ContactDetailPage() {
       // Fetch intelligence KPIs via RPC (non-blocking)
       if (c.email) {
         Promise.resolve(supabase.rpc("get_contact_intelligence", { p_contact_email: c.email }))
-          .then(({ data: intel }) => {
+          .then(({ data }) => {
+            const intel = data as ContactIntelligenceRPC | null;
             if (intel) {
               setIntelKpis({
                 open_alerts: intel.open_alerts ?? 0,
@@ -102,30 +107,30 @@ export default function ContactDetailPage() {
       // Fetch contact communications via RPC (non-blocking)
       if (c.email) {
         Promise.resolve(supabase.rpc("get_contact_communications", { p_contact_email: c.email }))
-          .then(({ data: commsData }) => {
+          .then(({ data }) => {
+            const commsData = data as ContactCommunicationsRPC | null;
             if (commsData) {
               setContactComms(commsData);
               if (Array.isArray(commsData.emails_sent) || Array.isArray(commsData.emails_received)) {
-                const allEmails = [
+                const allEmails: ContactEmailRow[] = [
                   ...(commsData.emails_sent ?? []),
                   ...(commsData.emails_received ?? []),
-                ].sort((a: Record<string, unknown>, b: Record<string, unknown>) =>
-                  new Date(b.email_date as string ?? 0).getTime() - new Date(a.email_date as string ?? 0).getTime()
+                ].sort((a, b) =>
+                  new Date(b.email_date ?? 0).getTime() - new Date(a.email_date ?? 0).getTime()
                 );
                 if (allEmails.length > 0) {
-                  setEmails(allEmails as Email[]);
+                  setEmails(allEmails as unknown as Email[]);
                 }
               }
               if (Array.isArray(commsData.facts) && commsData.facts.length > 0) {
-                setFacts(commsData.facts as Fact[]);
+                setFacts(commsData.facts);
               }
             }
           }).catch(() => {});
       }
 
       // Parallel fetches
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const promises: PromiseLike<any>[] = [];
+      const promises: PromiseLike<unknown>[] = [];
 
       if (c.entity_id) {
         promises.push(
@@ -152,7 +157,7 @@ export default function ContactDetailPage() {
         Promise.resolve(
           supabase.from("health_scores").select("*").eq("contact_id", contactId)
             .order("score_date", { ascending: false }).limit(30)
-        ).then(({ data }) => setHealthScores(data ?? []))
+        ).then(({ data }) => setHealthScores((data as HealthScore[] | null) ?? []))
           .catch(() => setHealthScores([]))
       );
 
@@ -280,25 +285,25 @@ export default function ContactDetailPage() {
         </div>
 
         <TabsContent value="perfil" className="space-y-6">
-          <TabPerfil contact={contact} personProfile={personProfile} />
+          <ErrorBoundary label="tab-perfil"><TabPerfil contact={contact} personProfile={personProfile} /></ErrorBoundary>
         </TabsContent>
         <TabsContent value="comercial" className="space-y-6">
-          <TabComercial contact={contact} />
+          <ErrorBoundary label="tab-comercial"><TabComercial contact={contact} /></ErrorBoundary>
         </TabsContent>
         <TabsContent value="salud" className="space-y-6">
-          <TabSalud healthScores={healthScores} />
+          <ErrorBoundary label="tab-salud"><TabSalud healthScores={healthScores} /></ErrorBoundary>
         </TabsContent>
         <TabsContent value="inteligencia">
-          <TabInteligencia facts={facts} />
+          <ErrorBoundary label="tab-inteligencia"><TabInteligencia facts={facts} /></ErrorBoundary>
         </TabsContent>
         <TabsContent value="alertas">
-          <TabAlertas alerts={alerts} />
+          <ErrorBoundary label="tab-alertas"><TabAlertas alerts={alerts} /></ErrorBoundary>
         </TabsContent>
         <TabsContent value="acciones">
-          <TabAcciones actions={actions} />
+          <ErrorBoundary label="tab-acciones"><TabAcciones actions={actions} /></ErrorBoundary>
         </TabsContent>
         <TabsContent value="emails" className="space-y-6">
-          <TabEmails emails={emails} contactComms={contactComms} />
+          <ErrorBoundary label="tab-emails"><TabEmails emails={emails} contactComms={contactComms} /></ErrorBoundary>
         </TabsContent>
       </Tabs>
     </div>

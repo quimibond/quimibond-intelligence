@@ -73,6 +73,18 @@ export function formatCurrency(value: number | null): string {
   );
 }
 
+export function formatPercentage(value: number | null, options?: { decimals?: number; fromRatio?: boolean }): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const decimals = options?.decimals ?? 0;
+  const pct = options?.fromRatio ? value * 100 : value;
+  return `${pct.toLocaleString("es-MX", { minimumFractionDigits: decimals, maximumFractionDigits: decimals })}%`;
+}
+
+export function formatNumber(value: number | null, decimals = 0): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  return value.toLocaleString("es-MX", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
 /** Display product: prefer internal_ref (e.g. "ZN4032OW160") over long name */
 export function productDisplay(item: { product_ref?: string | null; product_name?: string | null; internal_ref?: string | null; name?: string | null }): string {
   return item.product_ref || item.internal_ref || item.product_name || item.name || "—";
