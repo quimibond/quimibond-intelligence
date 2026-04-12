@@ -31,6 +31,8 @@ import { DataFreshness } from "@/components/shared/data-freshness";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { MiniStatCard } from "@/components/shared/mini-stat-card";
 import { PageHeader } from "@/components/shared/page-header";
+import { DataQualityPanel } from "./components/data-quality-panel";
+import { CostPanel } from "./components/cost-panel";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -177,6 +179,12 @@ export default function SystemPage() {
           );
         })}
       </div>
+
+      {/* Data Quality Scorecard — real-time health monitoring */}
+      <DataQualityPanel />
+
+      {/* Claude API cost monitoring */}
+      <CostPanel />
 
       {/* Data Stats */}
       <div>

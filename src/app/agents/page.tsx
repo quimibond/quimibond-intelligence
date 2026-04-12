@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { EffectivenessPanel } from "./components/effectiveness-panel";
 import {
   ArrowRight, Bot, Brain, CheckCircle2,
   Loader2, MessageSquare, Play, XCircle, Zap,
@@ -136,6 +137,9 @@ export default function AgentsPage() {
           Ejecutar Siguiente
         </Button>
       </div>
+
+      {/* Effectiveness scorecard — real-time ROI per agent */}
+      <EffectivenessPanel />
 
       {/* Active Directors */}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
