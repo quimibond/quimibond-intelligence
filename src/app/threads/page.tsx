@@ -75,22 +75,21 @@ export default function ThreadsPage() {
     return q;
   }
 
-  // Fetch threads
+  // Fetch threads + counts (single consolidated RPC for counts)
   useEffect(() => {
     async function fetchThreads() {
-      const [dataRes, totalRes, s24Res, s72Res] = await Promise.all([
+      const [dataRes, countsRes] = await Promise.all([
         buildThreadQuery("", "all"),
-        supabase.from("threads").select("id", { count: "exact", head: true }),
-        supabase.from("threads").select("id", { count: "exact", head: true }).gt("hours_without_response", 24),
-        supabase.from("threads").select("id", { count: "exact", head: true }).gt("hours_without_response", 72),
+        supabase.rpc("get_thread_counts"),
       ]);
       const rows = (dataRes.data as Thread[] | null) ?? [];
       setThreads(rows);
       setHasMore(rows.length >= PAGE_SIZE);
+      const counts = (countsRes.data as Array<{ total: number; stalled_24h: number; stalled_72h: number }> | null)?.[0];
       setTotalCounts({
-        total: totalRes.count ?? 0,
-        stalled24: s24Res.count ?? 0,
-        stalled72: s72Res.count ?? 0,
+        total: counts?.total ?? 0,
+        stalled24: counts?.stalled_24h ?? 0,
+        stalled72: counts?.stalled_72h ?? 0,
       });
       setLoading(false);
     }

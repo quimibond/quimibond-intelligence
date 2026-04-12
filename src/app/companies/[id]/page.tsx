@@ -227,36 +227,13 @@ export default function CompanyDetailPage() {
 
     async function fetchRelationships(entityId: number | null | undefined) {
       if (!entityId) return;
-      const { data: relData } = await supabase
-        .from("entity_relationships")
-        .select("*")
-        .or(`entity_a_id.eq.${entityId},entity_b_id.eq.${entityId}`)
-        .order("strength", { ascending: false });
-
-      const rawRels = (relData as EntityRelationship[] | null) ?? [];
-      if (rawRels.length === 0) return;
-
-      const relatedIds = rawRels.map((r) =>
-        r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id
-      );
-      const uniqueIds = [...new Set(relatedIds)];
-      const { data: relatedEntities } = await supabase
-        .from("entities")
-        .select("*")
-        .in("id", uniqueIds);
-
-      const entityMap = new Map<number, Entity>();
-      if (relatedEntities) {
-        for (const e of relatedEntities as Entity[]) {
-          entityMap.set(e.id, e);
-        }
-      }
-
-      const resolved: ResolvedRelationship[] = rawRels.map((r) => {
-        const relatedId = r.entity_a_id === entityId ? r.entity_b_id : r.entity_a_id;
-        return { ...r, related_entity: entityMap.get(relatedId) ?? null };
+      // Single RPC call with server-side JOIN (replaces 2-query N+1)
+      const { data } = await supabase.rpc("get_company_relationships", {
+        p_entity_id: entityId,
       });
-      setRelationships(resolved);
+      const resolved = ((data ?? []) as Array<EntityRelationship & { related_entity: Entity | null }>)
+        .map(r => ({ ...r, related_entity: r.related_entity ?? null }));
+      setRelationships(resolved as ResolvedRelationship[]);
     }
 
     fetchAll();

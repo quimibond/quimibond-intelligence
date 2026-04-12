@@ -290,7 +290,11 @@ export default function InsightDetailPage() {
           <CardContent className="p-4 space-y-2">
             <div className="flex items-center justify-between mb-1">
               <p className="text-xs font-semibold uppercase tracking-wider text-primary">Acciones</p>
-              <button onClick={() => setShowActions(false)} className="text-muted-foreground hover:text-foreground">
+              <button
+                onClick={() => setShowActions(false)}
+                aria-label="Cerrar panel de acciones"
+                className="rounded-md text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
+              >
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -326,16 +330,24 @@ export default function InsightDetailPage() {
             <Separator />
 
             <div className="grid grid-cols-2 gap-2">
-              <button onClick={() => markDone(3)} disabled={acting}
-                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50">
+              <button
+                onClick={() => markDone(3)}
+                disabled={acting}
+                aria-label="Marcar como util con recordatorio en 3 dias"
+                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Recordatorio 3d</p>
                   <p className="text-[10px] text-muted-foreground">Marca como util + follow-up</p>
                 </div>
               </button>
-              <button onClick={() => markDone()} disabled={acting}
-                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50">
+              <button
+                onClick={() => markDone()}
+                disabled={acting}
+                aria-label="Marcar insight como resuelto"
+                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
                 {acting ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Check className="h-4 w-4 shrink-0 text-success" />}
                 <div>
                   <p className="text-sm font-medium">Ya lo resolvi</p>
@@ -387,11 +399,15 @@ export default function InsightDetailPage() {
                   <span className="shrink-0 text-xs text-muted-foreground">{action.assignee_name ?? "Sin asignar"}</span>
                 )}
                 {action.state === "pending" && (
-                  <button onClick={async () => {
-                    await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
-                    setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
-                    toast.success("Accion completada");
-                  }} className="shrink-0 text-xs font-semibold text-primary hover:underline">
+                  <button
+                    onClick={async () => {
+                      await supabase.from("action_items").update({ state: "completed", completed_at: new Date().toISOString() }).eq("id", action.id);
+                      setActionItems(prev => prev.map(a => a.id === action.id ? { ...a, state: "completed" } : a));
+                      toast.success("Accion completada");
+                    }}
+                    aria-label="Marcar accion como completada"
+                    className="shrink-0 rounded text-xs font-semibold text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
                     ✓
                   </button>
                 )}

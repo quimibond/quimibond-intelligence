@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import {
-  Building2, CheckCircle2, ChevronRight, Clock, DollarSign,
+  Building2, CheckCircle2, ChevronDown, ChevronRight, Clock, DollarSign,
   Lightbulb, UserCheck,
 } from "lucide-react";
 import type { AgentInsight, AIAgent, AgentRun, Company, Contact } from "@/lib/types";
@@ -121,20 +122,8 @@ export function InsightCard({ insight, agent, agentRun, company, contact }: Insi
             </div>
           )}
 
-          {/* Evidence */}
-          {showEvidence && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-semibold text-muted-foreground">Evidencia:</p>
-              <ul className="space-y-1">
-                {evidence.map((e, i) => (
-                  <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
-                    <span className="text-muted-foreground/50 mt-0.5 shrink-0">&bull;</span>
-                    <span className="break-words">{typeof e === "string" ? e : JSON.stringify(e)}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
+          {/* Evidence — paginated: show first 10, expand for more */}
+          {showEvidence && <EvidenceList evidence={evidence} />}
 
           {/* Meta footer */}
           <div className="flex items-center gap-3 flex-wrap text-xs text-muted-foreground pt-2 border-t">
@@ -206,5 +195,45 @@ export function InsightCard({ insight, agent, agentRun, company, contact }: Insi
         </Link>
       )}
     </>
+  );
+}
+
+/**
+ * Evidence list with progressive disclosure:
+ * - Shows first 10 items by default
+ * - "Ver X mas" button to expand if more
+ * - Prevents overwhelming the view for insights with many evidence points
+ */
+function EvidenceList({ evidence }: { evidence: unknown[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const PAGE = 10;
+  const hasMore = evidence.length > PAGE;
+  const visible = expanded || !hasMore ? evidence : evidence.slice(0, PAGE);
+
+  return (
+    <div className="space-y-1.5">
+      <p className="text-xs font-semibold text-muted-foreground">
+        Evidencia{evidence.length > 1 ? ` (${evidence.length})` : ""}:
+      </p>
+      <ul className="space-y-1">
+        {visible.map((e, i) => (
+          <li key={i} className="text-sm text-muted-foreground flex items-start gap-2">
+            <span className="text-muted-foreground/50 mt-0.5 shrink-0">&bull;</span>
+            <span className="break-words">{typeof e === "string" ? e : JSON.stringify(e)}</span>
+          </li>
+        ))}
+      </ul>
+      {hasMore && (
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          aria-label={expanded ? "Ocultar evidencia adicional" : `Ver ${evidence.length - PAGE} items mas de evidencia`}
+          className="flex items-center gap-1 text-xs font-medium text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded px-1"
+        >
+          <ChevronDown className={cn("h-3 w-3 transition-transform", expanded && "rotate-180")} />
+          {expanded ? "Ocultar" : `Ver ${evidence.length - PAGE} mas`}
+        </button>
+      )}
+    </div>
   );
 }
