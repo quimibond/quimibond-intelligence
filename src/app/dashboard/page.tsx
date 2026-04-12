@@ -20,6 +20,7 @@ import { useDashboardData, fmtCompact, deltaStr } from "./hooks/use-dashboard-da
 import { KPICard } from "./components/kpi-card";
 import { SectionHeader } from "./components/section-header";
 import { MiniStat } from "./components/mini-stat";
+import { Top5Today } from "./components/top-5-today";
 
 function greet(): string {
   const h = new Date().getHours();
@@ -62,6 +63,9 @@ export default function DashboardPage() {
           <RefreshCw className={cn("h-4 w-4", refreshing && "animate-spin")} />
         </Button>
       </div>
+
+      {/* ════ Top 5 insights hoy — the one thing the CEO must see ════ */}
+      <Top5Today />
 
       {/* ════ 6 KPI Tiles ════ */}
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-6">

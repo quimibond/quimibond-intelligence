@@ -12,6 +12,7 @@ import { callClaudeJSON, logTokenUsage } from "@/lib/claude";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 import { sanitizeEmailForClaude } from "@/lib/sanitize";
 import { getServiceClient } from "@/lib/supabase-server";
+import { computeExpiresAt } from "@/lib/insight-ttl";
 
 export const maxDuration = 300;
 
@@ -388,11 +389,15 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         // Pick first action's assignee as the insight's primary assignee
         const primaryAction = actions[0] as { assignee_name?: string; assignee_role?: string } | undefined;
 
+        const severity = String(i.severity || "medium");
+        const insightType = String(i.insight_type || "recommendation");
+        const expiresAt = computeExpiresAt({ severity, insight_type: insightType });
+
         rows.push({
           agent_id: agent.id, run_id: runId,
-          insight_type: String(i.insight_type || "recommendation"),
+          insight_type: insightType,
           category: normalizeCategory(String(i.category || agent.domain)),
-          severity: String(i.severity || "medium"),
+          severity,
           title: String(i.title || ""), description: String(i.description || ""),
           evidence: i.evidence || [],
           recommendation,
@@ -400,6 +405,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
           company_id: companyId, contact_id: contactId,
           state: confidence < confidenceThreshold ? "archived" : "new",
+          expires_at: expiresAt.toISOString(),
           // Store actions in evidence for frontend access
         });
       }

@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServiceClient } from "@/lib/supabase-server";
+import { getInsightTTLDays } from "@/lib/insight-ttl";
 
 export const maxDuration = 60;
 
@@ -77,22 +78,26 @@ export async function POST() {  const supabase = getServiceClient();
     );
 
     if (paymentInsights.length) {
-      // Get companies with recently paid invoices
+      // Stricter check: only resolve if the company has NO currently-overdue invoices.
+      // Previous logic was too broad — matched any paid invoice even with other unpaid ones.
       const companyIds = [...new Set(paymentInsights.map(i => i.company_id).filter(Boolean))];
       if (companyIds.length) {
-        const { data: paidInvoices } = await supabase
+        const { data: overdueInvoices } = await supabase
           .from("odoo_invoices")
           .select("company_id")
           .in("company_id", companyIds)
-          .eq("payment_state", "paid");
+          .in("payment_state", ["not_paid", "partial"])
+          .gt("days_overdue", 0);
 
-        const paidCompanies = new Set((paidInvoices ?? []).map(i => i.company_id));
+        const stillOwingCompanies = new Set((overdueInvoices ?? []).map(i => i.company_id));
 
         for (const insight of paymentInsights) {
-          if (insight.company_id && paidCompanies.has(insight.company_id)) {
+          if (insight.company_id && !stillOwingCompanies.has(insight.company_id)) {
+            // Company has no overdue invoices = problem resolved
             await supabase.from("agent_insights").update({
-              state: "expired",
-              user_feedback: "Auto-resuelto: factura pagada detectada en Odoo",
+              state: "acted_on",
+              was_useful: true,
+              user_feedback: "Auto-resuelto: cliente sin facturas vencidas en Odoo",
             }).eq("id", insight.id);
             resolved++;
           }
@@ -122,7 +127,8 @@ export async function POST() {  const supabase = getServiceClient();
         for (const insight of deliveryInsights) {
           if (insight.company_id && !stillPendingCompanies.has(insight.company_id)) {
             await supabase.from("agent_insights").update({
-              state: "expired",
+              state: "acted_on",
+              was_useful: true,
               user_feedback: "Auto-resuelto: entregas completadas en Odoo",
             }).eq("id", insight.id);
             resolved++;
@@ -154,7 +160,8 @@ export async function POST() {  const supabase = getServiceClient();
         for (const insight of commInsights) {
           if (insight.contact_id && respondedContacts.has(insight.contact_id)) {
             await supabase.from("agent_insights").update({
-              state: "expired",
+              state: "acted_on",
+              was_useful: true,
               user_feedback: "Auto-resuelto: contacto respondio por email",
             }).eq("id", insight.id);
             resolved++;
@@ -183,7 +190,8 @@ export async function POST() {  const supabase = getServiceClient();
         for (const insight of crmInsights) {
           if (insight.company_id && wonCompanies.has(insight.company_id)) {
             await supabase.from("agent_insights").update({
-              state: "expired",
+              state: "acted_on",
+              was_useful: true,
               user_feedback: "Auto-resuelto: lead avanzo en CRM",
             }).eq("id", insight.id);
             resolved++;
@@ -301,15 +309,10 @@ export async function POST() {  const supabase = getServiceClient();
 }
 
 // ── Adaptive TTL: different lifetimes based on severity and type ─────
+// Delegates to shared helper in lib/insight-ttl.ts for consistency
+// with the orchestrate route that sets expires_at on INSERT.
 function getInsightTTL(severity: string, insightType: string): number {
-  // Risk and critical insights stay longer — they need more time to be addressed
-  if (severity === "critical") return 14;
-  if (severity === "high") return 10;
-  if (insightType === "risk" || insightType === "prediction") return 12;
-  if (severity === "medium") return 7;
-  if (severity === "low") return 5;
-  // Info insights expire fastest — least actionable
-  return 4;
+  return getInsightTTLDays({ severity, insight_type: insightType });
 }
 
 // ── Normalize titles for deduplication ───────────────────────────────
