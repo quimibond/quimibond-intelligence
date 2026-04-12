@@ -195,7 +195,22 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
 
   try {
     const directorConfig = await loadDirectorConfig(supabase, agent.id);
-    const context = await buildAgentContext(supabase, agent.domain, agent.id, directorConfig);
+
+    // Pre-load companies into a local map (kills N+1 in dedup loop + avoids global mutable state).
+    const { data: companiesPreload } = await supabase
+      .from("companies")
+      .select("id, canonical_name")
+      .limit(5000);
+    const companyNameToId = new Map<string, number>();
+    const companyIdToName = new Map<number, string>();
+    for (const c of (companiesPreload ?? []) as Array<{ id: number; canonical_name: string }>) {
+      if (c.canonical_name) {
+        companyNameToId.set(c.canonical_name.toLowerCase(), c.id);
+        companyIdToName.set(c.id, c.canonical_name);
+      }
+    }
+
+    const context = await buildAgentContext(supabase, agent.domain, agent.id, directorConfig, companyIdToName);
 
     const { data: memories } = await supabase
       .from("agent_memory")
@@ -330,9 +345,8 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
 
         // Company+category dedup (only if we have a company name)
         if (companyName && companyName !== "null") {
-          const { data: co } = await supabase.from("companies").select("id")
-            .ilike("canonical_name", companyName).limit(1).single();
-          if (co && existingCompanyCat.has(`${co.id}:${category}`)) {
+          const coId = companyNameToId.get(companyName);
+          if (coId !== undefined && existingCompanyCat.has(`${coId}:${category}`)) {
             duplicatesSkipped++;
             continue;
           }
@@ -342,9 +356,8 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         if (theme) existingThemes.add(theme);
         // Track for cross-director dedup within this run
         if (companyName && companyName !== "null") {
-          const { data: co2 } = await supabase.from("companies").select("id")
-            .ilike("canonical_name", companyName).limit(1).single();
-          if (co2) existingCompanyCat.add(`${co2.id}:${category}`);
+          const coId2 = companyNameToId.get(companyName);
+          if (coId2 !== undefined) existingCompanyCat.add(`${coId2}:${category}`);
         }
         filteredInsights.push(insight);
       }
@@ -362,9 +375,8 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         const i = cappedInsights[srcIdx];
         let companyId: number | null = null;
         if (i.company_name) {
-          const { data: co } = await supabase.from("companies").select("id")
-            .ilike("canonical_name", String(i.company_name).trim()).limit(1).single();
-          if (co) companyId = co.id;
+          const coId = companyNameToId.get(String(i.company_name).trim().toLowerCase());
+          if (coId !== undefined) companyId = coId;
         }
         if (!companyId && i.company_id) companyId = Number(i.company_id);
         let contactId: number | null = null;
@@ -844,7 +856,8 @@ async function buildAgentContext(
   supabase: any,
   domain: string,
   agentId?: number,
-  directorConfig?: import("@/lib/agents/director-config").DirectorConfig
+  directorConfig?: import("@/lib/agents/director-config").DirectorConfig,
+  companyIdToName?: Map<number, string>
 ): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
   const [emailFacts, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
@@ -957,7 +970,7 @@ async function buildAgentContext(
 
   const crossIntel = sections.length ? sections.join("\n\n") + "\n\n" : "";
 
-  const domainData = await getDomainData(supabase, domain, agentId, directorConfig);
+  const domainData = await getDomainData(supabase, domain, agentId, directorConfig, companyIdToName);
   return crossIntel + emailIntel + domainData;
 }
 
@@ -1066,12 +1079,21 @@ async function getEmailIntelligence(sb: any, domain: string): Promise<string> {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function getDomainData(sb: any, domain: string, agentId?: number, directorConfig?: import("@/lib/agents/director-config").DirectorConfig): Promise<string> {
-  // Load company name map for resolving IDs to names in JSON output
-  const { data: companyNames } = await sb.from("companies").select("id, canonical_name").limit(2000);
-  _companyNameMap = new Map<number, string>();
-  for (const c of companyNames ?? []) {
-    if (c.id && c.canonical_name) _companyNameMap.set(c.id, c.canonical_name);
+async function getDomainData(sb: any, domain: string, agentId?: number, directorConfig?: import("@/lib/agents/director-config").DirectorConfig, companyIdToName?: Map<number, string>): Promise<string> {
+  const nameMap = companyIdToName ?? new Map<number, string>();
+
+  function safeJSON(data: unknown): string {
+    if (!data) return "[]";
+    let str = JSON.stringify(data);
+    // Replace company_id with company name for readability
+    if (nameMap.size > 0 && str.includes("company_id")) {
+      str = str.replace(/"company_id"\s*:\s*(\d+)/g, (match, id) => {
+        const name = nameMap.get(Number(id));
+        return name ? `"empresa":"${name}"` : match;
+      });
+    }
+    if (str.length > 8000) return str.slice(0, 8000) + "...truncado]";
+    return str;
   }
 
   // Load company narratives — consolidated intelligence per company
@@ -1356,20 +1378,3 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
   }
 }
 
-/** Safe JSON stringify that handles null/undefined and limits size */
-/** Company name cache — loaded once per getDomainData call */
-let _companyNameMap: Map<number, string> | null = null;
-
-function safeJSON(data: unknown): string {
-  if (!data) return "[]";
-  let str = JSON.stringify(data);
-  // Replace company_id with company name for readability
-  if (_companyNameMap && str.includes("company_id")) {
-    str = str.replace(/"company_id"\s*:\s*(\d+)/g, (match, id) => {
-      const name = _companyNameMap?.get(Number(id));
-      return name ? `"empresa":"${name}"` : match;
-    });
-  }
-  if (str.length > 8000) return str.slice(0, 8000) + "...truncado]";
-  return str;
-}
