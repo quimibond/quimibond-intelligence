@@ -30,11 +30,19 @@ interface ClaudeRequestOptions {
   system: string;
   messages: { role: "user" | "assistant"; content: string }[];
   stream?: boolean;
+  /** Enable prompt caching on system prompt (saves ~90% on repeated system tokens).
+   *  Only effective when system prompt is > 1024 tokens. Default: true. */
+  cacheSystem?: boolean;
 }
 
 interface ClaudeResponse {
   content: { type: string; text: string }[];
-  usage?: { input_tokens: number; output_tokens: number };
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_creation_input_tokens?: number;
+    cache_read_input_tokens?: number;
+  };
   stop_reason?: string;
 }
 
@@ -44,12 +52,26 @@ export async function callClaude(
   label: string = "claude"
 ): Promise<Response> {
   const model = options.model || process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
+
+  // Prompt caching: wrap system prompt in array with cache_control.
+  // Anthropic requires min 1024 tokens for Sonnet/Opus, 2048 for Haiku.
+  // System prompt must be > this threshold to actually cache.
+  // Falls back to plain string if caching disabled or prompt is too short.
+  const cacheEnabled = options.cacheSystem !== false;
+  const systemLength = options.system?.length ?? 0;
+  // Rough heuristic: 4 chars ≈ 1 token. Haiku needs ~2048 tokens = ~8000 chars.
+  const likelyLongEnough = systemLength > 4000;
+
+  const systemField: unknown = cacheEnabled && likelyLongEnough
+    ? [{ type: "text", text: options.system, cache_control: { type: "ephemeral" } }]
+    : options.system;
+
   const body = {
     model,
     max_tokens: options.max_tokens,
     temperature: options.temperature,
     stream: options.stream ?? false,
-    system: options.system,
+    system: systemField,
     messages: options.messages,
   };
 
@@ -109,8 +131,13 @@ export async function callClaudeJSON<T>(
 
   const model = options.model || process.env.CLAUDE_MODEL || "claude-sonnet-4-6";
   if (data.usage) {
-    console.log(`[${label}] Tokens — in: ${data.usage.input_tokens}, out: ${data.usage.output_tokens}`);
-    logTokenUsage(label, model, data.usage.input_tokens, data.usage.output_tokens);
+    const cacheRead = data.usage.cache_read_input_tokens ?? 0;
+    const cacheWrite = data.usage.cache_creation_input_tokens ?? 0;
+    const cacheInfo = cacheRead > 0 || cacheWrite > 0
+      ? ` (cache: ${cacheRead} read, ${cacheWrite} write)` : "";
+    console.log(`[${label}] Tokens — in: ${data.usage.input_tokens}, out: ${data.usage.output_tokens}${cacheInfo}`);
+    // Log effective input = fresh input + cache writes (cache reads are 10% cost)
+    logTokenUsage(label, model, data.usage.input_tokens + cacheWrite + Math.ceil(cacheRead * 0.1), data.usage.output_tokens);
   }
 
   const rawText = data.content?.[0]?.text ?? "";
