@@ -12,6 +12,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
@@ -29,11 +30,7 @@ export async function POST(request: NextRequest) {
 
   if (!agent_slug) {
     return NextResponse.json({ error: "agent_slug required" }, { status: 400 });
-  }
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const supabase = createClient(url, key);
+  }  const supabase = getServiceClient();
 
   try {
     // Find the agent

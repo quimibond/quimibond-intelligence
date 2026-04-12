@@ -12,6 +12,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 30;
@@ -34,11 +35,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       error: "WhatsApp not configured. Set WHATSAPP_TOKEN, WHATSAPP_PHONE_ID, WHATSAPP_TO.",
     }, { status: 503 });
-  }
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const supabase = createClient(url, key);
+  }  const supabase = getServiceClient();
 
   try {
     // Check if we already sent today (prevent duplicates)

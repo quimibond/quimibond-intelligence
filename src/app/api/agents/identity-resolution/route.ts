@@ -16,7 +16,7 @@
  * Runs every 2 hours via Vercel cron. Idempotent.
  */
 import { NextRequest, NextResponse } from "next/server";
-import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
@@ -33,12 +33,7 @@ async function handler(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key =
-    process.env.SUPABASE_SERVICE_KEY ??
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ??
-    "";
-  const supabase = createClient(url, key);
+  const supabase = getServiceClient();
 
   try {
     // Get before-stats (non-blocking — don't fail if this errors)

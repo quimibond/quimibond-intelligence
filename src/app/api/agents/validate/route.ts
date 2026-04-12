@@ -11,6 +11,7 @@
  */
 import { NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
 
 export const maxDuration = 60;
 
@@ -18,10 +19,7 @@ export async function GET() {
   return POST();
 }
 
-export async function POST() {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const supabase = createClient(url, key);
+export async function POST() {  const supabase = getServiceClient();
 
   try {
     let resolved = 0;

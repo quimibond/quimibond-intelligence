@@ -11,6 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 import { callClaudeJSON, logTokenUsage } from "@/lib/claude";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 import { sanitizeEmailForClaude } from "@/lib/sanitize";
+import { getServiceClient } from "@/lib/supabase-server";
 
 export const maxDuration = 300;
 
@@ -49,9 +50,7 @@ export async function POST(request: NextRequest) {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return NextResponse.json({ error: "ANTHROPIC_API_KEY not set" }, { status: 503 });
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const supabase = createClient(url, key);
+  const supabase = getServiceClient();
   const start = Date.now();
 
   try {
@@ -138,10 +137,7 @@ export async function POST(request: NextRequest) {
   } catch (err) {
     console.error("[orchestrate] Fatal error:", err);
     try {
-      const sb = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
-        process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
-      );
+      const sb = getServiceClient();
       await sb.from("pipeline_logs").insert({
         level: "error",
         phase: "agent_orchestration",

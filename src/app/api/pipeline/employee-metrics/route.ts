@@ -6,6 +6,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 60;
@@ -16,11 +17,7 @@ export async function GET(request: NextRequest) {
 
 export async function POST(request: NextRequest) {
   const authError = validatePipelineAuth(request);
-  if (authError) return authError;
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const supabase = createClient(url, key);
+  if (authError) return authError;  const supabase = getServiceClient();
 
   try {
     const { data, error } = await supabase.rpc("calculate_employee_metrics");

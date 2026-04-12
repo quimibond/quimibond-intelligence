@@ -14,6 +14,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
 import { google } from "googleapis";
 import { JWT } from "google-auth-library";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
@@ -31,11 +32,7 @@ export async function POST(request: NextRequest) {
   const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!serviceAccountJson) {
     return NextResponse.json({ error: "GOOGLE_SERVICE_ACCOUNT_JSON not set" }, { status: 503 });
-  }
-
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const key = process.env.SUPABASE_SERVICE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-  const supabase = createClient(url, key);
+  }  const supabase = getServiceClient();
 
   try {
     // Find emails with XML attachments that haven't been parsed yet
