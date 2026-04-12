@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { PartyPopper, RefreshCw } from "lucide-react";
 import { supabase } from "@/lib/supabase";
+import { cached } from "@/lib/ttl-cache";
 import type { AgentInsight, CompanyProfile } from "@/lib/types";
 import { Button } from "@/components/ui/button";
 import { InboxFilters } from "./components/inbox-filters";
@@ -74,11 +75,14 @@ export default function InboxPage() {
       ]),
       supabase.from("agent_insights").select("assignee_name")
         .in("state", ["new", "seen"]).gte("confidence", 0.80).not("assignee_name", "is", null),
-      supabase.from("company_profile")
-        .select("company_id, name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level")
-        .in("tier", ["strategic", "important", "key_supplier"])
-        .order("total_revenue", { ascending: false })
-        .limit(50),
+      cached("inbox:company_profiles:strategic", 30_000, async () => {
+        const res = await supabase.from("company_profile")
+          .select("company_id, name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level")
+          .in("tier", ["strategic", "important", "key_supplier"])
+          .order("total_revenue", { ascending: false })
+          .limit(50);
+        return res;
+      }),
     ]);
 
     const [odooFresh, emailFresh, agentFresh] = freshnessRes;
