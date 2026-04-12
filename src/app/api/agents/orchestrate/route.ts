@@ -15,6 +15,7 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { computeExpiresAt } from "@/lib/insight-ttl";
 import { computeAdaptiveThreshold } from "@/lib/agents/confidence-threshold";
 import { loadDirectorConfig, filterInsightsByConfig } from "@/lib/agents/director-config";
+import { hasConcreteEvidence, looksLikeMetaHallucination } from "@/lib/agents/grounding";
 import { buildFinancieroContextOperativo, buildFinancieroContextEstrategico } from "@/lib/agents/financiero-context";
 import { advanceMode } from "@/lib/agents/mode-rotation";
 
@@ -31,6 +32,9 @@ const MAX_INSIGHTS_PER_RUN = 3;
 
 /** Old agents that should NOT generate insights (deactivated but kept for safety) */
 const SILENT_AGENTS = new Set(["meta", "cleanup", "data_quality", "odoo"]);
+
+/** Severities validas segun schema de agent_insights */
+const VALID_SEVERITIES = new Set(["medium", "high", "critical"]);
 
 /** Fixed category catalog — Claude MUST use one of these */
 const VALID_CATEGORIES = [
@@ -387,6 +391,32 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           continue;
         }
 
+        // Grounding stop 1: meta hallucination (sesiones del CEO, participacion de directores, etc.)
+        if (looksLikeMetaHallucination(i as Record<string, unknown>)) {
+          duplicatesSkipped++;
+          console.log(`[orchestrate] ${agent.slug} dropped meta hallucination: ${titleStr.slice(0, 80)}`);
+          continue;
+        }
+
+        // Validate severity against enum — silently coerce to "medium" if Claude hallucinated
+        const rawSeverity = String(i.severity || "medium").toLowerCase();
+        const severity = VALID_SEVERITIES.has(rawSeverity) ? rawSeverity : "medium";
+
+        // Validate business_impact_estimate — NaN/Infinity/negative become null
+        let businessImpact: number | null = null;
+        if (i.business_impact_estimate !== undefined && i.business_impact_estimate !== null) {
+          const asNum = typeof i.business_impact_estimate === "number"
+            ? i.business_impact_estimate
+            : Number(String(i.business_impact_estimate).replace(/[^\d.-]/g, ""));
+          if (Number.isFinite(asNum) && asNum >= 0) {
+            businessImpact = asNum;
+          }
+        }
+
+        // Grounding stop 2: concrete evidence check. If the insight does not reference
+        // any ID from the provided context, force state='archived' (auditable, invisible to CEO).
+        const isGrounded = hasConcreteEvidence(i as Record<string, unknown>, context);
+
         // Build recommendation from actions (backward compat) or use legacy field
         const actions = Array.isArray(i.actions) ? i.actions : [];
         const recommendation = actions.length > 0
@@ -398,7 +428,6 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         // Pick first action's assignee as the insight's primary assignee
         const primaryAction = actions[0] as { assignee_name?: string; assignee_role?: string } | undefined;
 
-        const severity = String(i.severity || "medium");
         const insightType = String(i.insight_type || "recommendation");
         const expiresAt = computeExpiresAt({ severity, insight_type: insightType });
 
@@ -411,9 +440,9 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           evidence: i.evidence || [],
           recommendation,
           confidence,
-          business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
+          business_impact_estimate: businessImpact,
           company_id: companyId, contact_id: contactId,
-          state: confidence < effectiveThreshold ? "archived" : "new",
+          state: (confidence < effectiveThreshold || !isGrounded) ? "archived" : "new",
           expires_at: expiresAt.toISOString(),
           // Store actions in evidence for frontend access
           _srcIdx: srcIdx,
@@ -726,7 +755,7 @@ Tu rol como director: analizar los datos de tu dominio, identificar patrones cri
 
 2. **Accionabilidad**: Cada insight DEBE poder convertirse en una accion concreta asignable a una persona con deadline. Si no puedes decir "Juan, haz X para el viernes", no es un insight valido. Reformulalo o descartalo.
 
-3. **Dedup cross-director obligatorio**: Si otro director ya reporto algo en la seccion "QUE DICEN OTROS DIRECTORES" del contexto, NO lo repitas bajo ningun concepto. Mejor devuelve [] que duplicar. El CEO se frustra cuando 3 directores le dicen lo mismo.
+3. **Sin duplicados**: No repitas insights que el CEO ya haya visto. Mejor devuelve [] que duplicar. El CEO se frustra cuando multiples directores le dicen lo mismo.
 
 4. **Evidencia verificable obligatoria**: Cada entrada en "evidence" DEBE ser un dato con fuente identificable en los datos que recibiste. Ejemplos BUENOS:
    - "Factura INV/2026/03/0173 por $47,005 vencida 40 dias (proveedor: Khafitex)"
@@ -774,7 +803,7 @@ function buildAgentPrompt(context: string, memoryText: string, threshold: number
 
 Si no hay nada urgente o nuevo, devuelve []. Es mejor devolver [] que generar ruido.
 
-IMPORTANTE: Si otro director ya reporto algo en "QUE DICEN OTROS DIRECTORES", NO lo repitas.
+IMPORTANTE: No repitas insights que otros directores ya hayan reportado.
 
 ${truncatedContext}${memoryText}
 
@@ -818,28 +847,13 @@ async function buildAgentContext(
   directorConfig?: import("@/lib/agents/director-config").DirectorConfig
 ): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
-  const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
-    // What OTHER directors are saying (reduced from 15 to 10)
-    supabase
-      .from("cross_director_signals")
-      .select("company_name, director_name, category, severity, title")
-      .in("severity", ["critical", "high"])
-      .limit(10),
-
+  const [emailFacts, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
     // Email facts per company (reduced from 15 to 8)
     supabase
       .from("company_email_intelligence")
       .select("company_name, fact_type, fact_text")
       .in("fact_type", ["complaint", "commitment", "request", "price"])
       .limit(8),
-
-    // Companies flagged multiple times (reduced from 10 to 5)
-    supabase
-      .from("company_insight_history")
-      .select("company_name, total_insights_30d, times_acted, times_dismissed, which_directors")
-      .gte("total_insights_30d", 2)
-      .order("total_insights_30d", { ascending: false })
-      .limit(5),
 
     // Domain-specific email facts
     getEmailIntelligence(supabase, domain),
@@ -883,35 +897,11 @@ async function buildAgentContext(
 
   const sections: string[] = [];
 
-  // Cross-director signals: what are OTHER directors saying?
-  if (crossSignals.data?.length) {
-    // Group by company for readability
-    const byCompany = new Map<string, string[]>();
-    for (const s of crossSignals.data as Record<string, unknown>[]) {
-      const co = String(s.company_name ?? "?");
-      if (!byCompany.has(co)) byCompany.set(co, []);
-      byCompany.get(co)!.push(`[${s.director_name}/${s.severity}] ${s.title}`);
-    }
-    const lines = [...byCompany.entries()].map(([co, signals]) =>
-      `  ${co.toUpperCase()}:\n${signals.map(s => `    ${s}`).join("\n")}`
-    );
-    sections.push(`## QUE DICEN OTROS DIRECTORES (no repitas, complementa)\n${lines.join("\n")}`);
-  }
-
   // Email intelligence: actual quotes from communications
   if (emailFacts.data?.length) {
     sections.push(`## SEÑALES DE EMAILS (citas textuales de comunicaciones)\n${
       (emailFacts.data as Record<string, unknown>[]).map(f =>
         `- [${f.fact_type}] ${f.company_name}: "${sanitizeEmailForClaude(String(f.fact_text), 200)}"`
-      ).join("\n")
-    }`);
-  }
-
-  // Temporal memory: companies flagged multiple times
-  if (insightHistory.data?.length) {
-    sections.push(`## HISTORIAL: empresas flaggeadas multiples veces (30 dias)\n${
-      (insightHistory.data as Record<string, unknown>[]).map(h =>
-        `- ${h.company_name}: ${h.total_insights_30d} veces (CEO actuo ${h.times_acted}, descarto ${h.times_dismissed}) — directores: ${h.which_directors}`
       ).join("\n")
     }`);
   }
