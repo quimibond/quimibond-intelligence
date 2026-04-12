@@ -42,8 +42,16 @@ function healthBgColor(score: number | null): string {
 function HealthBar({ score }: { score: number | null }) {
   const val = score ?? 0;
   const barBg = score == null ? "bg-muted" : score > 60 ? "bg-success/20" : score >= 40 ? "bg-warning/20" : "bg-danger/20";
+  const label = score != null ? `Salud ${score} de 100` : "Salud sin datos";
   return (
-    <div className="flex items-center gap-1.5">
+    <div
+      className="flex items-center gap-1.5"
+      role="meter"
+      aria-label={label}
+      aria-valuenow={val}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
       <div className={cn("h-1.5 w-12 rounded-full overflow-hidden", barBg)}>
         <div className={cn("h-full rounded-full", healthBgColor(score))} style={{ width: `${Math.min(100, Math.max(0, val))}%` }} />
       </div>

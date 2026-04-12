@@ -101,7 +101,11 @@ export default function DashboardPage() {
                 <CardTitle className="text-sm">Ingresos mensuales</CardTitle>
               </CardHeader>
               <CardContent className="pt-2">
-                <div className="h-36 lg:h-48">
+                <div
+                  className="h-36 lg:h-48"
+                  role="img"
+                  aria-label={`Grafico de ingresos mensuales: ${d.revenueByMonth.length} meses, ultimo ${d.revenueByMonth[d.revenueByMonth.length - 1]?.month ?? ""} ${formatCurrency(d.revenueByMonth[d.revenueByMonth.length - 1]?.revenue ?? 0)}`}
+                >
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={d.revenueByMonth} barGap={2}>
                       <XAxis dataKey="month" tick={{ fontSize: 10 }} axisLine={false} tickLine={false} />

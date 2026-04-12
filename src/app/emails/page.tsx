@@ -179,7 +179,7 @@ export default function EmailsPage() {
                       {senderTypeLabel[email.sender_type] ?? email.sender_type}
                     </Badge>
                   )}
-                  {email.has_attachments && <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />}
+                  {email.has_attachments && <Paperclip className="h-3.5 w-3.5 text-muted-foreground" aria-label="Tiene adjuntos" />}
                   {(email as unknown as { companies?: { name: string } | null }).companies?.name && (
                     <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
                       <Building2 className="h-3 w-3" />

@@ -276,6 +276,8 @@ export default function ChatPage() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label="Marcar respuesta como util"
+                        aria-pressed={msg.rated === "positive"}
                         className={cn(
                           "h-6 w-6 p-0",
                           msg.rated === "positive" &&
@@ -293,6 +295,8 @@ export default function ChatPage() {
                       <Button
                         size="sm"
                         variant="ghost"
+                        aria-label="Marcar respuesta como no util"
+                        aria-pressed={msg.rated === "negative"}
                         className={cn(
                           "h-6 w-6 p-0",
                           msg.rated === "negative" &&

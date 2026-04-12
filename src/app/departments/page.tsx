@@ -2,17 +2,14 @@
 
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { cn, formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { PageHeader } from "@/components/shared/page-header";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { MiniStatCard } from "@/components/shared/mini-stat-card";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Table, TableHeader, TableBody, TableHead, TableRow, TableCell,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Users, AlertTriangle, BarChart3 } from "lucide-react";
+import { Building2, Users, AlertTriangle } from "lucide-react";
 
 interface DeptData {
   department: string;
@@ -26,7 +23,6 @@ interface DeptData {
 
 export default function DepartmentsPage() {
   const [departments, setDepartments] = useState<DeptData[]>([]);
-  const [deptMetrics, setDeptMetrics] = useState<Record<string, unknown>[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -112,9 +108,6 @@ export default function DepartmentsPage() {
       setDepartments(
         Array.from(deptMap.values()).sort((a, b) => b.employee_count - a.employee_count)
       );
-
-      // department_metrics table removed
-      setDeptMetrics([]);
 
       setLoading(false);
     }
@@ -228,62 +221,6 @@ export default function DepartmentsPage() {
         </div>
       )}
 
-      {/* Department Metrics Table */}
-      {deptMetrics.length > 0 && (
-        <Card>
-          <CardContent className="py-4">
-            <div className="flex items-center gap-2 mb-4">
-              <BarChart3 className="h-4 w-4 text-muted-foreground" />
-              <h3 className="font-semibold text-sm">Metricas por Periodo</h3>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Departamento</TableHead>
-                  <TableHead>Periodo</TableHead>
-                  <TableHead className="text-right">Actividades</TableHead>
-                  <TableHead className="text-right">Vencidas</TableHead>
-                  <TableHead className="text-right">Insights</TableHead>
-                  <TableHead>Inicio</TableHead>
-                  <TableHead>Fin</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {deptMetrics.map((m, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-medium text-xs">
-                      {(m.department_name as string) ?? "-"}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className="text-[10px]">
-                        {(m.period_type as string) ?? "-"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-xs">
-                      {(m.total_activities as number) ?? 0}
-                    </TableCell>
-                    <TableCell className={cn(
-                      "text-right tabular-nums text-xs",
-                      ((m.overdue_activities as number) ?? 0) > 0 && "text-danger-foreground font-semibold"
-                    )}>
-                      {(m.overdue_activities as number) ?? 0}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums text-xs">
-                      {(m.insights_generated as number) ?? 0}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(m.period_start as string)}
-                    </TableCell>
-                    <TableCell className="text-xs text-muted-foreground">
-                      {formatDate(m.period_end as string)}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
     </div>
   );
 }

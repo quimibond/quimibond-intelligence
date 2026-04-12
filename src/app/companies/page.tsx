@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -122,9 +122,11 @@ export default function CompaniesPage() {
     }
   }
 
-  // Stats from current data
-  const overdueTotal = companies.reduce((s, c) => s + (c.overdue_amount ?? 0), 0);
-  const revenueTotal = companies.reduce((s, c) => s + (c.total_revenue ?? 0), 0);
+  // Stats from current data (memoized — only recompute when companies array changes)
+  const { overdueTotal, revenueTotal } = useMemo(() => ({
+    overdueTotal: companies.reduce((s, c) => s + (c.overdue_amount ?? 0), 0),
+    revenueTotal: companies.reduce((s, c) => s + (c.total_revenue ?? 0), 0),
+  }), [companies]);
 
   return (
     <div className="space-y-4">
