@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { syncAllAccounts, type GmailAccount } from "@/lib/pipeline/gmail";
+import { persistEmailsAndThreads } from "@/lib/pipeline/email-persist";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
@@ -84,108 +85,9 @@ export async function POST(request: NextRequest) {
       console.warn(`[sync-emails] Skipped ${skippedDates} emails with invalid dates`);
     }
 
-    // 1. Build threads first so we know their ids before inserting emails.
-    //    emails.thread_id (bigint FK → threads.id) MUST be populated at insert
-    //    time — we learned the hard way that relying on gmail_thread_id alone
-    //    leaves 400+ emails orphaned from their threads.
-    const threadMap = new Map<string, typeof validEmails>();
-    for (const e of validEmails) {
-      const tid = e.gmail_thread_id;
-      if (!threadMap.has(tid)) threadMap.set(tid, []);
-      threadMap.get(tid)!.push(e);
-    }
-
-    const threads = [...threadMap.entries()].map(([tid, msgs]) => {
-      msgs.sort((a, b) => a.date.localeCompare(b.date));
-      const first = msgs[0];
-      const last = msgs[msgs.length - 1];
-      const hasInternal = msgs.some(m => m.sender_type === "internal");
-      const hasExternal = msgs.some(m => m.sender_type === "external");
-      const hoursNoResponse = last.sender_type === "external"
-        ? (Date.now() - new Date(last.date).getTime()) / 3600000
-        : 0;
-
-      return {
-        gmail_thread_id: tid,
-        subject: first.subject,
-        subject_normalized: first.subject_normalized,
-        started_by: first.from_email,
-        started_by_type: first.sender_type,
-        started_at: new Date(first.date).toISOString(),
-        last_activity: new Date(last.date).toISOString(),
-        status: hoursNoResponse > 48 ? "stalled" : hoursNoResponse > 24 ? "needs_response" : msgs.length === 1 ? "new" : "active",
-        message_count: msgs.length,
-        participant_emails: [...new Set(msgs.map(m => m.from_email))],
-        has_internal_reply: hasInternal,
-        has_external_reply: hasExternal,
-        last_sender: last.from_email,
-        last_sender_type: last.sender_type,
-        hours_without_response: Math.round(hoursNoResponse * 10) / 10,
-        account: first.account,
-      };
-    });
-
-    // Upsert threads and capture ids in one round trip
-    const threadIdByGmail = new Map<string, number>();
-    if (threads.length) {
-      const { data: upsertedThreads, error: threadErr } = await supabase
-        .from("threads")
-        .upsert(threads, { onConflict: "gmail_thread_id" })
-        .select("id, gmail_thread_id");
-      if (threadErr) {
-        console.error("[sync-emails] thread upsert failed", threadErr);
-      }
-      for (const t of upsertedThreads ?? []) {
-        threadIdByGmail.set(t.gmail_thread_id as string, t.id as number);
-      }
-    }
-
-    // Fallback: any gmail_thread_ids not returned from the upsert (possible
-    // with ignoreDuplicates-style races) — fetch them explicitly so emails
-    // never land with null thread_id again.
-    const missingThreadGmailIds = [...threadMap.keys()].filter(
-      (tid) => !threadIdByGmail.has(tid),
-    );
-    if (missingThreadGmailIds.length) {
-      const { data: fetched } = await supabase
-        .from("threads")
-        .select("id, gmail_thread_id")
-        .in("gmail_thread_id", missingThreadGmailIds);
-      for (const t of fetched ?? []) {
-        threadIdByGmail.set(t.gmail_thread_id as string, t.id as number);
-      }
-    }
-
-    // 2. Now insert emails with thread_id populated
-    const emailBatches = chunkArray(validEmails.map(e => ({
-      account: e.account,
-      sender: e.from,
-      recipient: e.to,
-      subject: e.subject,
-      body: e.body,
-      snippet: e.snippet,
-      email_date: new Date(e.date).toISOString(),
-      gmail_message_id: e.gmail_message_id,
-      gmail_thread_id: e.gmail_thread_id,
-      thread_id: threadIdByGmail.get(e.gmail_thread_id) ?? null,
-      attachments: e.attachments.length ? e.attachments : null,
-      is_reply: e.is_reply,
-      sender_type: e.sender_type,
-      has_attachments: e.has_attachments,
-    })), 50);
-
-    let saved = 0;
-    let emailsMissingThread = 0;
-    for (const batch of emailBatches) {
-      emailsMissingThread += batch.filter(b => b.thread_id === null).length;
-      const { error } = await supabase
-        .from("emails")
-        .upsert(batch, { onConflict: "gmail_message_id", ignoreDuplicates: true });
-      if (!error) saved += batch.length;
-    }
-    if (emailsMissingThread > 0) {
-      console.warn(`[sync-emails] ${emailsMissingThread} emails inserted without thread_id — thread upsert likely failed`);
-    }
+    const persistResult = await persistEmailsAndThreads(supabase, validEmails);
+    const saved = persistResult.emails_saved;
+    const threads = { length: persistResult.threads_saved };
 
     // Save history state with last_sync_at timestamp
     for (const [account, historyId] of Object.entries(result.newHistoryState)) {
@@ -226,8 +128,3 @@ export async function POST(request: NextRequest) {
   }
 }
 
-function chunkArray<T>(arr: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < arr.length; i += size) chunks.push(arr.slice(i, i + size));
-  return chunks;
-}

@@ -250,6 +250,59 @@ function deduplicateEmails(emails: ParsedEmail[]): ParsedEmail[] {
 }
 
 /**
+ * Backfill: fetch emails for one account with a custom Gmail query and
+ * pagination cursor. Used by /api/pipeline/backfill-emails to import
+ * historical mail in chunks that fit within Vercel's request budget.
+ *
+ * Returns the parsed emails plus the nextPageToken so the caller can
+ * resume in a follow-up request. When nextPageToken is null, the backfill
+ * is complete for this query.
+ */
+export async function fetchAccountEmailsByQuery(
+  serviceAccountJson: string,
+  account: GmailAccount,
+  query: string,
+  pageToken?: string,
+  pageSize = 100,
+): Promise<{ emails: ParsedEmail[]; nextPageToken: string | null }> {
+  const auth = getAuthClient(serviceAccountJson, account.email);
+  const gmail = google.gmail({ version: "v1", auth });
+
+  const listRes = await gmail.users.messages.list({
+    userId: "me",
+    q: query,
+    maxResults: Math.min(pageSize, 500),
+    pageToken,
+  });
+
+  const messageIds = (listRes.data.messages ?? []).map((m) => m.id!).filter(Boolean);
+  const nextPageToken = listRes.data.nextPageToken ?? null;
+
+  if (!messageIds.length) {
+    return { emails: [], nextPageToken };
+  }
+
+  const emails: ParsedEmail[] = [];
+  for (const c of chunkArray([...new Set(messageIds)], 10)) {
+    const results = await Promise.allSettled(
+      c.map(async (msgId) => {
+        const msg = await gmail.users.messages.get({
+          userId: "me",
+          id: msgId,
+          format: "full",
+        });
+        return parseMessage(msg.data as Record<string, unknown>, account);
+      }),
+    );
+    for (const r of results) {
+      if (r.status === "fulfilled" && r.value) emails.push(r.value);
+    }
+  }
+
+  return { emails, nextPageToken };
+}
+
+/**
  * Main entry point: sync all Gmail accounts in parallel.
  */
 export async function syncAllAccounts(
