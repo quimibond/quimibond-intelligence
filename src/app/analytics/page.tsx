@@ -24,6 +24,7 @@ import {
   Cell,
 } from "recharts";
 import { supabase } from "@/lib/supabase";
+import { formatCurrency, formatCurrencyCompact, formatPercentage } from "@/lib/utils";
 import type { Briefing } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { StatCard } from "@/components/shared/stat-card";
@@ -54,11 +55,7 @@ const CHART_COLORS = {
 
 // ── Helpers ──
 
-function fmtCompact(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `$${Math.round(v / 1_000)}K`;
-  return `$${Math.round(v)}`;
-}
+const fmtCompact = (v: number) => formatCurrencyCompact(v);
 
 function formatShortDate(dateStr: string): string {
   const d = new Date(dateStr);
@@ -300,7 +297,7 @@ export default function AnalyticsPage() {
         />
         <StatCard
           title="Margen Promedio"
-          value={`${kpis.avgMargin.toFixed(1)}%`}
+          value={formatPercentage(kpis.avgMargin, { decimals: 1 })}
           icon={Package}
           trend={kpis.avgMargin >= 20 ? "up" : kpis.avgMargin >= 10 ? "neutral" : "down"}
           description={`Top ${margins.length} productos`}
@@ -324,13 +321,13 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             {revenueChartData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Sin datos de revenue.</p>
+              <EmptyState compact icon={TrendingUp} title="Sin datos de revenue" />
             ) : (
               <ResponsiveContainer width="100%" height={250}>
                 <AreaChart data={revenueChartData}>
                   <CartesianGrid strokeDasharray="3 3" className="stroke-border" />
                   <XAxis dataKey="month" tick={{ fontSize: 11 }} className="fill-muted-foreground" />
-                  <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" tickFormatter={(v) => `$${(v / 1_000_000).toFixed(1)}M`} />
+                  <YAxis tick={{ fontSize: 11 }} className="fill-muted-foreground" tickFormatter={(v) => formatCurrencyCompact(v)} />
                   <Tooltip content={<ChartTooltip />} />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
                   <Area type="monotone" dataKey="revenue" name="Revenue" stroke={CHART_COLORS.revenue} fill={CHART_COLORS.revenue} fillOpacity={0.15} strokeWidth={2} />
@@ -348,7 +345,7 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             {marginChartData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Sin datos de margen.</p>
+              <EmptyState compact icon={Package} title="Sin datos de margen" />
             ) : (
               <ResponsiveContainer width="100%" height={250}>
                 <BarChart data={marginChartData} layout="vertical">
@@ -381,7 +378,7 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             {sentimentData.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Sin datos de sentimiento.</p>
+              <EmptyState compact icon={Users} title="Sin datos de sentimiento" />
             ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <AreaChart data={sentimentData}>
@@ -404,7 +401,7 @@ export default function AnalyticsPage() {
           </CardHeader>
           <CardContent>
             {anomalies.length === 0 ? (
-              <p className="py-8 text-center text-sm text-muted-foreground">Sin anomalias detectadas.</p>
+              <EmptyState compact icon={AlertTriangle} title="Sin anomalias detectadas" />
             ) : (
               <div className="space-y-2 max-h-[200px] overflow-y-auto">
                 {anomalies.map((a, i) => (
@@ -437,7 +434,7 @@ export default function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           {weeklyTrends.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">Sin tendencias semanales.</p>
+            <EmptyState compact icon={BarChart3} title="Sin tendencias semanales" />
           ) : (
             <>
               {/* Mobile cards */}
@@ -529,7 +526,7 @@ export default function AnalyticsPage() {
         </CardHeader>
         <CardContent>
           {margins.length === 0 ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">Sin datos de margenes.</p>
+            <EmptyState compact icon={Package} title="Sin datos de margenes" />
           ) : (
             <div className="overflow-x-auto">
               <Table>
@@ -550,22 +547,22 @@ export default function AnalyticsPage() {
                       <TableCell className="font-mono text-xs">{m.product_ref ?? "—"}</TableCell>
                       <TableCell className="max-w-[180px] truncate">{m.company_name ?? "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {m.avg_order_price != null ? `$${Number(m.avg_order_price).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                        {formatCurrency(m.avg_order_price != null ? Number(m.avg_order_price) : null)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
-                        {m.avg_invoice_price != null ? `$${Number(m.avg_invoice_price).toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "—"}
+                        {formatCurrency(m.avg_invoice_price != null ? Number(m.avg_invoice_price) : null)}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">
                         {m.price_delta_pct != null ? (
                           <span className={Number(m.price_delta_pct) > 5 ? "text-danger" : Number(m.price_delta_pct) < -5 ? "text-success" : ""}>
-                            {Number(m.price_delta_pct) > 0 ? "+" : ""}{Number(m.price_delta_pct).toFixed(1)}%
+                            {Number(m.price_delta_pct) > 0 ? "+" : ""}{formatPercentage(Number(m.price_delta_pct), { decimals: 1 })}
                           </span>
                         ) : "—"}
                       </TableCell>
                       <TableCell className="text-right">
                         {m.gross_margin_pct != null ? (
                           <Badge variant={Number(m.gross_margin_pct) >= 25 ? "success" : Number(m.gross_margin_pct) >= 10 ? "warning" : "critical"}>
-                            {Number(m.gross_margin_pct).toFixed(1)}%
+                            {formatPercentage(Number(m.gross_margin_pct), { decimals: 1 })}
                           </Badge>
                         ) : "—"}
                       </TableCell>

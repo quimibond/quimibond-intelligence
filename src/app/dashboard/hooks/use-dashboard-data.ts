@@ -33,11 +33,7 @@ export interface DashboardData {
 
 /* ── Helpers ── */
 
-export function fmtCompact(v: number): string {
-  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `$${Math.round(v / 1_000)}K`;
-  return `$${Math.round(v)}`;
-}
+export { formatCurrencyCompact as fmtCompact } from "@/lib/utils";
 
 export function deltaStr(curr: number, prev: number, label: string): string {
   if (prev === 0) return "";

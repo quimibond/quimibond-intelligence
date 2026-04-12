@@ -1,6 +1,6 @@
 "use client";
 
-import { cn } from "@/lib/utils";
+import { cn, formatCurrencyCompact, formatPercentage } from "@/lib/utils";
 
 interface PipelineSummary {
   total_leads: number;
@@ -19,11 +19,7 @@ interface Lead {
   days_open: number;
 }
 
-function fmt(v: number): string {
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
-}
+const fmt = (v: number) => formatCurrencyCompact(v);
 
 export function PipelineFunnel({
   summary,

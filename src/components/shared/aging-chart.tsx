@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatCurrencyCompact, formatPercentage } from "@/lib/utils";
 
 interface AgingData {
   current: number;
@@ -20,11 +20,7 @@ const BUCKETS = [
   { key: "90_plus" as const, label: "90+ dias", color: "bg-danger/80" },
 ] as const;
 
-function fmt(v: number): string {
-  if (v >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (v >= 1_000) return `$${(v / 1_000).toFixed(0)}K`;
-  return `$${v.toFixed(0)}`;
-}
+const fmt = (v: number) => formatCurrencyCompact(v);
 
 export function AgingChart({ data }: { data: AgingData | null }) {
   const buckets = useMemo(() => {
@@ -54,7 +50,7 @@ export function AgingChart({ data }: { data: AgingData | null }) {
             key={b.key}
             className={cn(b.color, "transition-all")}
             style={{ width: `${Math.max(b.pct, 2)}%` }}
-            title={`${b.label}: ${fmt(b.value)} (${b.pct.toFixed(0)}%)`}
+            title={`${b.label}: ${fmt(b.value)} (${formatPercentage(b.pct)})`}
           />
         ))}
       </div>

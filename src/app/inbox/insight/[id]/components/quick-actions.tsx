@@ -4,6 +4,7 @@ import {
   Send, Mail, CalendarClock, Check, Loader2,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
+import { formatCurrency } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { LinkCard } from "@/components/shared/link-card";
 import { ShareWhatsApp } from "./share-whatsapp";
@@ -22,7 +23,7 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
   const title = insight.title ?? "";
   const recommendation = insight.recommendation ?? "";
   const impact = insight.business_impact_estimate
-    ? `$${Number(insight.business_impact_estimate).toLocaleString()} MXN`
+    ? `${formatCurrency(Number(insight.business_impact_estimate))} MXN`
     : "";
 
   const assigneeSubject = `Acción requerida: ${title.slice(0, 80)}`;

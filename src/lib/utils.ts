@@ -85,6 +85,16 @@ export function formatNumber(value: number | null, decimals = 0): string {
   return value.toLocaleString("es-MX", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 }
 
+/** Compact currency: $1.2M / $340K / $45. Useful for chart labels and dense KPIs. */
+export function formatCurrencyCompact(value: number | null): string {
+  if (value == null || Number.isNaN(value)) return "—";
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}$${abs.toFixed(0)}`;
+}
+
 /** Display product: prefer internal_ref (e.g. "ZN4032OW160") over long name */
 export function productDisplay(item: { product_ref?: string | null; product_name?: string | null; internal_ref?: string | null; name?: string | null }): string {
   return item.product_ref || item.internal_ref || item.product_name || item.name || "—";

@@ -108,19 +108,17 @@ export default function ContactsPage() {
     if (type === "supplier") countQuery.eq("is_supplier", true);
     if (searchVal.trim()) countQuery.or(`name.ilike.%${searchVal.trim()}%,email.ilike.%${searchVal.trim()}%`);
 
-    const [{ data }, { count }, atRiskCount, healthRes] = await Promise.all([
+    const [{ data }, { count }, statsRes] = await Promise.all([
       buildQuery(searchVal, risk, type).limit(PAGE_SIZE),
       countQuery,
-      supabase.from("contacts").select("id", { count: "exact", head: true }).in("risk_level", ["high", "critical"]),
-      supabase.from("contacts").select("current_health_score").not("current_health_score", "is", null),
+      supabase.rpc("get_contacts_health_stats"),
     ]);
 
-    // Compute avg health from ALL contacts (not just the page)
-    const healthScores = (healthRes.data ?? []).map((c: { current_health_score: number }) => c.current_health_score);
-    const avgHealth = healthScores.length > 0
-      ? Math.round(healthScores.reduce((sum: number, s: number) => sum + s, 0) / healthScores.length)
-      : null;
-    setGlobalStats({ atRisk: atRiskCount.count ?? 0, avgHealth });
+    const stats = (statsRes.data ?? {}) as { avg_health?: number | null; at_risk_count?: number };
+    setGlobalStats({
+      atRisk: stats.at_risk_count ?? 0,
+      avgHealth: stats.avg_health ?? null,
+    });
 
     setContacts(data ?? []);
     setTotalCount(count);

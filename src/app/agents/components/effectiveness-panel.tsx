@@ -6,7 +6,7 @@ import { TrendingUp, TrendingDown, Activity, DollarSign, RefreshCw } from "lucid
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, formatCurrencyCompact, formatPercentage } from "@/lib/utils";
 
 interface EffectivenessRow {
   agent_id: number;
@@ -30,12 +30,7 @@ interface EffectivenessRow {
   last_run_at: string | null;
 }
 
-function fmtK(n: number | null): string {
-  if (!n) return "—";
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${Math.round(n / 1_000)}K`;
-  return `$${Math.round(n)}`;
-}
+const fmtK = (n: number | null) => formatCurrencyCompact(n);
 
 export function EffectivenessPanel() {
   const [rows, setRows] = useState<EffectivenessRow[]>([]);
@@ -108,7 +103,7 @@ export function EffectivenessPanel() {
               <TrendingUp className="h-3.5 w-3.5 text-success" />
               <p className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">Acted rate</p>
             </div>
-            <p className="mt-1 text-xl font-bold tabular-nums">{overallActedPct.toFixed(1)}%</p>
+            <p className="mt-1 text-xl font-bold tabular-nums">{formatPercentage(overallActedPct, { decimals: 1 })}</p>
             <p className="text-[10px] text-muted-foreground tabular-nums">{totalActed} de {totalInsights}</p>
           </CardContent>
         </Card>
@@ -172,7 +167,7 @@ export function EffectivenessPanel() {
                     <p className={cn("text-lg font-bold tabular-nums",
                       actedRate >= 20 ? "text-success" : actedRate >= 10 ? "text-warning" : "text-danger"
                     )}>
-                      {actedRate.toFixed(0)}%
+                      {formatPercentage(actedRate)}
                     </p>
                     <p className="text-[10px] text-muted-foreground tabular-nums">
                       {fmtK(row.impact_delivered_mxn)} entregado

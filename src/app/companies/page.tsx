@@ -36,12 +36,7 @@ const TIER_CONFIG: Record<string, { label: string; variant: "info" | "success" |
   minor: { label: "Minor", variant: "secondary" },
 };
 
-function fmtCompact(v: number | null): string {
-  if (v == null) return "—";
-  if (Math.abs(v) >= 1_000_000) return `$${(v / 1_000_000).toFixed(1)}M`;
-  if (Math.abs(v) >= 1_000) return `$${Math.round(v / 1_000)}K`;
-  return `$${Math.round(v)}`;
-}
+import { formatCurrencyCompact as fmtCompact } from "@/lib/utils";
 
 export default function CompaniesPage() {
   const router = useRouter();

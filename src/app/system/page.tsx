@@ -25,7 +25,7 @@ import {
   XCircle,
 } from "lucide-react";
 import { supabase } from "@/lib/supabase";
-import { cn, timeAgo } from "@/lib/utils";
+import { cn, timeAgo, formatNumber } from "@/lib/utils";
 import type { PipelineRun, SyncCommand, SystemStats } from "@/lib/types";
 import { DataFreshness } from "@/components/shared/data-freshness";
 import { LoadingGrid } from "@/components/shared/loading-grid";
@@ -190,11 +190,11 @@ export default function SystemPage() {
       <div>
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Datos del Sistema</h3>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-          <MiniStatCard label="Empresas" value={stats?.totalCompanies.toLocaleString() ?? "0"} icon={Database} />
-          <MiniStatCard label="Contactos" value={stats?.totalContacts.toLocaleString() ?? "0"} icon={Users} />
-          <MiniStatCard label="Emails" value={stats?.totalEmails.toLocaleString() ?? "0"} icon={Mail} />
-          <MiniStatCard label="Alertas activas" value={stats?.activeAlerts.toLocaleString() ?? "0"} icon={Bell} />
-          <MiniStatCard label="Acciones pend." value={stats?.pendingActions.toLocaleString() ?? "0"} icon={Clock} />
+          <MiniStatCard label="Empresas" value={formatNumber(stats?.totalCompanies ?? 0)} icon={Database} />
+          <MiniStatCard label="Contactos" value={formatNumber(stats?.totalContacts ?? 0)} icon={Users} />
+          <MiniStatCard label="Emails" value={formatNumber(stats?.totalEmails ?? 0)} icon={Mail} />
+          <MiniStatCard label="Alertas activas" value={formatNumber(stats?.activeAlerts ?? 0)} icon={Bell} />
+          <MiniStatCard label="Acciones pend." value={formatNumber(stats?.pendingActions ?? 0)} icon={Clock} />
         </div>
       </div>
 
@@ -202,14 +202,14 @@ export default function SystemPage() {
       <div>
         <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Datos de Odoo</h3>
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-          <MiniStatCard label="Productos" value={stats?.totalOdooProducts.toLocaleString() ?? "0"} icon={Package} />
-          <MiniStatCard label="Lineas de Orden" value={stats?.totalOdooOrderLines.toLocaleString() ?? "0"} icon={ShoppingCart} />
-          <MiniStatCard label="Facturas" value={stats?.totalOdooInvoices.toLocaleString() ?? "0"} icon={CreditCard} />
-          <MiniStatCard label="Entregas" value={stats?.totalOdooDeliveries.toLocaleString() ?? "0"} icon={Truck} />
-          <MiniStatCard label="Pagos" value={stats?.totalOdooPayments.toLocaleString() ?? "0"} icon={TrendingUp} />
-          <MiniStatCard label="CRM Leads" value={stats?.totalOdooCrmLeads.toLocaleString() ?? "0"} icon={TrendingUp} />
-          <MiniStatCard label="Actividades" value={stats?.totalOdooActivities.toLocaleString() ?? "0"} icon={CheckCircle2} />
-          <MiniStatCard label="Usuarios" value={stats?.totalOdooUsers.toLocaleString() ?? "0"} icon={UserCog} />
+          <MiniStatCard label="Productos" value={formatNumber(stats?.totalOdooProducts ?? 0)} icon={Package} />
+          <MiniStatCard label="Lineas de Orden" value={formatNumber(stats?.totalOdooOrderLines ?? 0)} icon={ShoppingCart} />
+          <MiniStatCard label="Facturas" value={formatNumber(stats?.totalOdooInvoices ?? 0)} icon={CreditCard} />
+          <MiniStatCard label="Entregas" value={formatNumber(stats?.totalOdooDeliveries ?? 0)} icon={Truck} />
+          <MiniStatCard label="Pagos" value={formatNumber(stats?.totalOdooPayments ?? 0)} icon={TrendingUp} />
+          <MiniStatCard label="CRM Leads" value={formatNumber(stats?.totalOdooCrmLeads ?? 0)} icon={TrendingUp} />
+          <MiniStatCard label="Actividades" value={formatNumber(stats?.totalOdooActivities ?? 0)} icon={CheckCircle2} />
+          <MiniStatCard label="Usuarios" value={formatNumber(stats?.totalOdooUsers ?? 0)} icon={UserCog} />
         </div>
       </div>
 
