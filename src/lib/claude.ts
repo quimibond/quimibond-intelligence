@@ -85,13 +85,20 @@ export async function callClaude(
     }
 
     try {
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      };
+      // Add prompt-caching beta header when we're actually using cache_control
+      // Safe to include even if not needed (just a feature flag)
+      if (cacheEnabled && likelyLongEnough) {
+        headers["anthropic-beta"] = "prompt-caching-2024-07-31";
+      }
+
       const response = await fetch(CLAUDE_API_URL, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-        },
+        headers,
         body: JSON.stringify(body),
       });
 
