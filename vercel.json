@@ -79,6 +79,14 @@
     {
       "path": "/api/pipeline/verify-follow-ups",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/pipeline/refresh-views",
+      "schedule": "30 */6 * * *"
+    },
+    {
+      "path": "/api/pipeline/retention",
+      "schedule": "0 3 * * 0"
     }
   ]
 }

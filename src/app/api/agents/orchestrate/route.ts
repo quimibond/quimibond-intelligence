@@ -17,7 +17,7 @@ import { computeExpiresAt } from "@/lib/insight-ttl";
 export const maxDuration = 300;
 
 /** Max chars for the context sent to Claude (~15K tokens) */
-const MAX_CONTEXT_CHARS = 60_000;
+const MAX_CONTEXT_CHARS = 40_000;
 
 /** Default confidence threshold — raised from 0.65 to prevent noise */
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.80;
@@ -795,58 +795,58 @@ REGLAS para actions:
 async function buildAgentContext(supabase: any, domain: string, agentId?: number): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
   const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
-    // What OTHER directors are saying
+    // What OTHER directors are saying (reduced from 15 to 10)
     supabase
       .from("cross_director_signals")
       .select("company_name, director_name, category, severity, title")
       .in("severity", ["critical", "high"])
-      .limit(15),
+      .limit(10),
 
-    // Email facts per company
+    // Email facts per company (reduced from 15 to 8)
     supabase
       .from("company_email_intelligence")
       .select("company_name, fact_type, fact_text")
       .in("fact_type", ["complaint", "commitment", "request", "price"])
-      .limit(15),
+      .limit(8),
 
-    // Companies flagged multiple times + CEO response
+    // Companies flagged multiple times (reduced from 10 to 5)
     supabase
       .from("company_insight_history")
-      .select("company_name, total_insights_30d, times_acted, times_dismissed, directors_flagging, which_directors, categories_flagged")
+      .select("company_name, total_insights_30d, times_acted, times_dismissed, which_directors")
       .gte("total_insights_30d", 2)
       .order("total_insights_30d", { ascending: false })
-      .limit(10),
+      .limit(5),
 
     // Domain-specific email facts
     getEmailIntelligence(supabase, domain),
 
-    // FASE 2: CEO feedback from last 48h (immediate feedback loop)
+    // CEO feedback last 48h (reduced from 15 to 8)
     supabase
       .from("agent_insights")
       .select("title, state, category, severity, user_feedback")
       .in("state", ["acted_on", "dismissed"])
       .gte("updated_at", new Date(Date.now() - 48 * 3600_000).toISOString())
       .order("updated_at", { ascending: false })
-      .limit(15),
+      .limit(8),
 
-    // FASE 3: Tickets from other directors for this agent
+    // Tickets from other directors (reduced from 10 to 5)
     supabase
       .from("agent_tickets")
       .select("from_agent_id, insight_id, ticket_type, message, created_at")
       .eq("status", "pending")
       .order("created_at", { ascending: false })
-      .limit(10),
+      .limit(5),
 
-    // FASE 4: Recent high-confidence facts from knowledge graph
+    // High-confidence KG facts (reduced from 20 to 10)
     supabase
       .from("facts")
       .select("fact_text, fact_type, confidence, fact_date")
       .gte("confidence", 0.85)
       .eq("expired", false)
       .order("fact_date", { ascending: false, nullsFirst: false })
-      .limit(20),
+      .limit(10),
 
-    // FASE 5 (this agent's specific dismissal patterns — negative examples)
+    // This agent's dismissals (kept at 8 — important for learning)
     agentId ? supabase
       .from("agent_insights")
       .select("title, category, user_feedback")
