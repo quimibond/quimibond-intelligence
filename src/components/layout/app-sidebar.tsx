@@ -34,6 +34,7 @@ import {
   Bot,
   UserCheck,
   Layers,
+  BookOpen,
 } from "lucide-react";
 
 const navItems = [
@@ -43,6 +44,7 @@ const navItems = [
   { href: "/contacts", label: "Contactos", icon: Users },
   { href: "/employees", label: "Equipo", icon: UserCheck },
   { href: "/analytics", label: "Analitica", icon: BarChart3 },
+  { href: "/budgets", label: "Presupuestos", icon: BookOpen },
   { href: "/emails", label: "Emails", icon: Mail },
   { href: "/threads", label: "Hilos", icon: MessagesSquare },
   { href: "/knowledge", label: "Knowledge", icon: Share2 },
