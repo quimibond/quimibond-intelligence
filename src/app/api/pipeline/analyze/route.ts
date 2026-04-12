@@ -97,8 +97,10 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Step 3: Split into mini-batches and process in parallel ─────────
-    const BATCH_SIZE = 10;
-    const MAX_PARALLEL = 5;
+    // Reduced from 10 to 5 emails/batch to prevent output truncation at
+    // max_tokens. 10 emails × rich JSON extraction would hit 4K tokens.
+    const BATCH_SIZE = 5;
+    const MAX_PARALLEL = 8;
     const batches: typeof meaningful[] = [];
 
     for (let i = 0; i < meaningful.length && batches.length < MAX_PARALLEL; i += BATCH_SIZE) {
@@ -308,7 +310,7 @@ Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
     action_items?: { assignee: string; description: string; type: string; priority: string; due_date?: string; related_to?: string }[];
   }>(apiKey, {
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 3000,
+    max_tokens: 2500, // enough for 5 emails of extraction
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [{
