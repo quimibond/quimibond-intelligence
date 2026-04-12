@@ -89,8 +89,25 @@ export async function POST(request: NextRequest) {
 
       // Resolve company names to IDs and write insights
       if (insights.length > 0) {
+        // Quality filter: drop insights with impact < $50K unless severity=critical
+        // This cuts noise to the CEO drastically (50% of insights had no impact score)
+        const MIN_IMPACT = 50000;
+        const filtered = insights.filter(i => {
+          const severity = String(i.severity || "info").toLowerCase();
+          if (severity === "critical") return true;
+          const impact = Number(i.business_impact_estimate) || 0;
+          return impact >= MIN_IMPACT;
+        });
+
+        // Sort by impact and cap at 5 per run to force quality over quantity
+        filtered.sort((a, b) =>
+          (Number(b.business_impact_estimate) || 0) -
+          (Number(a.business_impact_estimate) || 0)
+        );
+        const topInsights = filtered.slice(0, 5);
+
         const rows = [];
-        for (const i of insights) {
+        for (const i of topInsights) {
           let companyId: number | null = null;
           if (i.company_name) {
             const { data: co } = await supabase
@@ -100,6 +117,24 @@ export async function POST(request: NextRequest) {
               .limit(1)
               .single();
             if (co) companyId = co.id;
+          }
+
+          // Dedup: check if same agent already has an open insight for this
+          // company with a similar title in the last 7 days. Skip if so.
+          const normalizedTitle = String(i.title || "")
+            .toLowerCase().trim().slice(0, 60);
+          if (normalizedTitle && companyId) {
+            const { data: existing } = await supabase
+              .from("agent_insights")
+              .select("id")
+              .eq("agent_id", agent.id)
+              .eq("company_id", companyId)
+              .in("state", ["new", "seen"])
+              .ilike("title", `${normalizedTitle}%`)
+              .gte("created_at", new Date(Date.now() - 7 * 86400000).toISOString())
+              .limit(1)
+              .maybeSingle();
+            if (existing) continue; // skip duplicate
           }
 
           rows.push({
@@ -118,7 +153,10 @@ export async function POST(request: NextRequest) {
             state: "new",
           });
         }
-        await supabase.from("agent_insights").insert(rows);
+        if (rows.length > 0) {
+          await supabase.from("agent_insights").insert(rows);
+        }
+        console.log(`[agent-run] ${agent.name}: ${insights.length} raw → ${filtered.length} filtered → ${rows.length} inserted (${insights.length - rows.length} dropped)`);
       }
 
       const duration = (Date.now() - startTime) / 1000;
