@@ -49,7 +49,7 @@ create index sync_run_status_idx
 -- 3. sync_failure: one row per failed entity, for targeted retry
 create table ingestion.sync_failure (
   failure_id uuid primary key default gen_random_uuid(),
-  run_id uuid not null references ingestion.sync_run(run_id) on delete cascade,
+  run_id uuid not null references ingestion.sync_run(run_id) on delete restrict,
   source_id text not null,
   table_name text not null,
   entity_id text not null,
@@ -61,7 +61,8 @@ create table ingestion.sync_failure (
     check (status in ('pending','retrying','resolved','abandoned')),
   first_seen_at timestamptz not null default now(),
   last_tried_at timestamptz not null default now(),
-  resolved_at timestamptz
+  resolved_at timestamptz,
+  foreign key (source_id, table_name) references ingestion.source_registry(source_id, table_name)
 );
 
 -- Unique constraint: one open failure per (source, table, entity) at a time.
@@ -73,6 +74,8 @@ create unique index sync_failure_open_idx
 create index sync_failure_status_idx
   on ingestion.sync_failure(source_id, table_name, status);
 
+create index sync_failure_run_id_idx on ingestion.sync_failure(run_id);
+
 -- 4. reconciliation_run: nightly count comparison output
 create table ingestion.reconciliation_run (
   reconciliation_id uuid primary key default gen_random_uuid(),
@@ -83,11 +86,16 @@ create table ingestion.reconciliation_run (
   window_end timestamptz,
   source_count int,
   supabase_count int not null,
-  divergence int not null,
+  divergence int,
   missing_entity_ids text[],
   status text not null
     check (status in ('clean','divergent_positive','divergent_negative','unknown')),
-  auto_healed_count int not null default 0
+  auto_healed_count int not null default 0,
+  foreign key (source_id, table_name) references ingestion.source_registry(source_id, table_name),
+  check (
+    (source_count is null and divergence is null and status = 'unknown')
+    or (source_count is not null and divergence is not null and status <> 'unknown')
+  )
 );
 
 create index reconciliation_run_source_table_ran_idx
@@ -103,7 +111,8 @@ create table ingestion.sla_breach (
   detected_at timestamptz not null default now(),
   sla_minutes int not null,
   actual_minutes int not null,
-  resolved_at timestamptz
+  resolved_at timestamptz,
+  foreign key (source_id, table_name) references ingestion.source_registry(source_id, table_name)
 );
 
 create index sla_breach_open_idx
