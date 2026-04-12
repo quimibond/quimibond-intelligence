@@ -226,6 +226,81 @@ async function processBatch(
     return `--- EMAIL ${i + 1} ---\nDe: ${e.sender}\nPara: ${e.recipient}\nAsunto: ${e.subject}\nFecha: ${e.email_date}\nTipo: ${e.sender_type}${attachmentInfo}\nCuerpo:\n${body}`;
   }).join("\n\n");
 
+  // System prompt is large + stable across calls → gets cached by Anthropic
+  // (Haiku needs >2048 tokens, ~8000 chars, to activate prompt caching)
+  // Cache reads cost 10% of normal input, so 346 calls/day amortize the cache write
+  const SYSTEM_PROMPT = `Eres un extractor de inteligencia de negocio para Quimibond — fabricante textil mexicano con sede en Toluca (Estado de Mexico). Tu trabajo es extraer entidades, hechos verificables, relaciones y acciones pendientes de emails internos y externos.
+
+## Contexto de negocio
+- Quimibond vende productos quimicos y materiales para la industria textil
+- Clientes: maquiladoras, marcas de ropa, fabricantes de automoviles (BMW, etc)
+- Proveedores: empresas quimicas internacionales (Zwisstex, otros)
+- Empleados internos tienen dominios @quimibond.com, @quimibond.com.mx
+- La moneda default es MXN. Fechas en formato ISO (YYYY-MM-DD).
+
+## Tipos de entidades
+- **person**: individuos (clientes, proveedores, empleados, contactos)
+- **company**: empresas (clientes corporativos, proveedores, competidores)
+- **product**: SKUs, materias primas, productos terminados, formulaciones
+
+## Tipos de facts
+- **commitment**: promesas (entregar, pagar, llamar, cotizar en X fecha)
+- **complaint**: quejas, problemas, defectos, retrasos reportados
+- **request**: solicitudes explicitas de info, cotizacion, muestra, reunion
+- **price**: precios, descuentos, cotizaciones mencionadas
+- **information**: datos factuales relevantes (capacidad, lead time, certificacion)
+- **change**: cambios anunciados (precio, proveedor, persona de contacto, politica)
+
+## Tipos de relaciones
+- **works_at**: persona trabaja en empresa
+- **buys_from**: empresa compra de otra empresa (cliente → proveedor)
+- **sells_to**: inverso de buys_from
+- **supplies**: entidad suministra producto/material
+- **mentioned_with**: mencionados en mismo contexto sin relacion clara
+
+## Tipos de action_items
+- **call**: llamar por telefono
+- **email**: responder o enviar email
+- **follow_up**: dar seguimiento a tema abierto
+- **review**: revisar documento/propuesta/calidad
+- **other**: cualquier otra accion
+
+## Prioridades de action_items
+- **high**: urgente, deadline < 3 dias, o involucra > $100K MXN
+- **medium**: deadline entre 3-7 dias, o impacto operativo
+- **low**: informativo, sin deadline
+
+## Adjuntos
+Cuando veas ADJUNTOS listados en un email, incluye facts sobre documentos importantes:
+- Facturas (PDF/XML): fact tipo "information" con texto tipo "Se envio factura INV-X-2026-001"
+- CFDIs (XML): fact tipo "information" con texto "Se recibio CFDI de proveedor X"
+- Ordenes de compra (PDF): fact tipo "commitment" si es confirmacion
+- Fichas tecnicas: fact tipo "information" sobre especs del producto
+
+## Formato de salida
+Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
+{
+  "entities": [
+    {"name": "string", "type": "person|company|product", "email": "string o null"}
+  ],
+  "facts": [
+    {"entity_name": "string", "type": "commitment|complaint|request|price|information|change", "text": "string conciso", "date": "YYYY-MM-DD o null", "confidence": 0.0-1.0}
+  ],
+  "relationships": [
+    {"entity_a": "string", "entity_b": "string", "type": "works_at|buys_from|sells_to|supplies|mentioned_with", "context": "string corto"}
+  ],
+  "action_items": [
+    {"assignee": "nombre o empresa", "description": "accion concreta", "type": "call|email|follow_up|review|other", "priority": "low|medium|high", "due_date": "YYYY-MM-DD o null", "related_to": "contacto o empresa relacionada"}
+  ]
+}
+
+## Reglas
+- NO inventes datos. Si no hay accion clara, devuelve action_items: [].
+- Un fact por compromiso o informacion unica, no dupliques.
+- Entidades con nombre < 2 caracteres se ignoran.
+- Confidence debe reflejar certeza real (0.9+ solo si es explicito, 0.5-0.7 si es inferencia).
+- NO incluyas comentarios, NO uses markdown code blocks, SOLO el JSON.`;
+
   const { result } = await callClaudeJSON<{
     entities?: { name: string; type: string; email?: string }[];
     facts?: { entity_name: string; type: string; text: string; date?: string; confidence?: number }[];
@@ -233,12 +308,12 @@ async function processBatch(
     action_items?: { assignee: string; description: string; type: string; priority: string; due_date?: string; related_to?: string }[];
   }>(apiKey, {
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 4000,
+    max_tokens: 3000,
     temperature: 0,
-    system: `Extractor de inteligencia para Quimibond (textiles, Mexico). Extrae entidades, hechos y relaciones de emails de negocio. Los emails pueden tener ADJUNTOS listados — incluye facts sobre documentos importantes (facturas, ordenes de compra, pagos, fichas tecnicas, CFDIs). Ejemplo: si hay adjunto "Factura-INV2026-0213.pdf" → fact: "Se envio factura INV-2026-0213". Responde SOLO JSON valido.`,
+    system: SYSTEM_PROMPT,
     messages: [{
       role: "user",
-      content: `Extrae inteligencia de estos ${emails.length} emails.\n\n${emailsText}\n\nJSON: {"entities":[{"name":"str","type":"person|company|product","email":"str or null"}],"facts":[{"entity_name":"str","type":"commitment|complaint|request|price|information|change","text":"str","date":"YYYY-MM-DD or null","confidence":0.9}],"relationships":[{"entity_a":"str","entity_b":"str","type":"works_at|buys_from|sells_to|supplies|mentioned_with","context":"str"}],"action_items":[{"assignee":"quien","description":"que hacer","type":"call|email|follow_up|review|other","priority":"low|medium|high","due_date":"YYYY-MM-DD or null","related_to":"contacto o empresa"}]}`,
+      content: `Extrae inteligencia de estos ${emails.length} emails:\n\n${emailsText}`,
     }],
   }, "analyze-batch");
 
