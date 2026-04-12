@@ -59,6 +59,9 @@ export function filterInsightsByConfig<T extends RawInsight>(
 ): T[] {
   let out = insights.slice();
 
+  // Order matters: confidence runs BEFORE impact so the `severity='critical'`
+  // bypass in the impact stage cannot rescue a low-confidence critical insight.
+  // The cap (max_insights_per_run) runs last so it slices the already-filtered set.
   if (cfg.min_confidence_floor > 0) {
     out = out.filter(i => Number(i.confidence ?? 0) >= cfg.min_confidence_floor);
   }
