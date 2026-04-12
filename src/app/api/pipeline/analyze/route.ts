@@ -213,8 +213,9 @@ async function processBatch(
   emails: { id: number; sender: string | null; recipient: string | null; subject: string | null; body: string | null; snippet: string | null; email_date: string | null; sender_type: string | null; account: string | null; has_attachments?: boolean; attachments?: { filename: string; mimeType: string; size: number }[] | null }[]
 ): Promise<BatchResult> {
   // Format emails for Claude — including attachment context
+  // 500 chars/email is enough context for extraction without bloating input
   const emailsText = emails.map((e, i) => {
-    const body = sanitizeEmailForClaude(e.body ?? e.snippet ?? "", 800);
+    const body = sanitizeEmailForClaude(e.body ?? e.snippet ?? "", 500);
     let attachmentInfo = "";
     if (e.has_attachments && e.attachments?.length) {
       const atts = (e.attachments as { filename: string; mimeType: string; size: number }[])
@@ -310,7 +311,7 @@ Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
     action_items?: { assignee: string; description: string; type: string; priority: string; due_date?: string; related_to?: string }[];
   }>(apiKey, {
     model: "claude-haiku-4-5-20251001",
-    max_tokens: 2500, // enough for 5 emails of extraction
+    max_tokens: 4000, // headroom for 5 emails of rich extraction
     temperature: 0,
     system: SYSTEM_PROMPT,
     messages: [{
