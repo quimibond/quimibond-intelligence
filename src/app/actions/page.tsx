@@ -17,6 +17,7 @@ import type { ActionItem } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select-native";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -355,11 +356,10 @@ export default function ActionsPage() {
           <div className="space-y-3 md:hidden">
             {/* Select all row for mobile */}
             <div className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm px-4 py-2.5">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                onChange={toggleSelectAll}
-                className="h-5 w-5 rounded border-input"
+                onCheckedChange={toggleSelectAll}
+                aria-label="Seleccionar todas las acciones"
               />
               <span className="text-sm text-muted-foreground">
                 Seleccionar todas ({filtered.length})
@@ -390,11 +390,10 @@ export default function ActionsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[40px]">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                      onChange={toggleSelectAll}
-                      className="h-4 w-4 rounded border-input"
+                      onCheckedChange={toggleSelectAll}
+                      aria-label="Seleccionar todas las acciones"
                     />
                   </TableHead>
                   <TableHead>Descripcion</TableHead>

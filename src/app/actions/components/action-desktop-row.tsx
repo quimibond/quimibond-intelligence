@@ -14,6 +14,7 @@ import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { AssigneeSelect } from "@/components/shared/assignee-select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { TableCell, TableRow } from "@/components/ui/table";
 
 const priorityVariantMap: Record<string, "critical" | "warning" | "info" | "secondary"> = {
@@ -63,11 +64,10 @@ export function ActionDesktopRow({
   return (
     <TableRow className="group transition-colors hover:bg-muted/50">
       <TableCell>
-        <input
-          type="checkbox"
+        <Checkbox
           checked={selected}
-          onChange={() => onToggleSelect(action.id)}
-          className="h-4 w-4 rounded border-input"
+          onCheckedChange={() => onToggleSelect(action.id)}
+          aria-label={`Seleccionar: ${action.description?.slice(0, 50)}`}
         />
       </TableCell>
       <TableCell className="max-w-[300px]">

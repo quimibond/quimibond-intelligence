@@ -8,6 +8,7 @@ import { StateBadge } from "@/components/shared/state-badge";
 import { FeedbackButtons } from "@/components/shared/feedback-buttons";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 
 const priorityVariantMap: Record<string, "critical" | "warning" | "info" | "secondary"> = {
   low: "secondary",
@@ -58,11 +59,11 @@ export function ActionMobileCard({
       <div className={`absolute left-0 top-0 bottom-0 w-1 ${priorityBarColor[action.priority] ?? "bg-muted-foreground/40"}`} />
       <div className="p-4 pl-5 space-y-3">
         <div className="flex items-start gap-3">
-          <input
-            type="checkbox"
+          <Checkbox
             checked={selected}
-            onChange={() => onToggleSelect(action.id)}
-            className="mt-0.5 h-5 w-5 shrink-0 rounded border-input"
+            onCheckedChange={() => onToggleSelect(action.id)}
+            aria-label={`Seleccionar accion: ${action.description?.slice(0, 50)}`}
+            className="mt-0.5 shrink-0"
           />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">{action.description}</p>

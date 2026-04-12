@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select-native";
 import {
   Card,
@@ -116,12 +117,12 @@ export default function BriefingsPage() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="relative flex-1 min-w-0 sm:max-w-xs">
-          <input
+          <Input
             type="text"
             placeholder="Buscar briefings..."
             value={searchFilter}
             onChange={(e) => setSearchFilter(e.target.value)}
-            className="h-9 w-full rounded-md border bg-background px-3 py-1 text-sm shadow-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            aria-label="Buscar briefings"
           />
         </div>
         <Select

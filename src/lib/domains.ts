@@ -48,8 +48,8 @@ export const DOMAIN_CONFIG: Record<string, DomainConfig> = {
   },
   costos: {
     icon: Calculator,
-    color: "text-amber-600",
-    bg: "bg-amber-50",
+    color: "text-warning",
+    bg: "bg-warning/10",
     description: "Margen real, price erosion, dead stock value",
   },
   equipo_dir: {

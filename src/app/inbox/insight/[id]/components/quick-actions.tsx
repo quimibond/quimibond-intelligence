@@ -1,11 +1,11 @@
 "use client";
 
-import { useState } from "react";
 import {
   Send, Mail, CalendarClock, Check, Loader2,
 } from "lucide-react";
 import type { AgentInsight, Company } from "@/lib/types";
 import { Card, CardContent } from "@/components/ui/card";
+import { LinkCard } from "@/components/shared/link-card";
 import { ShareWhatsApp } from "./share-whatsapp";
 
 export function QuickActions({ insight, company, companyContacts, onDone, onCancel, acting }: {
@@ -67,10 +67,12 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
         </p>
 
         {assigneeEmail && (
-          <a
+          <LinkCard
+            as="a"
             href={`mailto:${assigneeEmail}?subject=${encodeURIComponent(assigneeSubject)}&body=${encodeURIComponent(assigneeBody)}`}
             onClick={() => onDone(3)}
-            className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
+            className="flex items-center gap-3 p-3"
+            aria-label={`Enviar email a ${assigneeName}`}
           >
             <Send className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
@@ -79,14 +81,16 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
                 Email con instrucciones + recordatorio 3 días
               </p>
             </div>
-          </a>
+          </LinkCard>
         )}
 
         {mainContact && (
-          <a
+          <LinkCard
+            as="a"
             href={`mailto:${mainContact.email}?subject=${encodeURIComponent(contactSubject)}&body=${encodeURIComponent(contactBody)}`}
             onClick={() => onDone(5)}
-            className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
+            className="flex items-center gap-3 p-3"
+            aria-label={`Contactar a ${companyName}`}
           >
             <Mail className="h-4 w-4 shrink-0 text-primary" />
             <div className="min-w-0 flex-1">
@@ -95,26 +99,30 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
                 {mainContact.name ?? mainContact.email} + recordatorio 5 días
               </p>
             </div>
-          </a>
+          </LinkCard>
         )}
 
         <ShareWhatsApp insight={insight} companyName={company?.name} />
 
-        <button
+        <LinkCard
+          as="button"
           onClick={() => onDone(3)}
-          className="flex w-full items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50"
+          className="flex items-center gap-3 p-3"
+          aria-label="Marcar y recordar en 3 dias"
         >
           <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
           <div className="min-w-0 flex-1">
             <p className="text-sm font-medium">Recordatorio en 3 días</p>
             <p className="text-xs text-muted-foreground">El sistema verifica si se resolvió</p>
           </div>
-        </button>
+        </LinkCard>
 
-        <button
+        <LinkCard
+          as="button"
           onClick={() => onDone()}
           disabled={acting}
-          className="flex w-full items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50"
+          className="flex items-center gap-3 p-3"
+          aria-label="Marcar insight como resuelto"
         >
           {acting
             ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
@@ -123,7 +131,7 @@ export function QuickActions({ insight, company, companyContacts, onDone, onCanc
             <p className="text-sm font-medium">Ya lo resolví</p>
             <p className="text-xs text-muted-foreground">Solo marcar como útil</p>
           </div>
-        </button>
+        </LinkCard>
 
         <button
           onClick={onCancel}

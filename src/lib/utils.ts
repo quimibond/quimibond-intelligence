@@ -80,7 +80,7 @@ export function productDisplay(item: { product_ref?: string | null; product_name
 
 export function sentimentColor(score: number | null): string {
   if (score == null) return "text-muted-foreground";
-  if (score >= 0.6) return "text-emerald-600 dark:text-emerald-400";
-  if (score >= 0.3) return "text-amber-600 dark:text-amber-400";
-  return "text-red-600 dark:text-red-400";
+  if (score >= 0.6) return "text-success";
+  if (score >= 0.3) return "text-warning";
+  return "text-danger";
 }
