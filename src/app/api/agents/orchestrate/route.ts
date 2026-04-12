@@ -14,6 +14,7 @@ import { sanitizeEmailForClaude } from "@/lib/sanitize";
 import { getServiceClient } from "@/lib/supabase-server";
 import { computeExpiresAt } from "@/lib/insight-ttl";
 import { computeAdaptiveThreshold } from "@/lib/agents/confidence-threshold";
+import { loadDirectorConfig, filterInsightsByConfig } from "@/lib/agents/director-config";
 
 export const maxDuration = 300;
 
@@ -218,6 +219,9 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
     }
 
     const confidenceThreshold = await getAgentConfidenceThreshold(supabase, agent.id);
+    const directorConfig = await loadDirectorConfig(supabase, agent.id);
+    // Piso adicional desde config (si está seteado)
+    const effectiveThreshold = Math.max(confidenceThreshold, directorConfig.min_confidence_floor);
     const model = getModelForAgent(agent.slug);
 
     let insights: Record<string, unknown>[] = [];
@@ -233,7 +237,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           system: agent.system_prompt + AGENT_SYSTEM_SUFFIX,
           messages: [{
             role: "user",
-            content: buildAgentPrompt(context, memoryText, confidenceThreshold),
+            content: buildAgentPrompt(context, memoryText, effectiveThreshold),
           }],
         },
         `agent-${agent.slug}`
@@ -345,9 +349,11 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
     duplicatesSkipped += filteredInsights.length - cappedInsights.length;
 
     // Save insights
+    let filteredRows: Array<Record<string, unknown> & { _srcIdx: number }> = [];
     if (cappedInsights.length > 0) {
-      const rows = [];
-      for (const i of cappedInsights) {
+      const rows: Array<Record<string, unknown> & { _srcIdx: number }> = [];
+      for (let srcIdx = 0; srcIdx < cappedInsights.length; srcIdx++) {
+        const i = cappedInsights[srcIdx];
         let companyId: number | null = null;
         if (i.company_name) {
           const { data: co } = await supabase.from("companies").select("id")
@@ -405,19 +411,26 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           confidence,
           business_impact_estimate: i.business_impact_estimate ? Number(i.business_impact_estimate) : null,
           company_id: companyId, contact_id: contactId,
-          state: confidence < confidenceThreshold ? "archived" : "new",
+          state: confidence < effectiveThreshold ? "archived" : "new",
           expires_at: expiresAt.toISOString(),
           // Store actions in evidence for frontend access
+          _srcIdx: srcIdx,
         });
       }
-      console.log(`[orchestrate] ${agent.slug} inserting ${rows.length} rows (from ${cappedInsights.length} capped, ${insights.length} raw)`);
-      if (rows.length === 0) {
+      // Apply per-director config filter (min_business_impact, max_insights, etc.)
+      filteredRows = filterInsightsByConfig(rows, directorConfig);
+      if (filteredRows.length < rows.length) {
+        console.log(`[orchestrate] ${agent.slug} config filter: ${rows.length} → ${filteredRows.length}`);
+      }
+
+      console.log(`[orchestrate] ${agent.slug} inserting ${filteredRows.length} rows (from ${cappedInsights.length} capped, ${insights.length} raw)`);
+      if (filteredRows.length === 0) {
         console.warn(`[orchestrate] ${agent.slug} rows empty after filters. Sample titles: ${cappedInsights.slice(0, 3).map(i => String(i.title || "").slice(0, 60)).join(" | ")}`);
       }
-      const { data: savedInsights, error: insertErr } = await supabase.from("agent_insights").insert(rows).select("id");
+      const { data: savedInsights, error: insertErr } = await supabase.from("agent_insights").insert(filteredRows.map(({ _srcIdx, ...r }) => r)).select("id");
       if (insertErr) {
         console.error(`[orchestrate] ${agent.slug} insert error:`, JSON.stringify(insertErr));
-        console.error(`[orchestrate] ${agent.slug} first row sample:`, JSON.stringify(rows[0]).slice(0, 500));
+        console.error(`[orchestrate] ${agent.slug} first row sample:`, JSON.stringify(filteredRows[0]).slice(0, 500));
       } else {
         console.log(`[orchestrate] ${agent.slug} inserted ${savedInsights?.length ?? 0} insights ok`);
       }
@@ -425,8 +438,8 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
       // Save action_items linked to each insight
       if (savedInsights?.length) {
         const actionRows: Record<string, unknown>[] = [];
-        for (let idx = 0; idx < cappedInsights.length && idx < savedInsights.length; idx++) {
-          const insight = cappedInsights[idx];
+        for (let idx = 0; idx < filteredRows.length && idx < savedInsights.length; idx++) {
+          const insight = cappedInsights[filteredRows[idx]._srcIdx];
           const insightId = savedInsights[idx].id;
           const actions = Array.isArray(insight.actions) ? insight.actions : [];
 
@@ -448,7 +461,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
               description: String(action.description ?? ""),
               reason: String(insight.title ?? ""),
               priority: String(action.priority ?? "medium"),
-              company_id: rows[idx]?.company_id ?? null,
+              company_id: filteredRows[idx]?.company_id ?? null,
               contact_name: String(insight.company_name ?? ""),
               assignee_name: aName || null,
               assignee_email: assigneeEmail,
@@ -466,7 +479,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
       }
     }
 
-    const activeInsights = cappedInsights.filter(i => (Number(i.confidence) || 0.5) >= confidenceThreshold).length;
+    const activeInsights = filteredRows.filter(i => (Number(i.confidence) || 0.5) >= effectiveThreshold).length;
     const duration = (Date.now() - agentStart) / 1000;
 
     if (runId) {
