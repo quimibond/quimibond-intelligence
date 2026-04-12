@@ -33,3 +33,28 @@ begin
 end $$;
 
 grant execute on function ingestion_start_run(text,text,text,text) to service_role;
+
+-- 2. ingestion_report_batch: accumulate counters atomically on a live run
+create or replace function ingestion_report_batch(
+  p_run_id uuid,
+  p_attempted int,
+  p_succeeded int,
+  p_failed int
+) returns void
+language plpgsql security definer
+set search_path = ingestion, pg_catalog
+as $$
+begin
+  update ingestion.sync_run
+  set rows_attempted = rows_attempted + p_attempted,
+      rows_succeeded = rows_succeeded + p_succeeded,
+      rows_failed = rows_failed + p_failed
+  where run_id = p_run_id
+    and status = 'running';
+
+  if not found then
+    raise exception 'ingestion_report_batch: run_id % not found or not running', p_run_id;
+  end if;
+end $$;
+
+grant execute on function ingestion_report_batch(uuid,int,int,int) to service_role;

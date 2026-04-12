@@ -62,4 +62,29 @@ end $$;
 --   raise notice 'T2.3/T2.4 PASS: watermark propagation';
 -- end $$;
 
+-- ===== Task 3: ingestion_report_batch =====
+do $$
+declare
+  v_run uuid;
+  v_att int;
+  v_ok int;
+  v_fail int;
+begin
+  select run_id into v_run
+  from ingestion_start_run('test_src','test_tbl','incremental','cron');
+
+  perform ingestion_report_batch(v_run, 200, 195, 5);
+  perform ingestion_report_batch(v_run, 200, 200, 0);
+
+  select rows_attempted, rows_succeeded, rows_failed
+    into v_att, v_ok, v_fail
+  from ingestion.sync_run where run_id = v_run;
+
+  if v_att <> 400 then raise exception 'T3.1: attempted=% expected 400', v_att; end if;
+  if v_ok <> 395 then raise exception 'T3.2: succeeded=% expected 395', v_ok; end if;
+  if v_fail <> 5 then raise exception 'T3.3: failed=% expected 5', v_fail; end if;
+
+  raise notice 'T3 PASS: ingestion_report_batch';
+end $$;
+
 rollback;
