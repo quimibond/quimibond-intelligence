@@ -7,6 +7,7 @@ import type { Alert } from "@/lib/types";
 import { EmptyState } from "@/components/shared/empty-state";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { StateBadge } from "@/components/shared/state-badge";
+import { LinkCard } from "@/components/shared/link-card";
 import {
   Table,
   TableBody,
@@ -36,19 +37,17 @@ export function TabAlertas({ alerts }: TabAlertasProps) {
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {alerts.map((alert) => (
-          <Link key={alert.id} href={`/alerts/${alert.id}`} className="block">
-            <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2 hover:border-primary/30">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-sm font-medium line-clamp-2">{alert.title}</p>
-                <SeverityBadge severity={alert.severity} />
-              </div>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <StateBadge state={alert.state} />
-                {alert.contact_name && <span>{alert.contact_name}</span>}
-                <span>{timeAgo(alert.created_at)}</span>
-              </div>
+          <LinkCard key={alert.id} href={`/alerts/${alert.id}`} className="p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <p className="text-sm font-medium line-clamp-2">{alert.title}</p>
+              <SeverityBadge severity={alert.severity} />
             </div>
-          </Link>
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
+              <StateBadge state={alert.state} />
+              {alert.contact_name && <span>{alert.contact_name}</span>}
+              <span>{timeAgo(alert.created_at)}</span>
+            </div>
+          </LinkCard>
         ))}
       </div>
       {/* Desktop table */}

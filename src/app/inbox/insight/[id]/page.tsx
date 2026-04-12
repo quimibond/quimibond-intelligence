@@ -17,6 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { LinkCard } from "@/components/shared/link-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ShareWhatsApp } from "./components/share-whatsapp";
 import { FollowUpBanner } from "./components/follow-up-banner";
@@ -300,29 +301,33 @@ export default function InsightDetailPage() {
             </div>
 
             {assigneeEmail && (
-              <a
+              <LinkCard
+                as="a"
                 href={`mailto:${assigneeEmail}?subject=${encodeURIComponent(assigneeSubject)}&body=${encodeURIComponent(assigneeBody)}`}
-                className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
+                className="flex items-center gap-3 p-3"
+                aria-label={`Enviar email a ${assigneeName}`}
               >
                 <Send className="h-4 w-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">Instruir a {assigneeName.split(" ")[0]}</p>
                   <p className="text-xs text-muted-foreground">Abre email con instrucciones pre-llenadas</p>
                 </div>
-              </a>
+              </LinkCard>
             )}
 
             {mainContact && (
-              <a
+              <LinkCard
+                as="a"
                 href={`mailto:${mainContact.email}?subject=${encodeURIComponent(`Seguimiento — ${companyName}`)}&body=${encodeURIComponent(`Estimado${mainContact.name ? ` ${mainContact.name.split(" ")[0]}` : ""},\n\nLe escribo respecto a un tema pendiente con ${companyName}.\n\nQuedo atento a su respuesta.\n\nSaludos cordiales`)}`}
-                className="flex items-center gap-3 rounded-xl border bg-card text-card-foreground shadow-sm p-3 transition-colors hover:bg-muted/50"
+                className="flex items-center gap-3 p-3"
+                aria-label={`Contactar a ${companyName}`}
               >
                 <Mail className="h-4 w-4 shrink-0 text-primary" />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium">Contactar a {companyName}</p>
                   <p className="text-xs text-muted-foreground">{mainContact.name ?? mainContact.email}</p>
                 </div>
-              </a>
+              </LinkCard>
             )}
 
             <ShareWhatsApp insight={insight} companyName={company?.name} />
@@ -330,30 +335,32 @@ export default function InsightDetailPage() {
             <Separator />
 
             <div className="grid grid-cols-2 gap-2">
-              <button
+              <LinkCard
+                as="button"
                 onClick={() => markDone(3)}
                 disabled={acting}
                 aria-label="Marcar como util con recordatorio en 3 dias"
-                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-2 p-3"
               >
                 <CalendarClock className="h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="text-sm font-medium">Recordatorio 3d</p>
                   <p className="text-[10px] text-muted-foreground">Marca como util + follow-up</p>
                 </div>
-              </button>
-              <button
+              </LinkCard>
+              <LinkCard
+                as="button"
                 onClick={() => markDone()}
                 disabled={acting}
                 aria-label="Marcar insight como resuelto"
-                className="flex items-center gap-2 rounded-xl border bg-card text-card-foreground shadow-sm p-3 text-left transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-2 p-3"
               >
                 {acting ? <Loader2 className="h-4 w-4 shrink-0 animate-spin" /> : <Check className="h-4 w-4 shrink-0 text-success" />}
                 <div>
                   <p className="text-sm font-medium">Ya lo resolvi</p>
                   <p className="text-[10px] text-muted-foreground">Marcar como util</p>
                 </div>
-              </button>
+              </LinkCard>
             </div>
           </CardContent>
         </Card>

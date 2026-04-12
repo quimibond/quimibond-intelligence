@@ -10,6 +10,7 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select-native";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -121,25 +122,27 @@ export function TabEntities({
           {/* Mobile cards */}
           <div className="space-y-3 md:hidden">
             {filteredEntities.map((entity) => (
-              <div key={entity.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <p className="font-medium truncate">{entity.name}</p>
-                    {entity.email && (
-                      <p className="text-xs text-muted-foreground truncate">{entity.email}</p>
+              <Card key={entity.id}>
+                <CardContent className="p-3 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-medium truncate">{entity.name}</p>
+                      {entity.email && (
+                        <p className="text-xs text-muted-foreground truncate">{entity.email}</p>
+                      )}
+                    </div>
+                    <Badge variant={entityBadgeVariant(entity.entity_type)}>
+                      {entity.entity_type}
+                    </Badge>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>{timeAgo(entity.last_seen)}</span>
+                    {attributeSummary(entity.attributes) && (
+                      <span className="truncate">{attributeSummary(entity.attributes)}</span>
                     )}
                   </div>
-                  <Badge variant={entityBadgeVariant(entity.entity_type)}>
-                    {entity.entity_type}
-                  </Badge>
-                </div>
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>{timeAgo(entity.last_seen)}</span>
-                  {attributeSummary(entity.attributes) && (
-                    <span className="truncate">{attributeSummary(entity.attributes)}</span>
-                  )}
-                </div>
-              </div>
+                </CardContent>
+              </Card>
             ))}
           </div>
 

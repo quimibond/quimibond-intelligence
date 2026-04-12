@@ -6,6 +6,7 @@ import { formatDate, truncate } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -47,7 +48,8 @@ export function TabFacts({ facts, loading }: TabFactsProps) {
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {facts.map((fact) => (
-          <div key={fact.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
+          <Card key={fact.id}>
+          <CardContent className="p-3 space-y-2">
             <p className="text-sm">{truncate(fact.fact_text, 150)}</p>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant={factTypeBadgeVariant(fact.fact_type)}>
@@ -63,7 +65,8 @@ export function TabFacts({ facts, loading }: TabFactsProps) {
                 <span className="text-xs text-muted-foreground">{formatDate(fact.fact_date)}</span>
               )}
             </div>
-          </div>
+          </CardContent>
+          </Card>
         ))}
       </div>
 

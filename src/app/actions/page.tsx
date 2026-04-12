@@ -17,6 +17,7 @@ import type { ActionItem } from "@/lib/types";
 import { PageHeader } from "@/components/shared/page-header";
 import { EmptyState } from "@/components/shared/empty-state";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Select } from "@/components/ui/select-native";
 import { Input } from "@/components/ui/input";
@@ -258,34 +259,42 @@ export default function ActionsPage() {
 
       {/* Quick stats bar */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-muted-foreground">
-            <ClipboardList className="h-4 w-4" />
-            <span className="text-xs font-medium">Total</span>
-          </div>
-          <p className="mt-1 text-2xl font-bold">{counts.pending + counts.overdue + counts.completed}</p>
-        </div>
-        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-warning-foreground">
-            <Clock className="h-4 w-4" />
-            <span className="text-xs font-medium">Pendientes</span>
-          </div>
-          <p className="mt-1 text-2xl font-bold">{counts.pending}</p>
-        </div>
-        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-danger-foreground">
-            <AlertTriangle className="h-4 w-4" />
-            <span className="text-xs font-medium">Vencidas</span>
-          </div>
-          <p className="mt-1 text-2xl font-bold">{counts.overdue}</p>
-        </div>
-        <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 sm:p-4">
-          <div className="flex items-center gap-2 text-success-foreground">
-            <CheckCircle2 className="h-4 w-4" />
-            <span className="text-xs font-medium">Completadas</span>
-          </div>
-          <p className="mt-1 text-2xl font-bold">{counts.completed}</p>
-        </div>
+        <Card>
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <ClipboardList className="h-4 w-4" />
+              <span className="text-xs font-medium">Total</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{counts.pending + counts.overdue + counts.completed}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 text-warning">
+              <Clock className="h-4 w-4" />
+              <span className="text-xs font-medium">Pendientes</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{counts.pending}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 text-danger">
+              <AlertTriangle className="h-4 w-4" />
+              <span className="text-xs font-medium">Vencidas</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{counts.overdue}</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardContent className="p-3 sm:p-4">
+            <div className="flex items-center gap-2 text-success">
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-xs font-medium">Completadas</span>
+            </div>
+            <p className="mt-1 text-2xl font-bold tabular-nums">{counts.completed}</p>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Search */}

@@ -6,6 +6,7 @@ import { formatDate } from "@/lib/utils";
 import { EmptyState } from "@/components/shared/empty-state";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -39,19 +40,21 @@ export function TabRelationships({ relationships, loading }: TabRelationshipsPro
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {relationships.map((rel) => (
-          <div key={rel.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2">
-            <div className="flex items-center gap-2 text-sm">
-              <span className="font-medium truncate">{rel.entity_a_name}</span>
-              <Badge variant="secondary" className="shrink-0">{rel.relationship_type}</Badge>
-              <span className="font-medium truncate">{rel.entity_b_name}</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Progress value={(rel.strength ?? 0) * 100} className="h-2 flex-1" />
-              <span className="text-xs tabular-nums text-muted-foreground">
-                {((rel.strength ?? 0) * 100).toFixed(0)}%
-              </span>
-            </div>
-          </div>
+          <Card key={rel.id}>
+            <CardContent className="p-3 space-y-2">
+              <div className="flex items-center gap-2 text-sm">
+                <span className="font-medium truncate">{rel.entity_a_name}</span>
+                <Badge variant="secondary" className="shrink-0">{rel.relationship_type}</Badge>
+                <span className="font-medium truncate">{rel.entity_b_name}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Progress value={(rel.strength ?? 0) * 100} className="h-2 flex-1" />
+                <span className="text-xs tabular-nums text-muted-foreground">
+                  {((rel.strength ?? 0) * 100).toFixed(0)}%
+                </span>
+              </div>
+            </CardContent>
+          </Card>
         ))}
       </div>
 

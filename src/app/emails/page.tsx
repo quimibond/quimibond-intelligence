@@ -13,6 +13,7 @@ import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { Select } from "@/components/ui/select-native";
 import {
   Table,
@@ -164,7 +165,8 @@ export default function EmailsPage() {
         {/* Mobile card layout */}
         <div className="space-y-3 md:hidden">
           {emails.map((email) => (
-            <div key={email.id} className="rounded-xl border bg-card text-card-foreground shadow-sm p-4 space-y-2">
+            <Card key={email.id}>
+              <CardContent className="p-4 space-y-2">
               <Link href={`/emails/${email.id}`} className="block">
                 <p className="text-sm font-medium line-clamp-1">{email.subject || "—"}</p>
                 <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
@@ -193,7 +195,8 @@ export default function EmailsPage() {
                   )}
                 </div>
               </Link>
-            </div>
+              </CardContent>
+            </Card>
           ))}
         </div>
 

@@ -7,6 +7,7 @@ import { sentimentColor } from "@/lib/utils";
 import type { Contact } from "@/lib/types";
 import { EmptyState } from "@/components/shared/empty-state";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { LinkCard } from "@/components/shared/link-card";
 import { Progress } from "@/components/ui/progress";
 import {
   Table,
@@ -37,23 +38,21 @@ export function TabContactos({ contacts }: TabContactosProps) {
       {/* Mobile cards */}
       <div className="space-y-3 md:hidden">
         {contacts.map((contact) => (
-          <Link key={contact.id} href={`/contacts/${contact.id}`} className="block">
-            <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3 space-y-2 hover:border-primary/30">
-              <div className="flex items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <p className="font-medium truncate">{contact.name ?? "Sin nombre"}</p>
-                  <p className="text-xs text-muted-foreground truncate">{contact.email ?? "---"}</p>
-                </div>
-                <RiskBadge level={contact.risk_level} />
+          <LinkCard key={contact.id} href={`/contacts/${contact.id}`} className="p-3 space-y-2">
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="font-medium truncate">{contact.name ?? "Sin nombre"}</p>
+                <p className="text-xs text-muted-foreground truncate">{contact.email ?? "---"}</p>
               </div>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                {contact.role && <span>{contact.role}</span>}
-                <span className={cn("font-medium tabular-nums", sentimentColor(contact.sentiment_score))}>
-                  Sent: {contact.sentiment_score != null ? contact.sentiment_score.toFixed(2) : "---"}
-                </span>
-              </div>
+              <RiskBadge level={contact.risk_level} />
             </div>
-          </Link>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              {contact.role && <span>{contact.role}</span>}
+              <span className={cn("font-medium tabular-nums", sentimentColor(contact.sentiment_score))}>
+                Sent: {contact.sentiment_score != null ? contact.sentiment_score.toFixed(2) : "---"}
+              </span>
+            </div>
+          </LinkCard>
         ))}
       </div>
       {/* Desktop table */}

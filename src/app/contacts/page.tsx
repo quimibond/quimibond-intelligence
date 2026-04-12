@@ -16,6 +16,7 @@ import { MiniStatCard } from "@/components/shared/mini-stat-card";
 import { FilterBar } from "@/components/shared/filter-bar";
 import { LoadingGrid } from "@/components/shared/loading-grid";
 import { RiskBadge } from "@/components/shared/risk-badge";
+import { LinkCard } from "@/components/shared/link-card";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select-native";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
@@ -196,21 +197,19 @@ export default function ContactsPage() {
               const companyName = getCompanyName(contact);
               const riskDot = contact.risk_level === "high" || contact.risk_level === "critical" ? "bg-danger" : contact.risk_level === "medium" ? "bg-warning" : "bg-success";
               return (
-                <Link key={contact.id} href={`/contacts/${contact.id}`} className="block">
-                  <div className="rounded-xl border bg-card text-card-foreground shadow-sm p-3.5 active:bg-muted/50 transition-colors">
-                    <div className="flex items-start gap-2.5">
-                      <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", riskDot)} />
-                      <div className="min-w-0 flex-1">
-                        <p className="text-[15px] font-bold truncate">{contact.name ?? "—"}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {companyName ?? contact.role ?? contact.email ?? ""}
-                          {contact.current_health_score != null && ` · health ${contact.current_health_score}`}
-                        </p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-muted-foreground/40 mt-1 shrink-0" />
+                <LinkCard key={contact.id} href={`/contacts/${contact.id}`} className="p-3.5">
+                  <div className="flex items-start gap-2.5">
+                    <div className={cn("h-2 w-2 rounded-full mt-1.5 shrink-0", riskDot)} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[15px] font-bold truncate">{contact.name ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        {companyName ?? contact.role ?? contact.email ?? ""}
+                        {contact.current_health_score != null && ` · health ${contact.current_health_score}`}
+                      </p>
                     </div>
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/40 mt-1 shrink-0" />
                   </div>
-                </Link>
+                </LinkCard>
               );
             })}
           </div>
