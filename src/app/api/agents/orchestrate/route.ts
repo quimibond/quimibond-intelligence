@@ -13,6 +13,7 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 import { sanitizeEmailForClaude } from "@/lib/sanitize";
 import { getServiceClient } from "@/lib/supabase-server";
 import { computeExpiresAt } from "@/lib/insight-ttl";
+import { computeAdaptiveThreshold } from "@/lib/agents/confidence-threshold";
 
 export const maxDuration = 300;
 
@@ -525,20 +526,23 @@ async function getAgentConfidenceThreshold(supabase: any, agentId: number): Prom
     if (eff && eff.total_insights >= 10) {
       const actedRate = Number(eff.acted_rate_pct ?? 0);
       const dismissRate = Number(eff.dismiss_rate_pct ?? 0);
+      const total = Number(eff.total_insights ?? 0);
 
-      // Very high dismissal (>60%) → agent is generating noise, require very high confidence
-      if (dismissRate > 60) return 0.92;
-      // High dismissal (40-60%) → tighten significantly
-      if (dismissRate > 40) return 0.88;
-      // Moderate dismissal (20-40%) → tighten moderately
-      if (dismissRate > 20) return 0.83;
+      const { count: expiredCount } = await supabase
+        .from("agent_insights")
+        .select("id", { count: "exact", head: true })
+        .eq("agent_id", agentId)
+        .eq("state", "expired")
+        .gte("created_at", new Date(Date.now() - 30 * 86400_000).toISOString());
 
-      // Low acted rate without high dismiss → insights expire, need more selective picks
-      if (actedRate < 10) return 0.85;
-      if (actedRate < 20) return 0.80;
-
-      // High acted rate → trusted agent, can be more permissive
-      if (actedRate > 25) return 0.70;
+      const acted = Math.round((actedRate / 100) * total);
+      const dismissed = Math.round((dismissRate / 100) * total);
+      return computeAdaptiveThreshold({
+        acted,
+        dismissed,
+        expired: Number(expiredCount ?? 0),
+        total,
+      });
     }
 
     // Fallback to older logic for agents without effectiveness data yet
