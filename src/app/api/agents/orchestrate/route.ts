@@ -407,7 +407,10 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           // Store actions in evidence for frontend access
         });
       }
-      const { data: savedInsights } = await supabase.from("agent_insights").insert(rows).select("id");
+      const { data: savedInsights, error: insertErr } = await supabase.from("agent_insights").insert(rows).select("id");
+      if (insertErr) {
+        console.error(`[orchestrate] ${agent.slug} insert error:`, insertErr.message, insertErr.code);
+      }
 
       // Save action_items linked to each insight
       if (savedInsights?.length) {
