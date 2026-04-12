@@ -75,6 +75,10 @@
     {
       "path": "/api/pipeline/enrich-companies",
       "schedule": "20 */4 * * *"
+    },
+    {
+      "path": "/api/pipeline/verify-follow-ups",
+      "schedule": "0 8 * * *"
     }
   ]
 }

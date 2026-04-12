@@ -186,7 +186,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
   }
 
   try {
-    const context = await buildAgentContext(supabase, agent.domain);
+    const context = await buildAgentContext(supabase, agent.domain, agent.id);
 
     const { data: memories } = await supabase
       .from("agent_memory")
@@ -514,7 +514,34 @@ async function getAgentConfidenceThreshold(supabase: any, agentId: number): Prom
       }
     }
 
-    // Check recent acceptance rate
+    // Check recent acceptance rate from agent_effectiveness view (more accurate)
+    // This uses the view that already computes acted_rate / dismiss_rate per agent
+    const { data: eff } = await supabase
+      .from("agent_effectiveness")
+      .select("acted_rate_pct, dismiss_rate_pct, total_insights")
+      .eq("agent_id", agentId)
+      .maybeSingle();
+
+    if (eff && eff.total_insights >= 10) {
+      const actedRate = Number(eff.acted_rate_pct ?? 0);
+      const dismissRate = Number(eff.dismiss_rate_pct ?? 0);
+
+      // Very high dismissal (>60%) → agent is generating noise, require very high confidence
+      if (dismissRate > 60) return 0.92;
+      // High dismissal (40-60%) → tighten significantly
+      if (dismissRate > 40) return 0.88;
+      // Moderate dismissal (20-40%) → tighten moderately
+      if (dismissRate > 20) return 0.83;
+
+      // Low acted rate without high dismiss → insights expire, need more selective picks
+      if (actedRate < 10) return 0.85;
+      if (actedRate < 20) return 0.80;
+
+      // High acted rate → trusted agent, can be more permissive
+      if (actedRate > 25) return 0.70;
+    }
+
+    // Fallback to older logic for agents without effectiveness data yet
     const { data: recentFeedback } = await supabase
       .from("agent_insights")
       .select("state")
@@ -526,11 +553,9 @@ async function getAgentConfidenceThreshold(supabase: any, agentId: number): Prom
     if (recentFeedback && recentFeedback.length >= 10) {
       const actedOn = recentFeedback.filter((i: { state: string }) => i.state === "acted_on").length;
       const rate = actedOn / recentFeedback.length;
-      // Low acceptance rate → raise threshold to be more selective
-      if (rate < 0.3) return 0.75;
-      if (rate < 0.5) return 0.70;
-      // High acceptance rate → can be slightly more permissive
-      if (rate > 0.8) return 0.55;
+      if (rate < 0.3) return 0.85;
+      if (rate < 0.5) return 0.80;
+      if (rate > 0.8) return 0.70;
     }
   } catch {
     // Fallback to default
@@ -767,9 +792,9 @@ REGLAS para actions:
 
 // ── Context builders ──────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function buildAgentContext(supabase: any, domain: string): Promise<string> {
+async function buildAgentContext(supabase: any, domain: string, agentId?: number): Promise<string> {
   // Load 3 cross-cutting intelligence layers (all directors get these)
-  const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets, recentKGFacts] = await Promise.all([
+  const [crossSignals, emailFacts, insightHistory, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
     // What OTHER directors are saying
     supabase
       .from("cross_director_signals")
@@ -820,6 +845,16 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
       .eq("expired", false)
       .order("fact_date", { ascending: false, nullsFirst: false })
       .limit(20),
+
+    // FASE 5 (this agent's specific dismissal patterns — negative examples)
+    agentId ? supabase
+      .from("agent_insights")
+      .select("title, category, user_feedback")
+      .eq("agent_id", agentId)
+      .in("state", ["dismissed"])
+      .gte("updated_at", new Date(Date.now() - 14 * 86400_000).toISOString())
+      .order("updated_at", { ascending: false })
+      .limit(8) : Promise.resolve({ data: [] }),
   ]);
 
   const sections: string[] = [];
@@ -888,6 +923,22 @@ async function buildAgentContext(supabase: any, domain: string): Promise<string>
         `- [${t.ticket_type}] ${sanitizeEmailForClaude(String(t.message), 200)}`
       ).join("\n")
     }`);
+  }
+
+  // FASE 5: Per-agent dismissal patterns (learn from own mistakes)
+  // Shows this specific director what kinds of insights the CEO recently rejected
+  // so it can avoid repeating the same pattern
+  if (myDismissed.data?.length) {
+    const dismissedLines = (myDismissed.data as Record<string, unknown>[])
+      .map(d => {
+        const feedback = d.user_feedback ? ` [razon: ${String(d.user_feedback).slice(0, 80)}]` : "";
+        return `  ❌ "${String(d.title).slice(0, 100)}" [${d.category}]${feedback}`;
+      })
+      .join("\n");
+    sections.push(
+      `## TUS ULTIMOS INSIGHTS DESCARTADOS POR EL CEO (no repitas este patron)\n` +
+      `Aprende del rechazo: NO generes insights parecidos a estos.\n${dismissedLines}`
+    );
   }
 
   const crossIntel = sections.length ? sections.join("\n\n") + "\n\n" : "";
