@@ -1,0 +1,46 @@
+Baseline snapshot — 2026-04-12 (antes del deploy de feat/silenciar-directores a main)
+
+Ventana: agent_insights.created_at > now() - interval '30 days'
+Filtro: ai_agents.is_active AND archived_at IS NULL
+
+| slug         | acted | dismissed | expired | pending | total | action % |
+|--------------|-------|-----------|---------|---------|-------|----------|
+| comercial    |   9   |    0      |   29    |   5     |  43   |  20.9    |
+| compras      |   7   |   10      |   10    |   7     |  34   |  20.6    |
+| costos       |   8   |    3      |   22    |   7     |  40   |  20.0    |
+| data_quality |   0   |    0      |   67    |   0     |  67   |   0.0    |
+| equipo       |   5   |    7      |   66    |   8     |  86   |   5.8    |
+| financiero   |   2   |    2      |   52    |   7     |  63   |   3.2    |
+| operaciones  |   3   |   11      |   22    |   2     |  38   |   7.9    |
+| riesgo       |   5   |    4      |   47    |   3     |  59   |   8.5    |
+
+Deploy SHA: dfb72c7 (pushed a origin/main 2026-04-12)
+Migration aplicada: 20260412_director_config_seed.sql (7 directores activos)
+
+Criterio de éxito a 24h (ver Task 8 del plan):
+- Volumen de insights totales en 24h baja >= 30% vs ventana 24h previa
+- Al menos 1 insight de financiero menciona "presupuesto" o "budget" (señal de que budget_vs_actual llegó al prompt)
+- action_pct sube en >= 2 de los 4 directores ruidosos (financiero, equipo, operaciones, riesgo)
+
+Query para snapshot post-deploy (24h):
+
+SELECT
+  a.slug,
+  count(*) FILTER (WHERE i.state='acted_on') AS acted,
+  count(*) FILTER (WHERE i.state='dismissed') AS dismissed,
+  count(*) FILTER (WHERE i.state='expired') AS expired,
+  count(*) FILTER (WHERE i.state IN ('new','seen')) AS pending,
+  count(*) AS total,
+  round(100.0 * count(*) FILTER (WHERE i.state='acted_on') / NULLIF(count(*),0), 1) AS action_pct
+FROM agent_insights i
+JOIN ai_agents a ON a.id = i.agent_id
+WHERE a.is_active AND a.archived_at IS NULL
+  AND i.created_at > now() - interval '24 hours'
+GROUP BY a.slug
+ORDER BY a.slug;
+
+Query para validar rotación de modos del financiero:
+
+SELECT content, updated_at FROM agent_memory
+WHERE memory_type='mode_rotation'
+  AND agent_id = (SELECT id FROM ai_agents WHERE slug='financiero');
