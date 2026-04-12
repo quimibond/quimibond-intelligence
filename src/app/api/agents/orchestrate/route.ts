@@ -1102,19 +1102,21 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     // NEW: 7 DIRECTORS
     // ═══════════════════════════════════════════════════════════════
     case "comercial": {
-      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue] = await Promise.all([
+      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue, atRiskContacts] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier, overdue_amount, max_days_overdue").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
         sb.from("odoo_sale_orders").select("company_id, name, amount_total, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
         sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10),
-        // NEW: Threads from clients waiting for Quimibond response
+        // Threads from clients waiting for Quimibond response
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").eq("last_sender_type", "external").gt("hours_without_response", 24).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
-        // NEW: Top clients with overdue invoices (cross financial data)
+        // Top clients with overdue invoices (cross financial data)
         sb.from("company_profile").select("name, total_revenue, overdue_amount, max_days_overdue, tier").gt("overdue_amount", 50000).order("overdue_amount", { ascending: false }).limit(10),
+        // NEW: health scores de contactos — churn risk temprano (engagement + sentiment + payment compliance)
+        sb.from("health_scores").select("contact_email, company_id, overall_score, previous_score, trend, sentiment_score, responsiveness_score, payment_compliance_score, risk_signals").gte("score_date", new Date(Date.now() - 14 * 86400_000).toISOString().split("T")[0]).lt("overall_score", 60).order("overall_score", { ascending: true }).limit(10),
       ]);
-      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (riesgo de relacion)\n${safeJSON(clientOverdue.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (riesgo de relacion)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
       const modes = directorConfig?.mode_rotation?.length
