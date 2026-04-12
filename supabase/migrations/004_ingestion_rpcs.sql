@@ -9,6 +9,7 @@ create or replace function ingestion_start_run(
   p_triggered_by text
 ) returns table(run_id uuid, last_watermark text)
 language plpgsql security definer
+set search_path = ingestion, pg_catalog
 as $$
 declare
   v_run_id uuid;
