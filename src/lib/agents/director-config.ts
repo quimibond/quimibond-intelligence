@@ -42,3 +42,43 @@ export async function loadDirectorConfig(
     min_confidence_floor: clamp(Number(raw.min_confidence_floor ?? 0), 0, 1),
   };
 }
+
+export interface RawInsight {
+  title?: unknown;
+  description?: unknown;
+  severity?: unknown;
+  confidence?: unknown;
+  business_impact_estimate?: unknown;
+  category?: unknown;
+  [k: string]: unknown;
+}
+
+export function filterInsightsByConfig<T extends RawInsight>(
+  insights: T[],
+  cfg: DirectorConfig
+): T[] {
+  let out = insights.slice();
+
+  if (cfg.min_confidence_floor > 0) {
+    out = out.filter(i => Number(i.confidence ?? 0) >= cfg.min_confidence_floor);
+  }
+
+  if (cfg.min_business_impact_mxn > 0) {
+    out = out.filter(i => {
+      if (String(i.severity ?? "") === "critical") return true;
+      const impact = Number(i.business_impact_estimate ?? 0);
+      return impact >= cfg.min_business_impact_mxn;
+    });
+  }
+
+  if (cfg.max_insights_per_run > 0 && out.length > cfg.max_insights_per_run) {
+    out.sort((a, b) => {
+      const ai = Number(a.business_impact_estimate ?? 0);
+      const bi = Number(b.business_impact_estimate ?? 0);
+      return bi - ai;
+    });
+    out = out.slice(0, cfg.max_insights_per_run);
+  }
+
+  return out;
+}

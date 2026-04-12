@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { loadDirectorConfig, DEFAULT_DIRECTOR_CONFIG } from "@/lib/agents/director-config";
+import { loadDirectorConfig, DEFAULT_DIRECTOR_CONFIG, filterInsightsByConfig } from "@/lib/agents/director-config";
 
 function mockSupabase(configRow: Record<string, unknown> | null) {
   return {
@@ -44,5 +44,60 @@ describe("loadDirectorConfig", () => {
     const sb = mockSupabase({ config: { min_business_impact_mxn: -500 } });
     const cfg = await loadDirectorConfig(sb as never, 14);
     expect(cfg.min_business_impact_mxn).toBe(0);
+  });
+});
+
+describe("filterInsightsByConfig", () => {
+  const baseInsight = (overrides: Record<string, unknown>) => ({
+    title: "x", description: "x", severity: "medium", confidence: 0.9,
+    business_impact_estimate: 100_000, category: "cobranza", ...overrides,
+  });
+
+  it("deja pasar todo con config default", () => {
+    const ins = [baseInsight({}), baseInsight({ business_impact_estimate: 0 })];
+    const out = filterInsightsByConfig(ins, DEFAULT_DIRECTOR_CONFIG);
+    expect(out).toHaveLength(2);
+  });
+
+  it("descarta insights bajo min_business_impact_mxn", () => {
+    const ins = [
+      baseInsight({ business_impact_estimate: 10_000 }),
+      baseInsight({ business_impact_estimate: 100_000 }),
+      baseInsight({ business_impact_estimate: null }),
+    ];
+    const cfg = { ...DEFAULT_DIRECTOR_CONFIG, min_business_impact_mxn: 50_000 };
+    const out = filterInsightsByConfig(ins, cfg);
+    expect(out).toHaveLength(1);
+    expect(out[0].business_impact_estimate).toBe(100_000);
+  });
+
+  it("excepción: severity='critical' pasa aunque no tenga impacto", () => {
+    const ins = [baseInsight({ severity: "critical", business_impact_estimate: null })];
+    const cfg = { ...DEFAULT_DIRECTOR_CONFIG, min_business_impact_mxn: 50_000 };
+    const out = filterInsightsByConfig(ins, cfg);
+    expect(out).toHaveLength(1);
+  });
+
+  it("aplica max_insights_per_run (ordena por impacto desc)", () => {
+    const ins = [
+      baseInsight({ business_impact_estimate: 10_000, title: "a" }),
+      baseInsight({ business_impact_estimate: 500_000, title: "b" }),
+      baseInsight({ business_impact_estimate: 100_000, title: "c" }),
+    ];
+    const cfg = { ...DEFAULT_DIRECTOR_CONFIG, max_insights_per_run: 2 };
+    const out = filterInsightsByConfig(ins, cfg);
+    expect(out).toHaveLength(2);
+    expect(out.map(i => i.title)).toEqual(["b", "c"]);
+  });
+
+  it("aplica min_confidence_floor", () => {
+    const ins = [
+      baseInsight({ confidence: 0.82 }),
+      baseInsight({ confidence: 0.90 }),
+    ];
+    const cfg = { ...DEFAULT_DIRECTOR_CONFIG, min_confidence_floor: 0.88 };
+    const out = filterInsightsByConfig(ins, cfg);
+    expect(out).toHaveLength(1);
+    expect(out[0].confidence).toBe(0.90);
   });
 });
