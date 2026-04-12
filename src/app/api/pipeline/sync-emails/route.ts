@@ -84,31 +84,10 @@ export async function POST(request: NextRequest) {
       console.warn(`[sync-emails] Skipped ${skippedDates} emails with invalid dates`);
     }
 
-    const emailBatches = chunkArray(validEmails.map(e => ({
-      account: e.account,
-      sender: e.from,
-      recipient: e.to,
-      subject: e.subject,
-      body: e.body,
-      snippet: e.snippet,
-      email_date: new Date(e.date).toISOString(),
-      gmail_message_id: e.gmail_message_id,
-      gmail_thread_id: e.gmail_thread_id,
-      attachments: e.attachments.length ? e.attachments : null,
-      is_reply: e.is_reply,
-      sender_type: e.sender_type,
-      has_attachments: e.has_attachments,
-    })), 50);
-
-    let saved = 0;
-    for (const batch of emailBatches) {
-      const { error } = await supabase
-        .from("emails")
-        .upsert(batch, { onConflict: "gmail_message_id", ignoreDuplicates: true });
-      if (!error) saved += batch.length;
-    }
-
-    // Build threads
+    // 1. Build threads first so we know their ids before inserting emails.
+    //    emails.thread_id (bigint FK → threads.id) MUST be populated at insert
+    //    time — we learned the hard way that relying on gmail_thread_id alone
+    //    leaves 400+ emails orphaned from their threads.
     const threadMap = new Map<string, typeof validEmails>();
     for (const e of validEmails) {
       const tid = e.gmail_thread_id;
@@ -146,10 +125,66 @@ export async function POST(request: NextRequest) {
       };
     });
 
+    // Upsert threads and capture ids in one round trip
+    const threadIdByGmail = new Map<string, number>();
     if (threads.length) {
-      await supabase
+      const { data: upsertedThreads, error: threadErr } = await supabase
         .from("threads")
-        .upsert(threads, { onConflict: "gmail_thread_id" });
+        .upsert(threads, { onConflict: "gmail_thread_id" })
+        .select("id, gmail_thread_id");
+      if (threadErr) {
+        console.error("[sync-emails] thread upsert failed", threadErr);
+      }
+      for (const t of upsertedThreads ?? []) {
+        threadIdByGmail.set(t.gmail_thread_id as string, t.id as number);
+      }
+    }
+
+    // Fallback: any gmail_thread_ids not returned from the upsert (possible
+    // with ignoreDuplicates-style races) — fetch them explicitly so emails
+    // never land with null thread_id again.
+    const missingThreadGmailIds = [...threadMap.keys()].filter(
+      (tid) => !threadIdByGmail.has(tid),
+    );
+    if (missingThreadGmailIds.length) {
+      const { data: fetched } = await supabase
+        .from("threads")
+        .select("id, gmail_thread_id")
+        .in("gmail_thread_id", missingThreadGmailIds);
+      for (const t of fetched ?? []) {
+        threadIdByGmail.set(t.gmail_thread_id as string, t.id as number);
+      }
+    }
+
+    // 2. Now insert emails with thread_id populated
+    const emailBatches = chunkArray(validEmails.map(e => ({
+      account: e.account,
+      sender: e.from,
+      recipient: e.to,
+      subject: e.subject,
+      body: e.body,
+      snippet: e.snippet,
+      email_date: new Date(e.date).toISOString(),
+      gmail_message_id: e.gmail_message_id,
+      gmail_thread_id: e.gmail_thread_id,
+      thread_id: threadIdByGmail.get(e.gmail_thread_id) ?? null,
+      attachments: e.attachments.length ? e.attachments : null,
+      is_reply: e.is_reply,
+      sender_type: e.sender_type,
+      has_attachments: e.has_attachments,
+    })), 50);
+
+    let saved = 0;
+    let emailsMissingThread = 0;
+    for (const batch of emailBatches) {
+      emailsMissingThread += batch.filter(b => b.thread_id === null).length;
+      const { error } = await supabase
+        .from("emails")
+        .upsert(batch, { onConflict: "gmail_message_id", ignoreDuplicates: true });
+      if (!error) saved += batch.length;
+    }
+    if (emailsMissingThread > 0) {
+      console.warn(`[sync-emails] ${emailsMissingThread} emails inserted without thread_id — thread upsert likely failed`);
     }
 
     // Save history state with last_sync_at timestamp
