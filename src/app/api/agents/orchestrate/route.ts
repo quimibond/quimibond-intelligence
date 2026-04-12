@@ -407,9 +407,16 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
           // Store actions in evidence for frontend access
         });
       }
+      console.log(`[orchestrate] ${agent.slug} inserting ${rows.length} rows (from ${cappedInsights.length} capped, ${insights.length} raw)`);
+      if (rows.length === 0) {
+        console.warn(`[orchestrate] ${agent.slug} rows empty after filters. Sample titles: ${cappedInsights.slice(0, 3).map(i => String(i.title || "").slice(0, 60)).join(" | ")}`);
+      }
       const { data: savedInsights, error: insertErr } = await supabase.from("agent_insights").insert(rows).select("id");
       if (insertErr) {
-        console.error(`[orchestrate] ${agent.slug} insert error:`, insertErr.message, insertErr.code);
+        console.error(`[orchestrate] ${agent.slug} insert error:`, JSON.stringify(insertErr));
+        console.error(`[orchestrate] ${agent.slug} first row sample:`, JSON.stringify(rows[0]).slice(0, 500));
+      } else {
+        console.log(`[orchestrate] ${agent.slug} inserted ${savedInsights?.length ?? 0} insights ok`);
       }
 
       // Save action_items linked to each insight
