@@ -4,21 +4,20 @@ import { usePathname } from "next/navigation";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import {
+  Home,
   Inbox,
-  LayoutDashboard,
   Building2,
-  BarChart3,
-  MessageSquare,
-  Bot,
+  Banknote,
+  Menu,
 } from "lucide-react";
 
+// 5 tabs per spec mobile-first: Home, Insights, Companies, Finance, Menu.
 const tabs = [
-  { href: "/inbox", label: "Inbox", icon: Inbox },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "Home", icon: Home, exact: true },
+  { href: "/inbox", label: "Insights", icon: Inbox },
   { href: "/companies", label: "Empresas", icon: Building2 },
-  { href: "/analytics", label: "Analitica", icon: BarChart3 },
-  { href: "/chat", label: "Chat", icon: MessageSquare },
-  { href: "/agents", label: "Directores", icon: Bot },
+  { href: "/finanzas", label: "Finanzas", icon: Banknote },
+  { href: "/agents", label: "Menú", icon: Menu },
 ];
 
 export function MobileTabBar() {
@@ -27,14 +26,16 @@ export function MobileTabBar() {
   // Hide on login
   if (pathname === "/login") return null;
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string, exact?: boolean) => {
+    if (exact) return pathname === href;
+    return pathname === href || pathname.startsWith(href + "/");
+  };
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 md:hidden border-t border-border bg-background/95 backdrop-blur-md safe-area-bottom">
       <div className="flex items-center justify-around px-1 h-16">
-        {tabs.map(({ href, label, icon: Icon }) => {
-          const active = isActive(href);
+        {tabs.map(({ href, label, icon: Icon, exact }) => {
+          const active = isActive(href, exact);
           return (
             <Link
               key={href}
