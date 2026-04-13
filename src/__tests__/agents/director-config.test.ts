@@ -100,4 +100,24 @@ describe("filterInsightsByConfig", () => {
     expect(out).toHaveLength(1);
     expect(out[0].confidence).toBe(0.90);
   });
+
+  it("descarta insights arriba del max_business_impact_mxn (anti-hallucination cap)", () => {
+    const ins = [
+      baseInsight({ title: "real", business_impact_estimate: 300_000 }),
+      baseInsight({ title: "inflado", business_impact_estimate: 5_800_000 }),
+      baseInsight({ title: "null-pass", business_impact_estimate: null }),
+    ];
+    const cfg = { ...DEFAULT_DIRECTOR_CONFIG, max_business_impact_mxn: 500_000 };
+    const out = filterInsightsByConfig(ins, cfg);
+    expect(out.map(i => i.title)).toEqual(["real", "null-pass"]);
+  });
+
+  it("max_business_impact_mxn no se deja rescatar por severity=critical", () => {
+    const ins = [
+      baseInsight({ title: "fake_critical", severity: "critical", business_impact_estimate: 60_000_000 }),
+    ];
+    const cfg = { ...DEFAULT_DIRECTOR_CONFIG, max_business_impact_mxn: 500_000 };
+    const out = filterInsightsByConfig(ins, cfg);
+    expect(out).toHaveLength(0);
+  });
 });

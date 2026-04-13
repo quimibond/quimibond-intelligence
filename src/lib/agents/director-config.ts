@@ -3,6 +3,10 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export interface DirectorConfig {
   /** Mínimo de impacto económico (MXN) para que un insight pase. 0 = sin filtro. */
   min_business_impact_mxn: number;
+  /** Máximo de impacto económico (MXN). Insights arriba de este cap se rechazan
+   *  como probables alucinaciones (ej: equipo reportando issues de HR de $5.8M).
+   *  0 = sin cap. Se aplica DESPUÉS de min_business_impact y antes del top-N cap. */
+  max_business_impact_mxn: number;
   /** Máx insights insertados por corrida (0 = usar default global de la ruta). */
   max_insights_per_run: number;
   /** Modos rotativos del director. Si tiene 2+, cada corrida usa el siguiente. */
@@ -13,6 +17,7 @@ export interface DirectorConfig {
 
 export const DEFAULT_DIRECTOR_CONFIG: DirectorConfig = {
   min_business_impact_mxn: 0,
+  max_business_impact_mxn: 0,
   max_insights_per_run: 0,
   mode_rotation: [],
   min_confidence_floor: 0,
@@ -35,6 +40,7 @@ export async function loadDirectorConfig(
   const raw = (data?.config ?? {}) as Record<string, unknown>;
   return {
     min_business_impact_mxn: clamp(Number(raw.min_business_impact_mxn ?? 0), 0, 10_000_000),
+    max_business_impact_mxn: clamp(Number(raw.max_business_impact_mxn ?? 0), 0, 1_000_000_000),
     max_insights_per_run: clamp(Number(raw.max_insights_per_run ?? 0), 0, 10),
     mode_rotation: Array.isArray(raw.mode_rotation)
       ? (raw.mode_rotation as unknown[]).map(String).filter(Boolean)
@@ -71,6 +77,19 @@ export function filterInsightsByConfig<T extends RawInsight>(
       if (String(i.severity ?? "") === "critical") return true;
       const impact = Number(i.business_impact_estimate ?? 0);
       return impact >= cfg.min_business_impact_mxn;
+    });
+  }
+
+  // Cap de impact superior: rechaza insights con impact > cap.
+  // Esto ataca las alucinaciones de equipo ($5.8M avg para issues de HR) y
+  // de operaciones/costos ($9-12M). severity='critical' NO rescata aqui —
+  // la intencion es que el cap sea un truth-check, no un filtro de prioridad.
+  if (cfg.max_business_impact_mxn > 0) {
+    out = out.filter(i => {
+      const impact = Number(i.business_impact_estimate ?? 0);
+      // Si no hay estimate, no podemos juzgarlo — pasa.
+      if (!Number.isFinite(impact) || impact <= 0) return true;
+      return impact <= cfg.max_business_impact_mxn;
     });
   }
 
