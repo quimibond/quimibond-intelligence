@@ -11,15 +11,16 @@ export interface TeamKpis {
 export async function getTeamKpis(): Promise<TeamKpis> {
   const sb = getServiceClient();
   const [emp, dept, overdue, pending] = await Promise.all([
-    sb.from("odoo_employees").select("id", { count: "exact", head: true }),
+    sb
+      .from("odoo_employees")
+      .select("id", { count: "exact", head: true })
+      .eq("is_active", true),
     sb.from("odoo_departments").select("id", { count: "exact", head: true }),
     sb
       .from("odoo_activities")
       .select("id", { count: "exact", head: true })
-      .lt("date_deadline", new Date().toISOString().slice(0, 10)),
-    sb
-      .from("odoo_activities")
-      .select("id", { count: "exact", head: true }),
+      .eq("is_overdue", true),
+    sb.from("odoo_activities").select("id", { count: "exact", head: true }),
   ]);
   return {
     employees: emp.count ?? 0,
@@ -30,31 +31,34 @@ export async function getTeamKpis(): Promise<TeamKpis> {
 }
 
 export interface EmployeeActivityLoad {
-  user_name: string | null;
+  user_name: string;
   activities_count: number;
   overdue_count: number;
 }
 
+/**
+ * Carga de actividades por usuario asignado.
+ * Usa columna real `assigned_to` y flag `is_overdue`.
+ */
 export async function getTopActivityLoad(
   limit = 10
 ): Promise<EmployeeActivityLoad[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("odoo_activities")
-    .select("user_name, date_deadline")
-    .not("user_name", "is", null);
+    .select("assigned_to, is_overdue")
+    .not("assigned_to", "is", null);
   const rows = (data ?? []) as Array<{
-    user_name: string | null;
-    date_deadline: string | null;
+    assigned_to: string | null;
+    is_overdue: boolean | null;
   }>;
-  const today = new Date().toISOString().slice(0, 10);
   const buckets = new Map<string, { total: number; overdue: number }>();
   for (const r of rows) {
-    if (!r.user_name) continue;
-    const b = buckets.get(r.user_name) ?? { total: 0, overdue: 0 };
+    if (!r.assigned_to) continue;
+    const b = buckets.get(r.assigned_to) ?? { total: 0, overdue: 0 };
     b.total += 1;
-    if (r.date_deadline && r.date_deadline < today) b.overdue += 1;
-    buckets.set(r.user_name, b);
+    if (r.is_overdue) b.overdue += 1;
+    buckets.set(r.assigned_to, b);
   }
   return [...buckets.entries()]
     .map(([user_name, { total, overdue }]) => ({
@@ -62,6 +66,10 @@ export async function getTopActivityLoad(
       activities_count: total,
       overdue_count: overdue,
     }))
-    .sort((a, b) => b.overdue_count - a.overdue_count || b.activities_count - a.activities_count)
+    .sort(
+      (a, b) =>
+        b.overdue_count - a.overdue_count ||
+        b.activities_count - a.activities_count
+    )
     .slice(0, limit);
 }

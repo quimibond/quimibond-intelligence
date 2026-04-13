@@ -11,11 +11,11 @@ export interface OperationsKpis {
 
 export async function getOperationsKpis(): Promise<OperationsKpis> {
   const sb = getServiceClient();
-  const [otd, late, mfg, lead] = await Promise.all([
+  const [otd, late, mfg] = await Promise.all([
     sb
       .from("ops_delivery_health_weekly")
-      .select("otd_pct, week")
-      .order("week", { ascending: false })
+      .select("otd_pct, avg_lead_days, week_start")
+      .order("week_start", { ascending: false })
       .limit(1)
       .maybeSingle(),
     sb
@@ -26,23 +26,16 @@ export async function getOperationsKpis(): Promise<OperationsKpis> {
       .from("odoo_manufacturing")
       .select("id", { count: "exact", head: true })
       .in("state", ["confirmed", "progress"]),
-    sb.from("odoo_deliveries").select("lead_time_days"),
   ]);
-  const leadRows = (lead.data ?? []) as Array<{
-    lead_time_days: number | null;
-  }>;
-  const leadValues = leadRows
-    .map((r) => Number(r.lead_time_days))
-    .filter((v) => !Number.isNaN(v) && v > 0);
-  const avgLead =
-    leadValues.length > 0
-      ? leadValues.reduce((a, v) => a + v, 0) / leadValues.length
-      : null;
+  const otdRow = otd.data as {
+    otd_pct: number | null;
+    avg_lead_days: number | null;
+  } | null;
   return {
-    otdPct: (otd.data as { otd_pct: number | null } | null)?.otd_pct ?? null,
+    otdPct: otdRow?.otd_pct ?? null,
     lateDeliveries: late.count ?? 0,
     mfgActive: mfg.count ?? 0,
-    avgLeadTimeDays: avgLead,
+    avgLeadTimeDays: otdRow?.avg_lead_days ?? null,
   };
 }
 

@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { joinedCompanyName } from "./_helpers";
+import { resolveCompanyNames } from "./_helpers";
 
 export interface SalesKpis {
   monthTotal: number;
@@ -92,19 +92,20 @@ export async function getRecentSaleOrders(
   const { data } = await sb
     .from("odoo_sale_orders")
     .select(
-      "id, name, company_id, amount_total_mxn, salesperson_name, date_order, state, companies:company_id(name)"
+      "id, name, company_id, amount_total_mxn, salesperson_name, date_order, state"
     )
     .order("date_order", { ascending: false })
     .limit(limit);
-  type Raw = Omit<RecentSaleOrder, "company_name"> & { companies: unknown };
-  return ((data ?? []) as unknown as Raw[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    company_id: row.company_id,
-    company_name: joinedCompanyName(row.companies),
-    amount_total_mxn: row.amount_total_mxn,
-    salesperson_name: row.salesperson_name,
-    date_order: row.date_order,
-    state: row.state,
+
+  const rows = (data ?? []) as Array<Omit<RecentSaleOrder, "company_name">>;
+  const nameMap = await resolveCompanyNames(
+    sb,
+    rows.map((r) => r.company_id)
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    company_name:
+      row.company_id != null ? (nameMap.get(Number(row.company_id)) ?? null) : null,
   }));
 }

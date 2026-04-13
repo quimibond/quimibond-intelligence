@@ -1,9 +1,11 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
+import { toMxn } from "@/lib/formatters";
 
 /**
  * Dashboard queries — todo ejecutado en Server Components.
- * SIEMPRE usa campos _mxn para sumas.
+ * Usa `toMxn(amount, currency)` para sumas porque `odoo_invoices.amount_*_mxn`
+ * está NULL en todos los registros (backend bug documentado).
  */
 
 export interface DashboardKpis {
@@ -16,6 +18,7 @@ export interface DashboardKpis {
   insightsNew: number;
   insightsCritical: number;
   otdPct: number | null;
+  atRiskCount: number;
   topAtRiskClients: Array<{
     company_id: number | string | null;
     company_name: string | null;
@@ -32,25 +35,25 @@ function monthStart(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
-async function sumInvoices(
-  params: {
-    move_type: "out_invoice" | "in_invoice";
-    from: string;
-    to?: string;
-  }
-): Promise<number> {
+async function sumInvoices(params: {
+  move_type: "out_invoice" | "in_invoice";
+  from: string;
+  to?: string;
+}): Promise<number> {
   const sb = getServiceClient();
   let query = sb
     .from("odoo_invoices")
-    .select("amount_total_mxn")
+    .select("amount_total, currency")
     .eq("move_type", params.move_type)
     .neq("state", "cancel")
     .gte("invoice_date", params.from);
   if (params.to) query = query.lt("invoice_date", params.to);
   const { data } = await query;
   return (data ?? []).reduce(
-    (acc: number, row: { amount_total_mxn: number | null }) =>
-      acc + (Number(row.amount_total_mxn) || 0),
+    (
+      acc: number,
+      row: { amount_total: number | null; currency: string | null }
+    ) => acc + toMxn(row.amount_total, row.currency),
     0
   );
 }
@@ -72,6 +75,7 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
     insightsCritical,
     otd,
     ltv,
+    atRiskCountRes,
   ] = await Promise.all([
     sumInvoices({ move_type: "out_invoice", from: thisMonthStart, to: nextMonthStart }),
     sumInvoices({ move_type: "out_invoice", from: prevMonthStart, to: thisMonthStart }),
@@ -81,7 +85,7 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
       .eq("currency", "MXN"),
     sb
       .from("odoo_invoices")
-      .select("amount_residual_mxn,days_overdue")
+      .select("amount_residual, currency, days_overdue")
       .eq("move_type", "out_invoice")
       .in("payment_state", ["not_paid", "partial"])
       .gt("days_overdue", 0),
@@ -96,8 +100,8 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
       .eq("severity", "critical"),
     sb
       .from("ops_delivery_health_weekly")
-      .select("otd_pct,week")
-      .order("week", { ascending: false })
+      .select("otd_pct,week_start")
+      .order("week_start", { ascending: false })
       .limit(1)
       .maybeSingle(),
     sb
@@ -105,9 +109,15 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
       .select(
         "company_id, company_name, tier, ltv_mxn, churn_risk_score, overdue_risk_score, max_days_overdue"
       )
-      .gt("churn_risk_score", 60)
+      .gt("churn_risk_score", 70)
+      .gt("ltv_mxn", 100_000)
       .order("churn_risk_score", { ascending: false })
       .limit(5),
+    sb
+      .from("customer_ltv_health")
+      .select("company_id", { count: "exact", head: true })
+      .gt("churn_risk_score", 70)
+      .gt("ltv_mxn", 100_000),
   ]);
 
   const cashTotal = (cash.data ?? []).reduce(
@@ -117,10 +127,11 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
   );
 
   const overdueRows = (overdueAgg.data ?? []) as Array<{
-    amount_residual_mxn: number | null;
+    amount_residual: number | null;
+    currency: string | null;
   }>;
   const overdueTotal = overdueRows.reduce(
-    (acc, row) => acc + (Number(row.amount_residual_mxn) || 0),
+    (acc, row) => acc + toMxn(row.amount_residual, row.currency),
     0
   );
 
@@ -137,6 +148,7 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
     insightsNew: insightsNew.count ?? 0,
     insightsCritical: insightsCritical.count ?? 0,
     otdPct: (otd.data as { otd_pct: number | null } | null)?.otd_pct ?? null,
+    atRiskCount: atRiskCountRes.count ?? 0,
     topAtRiskClients: (ltv.data ?? []) as DashboardKpis["topAtRiskClients"],
     lastUpdated: new Date().toISOString(),
   };
@@ -147,6 +159,10 @@ export interface MonthlyRevenuePoint {
   revenue: number;
 }
 
+/**
+ * Revenue mensual agregado via MV `monthly_revenue_by_company`.
+ * Suma `net_revenue` (revenue - credit_notes) por mes para todas las empresas.
+ */
 export async function getRevenueTrend(
   months = 12
 ): Promise<MonthlyRevenuePoint[]> {
@@ -156,21 +172,19 @@ export async function getRevenueTrend(
   const sinceStr = monthStart(since);
 
   const { data } = await sb
-    .from("odoo_invoices")
-    .select("invoice_date, amount_total_mxn")
-    .eq("move_type", "out_invoice")
-    .neq("state", "cancel")
-    .gte("invoice_date", sinceStr)
-    .order("invoice_date", { ascending: true });
+    .from("monthly_revenue_by_company")
+    .select("month, net_revenue")
+    .gte("month", sinceStr)
+    .order("month", { ascending: true });
 
   const buckets = new Map<string, number>();
   for (const row of (data ?? []) as Array<{
-    invoice_date: string | null;
-    amount_total_mxn: number | null;
+    month: string | null;
+    net_revenue: number | null;
   }>) {
-    if (!row.invoice_date) continue;
-    const key = row.invoice_date.slice(0, 7);
-    buckets.set(key, (buckets.get(key) ?? 0) + (Number(row.amount_total_mxn) || 0));
+    if (!row.month) continue;
+    const key = row.month.slice(0, 7);
+    buckets.set(key, (buckets.get(key) ?? 0) + (Number(row.net_revenue) || 0));
   }
 
   return [...buckets.entries()]

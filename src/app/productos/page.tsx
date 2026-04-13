@@ -81,10 +81,11 @@ async function ProductsKpisSection() {
         tone="warning"
       />
       <KpiCard
-        title="Reglas reorden"
-        value={k.lowStockCount}
+        title="Por reordenar"
+        value={k.reorderCount}
         icon={AlertTriangle}
         format="number"
+        tone={k.reorderCount > 0 ? "warning" : "default"}
       />
     </StatGrid>
   );
@@ -166,7 +167,7 @@ const deadStockColumns: DataTableColumn<DeadStockRow>[] = [
     header: "Días sin venta",
     cell: (r) => (
       <span className="tabular-nums text-warning-foreground">
-        {r.days_without_sale ?? 0}
+        {r.days_since_last_sale ?? 0}
       </span>
     ),
     align: "right",
@@ -174,7 +175,7 @@ const deadStockColumns: DataTableColumn<DeadStockRow>[] = [
   {
     key: "value",
     header: "Valor",
-    cell: (r) => <Currency amount={r.stock_value_mxn} compact />,
+    cell: (r) => <Currency amount={r.inventory_value} compact />,
     align: "right",
   },
 ];
@@ -191,10 +192,10 @@ async function DeadStockTable() {
           title={r.product_name ?? r.product_ref ?? "—"}
           subtitle={r.product_ref ?? undefined}
           fields={[
-            { label: "Días sin venta", value: r.days_without_sale ?? 0 },
+            { label: "Días sin venta", value: r.days_since_last_sale ?? 0 },
             {
               label: "Valor",
-              value: <Currency amount={r.stock_value_mxn} compact />,
+              value: <Currency amount={r.inventory_value} compact />,
             },
           ]}
         />

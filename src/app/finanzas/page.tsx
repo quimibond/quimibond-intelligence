@@ -91,10 +91,11 @@ async function FinanceKpisSection() {
       />
       <KpiCard
         title="Cash USD"
-        value={k.cashUsdConverted}
+        value={k.cashUsd}
         format="currency"
         compact
         icon={Landmark}
+        subtitle="USD"
       />
       <KpiCard
         title="AR"
@@ -182,54 +183,52 @@ async function BanksTable() {
   );
 }
 
+const monthLabels = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
+function formatMonth(key: string) {
+  const [y, m] = key.split("-");
+  const idx = Number(m) - 1;
+  return `${monthLabels[idx] ?? m} ${y?.slice(2) ?? ""}`;
+}
+
 const cfColumns: DataTableColumn<CashflowPoint>[] = [
   {
-    key: "period",
-    header: "Periodo",
-    cell: (r) => r.period ?? "—",
+    key: "month",
+    header: "Mes",
+    cell: (r) => formatMonth(r.month),
   },
   {
-    key: "type",
-    header: "Tipo",
-    cell: (r) =>
-      r.flow_type === "inflow"
-        ? "Entrada"
-        : r.flow_type === "outflow"
-          ? "Salida"
-          : (r.flow_type ?? "—"),
-  },
-  {
-    key: "gross",
-    header: "Bruto",
-    cell: (r) => <Currency amount={r.gross_amount} />,
+    key: "residual",
+    header: "Por cobrar",
+    cell: (r) => <Currency amount={r.residualAmount} compact />,
     align: "right",
     hideOnMobile: true,
   },
   {
-    key: "net",
-    header: "Neto",
-    cell: (r) => <Currency amount={r.net_amount} />,
+    key: "expected",
+    header: "Esperado",
+    cell: (r) => <Currency amount={r.expectedAmount} compact />,
     align: "right",
   },
   {
     key: "prob",
-    header: "Prob",
+    header: "Probabilidad",
     cell: (r) =>
-      r.probability != null
-        ? `${(Number(r.probability) * 100).toFixed(0)}%`
+      r.collectionProbability != null
+        ? `${Math.round(r.collectionProbability * 100)}%`
         : "—",
+    align: "right",
     hideOnMobile: true,
   },
 ];
 
 async function CashflowTable() {
-  const rows = await getCashflowProjection();
+  const rows = await getCashflowProjection(6);
   if (!rows || rows.length === 0) {
     return (
       <EmptyState
         icon={Scale}
         title="Sin proyección"
-        description="No hay datos de cashflow_projection."
+        description="No hay cobranza esperada en los próximos meses."
         compact
       />
     );
@@ -238,20 +237,24 @@ async function CashflowTable() {
     <DataTable
       data={rows}
       columns={cfColumns}
-      rowKey={(r, i) => `${r.period}-${r.flow_type}-${i}`}
+      rowKey={(r) => r.month}
       mobileCard={(r) => (
         <MobileCard
-          title={r.period ?? "—"}
+          title={formatMonth(r.month)}
           subtitle={
-            r.flow_type === "inflow"
-              ? "Entrada"
-              : r.flow_type === "outflow"
-                ? "Salida"
-                : (r.flow_type ?? "—")
+            r.collectionProbability != null
+              ? `${Math.round(r.collectionProbability * 100)}% probabilidad`
+              : undefined
           }
           fields={[
-            { label: "Bruto", value: <Currency amount={r.gross_amount} /> },
-            { label: "Neto", value: <Currency amount={r.net_amount} /> },
+            {
+              label: "Por cobrar",
+              value: <Currency amount={r.residualAmount} compact />,
+            },
+            {
+              label: "Esperado",
+              value: <Currency amount={r.expectedAmount} compact />,
+            },
           ]}
         />
       )}

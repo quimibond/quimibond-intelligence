@@ -1,6 +1,7 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { joinedCompanyName } from "./_helpers";
+import { resolveCompanyNames } from "./_helpers";
+import { toMxn } from "@/lib/formatters";
 
 function monthStart(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
@@ -34,17 +35,21 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
       .lt("date_order", thisStart),
     sb
       .from("odoo_invoices")
-      .select("amount_residual_mxn")
+      .select("amount_residual, currency")
       .eq("move_type", "in_invoice")
       .in("payment_state", ["not_paid", "partial"]),
   ]);
 
-  const sum = (rows: Array<{ amount_total_mxn?: number | null; amount_residual_mxn?: number | null }>, field: "amount_total_mxn" | "amount_residual_mxn") =>
-    rows.reduce((a, r) => a + (Number(r[field]) || 0), 0);
-
-  const monthTotal = sum((curr.data ?? []) as Array<{ amount_total_mxn: number | null }>, "amount_total_mxn");
-  const prevMonthTotal = sum((prev.data ?? []) as Array<{ amount_total_mxn: number | null }>, "amount_total_mxn");
-  const supplierPayable = sum((ap.data ?? []) as Array<{ amount_residual_mxn: number | null }>, "amount_residual_mxn");
+  const monthTotal = ((curr.data ?? []) as Array<{
+    amount_total_mxn: number | null;
+  }>).reduce((a, r) => a + (Number(r.amount_total_mxn) || 0), 0);
+  const prevMonthTotal = ((prev.data ?? []) as Array<{
+    amount_total_mxn: number | null;
+  }>).reduce((a, r) => a + (Number(r.amount_total_mxn) || 0), 0);
+  const supplierPayable = ((ap.data ?? []) as Array<{
+    amount_residual: number | null;
+    currency: string | null;
+  }>).reduce((a, r) => a + toMxn(r.amount_residual, r.currency), 0);
 
   return {
     monthTotal,
@@ -76,19 +81,20 @@ export async function getRecentPurchaseOrders(
   const { data } = await sb
     .from("odoo_purchase_orders")
     .select(
-      "id, name, company_id, amount_total_mxn, buyer_name, date_order, state, companies:company_id(name)"
+      "id, name, company_id, amount_total_mxn, buyer_name, date_order, state"
     )
     .order("date_order", { ascending: false })
     .limit(limit);
-  type Raw = Omit<RecentPurchaseOrder, "company_name"> & { companies: unknown };
-  return ((data ?? []) as unknown as Raw[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    company_id: row.company_id,
-    company_name: joinedCompanyName(row.companies),
-    amount_total_mxn: row.amount_total_mxn,
-    buyer_name: row.buyer_name,
-    date_order: row.date_order,
-    state: row.state,
+
+  const rows = (data ?? []) as Array<Omit<RecentPurchaseOrder, "company_name">>;
+  const nameMap = await resolveCompanyNames(
+    sb,
+    rows.map((r) => r.company_id)
+  );
+
+  return rows.map((row) => ({
+    ...row,
+    company_name:
+      row.company_id != null ? (nameMap.get(Number(row.company_id)) ?? null) : null,
   }));
 }

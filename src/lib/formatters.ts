@@ -100,6 +100,25 @@ export function formatRelative(
   return formatDate(d);
 }
 
+/**
+ * Conversión a MXN para sumas cuando las columnas `*_mxn` vienen vacías.
+ * `odoo_invoices.amount_total_mxn` está NULL para todos los registros (backend bug),
+ * por lo que sumamos usando `amount + currency` y convertimos USD al vuelo.
+ * Tasa por default: 20 MXN/USD (override con env `QB_USD_RATE`).
+ */
+export const USD_TO_MXN = Number(process.env.QB_USD_RATE) || 20;
+
+export function toMxn(
+  amount: number | null | undefined,
+  currency: string | null | undefined
+): number {
+  if (amount == null || Number.isNaN(Number(amount))) return 0;
+  const value = Number(amount);
+  if (currency === "USD") return value * USD_TO_MXN;
+  // Default: MXN
+  return value;
+}
+
 export type FormatKind = "currency" | "number" | "percent" | "days";
 
 export function formatValue(
