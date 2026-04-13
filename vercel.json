@@ -9,6 +9,10 @@
       "schedule": "*/5 * * * *"
     },
     {
+      "path": "/api/pipeline/analyze?scope=backfill",
+      "schedule": "*/5 * * * *"
+    },
+    {
       "path": "/api/agents/auto-fix",
       "schedule": "*/30 * * * *"
     },

@@ -1,14 +1,21 @@
 /**
  * Pipeline Analyze v4 — Fast parallel email processing.
  *
+ * Two scopes (Fase 2 — 13-abr-2026):
+ * - scope=normal (default): emails_date >= NOW() - 14 days. Latencia baja
+ *   para correo reciente. Corre cada 5 min.
+ * - scope=backfill: email_date < NOW() - 14 days. Drena el historico de
+ *   ~98k emails sin procesar. Oldest-first, sin cutoff inferior.
+ *   Corre cada 5 min en paralelo al normal. No-op cuando remaining=0.
+ *
  * Key changes from v3:
  * 1. PRE-FILTER: Skip noise emails without calling Claude (~30% of total)
  * 2. HAIKU: Use claude-haiku for extraction (3x faster, 10x cheaper)
- * 3. PARALLEL: Process 5 mini-batches of 10 emails simultaneously
+ * 3. PARALLEL: Process up to 12 mini-batches of 5 emails simultaneously
  * 4. NO ACCOUNT GROUPING: Just grab the oldest unprocessed emails
  * 5. MORE CONTENT: 800 chars per email body instead of 400
  *
- * Throughput: ~250 emails per invocation (was ~50)
+ * Throughput: ~60 emails analyzed per invocation (was ~40 con MAX_PARALLEL=8).
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createHash } from "crypto";
@@ -57,15 +64,19 @@ export async function POST(request: NextRequest) {
     const supabase = getServiceClient();
     const start = Date.now();
 
+    // scope=backfill drena el historico (> 14d). Normal atiende los ultimos 14d.
+    const scope = request.nextUrl.searchParams.get("scope") === "backfill" ? "backfill" : "normal";
+
     // ── Step 1: Load unprocessed emails ─────────────────────────────────
     const cutoff = new Date(Date.now() - 14 * 24 * 3600_000).toISOString();
-    const { data: unprocessed, error: queryErr } = await supabase
+    let query = supabase
       .from("emails")
       .select("id, account, sender, recipient, subject, body, snippet, email_date, sender_type, has_attachments, attachments")
       .eq("kg_processed", false)
-      .gte("email_date", cutoff)
-      .order("email_date", { ascending: true }) // oldest first
+      .order("email_date", { ascending: true }) // oldest first (within the chosen window)
       .limit(250);
+    query = scope === "backfill" ? query.lt("email_date", cutoff) : query.gte("email_date", cutoff);
+    const { data: unprocessed, error: queryErr } = await query;
 
     if (queryErr) return NextResponse.json({ error: queryErr.message }, { status: 500 });
     if (!unprocessed?.length) return NextResponse.json({ success: true, message: "No pending emails", all_processed: true });
@@ -97,10 +108,11 @@ export async function POST(request: NextRequest) {
     }
 
     // ── Step 3: Split into mini-batches and process in parallel ─────────
-    // Reduced from 10 to 5 emails/batch to prevent output truncation at
-    // max_tokens. 10 emails × rich JSON extraction would hit 4K tokens.
+    // BATCH_SIZE=5 previene truncation de output (10 emails × JSON rico hit 4K tokens).
+    // MAX_PARALLEL subido de 8 → 12 (13-abr) para drenar mejor el backlog historico.
+    // Haiku maneja 12 llamadas concurrentes sin hit rate limits al tier actual.
     const BATCH_SIZE = 5;
-    const MAX_PARALLEL = 8;
+    const MAX_PARALLEL = 12;
     const batches: typeof meaningful[] = [];
 
     for (let i = 0; i < meaningful.length && batches.length < MAX_PARALLEL; i += BATCH_SIZE) {
@@ -141,8 +153,9 @@ export async function POST(request: NextRequest) {
     await supabase.from("pipeline_logs").insert({
       level: errors > 0 ? "warning" : "info",
       phase: "account_analysis",
-      message: `Batch: ${processedIds.length} analyzed, ${noiseIds.length} noise skipped, ${errors} errors in ${elapsed}s`,
+      message: `[${scope}] Batch: ${processedIds.length} analyzed, ${noiseIds.length} noise skipped, ${errors} errors in ${elapsed}s`,
       details: {
+        scope,
         analyzed: processedIds.length,
         noise_skipped: noiseIds.length,
         entities: totalEntities,
@@ -157,6 +170,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
+      scope,
       analyzed: processedIds.length,
       noise_skipped: noiseIds.length,
       data_extracted: { entities: totalEntities, facts: totalFacts, relationships: totalRelationships, actions: totalActions },
