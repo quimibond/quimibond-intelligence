@@ -30,8 +30,11 @@ const DEFAULT_CONFIDENCE_THRESHOLD = 0.80;
 /** Max insights per agent per run — prevents flooding the inbox */
 const MAX_INSIGHTS_PER_RUN = 3;
 
-/** Old agents that should NOT generate insights (deactivated but kept for safety) */
-const SILENT_AGENTS = new Set(["meta", "cleanup", "data_quality", "odoo"]);
+/** Old agents that should NOT generate insights (deactivated but kept for safety).
+ *  NOTE: `data_quality` fue removido el 13-abr-2026. Era un director activo
+ *  que estaba doblemente bloqueado (aqui + analysis_schedule='manual'), por eso
+ *  no corrio desde abril 1. Ver migration 042_director_integrity_phase1.sql. */
+const SILENT_AGENTS = new Set(["meta", "cleanup", "odoo"]);
 
 /** Severities validas segun schema de agent_insights */
 const VALID_SEVERITIES = new Set(["medium", "high", "critical"]);
@@ -283,13 +286,15 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
     let duplicatesSkipped = 0;
     const filteredInsights = [];
     if (insights.length > 0) {
-      // Check ALL recent insights (including expired) to prevent re-generating same insight
-      // Previously only checked 'new'/'seen' — but insights expire in hours and get regenerated
+      // Check ALL recent insights (including expired) to prevent re-generating same insight.
+      // Window ampliado de 72h → 7d (13-abr-2026): con 72h los mismos insights de
+      // COSMO MODA / Elena Delgado reaparecieron 10x en 14 dias porque entre corridas
+      // del agente pasaban mas de 3 dias y el dedup no los veia.
       const { data: existing } = await supabase
         .from("agent_insights").select("title, company_id, category")
         .in("state", ["new", "seen", "expired"])
-        .gte("created_at", new Date(Date.now() - 72 * 3600_000).toISOString()) // last 72h
-        .order("created_at", { ascending: false }).limit(500);
+        .gte("created_at", new Date(Date.now() - 7 * 24 * 3600_000).toISOString()) // last 7 days
+        .order("created_at", { ascending: false }).limit(1000);
 
       const existingTitles = new Set<string>((existing ?? []).map((i: { title: string }) => normalizeForDedup(i.title)));
       const existingCompanyCat = new Set<string>(
