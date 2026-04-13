@@ -252,4 +252,59 @@ begin
   raise notice 'T6 PASS: ingestion_report_source_count';
 end $$;
 
+-- ===== Task 7: ingestion_fetch_pending_failures =====
+do $$
+declare
+  v_run uuid;
+  v_f1 uuid;
+  v_f2 uuid;
+  v_f3 uuid;
+  v_rows int;
+  v_retrying int;
+  v_second int;
+begin
+  select run_id into v_run
+  from ingestion_start_run('test_src','test_tbl','incremental','cron');
+
+  -- Report 3 failures
+  v_f1 := ingestion_report_failure(v_run, 'X1', 'http_5xx', 'err', null);
+  v_f2 := ingestion_report_failure(v_run, 'X2', 'http_5xx', 'err', null);
+  v_f3 := ingestion_report_failure(v_run, 'X3', 'http_5xx', 'err', null);
+
+  -- Push X3 retry_count to 4 with 4 more calls (1 initial + 4 updates = retry_count=4)
+  perform ingestion_report_failure(v_run, 'X3', 'http_5xx', 'err2', null);
+  perform ingestion_report_failure(v_run, 'X3', 'http_5xx', 'err3', null);
+  perform ingestion_report_failure(v_run, 'X3', 'http_5xx', 'err4', null);
+  perform ingestion_report_failure(v_run, 'X3', 'http_5xx', 'err5', null);
+  -- Now X3.retry_count = 4
+
+  -- T7.1: fetch with max_retries=3 → only X1, X2 returned (X3 excluded: retry_count=4 >= 3)
+  select count(*) into v_rows
+  from ingestion_fetch_pending_failures('test_src','test_tbl',3,10);
+
+  if v_rows <> 2 then
+    raise exception 'T7.1: expected 2 rows, got %', v_rows;
+  end if;
+
+  -- T7.2: X1 and X2 should now be status=retrying
+  select count(*) into v_retrying
+  from ingestion.sync_failure
+  where source_id='test_src' and table_name='test_tbl'
+    and entity_id in ('X1','X2') and status='retrying';
+
+  if v_retrying <> 2 then
+    raise exception 'T7.2: expected 2 rows with status=retrying, got %', v_retrying;
+  end if;
+
+  -- T7.3: second fetch returns 0 (already claimed)
+  select count(*) into v_second
+  from ingestion_fetch_pending_failures('test_src','test_tbl',3,10);
+
+  if v_second <> 0 then
+    raise exception 'T7.3: expected 0 on second fetch, got %', v_second;
+  end if;
+
+  raise notice 'T7 PASS: ingestion_fetch_pending_failures';
+end $$;
+
 rollback;

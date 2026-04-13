@@ -239,3 +239,38 @@ begin
 end $$;
 
 grant execute on function ingestion_report_source_count(text,text,timestamptz,timestamptz,int,text[]) to service_role;
+
+-- 6. ingestion_fetch_pending_failures: atomically claim pending failures for a
+-- retry worker. Uses FOR UPDATE SKIP LOCKED + CTE update so concurrent workers
+-- never double-claim the same row.
+create or replace function ingestion_fetch_pending_failures(
+  p_source text,
+  p_table text,
+  p_max_retries int,
+  p_limit int
+) returns setof ingestion.sync_failure
+language plpgsql security definer
+set search_path = ingestion, pg_catalog
+as $$
+begin
+  return query
+  with claimed as (
+    select failure_id
+    from ingestion.sync_failure
+    where source_id = p_source
+      and table_name = p_table
+      and status = 'pending'
+      and retry_count < p_max_retries
+    order by first_seen_at asc
+    limit p_limit
+    for update skip locked
+  )
+  update ingestion.sync_failure sf
+  set status = 'retrying',
+      last_tried_at = now()
+  from claimed
+  where sf.failure_id = claimed.failure_id
+  returning sf.*;
+end $$;
+
+grant execute on function ingestion_fetch_pending_failures(text,text,int,int) to service_role;
