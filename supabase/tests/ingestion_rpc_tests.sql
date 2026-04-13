@@ -87,4 +87,79 @@ begin
   raise notice 'T3 PASS: ingestion_report_batch';
 end $$;
 
+-- ===== Task 4: ingestion_report_failure =====
+do $$
+declare
+  v_run    uuid;
+  v_fid1   uuid;
+  v_fid2   uuid;
+  v_count  int;
+  v_retry  int;
+  v_fid3   uuid;
+begin
+  -- Start a run to satisfy the run_id FK
+  select run_id into v_run
+  from ingestion_start_run('test_src','test_tbl','incremental','cron');
+
+  -- T4.1: first report for entity 'ent-001' returns a non-null failure_id
+  select ingestion_report_failure(
+    v_run, 'test_src', 'test_tbl', 'ent-001',
+    'ERR_TIMEOUT', 'connection timed out', null
+  ) into v_fid1;
+
+  if v_fid1 is null then
+    raise exception 'T4.1: first report_failure returned null failure_id';
+  end if;
+
+  -- T4.2: second report for same (source, table, entity) returns the same failure_id (idempotent)
+  select ingestion_report_failure(
+    v_run, 'test_src', 'test_tbl', 'ent-001',
+    'ERR_TIMEOUT', 'connection timed out again', null
+  ) into v_fid2;
+
+  if v_fid2 is distinct from v_fid1 then
+    raise exception 'T4.2: idempotent call returned different id: % vs %', v_fid1, v_fid2;
+  end if;
+
+  -- T4.3: only 1 row exists for entity 'ent-001'
+  select count(*) into v_count
+  from ingestion.sync_failure
+  where source_id = 'test_src'
+    and table_name = 'test_tbl'
+    and entity_id = 'ent-001';
+
+  if v_count <> 1 then
+    raise exception 'T4.3: expected 1 row for ent-001, got %', v_count;
+  end if;
+
+  -- T4.4: retry_count was incremented to 1 after the second call
+  select retry_count into v_retry
+  from ingestion.sync_failure
+  where source_id = 'test_src'
+    and table_name = 'test_tbl'
+    and entity_id = 'ent-001'
+    and status in ('pending','retrying');
+
+  if v_retry <> 1 then
+    raise exception 'T4.4: expected retry_count=1, got %', v_retry;
+  end if;
+
+  -- T4.5: a distinct entity 'ent-002' creates a second row
+  select ingestion_report_failure(
+    v_run, 'test_src', 'test_tbl', 'ent-002',
+    'ERR_NOT_FOUND', 'record missing', null
+  ) into v_fid3;
+
+  select count(*) into v_count
+  from ingestion.sync_failure
+  where source_id = 'test_src'
+    and table_name = 'test_tbl';
+
+  if v_count <> 2 then
+    raise exception 'T4.5: expected 2 rows total, got %', v_count;
+  end if;
+
+  raise notice 'T4 PASS: ingestion_report_failure';
+end $$;
+
 rollback;

@@ -58,3 +58,37 @@ begin
 end $$;
 
 grant execute on function ingestion_report_batch(uuid,int,int,int) to service_role;
+
+-- 3. ingestion_report_failure: upsert a failed entity row with idempotency via partial unique index
+create or replace function ingestion_report_failure(
+  p_run_id         uuid,
+  p_source         text,
+  p_table          text,
+  p_entity_id      text,
+  p_error_code     text,
+  p_error_detail   text,
+  p_payload        jsonb
+) returns uuid
+language plpgsql security definer
+set search_path = ingestion, pg_catalog
+as $$
+declare
+  v_failure_id uuid;
+begin
+  insert into ingestion.sync_failure
+    (run_id, source_id, table_name, entity_id, error_code, error_detail, payload_snapshot, status, last_tried_at)
+  values
+    (p_run_id, p_source, p_table, p_entity_id, p_error_code, p_error_detail, p_payload, 'pending', now())
+  on conflict (source_id, table_name, entity_id)
+    where status in ('pending','retrying')
+  do update set
+    retry_count   = ingestion.sync_failure.retry_count + 1,
+    error_code    = excluded.error_code,
+    error_detail  = excluded.error_detail,
+    last_tried_at = now()
+  returning failure_id into v_failure_id;
+
+  return v_failure_id;
+end $$;
+
+grant execute on function ingestion_report_failure(uuid,text,text,text,text,text,jsonb) to service_role;
