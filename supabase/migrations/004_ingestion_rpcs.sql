@@ -274,3 +274,23 @@ begin
 end $$;
 
 grant execute on function ingestion_fetch_pending_failures(text,text,int,int) to service_role;
+
+-- 7. ingestion_mark_failure_resolved: mark a sync_failure as resolved.
+-- Raises an exception if the failure_id does not exist.
+create or replace function ingestion_mark_failure_resolved(p_failure_id uuid)
+returns void
+language plpgsql security definer
+set search_path = ingestion, pg_catalog
+as $$
+begin
+  update ingestion.sync_failure
+  set status = 'resolved',
+      resolved_at = now()
+  where failure_id = p_failure_id;
+
+  if not found then
+    raise exception 'ingestion_mark_failure_resolved: failure_id % not found', p_failure_id;
+  end if;
+end $$;
+
+grant execute on function ingestion_mark_failure_resolved(uuid) to service_role;

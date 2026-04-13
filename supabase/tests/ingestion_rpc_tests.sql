@@ -307,4 +307,32 @@ begin
   raise notice 'T7 PASS: ingestion_fetch_pending_failures';
 end $$;
 
+-- ===== Task 8: ingestion_mark_failure_resolved =====
+do $$
+declare
+  v_run uuid;
+  v_fid uuid;
+  v_status text;
+  v_resolved timestamptz;
+begin
+  select run_id into v_run
+  from ingestion_start_run('test_src','test_tbl','incremental','cron');
+
+  v_fid := ingestion_report_failure(v_run, 'R1', 'http_5xx', 'err', null);
+
+  perform ingestion_mark_failure_resolved(v_fid);
+
+  select status, resolved_at into v_status, v_resolved
+  from ingestion.sync_failure where failure_id = v_fid;
+
+  if v_status <> 'resolved' then
+    raise exception 'T8.1: status=% expected resolved', v_status;
+  end if;
+  if v_resolved is null then
+    raise exception 'T8.2: resolved_at not set';
+  end if;
+
+  raise notice 'T8 PASS: ingestion_mark_failure_resolved';
+end $$;
+
 rollback;
