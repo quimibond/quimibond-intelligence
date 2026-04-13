@@ -31,23 +31,43 @@ export async function POST(request: NextRequest) {
   const supabase = getServiceClient();
 
   try {
+    // Step 1: Run the original verify_follow_ups (legacy)
     const { data, error } = await supabase.rpc("verify_follow_ups");
     if (error) {
-      console.error("[verify-follow-ups]", error.message);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      console.error("[verify-follow-ups] verify_follow_ups:", error.message);
     }
 
-    const result = data as Record<string, number>;
-    if ((result?.processed ?? 0) > 0) {
+    const result = (data ?? {}) as Record<string, number>;
+
+    // Step 2: Run the new resolve_pending_follow_ups which also feeds
+    // results back to agent_memory (feedback loop for agent learning)
+    let resolveResult: Record<string, number> = {};
+    try {
+      const { data: rData, error: rError } = await supabase.rpc("resolve_pending_follow_ups");
+      if (rError) {
+        console.error("[verify-follow-ups] resolve_pending:", rError.message);
+      } else {
+        resolveResult = (rData ?? {}) as Record<string, number>;
+      }
+    } catch (resolveErr) {
+      console.error("[verify-follow-ups] resolve_pending:", resolveErr);
+    }
+
+    const totalProcessed = (result?.processed ?? 0) + (resolveResult?.total_evaluated ?? 0);
+    if (totalProcessed > 0) {
       await supabase.from("pipeline_logs").insert({
         level: "info",
         phase: "follow_up_verification",
-        message: `Follow-ups: ${result.processed} verified (${result.improved} improved, ${result.unchanged} unchanged, ${result.worsened} worsened)`,
-        details: result,
+        message: `Follow-ups: ${result.processed ?? 0} verified + ${resolveResult.resolved ?? 0} resolved (feedback loop)`,
+        details: { verify: result, resolve: resolveResult },
       });
     }
 
-    return NextResponse.json({ success: true, ...result });
+    return NextResponse.json({
+      success: true,
+      verify: result,
+      resolve: resolveResult,
+    });
   } catch (err) {
     console.error("[verify-follow-ups]", err);
     return NextResponse.json({ error: String(err) }, { status: 500 });
