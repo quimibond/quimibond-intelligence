@@ -357,4 +357,80 @@ begin
   raise notice 'T9 PASS: check_missing_reconciliations';
 end $$;
 
+-- ===== Task 16: fictitious SAT adapter extensibility test =====
+-- Validates the spec's key property: a new source can integrate using
+-- only a source_registry INSERT + the 7 RPCs. Zero schema changes.
+do $$
+declare
+  v_run uuid;
+  v_wm text;
+  v_fid uuid;
+  v_rec uuid;
+  v_pending_count int;
+begin
+  -- Step 1: Register the fictitious source (the ONLY "schema-level" change)
+  insert into ingestion.source_registry
+    (source_id, table_name, entity_kind, sla_minutes, priority,
+     owner_agent, reconciliation_window_days, is_active)
+  values
+    ('sat_test_src','odoo_invoices','cfdi',1440,'context',
+     'finance',30,true);
+
+  -- Step 2: start_run
+  select run_id, last_watermark into v_run, v_wm
+  from ingestion_start_run('sat_test_src','odoo_invoices','full','manual');
+  if v_run is null then
+    raise exception 'T16.1: start_run returned null run_id';
+  end if;
+
+  -- Step 3: report_batch
+  perform ingestion_report_batch(v_run, 10, 9, 1);
+
+  -- Step 4: report_failure
+  v_fid := ingestion_report_failure(
+    v_run,
+    'SAT-CFDI-00001',
+    'parse_error',
+    'xml namespace mismatch',
+    '{"uuid":"SAT-CFDI-00001","total":1234.56}'::jsonb
+  );
+  if v_fid is null then
+    raise exception 'T16.2: report_failure returned null';
+  end if;
+
+  -- Step 5: complete_run as partial (1 row failed)
+  perform ingestion_complete_run(v_run, 'partial', null);
+
+  -- Step 6: report_source_count (reconciliation). No missing_ids passed
+  -- so no auto-heal; just records the divergence.
+  v_rec := ingestion_report_source_count(
+    'sat_test_src','odoo_invoices',
+    '2026-04-01 00:00'::timestamptz,
+    '2026-04-12 00:00'::timestamptz,
+    9,
+    null
+  );
+  if v_rec is null then
+    raise exception 'T16.3: report_source_count returned null';
+  end if;
+
+  -- Step 7: fetch_pending_failures should return the one failure we reported
+  select count(*) into v_pending_count
+  from ingestion_fetch_pending_failures('sat_test_src','odoo_invoices',5,10);
+  if v_pending_count <> 1 then
+    raise exception 'T16.4: expected 1 pending failure, got %', v_pending_count;
+  end if;
+
+  -- Step 8: mark_failure_resolved closes it out
+  perform ingestion_mark_failure_resolved(v_fid);
+
+  -- Verify it's resolved
+  if (select status from ingestion.sync_failure where failure_id = v_fid) <> 'resolved' then
+    raise exception 'T16.5: failure was not marked resolved';
+  end if;
+
+  raise notice 'T16 PASS: fictitious SAT adapter contract validated';
+end $$;
+
 rollback;
+
