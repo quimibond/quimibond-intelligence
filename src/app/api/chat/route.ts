@@ -3,6 +3,12 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { callClaude, getVoyageEmbedding, logTokenUsage } from "@/lib/claude";
 import { rateLimitResponse } from "@/lib/rate-limit";
 import { z } from "zod";
+import {
+  detectDirectorMention,
+  buildDirectorChatContext,
+  DIRECTOR_META,
+  type DirectorSlug,
+} from "@/lib/agents/director-chat-context";
 
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
@@ -389,11 +395,58 @@ export async function POST(request: NextRequest) {
 
     const supabase = getServiceClient();
 
-    // Gather RAG context from Supabase
+    // ── Detect @director mention ────────────────────────────────────────
+    // Si el CEO escribe "@financiero ..." cargamos el system_prompt del
+    // director real desde ai_agents y un contexto reducido especifico del
+    // dominio. El stream sigue identico.
+    const mentionedSlug: DirectorSlug | null = detectDirectorMention(message);
+    let directorSystemPrompt: string | null = null;
+    let directorContext = "";
+    if (mentionedSlug) {
+      const [agentRes, ctxText] = await Promise.all([
+        supabase
+          .from("ai_agents")
+          .select("slug, name, system_prompt")
+          .eq("slug", mentionedSlug)
+          .maybeSingle(),
+        buildDirectorChatContext(supabase, mentionedSlug),
+      ]);
+      if (agentRes.data?.system_prompt) {
+        directorSystemPrompt = agentRes.data.system_prompt;
+        directorContext = ctxText;
+      }
+    }
+
+    // Gather RAG context from Supabase (general)
     const context = await gatherContext(message, supabase);
 
-    // Build system prompt with context
-    const systemPrompt = buildSystemPrompt(context);
+    // Build system prompt:
+    //  - Si el CEO menciono @director: usa el system_prompt real del director
+    //    + contexto especifico + bloque corto del RAG general.
+    //  - Si no: genera el prompt generico actual.
+    let systemPrompt: string;
+    if (mentionedSlug && directorSystemPrompt) {
+      const meta = DIRECTOR_META[mentionedSlug];
+      systemPrompt = [
+        directorSystemPrompt,
+        "",
+        "---",
+        "",
+        `Estas respondiendo directamente al CEO Jose Mizrahi en el chat ejecutivo. Tu rol aqui es ${meta.label}. Cuando el CEO te pida un reporte (flujo de caja, reporte de compras, etc) responde con un markdown formal con secciones: Resumen Ejecutivo / Datos clave / Recomendaciones / Proximos pasos. Usa MXN, nombres de responsables reales y referencias de producto/factura concretas del contexto. Si te pide datos que no estan en tu contexto, dilo explicitamente.`,
+        "",
+        `## Datos de ${meta.department} (en tiempo real)`,
+        "",
+        directorContext,
+        "",
+        `## Contexto transversal del CEO (briefing + alertas globales)`,
+        "",
+        context.briefing ? `Briefing: ${context.briefing}` : "",
+        context.activeInsights ? `\nInsights activos:\n${context.activeInsights}` : "",
+        context.anomalies ? `\nAnomalias contables:\n${context.anomalies}` : "",
+      ].filter(Boolean).join("\n");
+    } else {
+      systemPrompt = buildSystemPrompt(context);
+    }
 
     // Build conversation messages (limit to last 20 for context window)
     const conversationMessages = (history ?? [])
@@ -449,6 +502,15 @@ export async function POST(request: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        // Primer evento: anuncia que director respondio (si hubo mention).
+        // La UI lo usa para pintar el badge "Director Financiero".
+        if (mentionedSlug) {
+          const meta = DIRECTOR_META[mentionedSlug];
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ type: "director", slug: mentionedSlug, label: meta.label })}\n\n`)
+          );
+        }
+
         const reader = claudeResponse.body?.getReader();
         if (!reader) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ type: "error", error: "No response body" })}\n\n`));

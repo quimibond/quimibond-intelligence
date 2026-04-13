@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User } from "lucide-react";
+import { Bot, Send, Sparkles, ThumbsDown, ThumbsUp, User, Briefcase } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { supabase } from "@/lib/supabase";
 import { PageHeader } from "@/components/shared/page-header";
@@ -9,22 +9,29 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Badge } from "@/components/ui/badge";
+import { DIRECTOR_META, DIRECTOR_SLUGS, type DirectorSlug } from "@/lib/agents/director-chat-context";
 
 interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   rated?: "positive" | "negative" | null;
+  /** Slug del director que respondio (solo assistant). */
+  directorSlug?: DirectorSlug;
+  /** Label para mostrar (ej: "Director Financiero"). */
+  directorLabel?: string;
 }
 
 const WELCOME_MESSAGE: ChatMessage = {
   role: "assistant",
-  content: "Hola! Preguntame sobre cualquier empresa, cliente, proveedor o situacion del negocio.",
+  content: "Hola! Preguntame sobre cualquier empresa, cliente, proveedor o situacion del negocio. Puedes mencionar a un director con @financiero, @compras, @comercial, @costos, @operaciones, @riesgo o @equipo para pedirle un reporte especifico.",
 };
 
 const FALLBACK_QUESTIONS = [
   "Cuales son las alertas criticas de hoy?",
   "Resume el ultimo briefing",
-  "Dame el estado de la cartera vencida",
+  "@financiero flujo de efectivo proyectado a 60 dias",
+  "@compras reporte de compras del mes",
 ];
 
 export default function ChatPage() {
@@ -106,6 +113,8 @@ export default function ChatPage() {
           const reader = res.body?.getReader();
           const decoder = new TextDecoder();
           let accumulated = "";
+          let detectedSlug: DirectorSlug | undefined;
+          let detectedLabel: string | undefined;
 
           if (reader) {
             let buffer = "";
@@ -122,12 +131,31 @@ export default function ChatPage() {
                   if (!line.startsWith("data: ")) continue;
                   try {
                     const event = JSON.parse(line.slice(6));
-                    if (event.type === "delta" && event.text) {
+                    if (event.type === "director" && event.slug) {
+                      // Primer evento antes del texto: pinta el badge del director.
+                      detectedSlug = event.slug as DirectorSlug;
+                      detectedLabel = event.label as string;
+                      setMessages((prev) => {
+                        const copy = [...prev];
+                        copy[copy.length - 1] = {
+                          role: "assistant",
+                          content: "",
+                          directorSlug: detectedSlug,
+                          directorLabel: detectedLabel,
+                        };
+                        return copy;
+                      });
+                    } else if (event.type === "delta" && event.text) {
                       accumulated += event.text;
                       const text = accumulated;
                       setMessages((prev) => {
                         const copy = [...prev];
-                        copy[copy.length - 1] = { role: "assistant", content: text };
+                        copy[copy.length - 1] = {
+                          role: "assistant",
+                          content: text,
+                          directorSlug: detectedSlug,
+                          directorLabel: detectedLabel,
+                        };
                         return copy;
                       });
                     }
@@ -260,6 +288,12 @@ export default function ChatPage() {
                   )}
                 </div>
                 <div className="space-y-1">
+                  {msg.role === "assistant" && msg.directorLabel && (
+                    <Badge variant="secondary" className="text-[10px] gap-1">
+                      <Briefcase className="h-3 w-3" />
+                      {msg.directorLabel}
+                    </Badge>
+                  )}
                   <div
                     className={cn(
                       "rounded-lg px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap",
@@ -362,10 +396,31 @@ export default function ChatPage() {
 
         {/* Input area */}
         <div className="border-t p-3 md:p-4 safe-area-bottom">
+          {/* Director chips — insertan el @mention en el input */}
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {DIRECTOR_SLUGS.map(slug => {
+              const meta = DIRECTOR_META[slug];
+              return (
+                <button
+                  key={slug}
+                  type="button"
+                  onClick={() => {
+                    const prefix = `@${slug} `;
+                    setInput(prev => prev.startsWith("@") ? prefix + prev.replace(/^@\w+\s*/, "") : prefix + prev);
+                    inputRef.current?.focus();
+                  }}
+                  className="text-[10px] rounded-full border bg-background px-2 py-1 hover:bg-muted transition-colors"
+                  title={meta.sampleQuestions[0]}
+                >
+                  @{slug}
+                </button>
+              );
+            })}
+          </div>
           <div className="flex items-center gap-2">
             <Input
               ref={inputRef}
-              placeholder="Pregunta algo..."
+              placeholder="Pregunta algo o menciona un director: @financiero, @compras, @comercial..."
               aria-label="Mensaje para el asistente"
               value={input}
               onChange={(e) => setInput(e.target.value)}
@@ -383,7 +438,7 @@ export default function ChatPage() {
             </Button>
           </div>
           <p className="mt-1.5 text-[10px] text-muted-foreground">
-            Conectado a Claude con contexto RAG de tu base de datos Supabase
+            Conectado a Claude con contexto RAG de Supabase. Los directores usan sus prompts y datos especificos.
           </p>
         </div>
       </Card>
