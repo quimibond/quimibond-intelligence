@@ -1,162 +1,205 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { toMxn } from "@/lib/formatters";
-
-export interface BankBalance {
-  name: string | null;
-  currency: string | null;
-  current_balance: number | null;
-  company_name: string | null;
-  journal_type: string | null;
-}
-
-export async function getBankBalances(): Promise<BankBalance[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("odoo_bank_balances")
-    .select("name, currency, current_balance, company_name, journal_type")
-    .order("current_balance", { ascending: false });
-  return (data ?? []) as BankBalance[];
-}
 
 /**
- * Proyección de cobranza por mes.
- * La MV `cashflow_projection` está pre-agregada. Usamos `flow_type='receivable_by_month'`
- * que ya trae un row por mes con expected_amount (con probabilidad aplicada)
- * y amount_residual (bruto sin probabilidad).
+ * Finance queries v2 — usa las VIEWS canónicas del backend.
+ * Todas las vistas ya están normalizadas a MXN, no necesitan `toMxn()`.
+ *
+ * Fuentes:
+ * - `cfo_dashboard` — snapshot ejecutivo (1 row)
+ * - `financial_runway` — runway en días + net position 30d
+ * - `working_capital` — ratios de liquidez + capital de trabajo
+ * - `pl_estado_resultados` — P&L mensual por periodo
+ * - `cash_position` — detalle de saldos bancarios
  */
-export interface CashflowPoint {
-  month: string; // YYYY-MM
-  expectedAmount: number; // con probabilidad de cobro aplicada
-  residualAmount: number; // bruto por cobrar
-  collectionProbability: number | null;
+
+/** Snapshot ejecutivo del CFO (view: cfo_dashboard) */
+export interface CfoSnapshot {
+  efectivoDisponible: number;
+  deudaTarjetas: number;
+  posicionNeta: number;
+  cuentasPorCobrar: number;
+  cuentasPorPagar: number;
+  carteraVencida: number;
+  ventas30d: number;
+  cobros30d: number;
+  pagosProv30d: number;
+  clientesMorosos: number;
 }
 
-export async function getCashflowProjection(
-  monthsAhead = 6
-): Promise<CashflowPoint[]> {
+export async function getCfoSnapshot(): Promise<CfoSnapshot | null> {
   const sb = getServiceClient();
-  const today = new Date().toISOString().slice(0, 10);
-  const { data } = await sb
-    .from("cashflow_projection")
-    .select(
-      "projected_date, expected_amount, amount_residual, collection_probability"
-    )
-    .eq("flow_type", "receivable_by_month")
-    .gte("projected_date", today)
-    .order("projected_date", { ascending: true })
-    .limit(monthsAhead);
-
-  const rows = (data ?? []) as Array<{
-    projected_date: string | null;
-    expected_amount: number | null;
-    amount_residual: number | null;
-    collection_probability: number | null;
-  }>;
-
-  return rows
-    .filter((r) => r.projected_date)
-    .map((r) => ({
-      month: (r.projected_date as string).slice(0, 7),
-      expectedAmount: Number(r.expected_amount) || 0,
-      residualAmount: Number(r.amount_residual) || 0,
-      collectionProbability: r.collection_probability
-        ? Number(r.collection_probability)
-        : null,
-    }));
-}
-
-/**
- * Aging buckets del AR (`receivable_bucket`).
- * 4 rows pre-computados: 0-30, 31-60, 61-90, 90+.
- */
-export interface ReceivableBucket {
-  bucket: string;
-  expectedAmount: number;
-  residualAmount: number;
-  collectionProbability: number | null;
-}
-
-export async function getReceivableBuckets(): Promise<ReceivableBucket[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("cashflow_projection")
-    .select(
-      "bucket, expected_amount, amount_residual, collection_probability"
-    )
-    .eq("flow_type", "receivable_bucket");
-  const rows = (data ?? []) as Array<{
-    bucket: string | null;
-    expected_amount: number | null;
-    amount_residual: number | null;
-    collection_probability: number | null;
-  }>;
-  // Orden fijo para consistencia visual
-  const order = ["0-30 dias", "31-60 dias", "61-90 dias", "90+ dias"];
-  return rows
-    .filter((r) => r.bucket)
-    .sort(
-      (a, b) => order.indexOf(a.bucket ?? "") - order.indexOf(b.bucket ?? "")
-    )
-    .map((r) => ({
-      bucket: r.bucket ?? "—",
-      expectedAmount: Number(r.expected_amount) || 0,
-      residualAmount: Number(r.amount_residual) || 0,
-      collectionProbability: r.collection_probability
-        ? Number(r.collection_probability)
-        : null,
-    }));
-}
-
-export interface FinanceKpis {
-  cashMxn: number;
-  cashUsd: number;
-  arTotal: number;
-  apTotal: number;
-  netPosition: number;
-}
-
-export async function getFinanceKpis(): Promise<FinanceKpis> {
-  const sb = getServiceClient();
-  const [bank, ar, ap] = await Promise.all([
-    sb.from("odoo_bank_balances").select("current_balance, currency"),
-    sb
-      .from("odoo_invoices")
-      .select("amount_residual, currency")
-      .eq("move_type", "out_invoice")
-      .in("payment_state", ["not_paid", "partial"]),
-    sb
-      .from("odoo_invoices")
-      .select("amount_residual, currency")
-      .eq("move_type", "in_invoice")
-      .in("payment_state", ["not_paid", "partial"]),
-  ]);
-
-  const bankRows = (bank.data ?? []) as Array<{
-    current_balance: number | null;
-    currency: string | null;
-  }>;
-  const cashMxn = bankRows
-    .filter((r) => r.currency === "MXN")
-    .reduce((a, r) => a + (Number(r.current_balance) || 0), 0);
-  const cashUsd = bankRows
-    .filter((r) => r.currency === "USD")
-    .reduce((a, r) => a + (Number(r.current_balance) || 0), 0);
-
-  const arTotal = ((ar.data ?? []) as Array<{
-    amount_residual: number | null;
-    currency: string | null;
-  }>).reduce((a, r) => a + toMxn(r.amount_residual, r.currency), 0);
-  const apTotal = ((ap.data ?? []) as Array<{
-    amount_residual: number | null;
-    currency: string | null;
-  }>).reduce((a, r) => a + toMxn(r.amount_residual, r.currency), 0);
-
-  return {
-    cashMxn,
-    cashUsd,
-    arTotal,
-    apTotal,
-    netPosition: cashMxn + arTotal - apTotal,
+  const { data } = await sb.from("cfo_dashboard").select("*").maybeSingle();
+  if (!data) return null;
+  const d = data as {
+    efectivo_disponible: number | null;
+    deuda_tarjetas: number | null;
+    posicion_neta: number | null;
+    cuentas_por_cobrar: number | null;
+    cuentas_por_pagar: number | null;
+    cartera_vencida: number | null;
+    ventas_30d: number | null;
+    cobros_30d: number | null;
+    pagos_prov_30d: number | null;
+    clientes_morosos: number | null;
   };
+  return {
+    efectivoDisponible: Number(d.efectivo_disponible) || 0,
+    deudaTarjetas: Number(d.deuda_tarjetas) || 0,
+    posicionNeta: Number(d.posicion_neta) || 0,
+    cuentasPorCobrar: Number(d.cuentas_por_cobrar) || 0,
+    cuentasPorPagar: Number(d.cuentas_por_pagar) || 0,
+    carteraVencida: Number(d.cartera_vencida) || 0,
+    ventas30d: Number(d.ventas_30d) || 0,
+    cobros30d: Number(d.cobros_30d) || 0,
+    pagosProv30d: Number(d.pagos_prov_30d) || 0,
+    clientesMorosos: Number(d.clientes_morosos) || 0,
+  };
+}
+
+/** Runway + net position 30d (view: financial_runway) */
+export interface FinancialRunway {
+  cashMxn: number;
+  expectedInMxn: number;
+  dueOutMxn: number;
+  netPosition30d: number;
+  burnRateDaily: number;
+  runwayDaysNet: number;
+  runwayDaysCashOnly: number;
+  computedAt: string | null;
+}
+
+export async function getFinancialRunway(): Promise<FinancialRunway | null> {
+  const sb = getServiceClient();
+  const { data } = await sb.from("financial_runway").select("*").maybeSingle();
+  if (!data) return null;
+  const d = data as {
+    cash_mxn: number | null;
+    expected_in_mxn: number | null;
+    due_out_mxn: number | null;
+    net_position_30d: number | null;
+    burn_rate_daily: number | null;
+    runway_days_net: number | null;
+    runway_days_cash_only: number | null;
+    computed_at: string | null;
+  };
+  return {
+    cashMxn: Number(d.cash_mxn) || 0,
+    expectedInMxn: Number(d.expected_in_mxn) || 0,
+    dueOutMxn: Number(d.due_out_mxn) || 0,
+    netPosition30d: Number(d.net_position_30d) || 0,
+    burnRateDaily: Number(d.burn_rate_daily) || 0,
+    runwayDaysNet: Number(d.runway_days_net) || 0,
+    runwayDaysCashOnly: Number(d.runway_days_cash_only) || 0,
+    computedAt: d.computed_at,
+  };
+}
+
+/** Capital de trabajo (view: working_capital) */
+export interface WorkingCapital {
+  efectivoDisponible: number;
+  deudaTarjetas: number;
+  efectivoNeto: number;
+  cuentasPorCobrar: number;
+  cuentasPorPagar: number;
+  capitalDeTrabajo: number;
+  ratioLiquidez: number;
+  ratioPruebaAcida: number;
+}
+
+export async function getWorkingCapital(): Promise<WorkingCapital | null> {
+  const sb = getServiceClient();
+  const { data } = await sb.from("working_capital").select("*").maybeSingle();
+  if (!data) return null;
+  const d = data as {
+    efectivo_disponible: number | null;
+    deuda_tarjetas: number | null;
+    efectivo_neto: number | null;
+    cuentas_por_cobrar: number | null;
+    cuentas_por_pagar: number | null;
+    capital_de_trabajo: number | null;
+    ratio_liquidez: number | null;
+    ratio_prueba_acida: number | null;
+  };
+  return {
+    efectivoDisponible: Number(d.efectivo_disponible) || 0,
+    deudaTarjetas: Number(d.deuda_tarjetas) || 0,
+    efectivoNeto: Number(d.efectivo_neto) || 0,
+    cuentasPorCobrar: Number(d.cuentas_por_cobrar) || 0,
+    cuentasPorPagar: Number(d.cuentas_por_pagar) || 0,
+    capitalDeTrabajo: Number(d.capital_de_trabajo) || 0,
+    ratioLiquidez: Number(d.ratio_liquidez) || 0,
+    ratioPruebaAcida: Number(d.ratio_prueba_acida) || 0,
+  };
+}
+
+/** Saldo bancario (view: cash_position) */
+export interface BankBalance {
+  banco: string | null;
+  tipo: string | null;
+  moneda: string | null;
+  cuenta: string | null;
+  saldo: number;
+}
+
+export async function getCashPosition(): Promise<BankBalance[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("cash_position")
+    .select("banco, tipo, moneda, cuenta, saldo")
+    .order("saldo", { ascending: false });
+  return ((data ?? []) as Array<
+    Omit<BankBalance, "saldo"> & { saldo: number | null }
+  >).map((r) => ({
+    ...r,
+    saldo: Number(r.saldo) || 0,
+  }));
+}
+
+/** Punto P&L por mes (view: pl_estado_resultados) */
+export interface PlPoint {
+  period: string;
+  ingresos: number;
+  costoVentas: number;
+  gastosOperativos: number;
+  utilidadBruta: number;
+  utilidadOperativa: number;
+  otrosNeto: number;
+}
+
+export async function getPlHistory(months = 12): Promise<PlPoint[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("pl_estado_resultados")
+    .select("*")
+    .order("period", { ascending: false })
+    .limit(months + 5); // buffer para filtrar datos corruptos
+  const rows = (data ?? []) as Array<{
+    period: string | null;
+    ingresos: number | null;
+    costo_ventas: number | null;
+    gastos_operativos: number | null;
+    utilidad_bruta: number | null;
+    utilidad_operativa: number | null;
+    otros_neto: number | null;
+  }>;
+  // filtra rows con periods inválidos (ej '2202-02') y los sin ingresos
+  const valid = rows.filter((r) => {
+    if (!r.period) return false;
+    const [y] = r.period.split("-");
+    const year = Number(y);
+    return year >= 2020 && year <= 2030;
+  });
+  return valid
+    .slice(0, months)
+    .map((r) => ({
+      period: r.period as string,
+      ingresos: Number(r.ingresos) || 0,
+      costoVentas: Number(r.costo_ventas) || 0,
+      gastosOperativos: Number(r.gastos_operativos) || 0,
+      utilidadBruta: Number(r.utilidad_bruta) || 0,
+      utilidadOperativa: Number(r.utilidad_operativa) || 0,
+      otrosNeto: Number(r.otros_neto) || 0,
+    }))
+    .reverse(); // orden cronológico ascendente
 }

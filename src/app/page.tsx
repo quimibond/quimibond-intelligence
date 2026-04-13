@@ -4,7 +4,9 @@ import {
   AlertTriangle,
   Banknote,
   ChevronRight,
+  Flame,
   Inbox,
+  ShoppingCart,
   TrendingUp,
   Truck,
   Users,
@@ -25,16 +27,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { getDashboardKpis, getRevenueTrend } from "@/lib/queries/dashboard";
 import { getInsights } from "@/lib/queries/insights";
-import { formatRelative } from "@/lib/formatters";
+import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 
 import { RevenueTrendChart } from "./_components/revenue-trend-chart";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
-
-export const metadata = {
-  title: "CEO Dashboard",
-};
+export const metadata = { title: "CEO Dashboard" };
 
 function greet() {
   const h = new Date().getHours();
@@ -46,11 +45,16 @@ export default function CeoDashboardPage() {
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
 
+      {/* Runway alert — la señal más crítica */}
+      <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
+        <RunwayBanner />
+      </Suspense>
+
       <Suspense fallback={<KpisSkeleton />}>
         <Kpis />
       </Suspense>
 
-      {/* Spec: "lista de insights urgentes abajo" — prioridad mobile */}
+      {/* Spec: "lista de insights urgentes abajo" */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
@@ -72,7 +76,7 @@ export default function CeoDashboardPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-base">Revenue últimos 12 meses</CardTitle>
+            <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
           </CardHeader>
           <CardContent>
             <Suspense
@@ -85,7 +89,7 @@ export default function CeoDashboardPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Top clientes en riesgo</CardTitle>
+            <CardTitle className="text-base">Clientes en riesgo</CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
             <Suspense fallback={<InsightsSkeleton rows={5} />}>
@@ -95,6 +99,48 @@ export default function CeoDashboardPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Runway banner — lo primero que ve el CEO
+// ──────────────────────────────────────────────────────────────────────────
+async function RunwayBanner() {
+  const k = await getDashboardKpis();
+  const tone =
+    k.runwayDias <= 7 ? "danger" : k.runwayDias <= 30 ? "warning" : "success";
+  const toneClass = {
+    danger: "border-l-danger bg-danger/10",
+    warning: "border-l-warning bg-warning/10",
+    success: "border-l-success bg-success/10",
+  }[tone];
+  const iconColor = {
+    danger: "text-danger",
+    warning: "text-warning",
+    success: "text-success",
+  }[tone];
+
+  return (
+    <Link href="/finanzas" className="block">
+      <Card className={`gap-2 border-l-4 transition-colors active:bg-accent/60 ${toneClass}`}>
+        <div className="flex items-start gap-3 px-4 py-3">
+          <Flame className={`h-6 w-6 shrink-0 ${iconColor}`} aria-hidden />
+          <div className="flex-1 min-w-0">
+            <div className="flex items-baseline gap-2">
+              <span className={`text-3xl font-bold tabular-nums ${iconColor}`}>
+                {k.runwayDias}
+              </span>
+              <span className="text-sm font-medium">días de runway</span>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Burn diario <Currency amount={k.burnDiario} compact /> · Efectivo
+              neto <Currency amount={k.efectivoNeto} compact colorBySign />
+            </p>
+          </div>
+          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+        </div>
+      </Card>
+    </Link>
   );
 }
 
@@ -119,84 +165,84 @@ function InsightsSkeleton({ rows = 4 }: { rows?: number }) {
 }
 
 async function Kpis() {
-  const kpis = await getDashboardKpis();
+  const k = await getDashboardKpis();
 
   return (
     <>
       <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 6 }}>
         <KpiCard
-          title="Revenue del mes"
-          value={kpis.revenueMonth}
+          title="Ingresos del mes"
+          value={k.ingresosMes}
           format="currency"
           compact
           icon={TrendingUp}
-          trend={{ value: kpis.revenueTrendPct, good: "up" }}
+          trend={{ value: k.ingresosTrendPct, good: "up" }}
           subtitle="vs mes anterior"
-          tone={kpis.revenueTrendPct >= 0 ? "success" : "warning"}
+          tone={k.ingresosTrendPct >= 0 ? "success" : "warning"}
           href="/ventas"
         />
         <KpiCard
           title="Cartera vencida"
-          value={kpis.overdueTotalMxn}
+          value={k.carteraVencida}
           format="currency"
           compact
           icon={AlertTriangle}
-          subtitle={`${kpis.overdueInvoiceCount} facturas`}
+          subtitle={`${k.clientesMorosos} clientes morosos`}
           tone="danger"
           href="/cobranza"
         />
         <KpiCard
-          title="Cash position"
-          value={kpis.cashPositionMxn}
+          title="Efectivo neto"
+          value={k.efectivoNeto}
           format="currency"
           compact
           icon={Banknote}
-          subtitle="MXN en bancos"
-          tone="info"
+          subtitle="efectivo − tarjetas"
+          tone={k.efectivoNeto >= 0 ? "success" : "danger"}
           href="/finanzas"
         />
         <KpiCard
+          title="Ventas 30d"
+          value={k.ventas30d}
+          format="currency"
+          compact
+          icon={ShoppingCart}
+          subtitle={`Cobrado ${formatCurrencyMXN(k.cobros30d, { compact: true })}`}
+          href="/ventas"
+        />
+        <KpiCard
           title="Insights nuevos"
-          value={kpis.insightsNew}
+          value={k.insightsNew}
           format="number"
           icon={Inbox}
           subtitle={
-            kpis.insightsCritical > 0
-              ? `${kpis.insightsCritical} críticos`
+            k.insightsCritical > 0
+              ? `${k.insightsCritical} críticos`
               : "sin críticos"
           }
-          tone={kpis.insightsCritical > 0 ? "danger" : "default"}
+          tone={k.insightsCritical > 0 ? "danger" : "default"}
           href="/inbox"
         />
         <KpiCard
           title="OTD rate"
-          value={kpis.otdPct}
+          value={k.otdPct}
           format="percent"
           icon={Truck}
           subtitle="última semana"
           tone={
-            kpis.otdPct == null
+            k.otdPct == null
               ? "default"
-              : kpis.otdPct >= 90
+              : k.otdPct >= 90
                 ? "success"
-                : kpis.otdPct >= 75
+                : k.otdPct >= 75
                   ? "warning"
                   : "danger"
           }
           href="/operaciones"
         />
-        <KpiCard
-          title="Clientes en riesgo"
-          value={kpis.atRiskCount}
-          format="number"
-          icon={Users}
-          subtitle="churn > 70, LTV > $100K"
-          tone={kpis.atRiskCount > 0 ? "warning" : "default"}
-          href="/companies"
-        />
       </StatGrid>
       <p className="text-[11px] text-muted-foreground">
-        Actualizado {formatRelative(kpis.lastUpdated)}
+        Actualizado {formatRelative(k.lastUpdated)}
       </p>
     </>
   );
@@ -208,8 +254,8 @@ async function RevenueChartSection() {
     return (
       <EmptyState
         icon={TrendingUp}
-        title="Sin datos de revenue"
-        description="No hay facturas registradas en los últimos 12 meses."
+        title="Sin datos de ingresos"
+        description="No hay periodos válidos en pl_estado_resultados."
         compact
       />
     );
@@ -217,13 +263,8 @@ async function RevenueChartSection() {
   return <RevenueTrendChart data={data} />;
 }
 
-/**
- * Lista de insights urgentes (state=new, severity=critical o high).
- * WhatsApp-like list — tap para ir al detalle.
- */
 async function UrgentInsights() {
-  const insights = await getInsights({ state: "new", limit: 6 });
-  // Filter client-side to prioritize critical + high
+  const insights = await getInsights({ state: "new", limit: 10 });
   const urgent = insights
     .filter((i) => i.severity === "critical" || i.severity === "high")
     .slice(0, 5);
@@ -242,11 +283,7 @@ async function UrgentInsights() {
   return (
     <div className="flex flex-col gap-2">
       {urgent.map((i) => (
-        <Link
-          key={i.id}
-          href={`/inbox/insight/${i.id}`}
-          className="block"
-        >
+        <Link key={i.id} href={`/inbox/insight/${i.id}`} className="block">
           <Card className="gap-1 py-3 transition-colors active:bg-accent/50">
             <div className="flex items-start justify-between gap-2 px-4">
               <div className="min-w-0 flex-1">
@@ -267,12 +304,12 @@ async function UrgentInsights() {
                   </p>
                 )}
                 <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                  {i.company_id && i.company_name ? (
+                  {i.company_name && (
                     <span className="truncate">{i.company_name}</span>
-                  ) : null}
+                  )}
                   {i.created_at && (
                     <>
-                      {i.company_id && i.company_name ? <span>·</span> : null}
+                      {i.company_name && <span>·</span>}
                       <DateDisplay date={i.created_at} relative />
                     </>
                   )}
@@ -291,20 +328,20 @@ async function UrgentInsights() {
 }
 
 async function AtRiskClients() {
-  const { topAtRiskClients } = await getDashboardKpis();
-  if (topAtRiskClients.length === 0) {
+  const k = await getDashboardKpis();
+  if (k.topAtRiskClients.length === 0) {
     return (
       <EmptyState
         icon={Users}
         title="Sin clientes en riesgo"
-        description="Todos los clientes tienen churn score aceptable."
+        description={`${k.atRiskCount} clientes con churn > 70 y LTV > 100K`}
         compact
       />
     );
   }
   return (
     <div className="flex flex-col">
-      {topAtRiskClients.map((c, i) => (
+      {k.topAtRiskClients.map((c, i) => (
         <div
           key={`${c.company_id}-${i}`}
           className="space-y-1 border-b border-border/60 py-2 last:border-b-0"
@@ -328,6 +365,15 @@ async function AtRiskClients() {
           )}
         </div>
       ))}
+      {k.atRiskCount > k.topAtRiskClients.length && (
+        <Link
+          href="/companies"
+          className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-primary"
+        >
+          Ver los {k.atRiskCount} clientes en riesgo
+          <ChevronRight className="h-3 w-3" />
+        </Link>
+      )}
     </div>
   );
 }

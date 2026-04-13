@@ -1,10 +1,14 @@
 import { Suspense } from "react";
 import {
+  AlertTriangle,
   ArrowDownCircle,
   ArrowUpCircle,
   Banknote,
-  Landmark,
+  CreditCard,
+  Flame,
   Scale,
+  TrendingUp,
+  Wallet,
 } from "lucide-react";
 
 import {
@@ -14,146 +18,367 @@ import {
   DataTable,
   MobileCard,
   Currency,
+  MetricRow,
   EmptyState,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+
 import {
-  getBankBalances,
-  getCashflowProjection,
-  getFinanceKpis,
+  getCfoSnapshot,
+  getFinancialRunway,
+  getWorkingCapital,
+  getCashPosition,
+  getPlHistory,
   type BankBalance,
-  type CashflowPoint,
+  type PlPoint,
 } from "@/lib/queries/finance";
+import { formatRelative } from "@/lib/formatters";
+
+import { PlHistoryChart } from "./_components/pl-history-chart";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export const metadata = { title: "Finanzas" };
+
+const monthLabels = [
+  "ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic",
+];
+function formatPeriod(period: string) {
+  const [y, m] = period.split("-");
+  const idx = Number(m) - 1;
+  return `${monthLabels[idx] ?? m} ${y?.slice(2) ?? ""}`;
+}
 
 export default function FinanzasPage() {
   return (
-    <div className="space-y-4 pb-24 md:pb-6">
+    <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Finanzas"
-        subtitle="Caja, AR/AP y proyección de cashflow"
+        subtitle="Posición ejecutiva, runway y cashflow"
       />
 
+      {/* Runway alert — lo más crítico para el CEO */}
+      <Suspense fallback={<Skeleton className="h-24 rounded-xl" />}>
+        <RunwaySection />
+      </Suspense>
+
+      {/* KPIs del CFO dashboard */}
       <Suspense
         fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 5, desktop: 5 }}>
-            {Array.from({ length: 5 }).map((_, i) => (
+          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+            {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-[96px] rounded-xl" />
             ))}
           </StatGrid>
         }
       >
-        <FinanceKpisSection />
+        <CfoKpisSection />
       </Suspense>
 
+      {/* Flujo 30 días + working capital */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Bancos</CardTitle>
+            <CardTitle className="text-base">Flujo 30 días</CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
-            <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
-              <BanksTable />
+            <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+              <FlowSection />
             </Suspense>
           </CardContent>
         </Card>
-
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Proyección de cashflow</CardTitle>
+            <CardTitle className="text-base">Capital de trabajo</CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
-            <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
-              <CashflowTable />
+            <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+              <WorkingCapitalSection />
             </Suspense>
           </CardContent>
         </Card>
       </div>
+
+      {/* P&L chart */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">P&amp;L últimos 12 meses</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Suspense
+            fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
+          >
+            <PlHistorySection />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      {/* Cuentas bancarias */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Posición de caja</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+            <BanksSection />
+          </Suspense>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-async function FinanceKpisSection() {
-  const k = await getFinanceKpis();
+// ──────────────────────────────────────────────────────────────────────────
+// Runway alert — critical CEO-facing band
+// ──────────────────────────────────────────────────────────────────────────
+async function RunwaySection() {
+  const runway = await getFinancialRunway();
+  if (!runway) return null;
+
+  const tone =
+    runway.runwayDaysNet <= 7
+      ? "danger"
+      : runway.runwayDaysNet <= 30
+        ? "warning"
+        : "success";
+
+  const toneClass = {
+    danger: "border-danger bg-danger/10",
+    warning: "border-warning bg-warning/10",
+    success: "border-success bg-success/10",
+  }[tone];
+
+  const iconColor = {
+    danger: "text-danger",
+    warning: "text-warning",
+    success: "text-success",
+  }[tone];
+
   return (
-    <StatGrid columns={{ mobile: 2, tablet: 5, desktop: 5 }}>
+    <Card className={`gap-2 border-l-4 ${toneClass}`}>
+      <div className="flex items-start gap-3 px-4 py-3">
+        <Flame className={`h-5 w-5 shrink-0 ${iconColor}`} aria-hidden />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-baseline gap-2">
+            <span className={`text-2xl font-bold tabular-nums ${iconColor}`}>
+              {runway.runwayDaysNet}
+            </span>
+            <span className="text-sm font-medium">días de runway</span>
+          </div>
+          <p className="mt-0.5 text-xs text-muted-foreground">
+            Burn diario{" "}
+            <Currency amount={runway.burnRateDaily} compact /> · Posición neta
+            30d{" "}
+            <Currency amount={runway.netPosition30d} compact colorBySign />
+          </p>
+          {runway.computedAt && (
+            <p className="text-[10px] text-muted-foreground">
+              Actualizado {formatRelative(runway.computedAt)}
+            </p>
+          )}
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// CFO KPI grid
+// ──────────────────────────────────────────────────────────────────────────
+async function CfoKpisSection() {
+  const cfo = await getCfoSnapshot();
+  if (!cfo) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Sin datos del CFO dashboard"
+        description="La vista cfo_dashboard no devolvió resultados."
+      />
+    );
+  }
+
+  return (
+    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
-        title="Cash MXN"
-        value={k.cashMxn}
+        title="Efectivo disponible"
+        value={cfo.efectivoDisponible}
         format="currency"
         compact
-        icon={Banknote}
-        tone="info"
+        icon={Wallet}
+        subtitle="en cuentas"
+        tone={cfo.efectivoDisponible >= 0 ? "success" : "danger"}
       />
       <KpiCard
-        title="Cash USD"
-        value={k.cashUsd}
+        title="Deuda tarjetas"
+        value={cfo.deudaTarjetas}
         format="currency"
         compact
-        icon={Landmark}
-        subtitle="USD"
-      />
-      <KpiCard
-        title="AR"
-        value={k.arTotal}
-        format="currency"
-        compact
-        icon={ArrowUpCircle}
-        subtitle="por cobrar"
-      />
-      <KpiCard
-        title="AP"
-        value={k.apTotal}
-        format="currency"
-        compact
-        icon={ArrowDownCircle}
-        subtitle="por pagar"
+        icon={CreditCard}
+        tone={cfo.deudaTarjetas > 0 ? "warning" : "default"}
       />
       <KpiCard
         title="Posición neta"
-        value={k.netPosition}
+        value={cfo.posicionNeta}
         format="currency"
         compact
         icon={Scale}
-        tone={k.netPosition >= 0 ? "success" : "danger"}
+        subtitle="efectivo − tarjetas"
+        tone={cfo.posicionNeta >= 0 ? "success" : "danger"}
+      />
+      <KpiCard
+        title="Cartera vencida"
+        value={cfo.carteraVencida}
+        format="currency"
+        compact
+        icon={AlertTriangle}
+        subtitle={`${cfo.clientesMorosos} clientes morosos`}
+        tone="danger"
+        href="/cobranza"
       />
     </StatGrid>
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// 30-day flow
+// ──────────────────────────────────────────────────────────────────────────
+async function FlowSection() {
+  const cfo = await getCfoSnapshot();
+  if (!cfo) return null;
+  const neto = cfo.ventas30d - cfo.pagosProv30d;
+  return (
+    <div className="space-y-1">
+      <MetricRow
+        label="Ventas 30d"
+        value={cfo.ventas30d}
+        format="currency"
+        compact
+      />
+      <MetricRow
+        label="Cobros 30d"
+        value={cfo.cobros30d}
+        format="currency"
+        compact
+      />
+      <MetricRow
+        label="Pagos a proveedores 30d"
+        value={cfo.pagosProv30d}
+        format="currency"
+        compact
+      />
+      <MetricRow
+        label="Cuentas por cobrar"
+        value={cfo.cuentasPorCobrar}
+        format="currency"
+        compact
+      />
+      <MetricRow
+        label="Cuentas por pagar"
+        value={cfo.cuentasPorPagar}
+        format="currency"
+        compact
+      />
+      <div className="mt-2 flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm font-semibold">
+        <span>Diferencia 30d</span>
+        <Currency amount={neto} compact colorBySign />
+      </div>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Working capital + liquidity ratios
+// ──────────────────────────────────────────────────────────────────────────
+async function WorkingCapitalSection() {
+  const wc = await getWorkingCapital();
+  if (!wc) return null;
+  return (
+    <div className="space-y-1">
+      <MetricRow
+        label="Capital de trabajo"
+        value={wc.capitalDeTrabajo}
+        format="currency"
+        compact
+      />
+      <MetricRow
+        label="Ratio de liquidez"
+        value={wc.ratioLiquidez}
+        format="number"
+        hint="activo corriente ÷ pasivo corriente"
+      />
+      <MetricRow
+        label="Prueba ácida"
+        value={wc.ratioPruebaAcida}
+        format="number"
+        alert={wc.ratioPruebaAcida < 1}
+        hint="sin inventarios"
+      />
+      <MetricRow
+        label="Efectivo neto"
+        value={wc.efectivoNeto}
+        format="currency"
+        compact
+        alert={wc.efectivoNeto < 0}
+      />
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// P&L history chart
+// ──────────────────────────────────────────────────────────────────────────
+async function PlHistorySection() {
+  const rows = await getPlHistory(12);
+  if (!rows || rows.length === 0) {
+    return (
+      <EmptyState
+        icon={TrendingUp}
+        title="Sin datos de P&L"
+        description="La vista pl_estado_resultados no tiene datos recientes."
+        compact
+      />
+    );
+  }
+  return <PlHistoryChart data={rows} />;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Bank accounts table
+// ──────────────────────────────────────────────────────────────────────────
 const bankColumns: DataTableColumn<BankBalance>[] = [
   {
-    key: "name",
+    key: "banco",
     header: "Banco",
-    cell: (r) => r.name ?? "—",
+    cell: (r) => <span className="truncate">{r.banco ?? "—"}</span>,
   },
   {
-    key: "company",
-    header: "Empresa",
-    cell: (r) => r.company_name ?? "—",
+    key: "tipo",
+    header: "Tipo",
+    cell: (r) =>
+      r.tipo === "bank"
+        ? "Banco"
+        : r.tipo === "credit"
+          ? "Tarjeta"
+          : (r.tipo ?? "—"),
     hideOnMobile: true,
   },
   {
-    key: "currency",
+    key: "moneda",
     header: "Moneda",
-    cell: (r) => (
-      <span className="font-mono text-xs">{r.currency ?? "—"}</span>
-    ),
+    cell: (r) => <span className="font-mono text-xs">{r.moneda ?? "—"}</span>,
   },
   {
-    key: "balance",
+    key: "saldo",
     header: "Saldo",
-    cell: (r) => <Currency amount={r.current_balance} />,
+    cell: (r) => <Currency amount={r.saldo} colorBySign />,
     align: "right",
   },
 ];
 
-async function BanksTable() {
-  const rows = await getBankBalances();
+async function BanksSection() {
+  const rows = await getCashPosition();
   if (!rows || rows.length === 0) {
     return (
       <EmptyState
@@ -168,92 +393,20 @@ async function BanksTable() {
     <DataTable
       data={rows}
       columns={bankColumns}
-      rowKey={(r, i) => `${r.name ?? "bank"}-${i}`}
+      rowKey={(r, i) => `${r.banco ?? "bank"}-${i}`}
       mobileCard={(r) => (
         <MobileCard
-          title={r.name ?? "—"}
-          subtitle={r.company_name ?? undefined}
-          fields={[
-            { label: "Moneda", value: r.currency ?? "—" },
-            { label: "Saldo", value: <Currency amount={r.current_balance} /> },
-          ]}
-        />
-      )}
-    />
-  );
-}
-
-const monthLabels = ["ene","feb","mar","abr","may","jun","jul","ago","sep","oct","nov","dic"];
-function formatMonth(key: string) {
-  const [y, m] = key.split("-");
-  const idx = Number(m) - 1;
-  return `${monthLabels[idx] ?? m} ${y?.slice(2) ?? ""}`;
-}
-
-const cfColumns: DataTableColumn<CashflowPoint>[] = [
-  {
-    key: "month",
-    header: "Mes",
-    cell: (r) => formatMonth(r.month),
-  },
-  {
-    key: "residual",
-    header: "Por cobrar",
-    cell: (r) => <Currency amount={r.residualAmount} compact />,
-    align: "right",
-    hideOnMobile: true,
-  },
-  {
-    key: "expected",
-    header: "Esperado",
-    cell: (r) => <Currency amount={r.expectedAmount} compact />,
-    align: "right",
-  },
-  {
-    key: "prob",
-    header: "Probabilidad",
-    cell: (r) =>
-      r.collectionProbability != null
-        ? `${Math.round(r.collectionProbability * 100)}%`
-        : "—",
-    align: "right",
-    hideOnMobile: true,
-  },
-];
-
-async function CashflowTable() {
-  const rows = await getCashflowProjection(6);
-  if (!rows || rows.length === 0) {
-    return (
-      <EmptyState
-        icon={Scale}
-        title="Sin proyección"
-        description="No hay cobranza esperada en los próximos meses."
-        compact
-      />
-    );
-  }
-  return (
-    <DataTable
-      data={rows}
-      columns={cfColumns}
-      rowKey={(r) => r.month}
-      mobileCard={(r) => (
-        <MobileCard
-          title={formatMonth(r.month)}
+          title={r.banco ?? "—"}
           subtitle={
-            r.collectionProbability != null
-              ? `${Math.round(r.collectionProbability * 100)}% probabilidad`
-              : undefined
+            r.tipo === "credit"
+              ? "Tarjeta de crédito"
+              : r.cuenta ?? r.tipo ?? undefined
           }
           fields={[
+            { label: "Moneda", value: r.moneda ?? "—" },
             {
-              label: "Por cobrar",
-              value: <Currency amount={r.residualAmount} compact />,
-            },
-            {
-              label: "Esperado",
-              value: <Currency amount={r.expectedAmount} compact />,
+              label: "Saldo",
+              value: <Currency amount={r.saldo} colorBySign />,
             },
           ]}
         />

@@ -1,94 +1,69 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { toMxn } from "@/lib/formatters";
 
 /**
- * Dashboard queries — todo ejecutado en Server Components.
- * Usa `toMxn(amount, currency)` para sumas porque `odoo_invoices.amount_*_mxn`
- * está NULL en todos los registros (backend bug documentado).
+ * Dashboard queries v2 — usa las views canónicas del backend
+ * (`cfo_dashboard`, `financial_runway`, `pl_estado_resultados`,
+ *  `ops_delivery_health_weekly`, `customer_ltv_health`, `agent_insights`).
+ *
+ * Las views ya están normalizadas a MXN — nunca tocamos `odoo_invoices.amount_*`
+ * directamente.
  */
 
 export interface DashboardKpis {
-  revenueMonth: number;
-  revenuePrevMonth: number;
-  revenueTrendPct: number;
-  cashPositionMxn: number;
-  overdueTotalMxn: number;
-  overdueInvoiceCount: number;
+  // Revenue del mes actual + trend (de pl_estado_resultados)
+  ingresosMes: number;
+  ingresosMesAnt: number;
+  ingresosTrendPct: number;
+  utilidadOperativaMes: number;
+  // Cash y runway (de cfo_dashboard + financial_runway)
+  efectivoNeto: number;
+  runwayDias: number;
+  burnDiario: number;
+  // Cobranza (de cfo_dashboard)
+  carteraVencida: number;
+  clientesMorosos: number;
+  // Ventas 30d
+  ventas30d: number;
+  cobros30d: number;
+  // Insights
   insightsNew: number;
   insightsCritical: number;
+  // Operaciones
   otdPct: number | null;
+  // Clientes en riesgo
   atRiskCount: number;
   topAtRiskClients: Array<{
-    company_id: number | string | null;
+    company_id: number | null;
     company_name: string | null;
     tier: string | null;
     ltv_mxn: number | null;
     churn_risk_score: number | null;
-    overdue_risk_score: number | null;
     max_days_overdue: number | null;
   }>;
   lastUpdated: string;
 }
 
-function monthStart(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-01`;
-}
-
-async function sumInvoices(params: {
-  move_type: "out_invoice" | "in_invoice";
-  from: string;
-  to?: string;
-}): Promise<number> {
-  const sb = getServiceClient();
-  let query = sb
-    .from("odoo_invoices")
-    .select("amount_total, currency")
-    .eq("move_type", params.move_type)
-    .neq("state", "cancel")
-    .gte("invoice_date", params.from);
-  if (params.to) query = query.lt("invoice_date", params.to);
-  const { data } = await query;
-  return (data ?? []).reduce(
-    (
-      acc: number,
-      row: { amount_total: number | null; currency: string | null }
-    ) => acc + toMxn(row.amount_total, row.currency),
-    0
-  );
-}
-
 export async function getDashboardKpis(): Promise<DashboardKpis> {
   const sb = getServiceClient();
 
-  const now = new Date();
-  const thisMonthStart = monthStart(new Date(now.getFullYear(), now.getMonth(), 1));
-  const nextMonthStart = monthStart(new Date(now.getFullYear(), now.getMonth() + 1, 1));
-  const prevMonthStart = monthStart(new Date(now.getFullYear(), now.getMonth() - 1, 1));
-
   const [
-    revenueMonth,
-    revenuePrev,
-    cash,
-    overdueAgg,
+    cfo,
+    runway,
+    plHistory,
     insightsNew,
     insightsCritical,
     otd,
     ltv,
     atRiskCountRes,
   ] = await Promise.all([
-    sumInvoices({ move_type: "out_invoice", from: thisMonthStart, to: nextMonthStart }),
-    sumInvoices({ move_type: "out_invoice", from: prevMonthStart, to: thisMonthStart }),
+    sb.from("cfo_dashboard").select("*").maybeSingle(),
+    sb.from("financial_runway").select("*").maybeSingle(),
     sb
-      .from("odoo_bank_balances")
-      .select("current_balance")
-      .eq("currency", "MXN"),
-    sb
-      .from("odoo_invoices")
-      .select("amount_residual, currency, days_overdue")
-      .eq("move_type", "out_invoice")
-      .in("payment_state", ["not_paid", "partial"])
-      .gt("days_overdue", 0),
+      .from("pl_estado_resultados")
+      .select("period, ingresos, utilidad_operativa")
+      .order("period", { ascending: false })
+      .limit(24),
     sb
       .from("agent_insights")
       .select("id", { count: "exact", head: true })
@@ -100,14 +75,14 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
       .eq("severity", "critical"),
     sb
       .from("ops_delivery_health_weekly")
-      .select("otd_pct,week_start")
+      .select("otd_pct, week_start")
       .order("week_start", { ascending: false })
       .limit(1)
       .maybeSingle(),
     sb
       .from("customer_ltv_health")
       .select(
-        "company_id, company_name, tier, ltv_mxn, churn_risk_score, overdue_risk_score, max_days_overdue"
+        "company_id, company_name, tier, ltv_mxn, churn_risk_score, max_days_overdue"
       )
       .gt("churn_risk_score", 70)
       .gt("ltv_mxn", 100_000)
@@ -120,31 +95,70 @@ export async function getDashboardKpis(): Promise<DashboardKpis> {
       .gt("ltv_mxn", 100_000),
   ]);
 
-  const cashTotal = (cash.data ?? []).reduce(
-    (acc: number, row: { current_balance: number | null }) =>
-      acc + (Number(row.current_balance) || 0),
-    0
-  );
+  // PL rows cleaned: filter invalid years, sort ascending, take current+prev month
+  const plValid = ((plHistory.data ?? []) as Array<{
+    period: string | null;
+    ingresos: number | null;
+    utilidad_operativa: number | null;
+  }>)
+    .filter((r) => {
+      if (!r.period) return false;
+      const year = Number(r.period.split("-")[0]);
+      return year >= 2020 && year <= 2030;
+    })
+    .sort((a, b) => (b.period as string).localeCompare(a.period as string));
 
-  const overdueRows = (overdueAgg.data ?? []) as Array<{
-    amount_residual: number | null;
-    currency: string | null;
-  }>;
-  const overdueTotal = overdueRows.reduce(
-    (acc, row) => acc + toMxn(row.amount_residual, row.currency),
-    0
-  );
+  const currentMonth = new Date();
+  const currentKey = `${currentMonth.getFullYear()}-${String(
+    currentMonth.getMonth() + 1
+  ).padStart(2, "0")}`;
+  const prev = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+  const prevKey = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(
+    2,
+    "0"
+  )}`;
 
-  const trend =
-    revenuePrev > 0 ? ((revenueMonth - revenuePrev) / revenuePrev) * 100 : 0;
+  const currRow = plValid.find((r) => r.period === currentKey);
+  const prevRow = plValid.find((r) => r.period === prevKey);
+
+  const ingresosMes = Number(currRow?.ingresos) || 0;
+  const ingresosMesAnt = Number(prevRow?.ingresos) || 0;
+  const ingresosTrendPct =
+    ingresosMesAnt > 0
+      ? ((ingresosMes - ingresosMesAnt) / ingresosMesAnt) * 100
+      : 0;
+  const utilidadOperativaMes = Number(currRow?.utilidad_operativa) || 0;
+
+  const cfoData = (cfo.data ?? {}) as {
+    efectivo_disponible: number | null;
+    deuda_tarjetas: number | null;
+    posicion_neta: number | null;
+    cuentas_por_cobrar: number | null;
+    cuentas_por_pagar: number | null;
+    cartera_vencida: number | null;
+    ventas_30d: number | null;
+    cobros_30d: number | null;
+    clientes_morosos: number | null;
+  };
+
+  const runwayData = (runway.data ?? {}) as {
+    cash_mxn: number | null;
+    runway_days_net: number | null;
+    burn_rate_daily: number | null;
+  };
 
   return {
-    revenueMonth,
-    revenuePrevMonth: revenuePrev,
-    revenueTrendPct: trend,
-    cashPositionMxn: cashTotal,
-    overdueTotalMxn: overdueTotal,
-    overdueInvoiceCount: overdueRows.length,
+    ingresosMes,
+    ingresosMesAnt,
+    ingresosTrendPct,
+    utilidadOperativaMes,
+    efectivoNeto: Number(runwayData.cash_mxn) || 0,
+    runwayDias: Number(runwayData.runway_days_net) || 0,
+    burnDiario: Number(runwayData.burn_rate_daily) || 0,
+    carteraVencida: Number(cfoData.cartera_vencida) || 0,
+    clientesMorosos: Number(cfoData.clientes_morosos) || 0,
+    ventas30d: Number(cfoData.ventas_30d) || 0,
+    cobros30d: Number(cfoData.cobros_30d) || 0,
     insightsNew: insightsNew.count ?? 0,
     insightsCritical: insightsCritical.count ?? 0,
     otdPct: (otd.data as { otd_pct: number | null } | null)?.otd_pct ?? null,
@@ -160,34 +174,34 @@ export interface MonthlyRevenuePoint {
 }
 
 /**
- * Revenue mensual agregado via MV `monthly_revenue_by_company`.
- * Suma `net_revenue` (revenue - credit_notes) por mes para todas las empresas.
+ * Revenue mensual histórico desde `pl_estado_resultados` (ingresos reales
+ * por periodo, limpiados de bad years).
  */
 export async function getRevenueTrend(
   months = 12
 ): Promise<MonthlyRevenuePoint[]> {
   const sb = getServiceClient();
-  const since = new Date();
-  since.setMonth(since.getMonth() - months);
-  const sinceStr = monthStart(since);
-
   const { data } = await sb
-    .from("monthly_revenue_by_company")
-    .select("month, net_revenue")
-    .gte("month", sinceStr)
-    .order("month", { ascending: true });
+    .from("pl_estado_resultados")
+    .select("period, ingresos")
+    .order("period", { ascending: false })
+    .limit(months + 5);
 
-  const buckets = new Map<string, number>();
-  for (const row of (data ?? []) as Array<{
-    month: string | null;
-    net_revenue: number | null;
-  }>) {
-    if (!row.month) continue;
-    const key = row.month.slice(0, 7);
-    buckets.set(key, (buckets.get(key) ?? 0) + (Number(row.net_revenue) || 0));
-  }
+  const rows = ((data ?? []) as Array<{
+    period: string | null;
+    ingresos: number | null;
+  }>)
+    .filter((r) => {
+      if (!r.period) return false;
+      const year = Number(r.period.split("-")[0]);
+      return year >= 2020 && year <= 2030;
+    })
+    .slice(0, months)
+    .map((r) => ({
+      period: r.period as string,
+      revenue: Number(r.ingresos) || 0,
+    }))
+    .reverse();
 
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([period, revenue]) => ({ period, revenue }));
+  return rows;
 }
