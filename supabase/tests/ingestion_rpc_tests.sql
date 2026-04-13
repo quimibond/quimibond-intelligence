@@ -137,4 +137,57 @@ begin
   raise notice 'T4 PASS: ingestion_report_failure';
 end $$;
 
+-- ===== Task 5: ingestion_complete_run =====
+do $$
+declare
+  v_run uuid;
+  v_status text;
+  v_wm text;
+  v_ended timestamptz;
+begin
+  select run_id into v_run
+  from ingestion_start_run('test_src','test_tbl','incremental','cron');
+
+  perform ingestion_complete_run(v_run, 'success', '2026-04-12T11:00:00Z');
+
+  select status, high_watermark, ended_at into v_status, v_wm, v_ended
+  from ingestion.sync_run where run_id = v_run;
+
+  if v_status <> 'success' then raise exception 'T5.1: status=% expected success', v_status; end if;
+  if v_wm is distinct from '2026-04-12T11:00:00Z' then
+    raise exception 'T5.2: watermark=% expected 2026-04-12T11:00:00Z', v_wm;
+  end if;
+  if v_ended is null then raise exception 'T5.3: ended_at not set'; end if;
+
+  raise notice 'T5 PASS: ingestion_complete_run';
+end $$;
+
+-- Re-run Task 2's deferred assertions now that complete_run exists
+do $$
+declare
+  r_first record;
+  r_second record;
+begin
+  -- Use a new distinct test table name so we don't collide with earlier T2/T3/T4/T5 inserts
+  insert into ingestion.source_registry
+    (source_id, table_name, entity_kind, sla_minutes, priority)
+  values ('test_src','test_tbl_wm','wm_entity',5,'critical');
+
+  select * into r_first
+  from ingestion_start_run('test_src','test_tbl_wm','incremental','cron');
+  perform ingestion_complete_run(r_first.run_id, 'success', '2026-04-12T10:00:00Z');
+
+  select * into r_second
+  from ingestion_start_run('test_src','test_tbl_wm','incremental','cron');
+
+  if r_second.last_watermark is distinct from '2026-04-12T10:00:00Z' then
+    raise exception 'T2.3 (deferred): watermark not carried, got %', r_second.last_watermark;
+  end if;
+  if r_second.run_id = r_first.run_id then
+    raise exception 'T2.4 (deferred): start_run did not generate fresh run_id';
+  end if;
+
+  raise notice 'T2 deferred PASS: watermark carryover';
+end $$;
+
 rollback;

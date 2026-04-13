@@ -105,3 +105,31 @@ begin
 end $$;
 
 grant execute on function ingestion_report_failure(uuid,text,text,text,jsonb) to service_role;
+
+-- 4. ingestion_complete_run: close a run with final status and watermark
+create or replace function ingestion_complete_run(
+  p_run_id uuid,
+  p_status text,
+  p_high_watermark text
+) returns void
+language plpgsql security definer
+set search_path = ingestion, pg_catalog
+as $$
+begin
+  if p_status not in ('success','partial','failed') then
+    raise exception 'ingestion_complete_run: invalid status %', p_status;
+  end if;
+
+  update ingestion.sync_run
+  set status = p_status,
+      high_watermark = coalesce(p_high_watermark, high_watermark),
+      ended_at = now()
+  where run_id = p_run_id
+    and status = 'running';
+
+  if not found then
+    raise exception 'ingestion_complete_run: run_id % not found or already closed', p_run_id;
+  end if;
+end $$;
+
+grant execute on function ingestion_complete_run(uuid,text,text) to service_role;
