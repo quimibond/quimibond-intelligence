@@ -39,6 +39,8 @@ export async function POST(request: NextRequest) {
 
     // ── Gather ALL intelligence sources in parallel ─────────────────────
     const [
+      // TOP-3: insights accionables ranked por impact×confidence×recency
+      top3Res,
       // PRIMARY: Company narratives with risk signals
       narrativesRes,
       // Director insights from last 24h (the MAIN content)
@@ -56,6 +58,8 @@ export async function POST(request: NextRequest) {
       // Previous briefing
       previousRes,
     ] = await Promise.all([
+      // 0. TOP-3 via RPC top_actionable_insights (score = impact_norm*0.4 + conf*0.3 + recency*0.3)
+      supabase.rpc("top_actionable_insights", { p_limit: 3 }),
       // 1. Company narratives — the connected intelligence view
       supabase
         .from("company_narrative")
@@ -123,6 +127,7 @@ export async function POST(request: NextRequest) {
         .limit(1),
     ]);
 
+    const top3 = (top3Res.data ?? []) as Record<string, unknown>[];
     const narratives = narrativesRes.data ?? [];
     const insights = insightsRes.data ?? [];
     const multiSignals = multiSignalRes.data ?? [];
@@ -134,6 +139,7 @@ export async function POST(request: NextRequest) {
     // ── Build the consolidated data package ─────────────────────────────
     const dataPackage = buildConsolidatedPackage({
       today,
+      top3,
       narratives,
       insights,
       multiSignals,
@@ -152,18 +158,20 @@ Usa <h2>, <h3>, <ul>, <li>, <strong>, <em>, <span style="color:red"> para urgent
 
 ESTRUCTURA OBLIGATORIA:
 1. <h2>Resumen del dia</h2> — 3 lineas max. Que paso, que importa, que necesita accion.
-2. <h2>Decisiones que necesitas hoy</h2> — Max 3 items. Solo cosas que requieren decision del CEO/directivo HOY. Incluir nombre de responsable y monto si aplica.
-3. <h2>Alertas criticas</h2> — Riesgos que no se pueden ignorar. Clientes cayendo, cartera peligrosa, promesas incumplidas.
-4. <h2>Seguimientos</h2> — Acciones vencidas que alguien prometio y no hizo. Nombre + que debian hacer + cuando vencia.
-5. <h2>Buenas noticias</h2> — Pagos recibidos, clientes creciendo, deals cerrados. Maximo 3.
+2. <h2>Decisiones que necesitas hoy</h2> — EXACTAMENTE los 3 items del bloque "TOP 3 DECISIONES ACCIONABLES HOY" del contexto (ya vienen rankeados por impact×confidence×recency). Para cada uno: 1 linea con empresa/responsable + accion concreta + monto MXN. No inventes ni agregues otros.
+3. <h2>Alertas criticas</h2> — Riesgos adicionales que no estan en las 3 decisiones pero tampoco se pueden ignorar. Max 2 items.
+4. <h2>Seguimientos</h2> — Acciones vencidas que alguien prometio y no hizo. Nombre + que debian hacer + cuando vencia. Max 2 items.
+5. <h2>Buenas noticias</h2> — Pagos recibidos, clientes creciendo, deals cerrados. Maximo 2 items.
 
 REGLAS:
-- MAXIMO 7 items en total entre todas las secciones. No mas.
-- Cada item debe nombrar UNA persona o empresa especifica
-- Incluir montos en MXN cuando sea posible
-- Si no hay nada critico, di "Sin alertas criticas hoy" — no inventes
-- NO repitas informacion del briefing anterior
-- Sé brutalmente conciso. El CEO lee esto en 2 minutos.`;
+- Seccion 2 (Decisiones) DEBE ser los 3 items del TOP 3 — no los reemplaces por otros.
+- Si el bloque TOP 3 viene vacio, dilo: "Sin decisiones urgentes hoy".
+- MAXIMO 9 items en total entre todas las secciones.
+- Cada item debe nombrar UNA persona o empresa especifica (ya vienen en el TOP 3).
+- Incluir montos en MXN cuando sea posible.
+- Si no hay nada critico en alguna seccion, di "Sin novedades" — no inventes.
+- NO repitas informacion del briefing anterior.
+- Se brutalmente conciso. El CEO lee esto en 2 minutos.`;
 
     const response = await callClaude(apiKey, {
       system,
@@ -204,30 +212,33 @@ REGLAS:
     }
     if (insights.length) topicSet.add("agent_insights");
 
-    // ── Save briefing ──────────────────────────────────────────────────
-    const { error: insertError } = await supabase.from("briefings").insert({
-      briefing_date: today,
-      scope: "daily",
-      account: "all",
+    // Payload compartido (insert/update) — incluye metadata con top3_ids
+    // para que el frontend pueda linkear directamente a los insights.
+    const briefingPayload = {
       summary_html: briefingHtml,
       summary_text: summaryText,
       total_emails: emailCount(emailVolumeRes),
       topics_identified: [...topicSet].map(t => ({ topic: t, status: "new" })),
       risks_detected: risks,
       overall_sentiment: risks.length > 3 ? "negative" : risks.length === 0 ? "positive" : "neutral",
+      metadata: {
+        top3_insight_ids: top3.map(i => i.id),
+        top3_scores: top3.map(i => ({ id: i.id, title: i.title, score: i.score })),
+      },
+    };
+
+    // ── Save briefing ──────────────────────────────────────────────────
+    const { error: insertError } = await supabase.from("briefings").insert({
+      briefing_date: today,
+      scope: "daily",
+      account: "all",
+      ...briefingPayload,
     });
 
     if (insertError) {
       if (insertError.code === "23505") {
         await supabase.from("briefings")
-          .update({
-            summary_html: briefingHtml,
-            summary_text: summaryText,
-            total_emails: emailCount(emailVolumeRes),
-            topics_identified: [...topicSet].map(t => ({ topic: t, status: "new" })),
-            risks_detected: risks,
-            overall_sentiment: risks.length > 3 ? "negative" : risks.length === 0 ? "positive" : "neutral",
-          })
+          .update(briefingPayload)
           .eq("briefing_date", today)
           .eq("scope", "daily")
           .eq("account", "all");
@@ -240,6 +251,7 @@ REGLAS:
       success: true,
       briefing_date: today,
       sources: {
+        top3: top3.length,
         companies_at_risk: narratives.length,
         insights: insights.length,
         multi_signal_companies: multiSignals.length,
@@ -247,6 +259,7 @@ REGLAS:
         email_facts: emailFacts.length,
         recent_payments: payments.length,
       },
+      top3_ids: top3.map(i => i.id),
     });
   } catch (err) {
     console.error("[briefing] Error:", err);
@@ -266,6 +279,7 @@ function emailCount(res: any): number {
 
 interface BriefingData {
   today: string;
+  top3: Record<string, unknown>[];
   narratives: Record<string, unknown>[];
   insights: Record<string, unknown>[];
   multiSignals: Record<string, unknown>[];
@@ -280,7 +294,27 @@ function buildConsolidatedPackage(data: BriefingData): string {
   const lines: string[] = [];
 
   lines.push(`=== BRIEFING EJECUTIVO QUIMIBOND — ${data.today} ===`);
-  lines.push(`${data.narratives.length} empresas con señales de alerta, ${data.insights.length} insights nuevos, ${data.emailCount} emails procesados\n`);
+  lines.push(`${data.top3.length} decisiones top, ${data.narratives.length} empresas con señales de alerta, ${data.insights.length} insights nuevos, ${data.emailCount} emails procesados\n`);
+
+  // ── 0. TOP-3 DECISIONES PARA HOY (highest priority) ───────────────────
+  // Pre-calculado via top_actionable_insights() — score = impact*0.4 + conf*0.3 + recency*0.3.
+  // Claude DEBE usar estos 3 tal cual en la seccion "Decisiones que necesitas hoy"
+  // del briefing HTML.
+  if (data.top3.length) {
+    lines.push(`--- TOP 3 DECISIONES ACCIONABLES HOY (usar ESTOS en la seccion Decisiones) ---`);
+    for (let idx = 0; idx < data.top3.length; idx++) {
+      const t = data.top3[idx];
+      const impact = Number(t.business_impact_estimate ?? 0);
+      const impactStr = impact > 0 ? ` | $${impact.toLocaleString()} MXN impacto` : "";
+      const companyStr = t.company_name ? ` | Empresa: ${t.company_name}` : "";
+      const assigneeStr = t.assignee_name ? ` | Responsable: ${t.assignee_name}` : "";
+      const hoursStr = t.hours_old != null ? ` | hace ${Number(t.hours_old).toFixed(1)}h` : "";
+      lines.push(`\n  ${idx + 1}. [${String(t.severity).toUpperCase()}] ${t.title} (score ${t.score})`);
+      lines.push(`     Director: ${t.agent_name ?? t.agent_slug}${companyStr}${assigneeStr}${impactStr}${hoursStr}`);
+      if (t.description) lines.push(`     ${String(t.description).slice(0, 220)}`);
+    }
+    lines.push("");
+  }
 
   // Previous context (don't repeat)
   if (data.previousSummary) {

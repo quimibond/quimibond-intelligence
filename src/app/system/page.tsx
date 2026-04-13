@@ -64,6 +64,8 @@ const statusConfig: Record<string, { variant: "success" | "warning" | "critical"
 // ── Quick Links ──
 
 const quickLinks = [
+  { href: "/system/directors", label: "Salud de directores", icon: TrendingUp },
+  { href: "/system/sync", label: "Sync Odoo ↔ Supabase", icon: Server },
   { href: "/system/cfdi", label: "CFDI / Facturas", icon: FileText },
   { href: "/system/routing", label: "Routing de Insights", icon: Settings },
 ];
