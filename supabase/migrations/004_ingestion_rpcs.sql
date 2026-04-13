@@ -133,3 +133,109 @@ begin
 end $$;
 
 grant execute on function ingestion_complete_run(uuid,text,text) to service_role;
+
+-- 5. ingestion_report_source_count: reconcile source vs supabase counts,
+-- auto-heal by injecting failures for known-missing entity_ids.
+-- p_missing_entity_ids: the full set of IDs the source reported (or just the
+-- missing subset — function cross-checks against the target table and only
+-- injects failures for IDs that are confirmed absent).
+create or replace function ingestion_report_source_count(
+  p_source text,
+  p_table text,
+  p_window_start timestamptz,
+  p_window_end timestamptz,
+  p_source_count int,
+  p_missing_entity_ids text[]
+) returns uuid
+language plpgsql security definer
+set search_path = ingestion, public, pg_temp, pg_catalog
+as $$
+declare
+  v_rec_id uuid;
+  v_sb_count int;
+  v_divergence int;
+  v_status text;
+  v_healed int := 0;
+  v_synthetic_run uuid;
+  v_missing_id text;
+  v_is_absent boolean;
+begin
+  -- Verify source is registered
+  if not exists (
+    select 1 from ingestion.source_registry
+    where source_id = p_source and table_name = p_table
+  ) then
+    raise exception 'ingestion_report_source_count: source (%, %) not in registry', p_source, p_table;
+  end if;
+
+  -- Count rows in the target table (found via search_path: public, pg_temp)
+  execute format('select count(*) from %I', p_table) into v_sb_count;
+
+  -- Handle null source_count explicitly to satisfy the reconciliation_run CHECK constraint:
+  -- (source_count IS NULL) => divergence must also be NULL and status must be 'unknown'
+  if p_source_count is null then
+    v_divergence := null;
+    v_status := 'unknown';
+  else
+    v_divergence := p_source_count - v_sb_count;
+    if v_divergence = 0 then
+      v_status := 'clean';
+    elsif v_divergence > 0 then
+      v_status := 'divergent_positive';
+    else
+      v_status := 'divergent_negative';
+    end if;
+  end if;
+
+  -- Auto-heal only for positive divergence WITH a list of candidate ids.
+  -- We cross-check each candidate against the target table and only inject
+  -- a sync_failure for IDs that are confirmed absent (not found in the table).
+  if v_status = 'divergent_positive' and p_missing_entity_ids is not null then
+    -- Open a synthetic sync_run so failures have a valid parent run_id FK
+    insert into ingestion.sync_run
+      (source_id, table_name, run_type, triggered_by, status, ended_at)
+    values
+      (p_source, p_table, 'retry', 'reconciliation', 'success', now())
+    returning run_id into v_synthetic_run;
+
+    foreach v_missing_id in array p_missing_entity_ids loop
+      -- Only inject a failure if the id is actually absent from the target table
+      execute format(
+        'select not exists (select 1 from %I where id = $1)', p_table
+      ) into v_is_absent using v_missing_id;
+
+      if v_is_absent then
+        with ins as (
+          insert into ingestion.sync_failure
+            (run_id, source_id, table_name, entity_id,
+             error_code, error_detail, payload_snapshot)
+          values
+            (v_synthetic_run, p_source, p_table, v_missing_id,
+             'reconciliation_missing',
+             format('row %s missing in supabase per nightly reconcile', v_missing_id),
+             null)
+          on conflict (source_id, table_name, entity_id)
+            where status in ('pending','retrying')
+          do nothing
+          returning 1
+        )
+        select v_healed + coalesce((select count(*) from ins), 0)
+        into v_healed;
+      end if;
+    end loop;
+  end if;
+
+  insert into ingestion.reconciliation_run
+    (source_id, table_name, window_start, window_end,
+     source_count, supabase_count, divergence,
+     missing_entity_ids, status, auto_healed_count)
+  values
+    (p_source, p_table, p_window_start, p_window_end,
+     p_source_count, v_sb_count, v_divergence,
+     p_missing_entity_ids, v_status, v_healed)
+  returning reconciliation_id into v_rec_id;
+
+  return v_rec_id;
+end $$;
+
+grant execute on function ingestion_report_source_count(text,text,timestamptz,timestamptz,int,text[]) to service_role;

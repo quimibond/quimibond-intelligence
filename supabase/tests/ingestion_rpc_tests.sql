@@ -190,4 +190,66 @@ begin
   raise notice 'T2 deferred PASS: watermark carryover';
 end $$;
 
+-- ===== Task 6: ingestion_report_source_count (with auto-heal) =====
+do $$
+declare
+  v_rec uuid;
+  v_count int;
+  v_div int;
+  v_status text;
+  v_healed int;
+  v_failures int;
+begin
+  -- Create a dummy target table in the default schema so the RPC can count it
+  create temporary table odoo_test_target (id text primary key);
+  insert into odoo_test_target values ('A'), ('B'), ('C');
+
+  -- Register a source whose table_name points to the dummy
+  insert into ingestion.source_registry
+    (source_id, table_name, entity_kind, sla_minutes, priority, reconciliation_window_days)
+  values ('test_src','odoo_test_target','thing',60,'important',30);
+
+  -- Source claims 5 rows (D and E missing from supabase)
+  v_rec := ingestion_report_source_count(
+    'test_src','odoo_test_target',
+    '2026-04-01 00:00'::timestamptz, '2026-04-12 00:00'::timestamptz,
+    5, array['A','B','C','D','E']);
+
+  select supabase_count, divergence, status, auto_healed_count
+    into v_count, v_div, v_status, v_healed
+  from ingestion.reconciliation_run where reconciliation_id = v_rec;
+
+  if v_count <> 3 then raise exception 'T6.1: supabase_count=% expected 3', v_count; end if;
+  if v_div <> 2 then raise exception 'T6.2: divergence=% expected 2', v_div; end if;
+  if v_status <> 'divergent_positive' then
+    raise exception 'T6.3: status=% expected divergent_positive', v_status;
+  end if;
+  if v_healed <> 2 then raise exception 'T6.4: auto_healed=% expected 2', v_healed; end if;
+
+  -- Two new failure rows should exist for D and E
+  select count(*) into v_failures
+  from ingestion.sync_failure
+  where source_id='test_src' and table_name='odoo_test_target'
+    and entity_id in ('D','E')
+    and error_code='reconciliation_missing';
+  if v_failures <> 2 then
+    raise exception 'T6.5: expected 2 auto-healed failures, got %', v_failures;
+  end if;
+
+  -- Negative divergence test: source says 2 rows, supabase has 3 → divergent_negative, no auto-heal
+  v_rec := ingestion_report_source_count(
+    'test_src','odoo_test_target',
+    '2026-04-01 00:00'::timestamptz, '2026-04-12 00:00'::timestamptz,
+    2, null);
+
+  select status, auto_healed_count into v_status, v_healed
+  from ingestion.reconciliation_run where reconciliation_id = v_rec;
+  if v_status <> 'divergent_negative' then
+    raise exception 'T6.6: status=% expected divergent_negative', v_status;
+  end if;
+  if v_healed <> 0 then raise exception 'T6.7: negative divergence should not auto-heal'; end if;
+
+  raise notice 'T6 PASS: ingestion_report_source_count';
+end $$;
+
 rollback;
