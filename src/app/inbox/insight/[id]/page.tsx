@@ -232,10 +232,12 @@ export default function InsightDetailPage() {
             <div className="mt-1.5 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant={sev.variant}>{sev.label}</Badge>
               {insight.category && <Badge variant="secondary">{insight.category}</Badge>}
-              {company && (
+              {company ? (
                 <Link href={`/companies/${company.id}`} className="flex items-center gap-1 text-primary hover:underline">
                   <Building2 className="h-3 w-3" /> {company.name}
                 </Link>
+              ) : (
+                <Badge variant="outline" className="text-[10px]">Insight global (sin empresa)</Badge>
               )}
               <span>{timeAgo(insight.created_at)}</span>
               <span>{((insight.confidence ?? 0) * 100).toFixed(0)}% confianza</span>

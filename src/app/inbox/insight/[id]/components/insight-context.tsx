@@ -82,8 +82,18 @@ export function InsightContext({
     }
 
     // ── Odoo data based on agent domain ──
+    // Directores activos (slug en DB): comercial, financiero, compras, costos,
+    // operaciones (domain=operaciones_dir), riesgo (domain=riesgo_dir),
+    // equipo (domain=equipo_dir). Mantengo los slugs legacy (finance, sales, etc)
+    // para que los insights historicos sigan mostrando contexto.
     if (companyId) {
-      if (domain === "finance" || domain === "risk") {
+      const isFinance = domain === "financiero" || domain === "finance" ||
+        domain === "riesgo_dir" || domain === "risk" || domain === "costos";
+      const isOps = domain === "operaciones_dir" || domain === "operations";
+      const isSales = domain === "comercial" || domain === "sales" || domain === "growth";
+      const isPurchases = domain === "compras";
+
+      if (isFinance) {
         promises.push(wrap(
           supabase
             .from("odoo_invoices")
@@ -94,7 +104,7 @@ export function InsightContext({
             .limit(5)
         ).then(({ data }) => { if (data) setOdooData(prev => ({ ...prev, invoices: data as InvoiceRow[] })); }));
       }
-      if (domain === "operations") {
+      if (isOps) {
         promises.push(wrap(
           supabase
             .from("odoo_deliveries")
@@ -104,7 +114,7 @@ export function InsightContext({
             .limit(5)
         ).then(({ data }) => { if (data) setOdooData(prev => ({ ...prev, deliveries: data as DeliveryRow[] })); }));
       }
-      if (domain === "sales" || domain === "growth") {
+      if (isSales) {
         promises.push(wrap(
           supabase
             .from("odoo_order_lines")
@@ -122,6 +132,28 @@ export function InsightContext({
             .eq("active", true)
             .limit(5)
         ).then(({ data }) => { if (data) setOdooData(prev => ({ ...prev, leads: data as LeadRow[] })); }));
+      }
+      if (isPurchases) {
+        // Para compras: mostrar ordenes de compra recientes (order_type=purchase)
+        // + facturas de proveedor (in_invoice).
+        promises.push(wrap(
+          supabase
+            .from("odoo_order_lines")
+            .select("order_name, product_name, product_ref, qty, subtotal, order_date, order_state")
+            .eq("company_id", companyId)
+            .eq("order_type", "purchase")
+            .order("order_date", { ascending: false })
+            .limit(5)
+        ).then(({ data }) => { if (data) setOdooData(prev => ({ ...prev, orders: data as OrderRow[] })); }));
+        promises.push(wrap(
+          supabase
+            .from("odoo_invoices")
+            .select("name, move_type, amount_total, amount_residual, invoice_date, due_date, state, payment_state, days_overdue")
+            .eq("company_id", companyId)
+            .eq("move_type", "in_invoice")
+            .order("invoice_date", { ascending: false })
+            .limit(5)
+        ).then(({ data }) => { if (data) setOdooData(prev => ({ ...prev, invoices: data as InvoiceRow[] })); }));
       }
 
       // Related insights from same company

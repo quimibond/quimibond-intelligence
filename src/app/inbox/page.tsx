@@ -252,6 +252,7 @@ export default function InboxPage() {
         allAssignees={allAssignees}
         categoryFilter={categoryFilter}
         setCategoryFilter={setCategoryFilter}
+        availableCategories={Array.from(new Set(insights.map(i => i.category).filter((c): c is string => !!c)))}
         dateFilter={dateFilter}
         setDateFilter={setDateFilter}
         freshness={freshness}

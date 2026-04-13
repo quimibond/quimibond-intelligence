@@ -17,6 +17,9 @@ interface InboxFiltersProps {
   allAssignees: string[];
   categoryFilter: string;
   setCategoryFilter: (cat: string) => void;
+  /** Categorias unicas presentes en los insights cargados hoy. Si no se provee,
+   *  se usa el catalogo completo (retrocompat). */
+  availableCategories?: string[];
   dateFilter: string;
   setDateFilter: (d: string) => void;
   freshness: { lastSync: string | null; lastAnalyze: string | null; lastAgents: string | null };
@@ -27,10 +30,17 @@ export function InboxFilters({
   totalCount, filteredCount, tierCounts,
   filterMode, setFilterMode,
   assigneeFilter, setAssigneeFilter, allAssignees,
-  categoryFilter, setCategoryFilter,
+  categoryFilter, setCategoryFilter, availableCategories,
   dateFilter, setDateFilter,
   onRefresh,
 }: InboxFiltersProps) {
+  // Solo muestra categorias con insights reales (evita opciones que dan 0 resultados).
+  // Si availableCategories viene vacio o undefined, fallback al catalogo completo.
+  const catEntries = (availableCategories && availableCategories.length > 0)
+    ? availableCategories
+        .filter(k => k in INSIGHT_CATEGORY_LABELS)
+        .map(k => [k, INSIGHT_CATEGORY_LABELS[k]] as const)
+    : Object.entries(INSIGHT_CATEGORY_LABELS);
   return (
     <div className="px-3 py-2 md:px-0 md:mb-4 space-y-3">
       {/* Header */}
@@ -99,7 +109,7 @@ export function InboxFilters({
           className="shrink-0 rounded-full h-auto border bg-transparent px-3 py-1.5 text-xs font-medium text-muted-foreground cursor-pointer outline-none"
         >
           <option value="all">Categorias</option>
-          {Object.entries(INSIGHT_CATEGORY_LABELS).map(([key, label]) => (
+          {catEntries.map(([key, label]) => (
             <option key={key} value={key}>{label}</option>
           ))}
         </Select>

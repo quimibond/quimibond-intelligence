@@ -62,11 +62,35 @@ export function useDashboardData() {
       const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
       const rangeStr = new Date(now.getTime() - 45 * 86400_000).toISOString().split("T")[0];
 
-      async function sq<T>(p: PromiseLike<{ data: T | null }>): Promise<T | null> {
-        try { return (await p).data; } catch { return null; }
+      // Wrappers que aislan errores por query (una view rota no debe tumbar el
+      // dashboard entero) PERO loggean cualquier fallo al console para no
+      // silenciar problemas reales con las vistas financieras. Si una view
+      // cambia schema o desaparece, veras un warning aqui.
+      async function sq<T>(p: PromiseLike<{ data: T | null; error?: { message: string } | null }>, label: string): Promise<T | null> {
+        try {
+          const res = await p;
+          if (res.error) {
+            console.warn(`[dashboard] ${label} query error:`, res.error.message);
+            return null;
+          }
+          return res.data;
+        } catch (err) {
+          console.warn(`[dashboard] ${label} threw:`, err instanceof Error ? err.message : String(err));
+          return null;
+        }
       }
-      async function sc(p: PromiseLike<{ count: number | null }>): Promise<number> {
-        try { return (await p).count ?? 0; } catch { return 0; }
+      async function sc(p: PromiseLike<{ count: number | null; error?: { message: string } | null }>, label: string): Promise<number> {
+        try {
+          const res = await p;
+          if (res.error) {
+            console.warn(`[dashboard] ${label} count error:`, res.error.message);
+            return 0;
+          }
+          return res.count ?? 0;
+        } catch (err) {
+          console.warn(`[dashboard] ${label} count threw:`, err instanceof Error ? err.message : String(err));
+          return 0;
+        }
       }
 
       const [
@@ -76,25 +100,25 @@ export function useDashboardData() {
         revenueR, invoicedR, cashflowR, anomalyR, briefingR,
         reorderR, riskContactsR, urgentInsightsR,
       ] = await Promise.all([
-        sq(supabase.from("odoo_sale_orders").select("date_order, amount_untaxed, salesperson_name").gte("date_order", rangeStr).in("state", ["sale", "done"])),
-        sq(supabase.from("odoo_payments").select("payment_date, amount").gte("payment_date", monthStr).eq("payment_type", "inbound")),
-        sq(supabase.from("odoo_invoices").select("amount_residual, days_overdue").eq("move_type", "out_invoice").in("payment_state", ["not_paid", "partial"]).gt("days_overdue", 0)),
-        sq(supabase.from("odoo_deliveries").select("state, date_done, scheduled_date, is_late").or(`date_done.gte.${rangeStr},and(state.neq.done,state.neq.cancel)`)),
-        sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", todayStr).lt("email_date", tomorrowStr)),
-        sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", yesterdayStr).lt("email_date", todayStr)),
-        sq(supabase.from("agent_insights").select("state").in("state", ["new", "seen"]).gte("confidence", 0.80)),
-        sq(supabase.from("odoo_purchase_orders").select("amount_untaxed").gte("date_order", todayStr).lt("date_order", tomorrowStr).in("state", ["purchase", "done"])),
-        sc(supabase.from("odoo_activities").select("id", { count: "exact", head: true }).eq("is_overdue", true)),
-        sc(supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending")),
-        sc(supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "completed").gte("completed_at", todayStr)),
-        sq(supabase.from("monthly_revenue_trend").select("month, revenue, active_clients, mom_change_pct").order("month", { ascending: false }).limit(7)),
-        sq(supabase.from("odoo_invoices").select("amount_total").eq("move_type", "out_invoice").eq("state", "posted").gte("invoice_date", monthStr)),
-        sq(supabase.from("cashflow_projection").select("flow_type, period, gross_amount, net_amount, probability").order("sort_order")),
-        sc(supabase.from("accounting_anomalies").select("id", { count: "exact", head: true }).in("severity", ["critical", "high"])),
-        sq(supabase.from("briefings").select("summary_text").eq("scope", "daily").order("created_at", { ascending: false }).limit(1)),
-        sq(supabase.from("client_reorder_predictions").select("company_name, reorder_status, days_overdue_reorder, avg_order_value, top_product_ref").in("reorder_status", ["overdue", "critical", "lost"]).order("avg_order_value", { ascending: false }).limit(8)),
-        sq(supabase.from("contacts").select("id, name, risk_level, relationship_score").in("risk_level", ["high", "critical"]).order("relationship_score", { ascending: true }).limit(6)),
-        sq(supabase.from("agent_insights").select("id, agent_id, title, severity, category, created_at").in("state", ["new", "seen"]).in("severity", ["critical", "high"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(5)),
+        sq(supabase.from("odoo_sale_orders").select("date_order, amount_untaxed, salesperson_name").gte("date_order", rangeStr).in("state", ["sale", "done"]), "odoo_sale_orders"),
+        sq(supabase.from("odoo_payments").select("payment_date, amount").gte("payment_date", monthStr).eq("payment_type", "inbound"), "odoo_payments"),
+        sq(supabase.from("odoo_invoices").select("amount_residual, days_overdue").eq("move_type", "out_invoice").in("payment_state", ["not_paid", "partial"]).gt("days_overdue", 0), "odoo_invoices.overdue"),
+        sq(supabase.from("odoo_deliveries").select("state, date_done, scheduled_date, is_late").or(`date_done.gte.${rangeStr},and(state.neq.done,state.neq.cancel)`), "odoo_deliveries"),
+        sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", todayStr).lt("email_date", tomorrowStr), "emails.today"),
+        sc(supabase.from("emails").select("id", { count: "exact", head: true }).gte("email_date", yesterdayStr).lt("email_date", todayStr), "emails.yesterday"),
+        sq(supabase.from("agent_insights").select("state").in("state", ["new", "seen"]).gte("confidence", 0.80), "agent_insights"),
+        sq(supabase.from("odoo_purchase_orders").select("amount_untaxed").gte("date_order", todayStr).lt("date_order", tomorrowStr).in("state", ["purchase", "done"]), "odoo_purchase_orders"),
+        sc(supabase.from("odoo_activities").select("id", { count: "exact", head: true }).eq("is_overdue", true), "odoo_activities.overdue"),
+        sc(supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "pending"), "action_items.pending"),
+        sc(supabase.from("action_items").select("id", { count: "exact", head: true }).eq("state", "completed").gte("completed_at", todayStr), "action_items.completed"),
+        sq(supabase.from("monthly_revenue_trend").select("month, revenue, active_clients, mom_change_pct").order("month", { ascending: false }).limit(7), "monthly_revenue_trend"),
+        sq(supabase.from("odoo_invoices").select("amount_total").eq("move_type", "out_invoice").eq("state", "posted").gte("invoice_date", monthStr), "odoo_invoices.month"),
+        sq(supabase.from("cashflow_projection").select("flow_type, period, gross_amount, net_amount, probability").order("sort_order"), "cashflow_projection"),
+        sc(supabase.from("accounting_anomalies").select("id", { count: "exact", head: true }).in("severity", ["critical", "high"]), "accounting_anomalies"),
+        sq(supabase.from("briefings").select("summary_text").eq("scope", "daily").order("created_at", { ascending: false }).limit(1), "briefings"),
+        sq(supabase.from("client_reorder_predictions").select("company_name, reorder_status, days_overdue_reorder, avg_order_value, top_product_ref").in("reorder_status", ["overdue", "critical", "lost"]).order("avg_order_value", { ascending: false }).limit(8), "client_reorder_predictions"),
+        sq(supabase.from("contacts").select("id, name, risk_level, relationship_score").in("risk_level", ["high", "critical"]).order("relationship_score", { ascending: true }).limit(6), "contacts.risk"),
+        sq(supabase.from("agent_insights").select("id, agent_id, title, severity, category, created_at").in("state", ["new", "seen"]).in("severity", ["critical", "high"]).gte("confidence", 0.80).order("created_at", { ascending: false }).limit(5), "agent_insights.urgent"),
       ]);
 
       // Process sales
