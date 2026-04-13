@@ -135,7 +135,13 @@ function safeJSON(v: any): string {
 // ── Context builders por director ───────────────────────────────────────
 
 async function buildComercial(sb: SupabaseClient): Promise<string> {
-  const [reorderRisk, top, crmLeads, clientOverdue, clientThreads] = await Promise.all([
+  const [ltvHealth, reorderRisk, top, crmLeads, clientOverdue, clientThreads] = await Promise.all([
+    // NEW (Fase 7): customer_ltv_health — churn_risk_score + overdue_risk_score + LTV ranking
+    sb.from("customer_ltv_health")
+      .select("company_name, tier, ltv_mxn, revenue_12m, revenue_3m, trend_pct_vs_prior_quarters, churn_risk_score, overdue_risk_score, days_since_last_order, max_days_overdue")
+      .gte("ltv_mxn", 100000)
+      .order("churn_risk_score", { ascending: false })
+      .limit(15),
     sb.from("client_reorder_predictions")
       .select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue")
       .in("reorder_status", ["overdue", "at_risk", "critical", "lost"])
@@ -165,6 +171,7 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
       .limit(8),
   ]);
   return [
+    `## LTV + churn risk score (>= 100K LTV, ordenado por churn_risk)\n${safeJSON(ltvHealth.data)}`,
     `## Reorden vencido (clientes que deberian haber comprado)\n${safeJSON(reorderRisk.data)}`,
     `## Top clientes (revenue y tendencia 90d)\n${safeJSON(top.data)}`,
     `## Pipeline CRM — oportunidades activas\n${safeJSON(crmLeads.data)}`,
@@ -174,7 +181,9 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildFinanciero(sb: SupabaseClient): Promise<string> {
-  const [cfoDash, overdue, payments, payPredictions, cashflow, pl, workingCapital, budget] = await Promise.all([
+  const [runway, cfoDash, overdue, payments, payPredictions, cashflow, pl, workingCapital, budget] = await Promise.all([
+    // NEW (Fase 7): runway calculation con cash + AR/AP y burn rate 60d
+    sb.from("financial_runway").select("*").limit(1),
     sb.from("cfo_dashboard").select("*").limit(1),
     sb.from("odoo_invoices")
       .select("company_id, name, amount_total, amount_residual, payment_state, days_overdue, due_date, invoice_date")
@@ -198,6 +207,7 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
     sb.from("budget_vs_actual").select("*").order("period", { ascending: false }).limit(12),
   ]);
   return [
+    `## RUNWAY ejecutivo (cash + AR 30d - AP 30d / burn rate diario)\n${safeJSON(runway.data?.[0])}`,
     `## CFO Dashboard (snapshot ejecutivo)\n${safeJSON(cfoDash.data?.[0])}`,
     `## Cash flow proyectado\n${safeJSON(cashflow.data)}`,
     `## Working capital\n${safeJSON(workingCapital.data?.[0])}`,
@@ -210,7 +220,13 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildCompras(sb: SupabaseClient): Promise<string> {
-  const [recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix] = await Promise.all([
+  const [herfindahl, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix] = await Promise.all([
+    // NEW (Fase 7): concentracion Herfindahl por producto (single_source / very_high riesgo de sourcing)
+    sb.from("supplier_concentration_herfindahl")
+      .select("product_ref, product_name, supplier_count, herfindahl_idx, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level")
+      .in("concentration_level", ["single_source", "very_high"])
+      .order("total_spent_12m", { ascending: false })
+      .limit(15),
     sb.from("odoo_purchase_orders")
       .select("company_id, name, amount_total, state, date_order, buyer_name")
       .order("date_order", { ascending: false })
@@ -243,6 +259,7 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
       .limit(15),
   ]);
   return [
+    `## Concentracion Herfindahl por producto (single_source/very_high, 12m)\n${safeJSON(herfindahl.data)}`,
     `## OC recientes\n${safeJSON(recentPOs.data)}`,
     `## Facturas proveedor pendientes (lo que debemos)\n${safeJSON(weOwe.data)}`,
     `## Alertas de precio vs promedio\n${safeJSON(priceAnomalies.data)}`,
@@ -289,7 +306,12 @@ async function buildCostos(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildOperaciones(sb: SupabaseClient): Promise<string> {
-  const [lateDeliveries, pendingDeliveries, orderpoints, deadStock, pendingPOs] = await Promise.all([
+  const [otdWeekly, lateDeliveries, pendingDeliveries, orderpoints, deadStock, pendingPOs] = await Promise.all([
+    // NEW (Fase 7): OTD rolling 12 semanas con avg lead days
+    sb.from("ops_delivery_health_weekly")
+      .select("week_start, total_completed, on_time, late, otd_pct, avg_lead_days")
+      .order("week_start", { ascending: false })
+      .limit(12),
     sb.from("odoo_deliveries")
       .select("company_id, name, state, is_late, scheduled_date, origin")
       .eq("is_late", true)
@@ -316,6 +338,7 @@ async function buildOperaciones(sb: SupabaseClient): Promise<string> {
       .limit(10),
   ]);
   return [
+    `## OTD rate semanal rolling 12w\n${safeJSON(otdWeekly.data)}`,
     `## Entregas atrasadas\n${safeJSON(lateDeliveries.data)}`,
     `## Todas las entregas pendientes\n${safeJSON(pendingDeliveries.data)}`,
     `## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}`,
@@ -373,7 +396,12 @@ async function buildRiesgo(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildEquipo(sb: SupabaseClient): Promise<string> {
-  const [employees, activities, stalledThreads, salesByPerson, overdueByCompany] = await Promise.all([
+  const [workloadRows, employees, activities, stalledThreads, salesByPerson, overdueByCompany] = await Promise.all([
+    // NEW (Fase 7): workload real por vendedor con stress score
+    sb.from("salesperson_workload_30d")
+      .select("salesperson_name, department, open_orders, open_order_value, orders_30d, revenue_30d, overdue_activities, overdue_activities_pct, workload_stress_score")
+      .order("workload_stress_score", { ascending: false })
+      .limit(20),
     sb.from("odoo_users")
       .select("name, email, department, pending_activities_count, overdue_activities_count")
       .order("overdue_activities_count", { ascending: false })
@@ -413,7 +441,8 @@ async function buildEquipo(sb: SupabaseClient): Promise<string> {
     .map(([name, d]) => `${name}: ${d.orders} ordenes abiertas ($${Math.round(d.totalValue / 1000)}K)`)
     .join("\n");
   return [
-    `## Carga de trabajo por vendedor (ordenes abiertas)\n${workloadSummary || "(sin datos)"}`,
+    `## Workload real por vendedor con stress score (open orders + revenue 30d + actividades vencidas)\n${safeJSON(workloadRows.data)}`,
+    `## Carga de trabajo agrupada (legacy desde odoo_sale_orders)\n${workloadSummary || "(sin datos)"}`,
     `## Empleados con mas actividades vencidas\n${safeJSON(employees.data)}`,
     `## Actividades vencidas detalle\n${safeJSON(activities.data)}`,
     `## Emails externos sin respuesta >48h\n${safeJSON(stalledThreads.data)}`,
