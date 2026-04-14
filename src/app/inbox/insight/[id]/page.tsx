@@ -1,15 +1,18 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bot, Building2, Calendar, Database, User } from "lucide-react";
+import { ArrowLeft, Bot, Calendar, Database } from "lucide-react";
 
 import {
   PageHeader,
   SeverityBadge,
   DateDisplay,
-  CompanyLink,
   MetricRow,
   EvidencePackView,
+  EvidenceChip,
+  EvidenceTimeline,
+  PersonCard,
+  InvoiceDetailView,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +20,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { getInsightById } from "@/lib/queries/insights";
 import { getCompanyEvidencePack } from "@/lib/queries/evidence";
+import {
+  buildTimelineFromEvidencePack,
+  extractEvidenceRefs,
+} from "@/lib/queries/evidence-helpers";
 import { markInsightSeen } from "../../actions";
 import { InsightActions } from "./_components/insight-actions";
 
@@ -44,10 +51,19 @@ export default async function InsightDetailPage({
   const insight = await getInsightById(id);
   if (!insight) notFound();
 
-  // Auto-mark seen when CEO opens detail
   if (insight.state === "new") {
     await markInsightSeen(id);
   }
+
+  // Extract evidence refs from title + description + recommendation
+  const searchText = [
+    insight.title,
+    insight.description,
+    insight.recommendation,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const refs = extractEvidenceRefs(searchText);
 
   return (
     <div className="space-y-5 pb-24 md:pb-6">
@@ -83,65 +99,85 @@ export default async function InsightDetailPage({
         )}
       </div>
 
+      {/* Evidence refs clickeables parseadas del texto del insight */}
+      {refs.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {refs.map((ref, i) => (
+            <EvidenceChip
+              key={`${ref.reference}-${i}`}
+              type={ref.type}
+              reference={ref.reference}
+              detail={
+                ref.type === "invoice" ? (
+                  <InvoiceDetailView reference={ref.reference} />
+                ) : undefined
+              }
+            />
+          ))}
+        </div>
+      )}
+
       {/* Action buttons */}
       <InsightActions insightId={insight.id} currentState={insight.state} />
 
-      {/* Meta grid */}
+      {/* Person card — persona responsable */}
+      {insight.assignee_name && (
+        <PersonCard
+          name={insight.assignee_name}
+          email={insight.assignee_email}
+          role={insight.assignee_department ?? "Asignado"}
+          action={
+            insight.recommendation
+              ? truncate(insight.recommendation, 140)
+              : undefined
+          }
+        />
+      )}
+
+      {/* Meta grid: context + metrics */}
       <div className="grid gap-4 md:grid-cols-2">
         <Card>
           <CardHeader>
             <CardTitle className="text-base">Contexto</CardTitle>
           </CardHeader>
           <CardContent className="pb-4">
-            {insight.company_id && insight.company_name && (
-              <div className="flex items-center gap-2 border-b border-border/60 py-2">
-                <Building2
-                  className="h-4 w-4 text-muted-foreground"
-                  aria-hidden
-                />
-                <CompanyLink
-                  companyId={insight.company_id}
-                  name={insight.company_name}
-                  truncate
-                />
-              </div>
-            )}
             {insight.agent_name && (
-              <div className="flex items-center gap-2 border-b border-border/60 py-2 text-sm">
-                <Bot className="h-4 w-4 text-muted-foreground" aria-hidden />
-                <span>
-                  Generado por{" "}
-                  <span className="font-semibold">{insight.agent_name}</span>
-                </span>
-              </div>
-            )}
-            {insight.assignee_name && (
-              <div className="flex items-center gap-2 border-b border-border/60 py-2 text-sm">
-                <User className="h-4 w-4 text-muted-foreground" aria-hidden />
-                <span>
-                  Asignado a{" "}
-                  <span className="font-semibold">
-                    {insight.assignee_name}
+              <MetricRow
+                label="Generado por"
+                value={
+                  <span className="inline-flex items-center gap-1">
+                    <Bot className="h-3 w-3 text-muted-foreground" aria-hidden />
+                    {insight.agent_name}
                   </span>
-                  {insight.assignee_department && (
-                    <span className="text-muted-foreground">
-                      {" "}
-                      · {insight.assignee_department}
-                    </span>
-                  )}
-                </span>
-              </div>
+                }
+              />
             )}
             {insight.created_at && (
-              <div className="flex items-center gap-2 border-b border-border/60 py-2 text-sm">
-                <Calendar
-                  className="h-4 w-4 text-muted-foreground"
-                  aria-hidden
-                />
-                <span>
-                  Detectado <DateDisplay date={insight.created_at} relative />
-                </span>
-              </div>
+              <MetricRow
+                label="Detectado"
+                value={<DateDisplay date={insight.created_at} relative />}
+              />
+            )}
+            {insight.expires_at && (
+              <MetricRow
+                label="Expira"
+                value={
+                  <span className="inline-flex items-center gap-1">
+                    <Calendar className="h-3 w-3 text-muted-foreground" aria-hidden />
+                    {new Date(insight.expires_at).toLocaleDateString("es-MX")}
+                  </span>
+                }
+              />
+            )}
+            {insight.state && (
+              <MetricRow
+                label="Estado"
+                value={
+                  <Badge variant="outline" className="text-[10px] uppercase">
+                    {insight.state}
+                  </Badge>
+                }
+              />
             )}
           </CardContent>
         </Card>
@@ -162,19 +198,17 @@ export default async function InsightDetailPage({
             {insight.confidence != null && (
               <MetricRow
                 label="Confianza"
-                value={Math.round(insight.confidence * 100)}
-                format="number"
-                hint="del agente que generó este insight"
+                value={`${Math.round(insight.confidence * 100)}%`}
+                hint="del agente"
               />
             )}
-            {insight.expires_at && (
-              <MetricRow
-                label="Expira"
-                value={new Date(insight.expires_at).toLocaleDateString(
-                  "es-MX"
-                )}
-              />
-            )}
+            <MetricRow
+              label="Severidad"
+              value={
+                <SeverityBadge level={insight.severity ?? "medium"} />
+              }
+            />
+            <MetricRow label="Categoría" value={insight.category ?? "—"} />
           </CardContent>
         </Card>
       </div>
@@ -195,16 +229,31 @@ export default async function InsightDetailPage({
         </Card>
       )}
 
-      {/* Evidence pack — cross-referenced data about the company */}
+      {/* Timeline + Evidence pack — solo si hay empresa */}
       {insight.company_id && (
-        <section className="space-y-2">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Evidencia cruzada
-          </h2>
-          <Suspense fallback={<EvidencePackSkeleton />}>
-            <EvidenceSection companyId={insight.company_id} />
-          </Suspense>
-        </section>
+        <>
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Timeline de eventos
+            </h2>
+            <Card>
+              <CardContent className="py-4">
+                <Suspense fallback={<Skeleton className="h-48" />}>
+                  <TimelineSection companyId={insight.company_id} />
+                </Suspense>
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="space-y-2">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Evidencia cruzada
+            </h2>
+            <Suspense fallback={<EvidencePackSkeleton />}>
+              <EvidenceSection companyId={insight.company_id} />
+            </Suspense>
+          </section>
+        </>
       )}
 
       {/* Raw evidence JSON (collapsible, for debugging) */}
@@ -233,6 +282,20 @@ function EvidencePackSkeleton() {
   );
 }
 
+async function TimelineSection({ companyId }: { companyId: number }) {
+  const pack = await getCompanyEvidencePack(companyId);
+  if (!pack) return null;
+  const events = buildTimelineFromEvidencePack(pack);
+  if (events.length === 0) {
+    return (
+      <p className="text-center text-xs text-muted-foreground">
+        Sin eventos históricos recientes.
+      </p>
+    );
+  }
+  return <EvidenceTimeline events={events} />;
+}
+
 async function EvidenceSection({ companyId }: { companyId: number }) {
   const pack = await getCompanyEvidencePack(companyId);
   if (!pack) {
@@ -245,4 +308,8 @@ async function EvidenceSection({ companyId }: { companyId: number }) {
     );
   }
   return <EvidencePackView pack={pack} />;
+}
+
+function truncate(s: string, len: number): string {
+  return s.length > len ? s.slice(0, len).trim() + "…" : s;
 }
