@@ -119,6 +119,96 @@ export interface OverdueInvoice {
   payment_state: string | null;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Payment predictions — clientes con patrón anormal de pago
+// ──────────────────────────────────────────────────────────────────────────
+export interface PaymentPredictionRow {
+  company_id: number;
+  company_name: string | null;
+  tier: string | null;
+  payment_risk: string;
+  payment_trend: string | null;
+  avg_days_to_pay: number | null;
+  median_days_to_pay: number | null;
+  max_days_overdue: number | null;
+  total_pending: number;
+  pending_count: number;
+  predicted_payment_date: string | null;
+}
+
+/**
+ * Devuelve solo los clientes con patrón anormal de pago (no NORMAL).
+ * `payment_risk` viene como texto largo: "CRITICO: excede maximo historico", etc.
+ */
+export async function getPaymentPredictions(
+  limit = 30
+): Promise<PaymentPredictionRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("payment_predictions")
+    .select(
+      "company_id, company_name, tier, payment_risk, payment_trend, avg_days_to_pay, median_days_to_pay, max_days_overdue, total_pending, pending_count, predicted_payment_date"
+    )
+    .gt("total_pending", 0)
+    .not("payment_risk", "ilike", "NORMAL%")
+    .order("total_pending", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map((r) => ({
+    company_id: Number(r.company_id) || 0,
+    company_name: r.company_name ?? null,
+    tier: r.tier ?? null,
+    payment_risk: r.payment_risk ?? "—",
+    payment_trend: r.payment_trend ?? null,
+    avg_days_to_pay:
+      r.avg_days_to_pay != null ? Number(r.avg_days_to_pay) : null,
+    median_days_to_pay:
+      r.median_days_to_pay != null ? Number(r.median_days_to_pay) : null,
+    max_days_overdue:
+      r.max_days_overdue != null ? Number(r.max_days_overdue) : null,
+    total_pending: Number(r.total_pending) || 0,
+    pending_count: Number(r.pending_count) || 0,
+    predicted_payment_date: r.predicted_payment_date ?? null,
+  }));
+}
+
+/**
+ * Conteo y suma de los clientes con riesgo crítico/alto/medio.
+ */
+export async function getPaymentRiskKpis(): Promise<{
+  abnormalCount: number;
+  abnormalPending: number;
+  criticalCount: number;
+  criticalPending: number;
+}> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("payment_predictions")
+    .select("payment_risk, total_pending")
+    .gt("total_pending", 0)
+    .not("payment_risk", "ilike", "NORMAL%");
+  const rows = (data ?? []) as Array<{
+    payment_risk: string | null;
+    total_pending: number | null;
+  }>;
+  const abnormalPending = rows.reduce(
+    (a, r) => a + (Number(r.total_pending) || 0),
+    0
+  );
+  const critical = rows.filter((r) =>
+    (r.payment_risk ?? "").toUpperCase().startsWith("CRITICO")
+  );
+  const criticalPending = critical.reduce(
+    (a, r) => a + (Number(r.total_pending) || 0),
+    0
+  );
+  return {
+    abnormalCount: rows.length,
+    abnormalPending,
+    criticalCount: critical.length,
+    criticalPending,
+  };
+}
+
 /**
  * Facturas vencidas (view: ar_aging_detail).
  * Una fila por factura, con aging_bucket pre-computado.

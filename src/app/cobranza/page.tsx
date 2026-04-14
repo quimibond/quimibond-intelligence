@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Calendar,
   FileText,
+  Flame,
   TrendingDown,
   Users,
 } from "lucide-react";
@@ -16,17 +17,23 @@ import {
   CompanyLink,
   Currency,
   DateDisplay,
+  EmptyState,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getArAging,
   getCompanyAging,
   getOverdueInvoices,
+  getPaymentPredictions,
+  getPaymentRiskKpis,
   type CompanyAgingRow,
   type OverdueInvoice,
+  type PaymentPredictionRow,
 } from "@/lib/queries/invoices";
+import { getCfoSnapshot } from "@/lib/queries/finance";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cobranza" };
@@ -36,21 +43,65 @@ export default function CobranzaPage() {
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Cobranza"
-        subtitle="Cartera vencida por bucket y por cliente"
+        subtitle="Cartera vencida, riesgo de pago y aging"
       />
 
+      {/* Hero KPIs */}
       <Suspense
         fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 5, desktop: 5 }}>
-            {Array.from({ length: 5 }).map((_, i) => (
+          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+            {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-[96px] rounded-xl" />
             ))}
           </StatGrid>
         }
       >
-        <AgingKpis />
+        <CobranzaHeroKpis />
       </Suspense>
 
+      {/* Aging buckets */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Aging buckets</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <StatGrid columns={{ mobile: 2, tablet: 5, desktop: 5 }}>
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[80px] rounded-xl" />
+                ))}
+              </StatGrid>
+            }
+          >
+            <AgingBuckets />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      {/* Payment risk */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Clientes con patrón anormal de pago
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <PaymentRiskTable />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      {/* Companies with aging */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -72,6 +123,7 @@ export default function CobranzaPage() {
         </CardContent>
       </Card>
 
+      {/* Overdue invoices */}
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Facturas vencidas</CardTitle>
@@ -94,7 +146,59 @@ export default function CobranzaPage() {
   );
 }
 
-async function AgingKpis() {
+// ──────────────────────────────────────────────────────────────────────────
+// Hero KPIs
+// ──────────────────────────────────────────────────────────────────────────
+async function CobranzaHeroKpis() {
+  const [cfo, paymentRisk] = await Promise.all([
+    getCfoSnapshot(),
+    getPaymentRiskKpis(),
+  ]);
+
+  return (
+    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+      <KpiCard
+        title="Cartera vencida"
+        value={cfo?.carteraVencida ?? 0}
+        format="currency"
+        compact
+        icon={AlertTriangle}
+        subtitle={`${cfo?.clientesMorosos ?? 0} clientes morosos`}
+        tone="danger"
+      />
+      <KpiCard
+        title="Cuentas por cobrar"
+        value={cfo?.cuentasPorCobrar ?? 0}
+        format="currency"
+        compact
+        icon={FileText}
+        subtitle="total AR"
+      />
+      <KpiCard
+        title="Cobros 30d"
+        value={cfo?.cobros30d ?? 0}
+        format="currency"
+        compact
+        icon={Calendar}
+        tone="success"
+      />
+      <KpiCard
+        title="Riesgo crítico"
+        value={paymentRisk.criticalPending}
+        format="currency"
+        compact
+        icon={Flame}
+        subtitle={`${paymentRisk.criticalCount} clientes`}
+        tone={paymentRisk.criticalCount > 0 ? "danger" : "default"}
+      />
+    </StatGrid>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Aging buckets
+// ──────────────────────────────────────────────────────────────────────────
+async function AgingBuckets() {
   const buckets = await getArAging();
   const iconMap: Record<string, typeof Calendar> = {
     "1-30": Calendar,
@@ -130,7 +234,166 @@ async function AgingKpis() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Company aging (from cash_flow_aging view)
+// Payment risk
+// ──────────────────────────────────────────────────────────────────────────
+function riskShortLabel(raw: string): string {
+  const upper = raw.toUpperCase();
+  if (upper.startsWith("CRITICO")) return "Crítico";
+  if (upper.startsWith("ALTO")) return "Alto";
+  if (upper.startsWith("MEDIO")) return "Medio";
+  return raw;
+}
+function riskVariant(raw: string): "critical" | "warning" | "info" {
+  const upper = raw.toUpperCase();
+  if (upper.startsWith("CRITICO")) return "critical";
+  if (upper.startsWith("ALTO")) return "warning";
+  return "info";
+}
+function trendLabel(raw: string | null): string {
+  if (!raw) return "—";
+  const map: Record<string, string> = {
+    estable: "Estable",
+    mejorando: "Mejorando",
+    empeorando: "Empeorando",
+  };
+  return map[raw] ?? raw;
+}
+
+const paymentColumns: DataTableColumn<PaymentPredictionRow>[] = [
+  {
+    key: "company",
+    header: "Cliente",
+    cell: (r) => (
+      <CompanyLink
+        companyId={r.company_id}
+        name={r.company_name ? capitalize(r.company_name) : null}
+        truncate
+      />
+    ),
+  },
+  {
+    key: "risk",
+    header: "Riesgo",
+    cell: (r) => (
+      <Badge variant={riskVariant(r.payment_risk)}>
+        {riskShortLabel(r.payment_risk)}
+      </Badge>
+    ),
+  },
+  {
+    key: "trend",
+    header: "Tendencia",
+    cell: (r) => (
+      <span className="text-xs">{trendLabel(r.payment_trend)}</span>
+    ),
+    hideOnMobile: true,
+  },
+  {
+    key: "avg_days",
+    header: "Días promedio",
+    cell: (r) =>
+      r.avg_days_to_pay != null ? Math.round(r.avg_days_to_pay) : "—",
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "max_overdue",
+    header: "Máx vencido",
+    cell: (r) =>
+      r.max_days_overdue != null ? (
+        <span className="font-semibold tabular-nums text-danger">
+          {r.max_days_overdue}d
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+  {
+    key: "pending",
+    header: "Pendiente",
+    cell: (r) => (
+      <span className="font-bold">
+        <Currency amount={r.total_pending} compact />
+      </span>
+    ),
+    align: "right",
+  },
+];
+
+function capitalize(s: string): string {
+  return s
+    .toLowerCase()
+    .split(" ")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
+async function PaymentRiskTable() {
+  const rows = await getPaymentPredictions(20);
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={Flame}
+        title="Sin clientes en riesgo"
+        description="Todos los clientes pagan dentro de su patrón normal."
+        compact
+      />
+    );
+  }
+  return (
+    <DataTable
+      data={rows}
+      columns={paymentColumns}
+      rowKey={(r) => String(r.company_id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <CompanyLink
+              companyId={r.company_id}
+              name={r.company_name ? capitalize(r.company_name) : null}
+              truncate
+            />
+          }
+          subtitle={trendLabel(r.payment_trend)}
+          badge={
+            <Badge variant={riskVariant(r.payment_risk)}>
+              {riskShortLabel(r.payment_risk)}
+            </Badge>
+          }
+          fields={[
+            {
+              label: "Pendiente",
+              value: <Currency amount={r.total_pending} compact />,
+            },
+            {
+              label: "Máx vencido",
+              value:
+                r.max_days_overdue != null
+                  ? `${r.max_days_overdue}d`
+                  : "—",
+              className: "text-danger",
+            },
+            {
+              label: "Días promedio",
+              value:
+                r.avg_days_to_pay != null
+                  ? Math.round(r.avg_days_to_pay)
+                  : "—",
+            },
+            {
+              label: "# facturas",
+              value: r.pending_count,
+            },
+          ]}
+        />
+      )}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Company aging
 // ──────────────────────────────────────────────────────────────────────────
 const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   {
@@ -249,7 +512,7 @@ async function CompanyAgingTable() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Overdue invoices (from ar_aging_detail view)
+// Overdue invoices
 // ──────────────────────────────────────────────────────────────────────────
 const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
   {
