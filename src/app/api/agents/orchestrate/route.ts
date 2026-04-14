@@ -1378,9 +1378,9 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     }
     case "costos": {
       const [margins, deadStock, priceErosion, topProducts, purchasePrices, productCosts, belowCostLines] = await Promise.all([
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, cost_price, gross_margin_pct, total_order_value").not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(20),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, effective_cost, cost_source, bom_real_cost, cached_standard_price, gross_margin_pct, total_order_value").not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(20),
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers, standard_price, list_price").order("inventory_value", { ascending: false }).limit(15),
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, cost_price, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, effective_cost, cost_source, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, standard_price, list_price").gt("stock_qty", 0).order("stock_qty", { ascending: false }).limit(15),
         // NEW: Purchase prices vs historical average (are we buying expensive?)
         sb.from("purchase_price_intelligence").select("product_ref, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, total_spent").eq("price_flag", "price_above_avg").order("total_spent", { ascending: false }).limit(15),

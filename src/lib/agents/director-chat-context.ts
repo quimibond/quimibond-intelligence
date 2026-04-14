@@ -276,7 +276,7 @@ async function buildCostos(sb: SupabaseClient): Promise<string> {
       .order("margin_total", { ascending: true })
       .limit(15),
     sb.from("product_margin_analysis")
-      .select("product_ref, company_name, avg_order_price, cost_price, gross_margin_pct, total_order_value")
+      .select("product_ref, company_name, avg_order_price, effective_cost, cost_source, gross_margin_pct, total_order_value")
       .lt("gross_margin_pct", 15)
       .not("gross_margin_pct", "is", null)
       .order("total_order_value", { ascending: false })
