@@ -3,26 +3,46 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { resolveCompanyNames } from "./_helpers";
 import { toMxn } from "@/lib/formatters";
 
+/**
+ * Purchases queries v2 — usa views canónicas:
+ * - `cfo_dashboard` — pagos a proveedores 30d, cuentas por pagar
+ * - `supplier_concentration_herfindahl` — productos con concentración riesgosa
+ * - `purchase_price_intelligence` — alertas de precios anormales
+ * - `supplier_product_matrix` — qué proveedor da qué producto
+ * - `odoo_purchase_orders` — pedidos crudos
+ * - `odoo_invoices` (in_invoice) — facturas de proveedores
+ */
+
 function monthStart(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// KPIs
+// ──────────────────────────────────────────────────────────────────────────
 export interface PurchasesKpis {
   monthTotal: number;
   prevMonthTotal: number;
   trendPct: number;
   poCount: number;
   supplierPayable: number;
+  pagosProv30d: number;
+  singleSourceCount: number;
+  singleSourceSpent: number;
 }
 
 export async function getPurchasesKpis(): Promise<PurchasesKpis> {
   const sb = getServiceClient();
   const now = new Date();
   const thisStart = monthStart(new Date(now.getFullYear(), now.getMonth(), 1));
-  const nextStart = monthStart(new Date(now.getFullYear(), now.getMonth() + 1, 1));
-  const prevStart = monthStart(new Date(now.getFullYear(), now.getMonth() - 1, 1));
+  const nextStart = monthStart(
+    new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  );
+  const prevStart = monthStart(
+    new Date(now.getFullYear(), now.getMonth() - 1, 1)
+  );
 
-  const [curr, prev, ap] = await Promise.all([
+  const [curr, prev, ap, cfo, herfindahl] = await Promise.all([
     sb
       .from("odoo_purchase_orders")
       .select("amount_total_mxn")
@@ -38,6 +58,11 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
       .select("amount_residual, currency")
       .eq("move_type", "in_invoice")
       .in("payment_state", ["not_paid", "partial"]),
+    sb.from("cfo_dashboard").select("pagos_prov_30d").maybeSingle(),
+    sb
+      .from("supplier_concentration_herfindahl")
+      .select("total_spent_12m")
+      .eq("concentration_level", "single_source"),
   ]);
 
   const monthTotal = ((curr.data ?? []) as Array<{
@@ -51,6 +76,14 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
     currency: string | null;
   }>).reduce((a, r) => a + toMxn(r.amount_residual, r.currency), 0);
 
+  const ssRows = (herfindahl.data ?? []) as Array<{
+    total_spent_12m: number | null;
+  }>;
+  const singleSourceSpent = ssRows.reduce(
+    (a, r) => a + (Number(r.total_spent_12m) || 0),
+    0
+  );
+
   return {
     monthTotal,
     prevMonthTotal,
@@ -60,13 +93,112 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
         : 0,
     poCount: (curr.data ?? []).length,
     supplierPayable,
+    pagosProv30d:
+      (cfo.data as { pagos_prov_30d: number | null } | null)?.pagos_prov_30d ??
+      0,
+    singleSourceCount: ssRows.length,
+    singleSourceSpent,
   };
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Single-source risk — productos con UN solo proveedor
+// ──────────────────────────────────────────────────────────────────────────
+export interface SingleSourceRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  top_supplier_name: string | null;
+  top_supplier_company_id: number | null;
+  total_spent_12m: number;
+  concentration_level: string;
+  herfindahl_idx: number;
+  top_supplier_share_pct: number;
+}
+
+export async function getSingleSourceRisk(
+  limit = 20
+): Promise<SingleSourceRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("supplier_concentration_herfindahl")
+    .select(
+      "odoo_product_id, product_ref, product_name, top_supplier_name, top_supplier_company_id, total_spent_12m, concentration_level, herfindahl_idx, top_supplier_share_pct"
+    )
+    .in("concentration_level", ["single_source", "very_high"])
+    .order("total_spent_12m", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<SingleSourceRow>>).map((r) => ({
+    odoo_product_id: Number(r.odoo_product_id) || 0,
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    top_supplier_name: r.top_supplier_name ?? null,
+    top_supplier_company_id:
+      r.top_supplier_company_id != null
+        ? Number(r.top_supplier_company_id)
+        : null,
+    total_spent_12m: Number(r.total_spent_12m) || 0,
+    concentration_level: r.concentration_level ?? "—",
+    herfindahl_idx: Number(r.herfindahl_idx) || 0,
+    top_supplier_share_pct: Number(r.top_supplier_share_pct) || 0,
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Price anomalies — productos comprados arriba del promedio
+// ──────────────────────────────────────────────────────────────────────────
+export interface PriceAnomalyRow {
+  product_ref: string | null;
+  product_name: string | null;
+  currency: string | null;
+  last_supplier: string | null;
+  last_price: number | null;
+  prev_price: number | null;
+  avg_price: number | null;
+  price_change_pct: number | null;
+  price_vs_avg_pct: number | null;
+  price_flag: string;
+  total_spent: number;
+  last_purchase_date: string | null;
+}
+
+export async function getPriceAnomalies(
+  limit = 30
+): Promise<PriceAnomalyRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("purchase_price_intelligence")
+    .select(
+      "product_ref, product_name, currency, last_supplier, last_price, prev_price, avg_price, price_change_pct, price_vs_avg_pct, price_flag, total_spent, last_purchase_date"
+    )
+    .in("price_flag", ["price_above_avg", "price_below_avg"])
+    .order("total_spent", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<PriceAnomalyRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    currency: r.currency ?? null,
+    last_supplier: r.last_supplier ?? null,
+    last_price: r.last_price != null ? Number(r.last_price) : null,
+    prev_price: r.prev_price != null ? Number(r.prev_price) : null,
+    avg_price: r.avg_price != null ? Number(r.avg_price) : null,
+    price_change_pct:
+      r.price_change_pct != null ? Number(r.price_change_pct) : null,
+    price_vs_avg_pct:
+      r.price_vs_avg_pct != null ? Number(r.price_vs_avg_pct) : null,
+    price_flag: r.price_flag ?? "—",
+    total_spent: Number(r.total_spent) || 0,
+    last_purchase_date: r.last_purchase_date ?? null,
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Recent purchase orders
+// ──────────────────────────────────────────────────────────────────────────
 export interface RecentPurchaseOrder {
-  id: number | string;
+  id: number;
   name: string | null;
-  company_id: number | string | null;
+  company_id: number | null;
   company_name: string | null;
   amount_total_mxn: number | null;
   buyer_name: string | null;
@@ -95,6 +227,57 @@ export async function getRecentPurchaseOrders(
   return rows.map((row) => ({
     ...row,
     company_name:
-      row.company_id != null ? (nameMap.get(Number(row.company_id)) ?? null) : null,
+      row.company_id != null
+        ? (nameMap.get(Number(row.company_id)) ?? null)
+        : null,
   }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Top suppliers (12m spent)
+// ──────────────────────────────────────────────────────────────────────────
+export interface TopSupplierRow {
+  supplier_name: string;
+  total_spent: number;
+  product_count: number;
+  order_count: number;
+}
+
+export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("supplier_product_matrix")
+    .select("supplier_name, purchase_value, purchase_orders, odoo_product_id")
+    .gt("purchase_value", 0);
+  const rows = (data ?? []) as Array<{
+    supplier_name: string | null;
+    purchase_value: number | null;
+    purchase_orders: number | null;
+    odoo_product_id: number | null;
+  }>;
+  const buckets = new Map<
+    string,
+    { spent: number; products: Set<number>; orders: number }
+  >();
+  for (const r of rows) {
+    if (!r.supplier_name) continue;
+    const b = buckets.get(r.supplier_name) ?? {
+      spent: 0,
+      products: new Set<number>(),
+      orders: 0,
+    };
+    b.spent += Number(r.purchase_value) || 0;
+    if (r.odoo_product_id) b.products.add(r.odoo_product_id);
+    b.orders += Number(r.purchase_orders) || 0;
+    buckets.set(r.supplier_name, b);
+  }
+  return [...buckets.entries()]
+    .map(([supplier_name, v]) => ({
+      supplier_name,
+      total_spent: v.spent,
+      product_count: v.products.size,
+      order_count: v.orders,
+    }))
+    .sort((a, b) => b.total_spent - a.total_spent)
+    .slice(0, limit);
 }
