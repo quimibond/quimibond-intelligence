@@ -279,3 +279,356 @@ export async function getTopMarginProducts(
     .sort((a, b) => b.total_revenue - a.total_revenue)
     .slice(0, limit);
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// BOM real cost insights (Sprint 13)
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Desde el 1-Abr-2026, los BOMs sólo contienen materia prima (sin mano de
+// obra ni energéticos, que se incorporarán vía centros de trabajo).
+// Por eso el real_unit_cost derivado de BOM es un LÍMITE INFERIOR del
+// costo verdadero; la diferencia negativa contra standard_price NO es
+// "descubrimiento de margen", es sólo la porción de costos aún no capturada.
+//
+// Usamos estas queries para identificar:
+// 1. BOMs sospechosos (delta positivo grande → el BOM tiene cantidades mal
+//    capturadas, porque nada debería costar MÁS que el standard histórico).
+// 2. Productos con componentes sin costeo (has_missing_costs).
+// 3. Impacto $ en revenue: productos con mayor volumen × delta.
+
+export interface BomCostRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  component_count: number;
+  missing_cost_components: number;
+  has_missing_costs: boolean;
+  bom_type: string | null;
+  cached_standard_price: number;
+  real_unit_cost: number;
+  delta_vs_cached_pct: number | null;
+  material_cost_total: number;
+  bom_yield: number;
+  revenue_12m: number;
+  avg_order_price: number;
+  qty_ordered_12m: number;
+  impact_mxn: number; // abs(delta_pct) × revenue_12m / 100
+}
+
+export interface BomCostSummary {
+  totalBoms: number;
+  productsWithRealCost: number;
+  productsWithMissingComponents: number;
+  productsInSales: number;
+  coverageOfSalesPct: number;
+  medianDeltaPct: number | null;
+  suspiciousBomsCount: number; // delta > +50% (likely bad data)
+  revenueCoveredMxn: number;
+}
+
+export async function getBomCostSummary(): Promise<BomCostSummary> {
+  const sb = getServiceClient();
+  const [boms, prc, pmaProducts, revenue] = await Promise.all([
+    sb.from("mrp_boms").select("id", { count: "exact", head: true }).eq("active", true),
+    sb
+      .from("product_real_cost")
+      .select(
+        "odoo_product_id, has_missing_costs, delta_vs_cached_pct, real_unit_cost"
+      ),
+    sb
+      .from("product_margin_analysis")
+      .select("odoo_product_id, total_order_value, cost_source"),
+    // noop placeholder
+    Promise.resolve(null),
+  ]);
+
+  const prcRows = (prc.data ?? []) as Array<{
+    odoo_product_id: number;
+    has_missing_costs: boolean;
+    delta_vs_cached_pct: number | null;
+    real_unit_cost: number | null;
+  }>;
+
+  const pmaRows = (pmaProducts.data ?? []) as Array<{
+    odoo_product_id: number;
+    total_order_value: number | null;
+    cost_source: string | null;
+  }>;
+  void revenue;
+
+  const bomProductIds = new Set(prcRows.map((r) => r.odoo_product_id));
+  const saleProductRevenue = new Map<number, number>();
+  for (const r of pmaRows) {
+    if (r.odoo_product_id == null) continue;
+    saleProductRevenue.set(
+      r.odoo_product_id,
+      (saleProductRevenue.get(r.odoo_product_id) ?? 0) +
+        (r.total_order_value ?? 0)
+    );
+  }
+  const productsInSales = saleProductRevenue.size;
+  const overlap = [...saleProductRevenue.keys()].filter((id) =>
+    bomProductIds.has(id)
+  );
+  const revenueCovered = overlap.reduce(
+    (a, id) => a + (saleProductRevenue.get(id) ?? 0),
+    0
+  );
+
+  const deltas = prcRows
+    .map((r) => r.delta_vs_cached_pct)
+    .filter((d): d is number => d != null)
+    .sort((a, b) => a - b);
+  const median =
+    deltas.length === 0
+      ? null
+      : deltas.length % 2 === 1
+        ? deltas[(deltas.length - 1) / 2]
+        : (deltas[deltas.length / 2 - 1] + deltas[deltas.length / 2]) / 2;
+
+  return {
+    totalBoms: boms.count ?? 0,
+    productsWithRealCost: prcRows.filter((r) => (r.real_unit_cost ?? 0) > 0)
+      .length,
+    productsWithMissingComponents: prcRows.filter((r) => r.has_missing_costs)
+      .length,
+    productsInSales,
+    coverageOfSalesPct:
+      productsInSales === 0 ? 0 : (overlap.length / productsInSales) * 100,
+    medianDeltaPct: median,
+    suspiciousBomsCount: prcRows.filter(
+      (r) => (r.delta_vs_cached_pct ?? 0) > 50
+    ).length,
+    revenueCoveredMxn: revenueCovered,
+  };
+}
+
+async function getPmaRevenueMap(): Promise<
+  Map<number, { revenue: number; avgPrice: number; qty: number }>
+> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("product_margin_analysis")
+    .select(
+      "odoo_product_id, total_order_value, avg_order_price, total_qty_ordered"
+    );
+  const rows = (data ?? []) as Array<{
+    odoo_product_id: number;
+    total_order_value: number | null;
+    avg_order_price: number | null;
+    total_qty_ordered: number | null;
+  }>;
+  const map = new Map<
+    number,
+    { revenue: number; avgPrice: number; qty: number; n: number }
+  >();
+  for (const r of rows) {
+    if (r.odoo_product_id == null) continue;
+    const cur = map.get(r.odoo_product_id) ?? {
+      revenue: 0,
+      avgPrice: 0,
+      qty: 0,
+      n: 0,
+    };
+    cur.revenue += r.total_order_value ?? 0;
+    cur.avgPrice += r.avg_order_price ?? 0;
+    cur.qty += r.total_qty_ordered ?? 0;
+    cur.n += 1;
+    map.set(r.odoo_product_id, cur);
+  }
+  const result = new Map<
+    number,
+    { revenue: number; avgPrice: number; qty: number }
+  >();
+  for (const [k, v] of map) {
+    result.set(k, {
+      revenue: v.revenue,
+      avgPrice: v.n > 0 ? v.avgPrice / v.n : 0,
+      qty: v.qty,
+    });
+  }
+  return result;
+}
+
+export async function getSuspiciousBoms(limit = 30): Promise<BomCostRow[]> {
+  // BOMs donde el costo derivado > standard_price histórico.
+  // Con MO/energéticos removidos desde abr-2026, el BOM debería ser LOWER
+  // que el standard histórico en casi todos los productos. Un delta positivo
+  // > 50% es casi siempre captura errónea (qty, uom, wrong component).
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("product_real_cost")
+    .select(
+      "odoo_product_id, product_ref, product_name, component_count, missing_cost_components, has_missing_costs, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield"
+    )
+    .gt("delta_vs_cached_pct", 50)
+    .order("delta_vs_cached_pct", { ascending: false })
+    .limit(limit);
+
+  const prcRows = (data ?? []) as Array<{
+    odoo_product_id: number;
+    product_ref: string | null;
+    product_name: string | null;
+    component_count: number;
+    missing_cost_components: number;
+    has_missing_costs: boolean;
+    bom_type: string | null;
+    cached_standard_price: number | null;
+    real_unit_cost: number | null;
+    delta_vs_cached_pct: number | null;
+    material_cost_total: number | null;
+    bom_yield: number | null;
+  }>;
+
+  const pmaMap = await getPmaRevenueMap();
+  return prcRows.map((r) => {
+    const pma = pmaMap.get(r.odoo_product_id) ?? {
+      revenue: 0,
+      avgPrice: 0,
+      qty: 0,
+    };
+    const delta = r.delta_vs_cached_pct ?? 0;
+    return {
+      odoo_product_id: r.odoo_product_id,
+      product_ref: r.product_ref,
+      product_name: r.product_name,
+      component_count: r.component_count ?? 0,
+      missing_cost_components: r.missing_cost_components ?? 0,
+      has_missing_costs: r.has_missing_costs ?? false,
+      bom_type: r.bom_type,
+      cached_standard_price: r.cached_standard_price ?? 0,
+      real_unit_cost: r.real_unit_cost ?? 0,
+      delta_vs_cached_pct: delta,
+      material_cost_total: r.material_cost_total ?? 0,
+      bom_yield: r.bom_yield ?? 1,
+      revenue_12m: pma.revenue,
+      avg_order_price: pma.avgPrice,
+      qty_ordered_12m: pma.qty,
+      impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
+    };
+  });
+}
+
+export async function getBomsMissingComponents(
+  limit = 30
+): Promise<BomCostRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("product_real_cost")
+    .select(
+      "odoo_product_id, product_ref, product_name, component_count, missing_cost_components, has_missing_costs, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield"
+    )
+    .eq("has_missing_costs", true)
+    .order("missing_cost_components", { ascending: false })
+    .limit(limit);
+
+  const prcRows = (data ?? []) as Array<{
+    odoo_product_id: number;
+    product_ref: string | null;
+    product_name: string | null;
+    component_count: number;
+    missing_cost_components: number;
+    has_missing_costs: boolean;
+    bom_type: string | null;
+    cached_standard_price: number | null;
+    real_unit_cost: number | null;
+    delta_vs_cached_pct: number | null;
+    material_cost_total: number | null;
+    bom_yield: number | null;
+  }>;
+
+  const pmaMap = await getPmaRevenueMap();
+  return prcRows
+    .map((r) => {
+      const pma = pmaMap.get(r.odoo_product_id) ?? {
+        revenue: 0,
+        avgPrice: 0,
+        qty: 0,
+      };
+      const delta = r.delta_vs_cached_pct ?? 0;
+      return {
+        odoo_product_id: r.odoo_product_id,
+        product_ref: r.product_ref,
+        product_name: r.product_name,
+        component_count: r.component_count ?? 0,
+        missing_cost_components: r.missing_cost_components ?? 0,
+        has_missing_costs: r.has_missing_costs ?? false,
+        bom_type: r.bom_type,
+        cached_standard_price: r.cached_standard_price ?? 0,
+        real_unit_cost: r.real_unit_cost ?? 0,
+        delta_vs_cached_pct: delta,
+        material_cost_total: r.material_cost_total ?? 0,
+        bom_yield: r.bom_yield ?? 1,
+        revenue_12m: pma.revenue,
+        avg_order_price: pma.avgPrice,
+        qty_ordered_12m: pma.qty,
+        impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
+      };
+    })
+    .sort((a, b) => b.revenue_12m - a.revenue_12m);
+}
+
+export async function getTopRevenueBoms(limit = 30): Promise<BomCostRow[]> {
+  // Productos vendidos con BOM (overlap PMA ↔ PRC), ordenados por revenue.
+  // Sirve para priorizar cuáles BOMs revisar primero por impacto económico.
+  const pmaMap = await getPmaRevenueMap();
+  const topPmaIds = [...pmaMap.entries()]
+    .sort((a, b) => b[1].revenue - a[1].revenue)
+    .slice(0, 300)
+    .map(([id]) => id);
+
+  if (topPmaIds.length === 0) return [];
+
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("product_real_cost")
+    .select(
+      "odoo_product_id, product_ref, product_name, component_count, missing_cost_components, has_missing_costs, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield"
+    )
+    .in("odoo_product_id", topPmaIds);
+
+  const prcRows = (data ?? []) as Array<{
+    odoo_product_id: number;
+    product_ref: string | null;
+    product_name: string | null;
+    component_count: number;
+    missing_cost_components: number;
+    has_missing_costs: boolean;
+    bom_type: string | null;
+    cached_standard_price: number | null;
+    real_unit_cost: number | null;
+    delta_vs_cached_pct: number | null;
+    material_cost_total: number | null;
+    bom_yield: number | null;
+  }>;
+
+  return prcRows
+    .map((r) => {
+      const pma = pmaMap.get(r.odoo_product_id) ?? {
+        revenue: 0,
+        avgPrice: 0,
+        qty: 0,
+      };
+      const delta = r.delta_vs_cached_pct ?? 0;
+      return {
+        odoo_product_id: r.odoo_product_id,
+        product_ref: r.product_ref,
+        product_name: r.product_name,
+        component_count: r.component_count ?? 0,
+        missing_cost_components: r.missing_cost_components ?? 0,
+        has_missing_costs: r.has_missing_costs ?? false,
+        bom_type: r.bom_type,
+        cached_standard_price: r.cached_standard_price ?? 0,
+        real_unit_cost: r.real_unit_cost ?? 0,
+        delta_vs_cached_pct: delta,
+        material_cost_total: r.material_cost_total ?? 0,
+        bom_yield: r.bom_yield ?? 1,
+        revenue_12m: pma.revenue,
+        avg_order_price: pma.avgPrice,
+        qty_ordered_12m: pma.qty,
+        impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
+      };
+    })
+    .sort((a, b) => b.revenue_12m - a.revenue_12m)
+    .slice(0, limit);
+}

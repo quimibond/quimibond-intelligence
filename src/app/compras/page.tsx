@@ -49,6 +49,28 @@ export default function ComprasPage() {
         subtitle="Pedidos, riesgo de proveedor único y anomalías de precio"
       />
 
+      {/* Sub-nav a páginas especializadas */}
+      <div className="flex flex-wrap gap-2 text-xs">
+        <a
+          href="/compras/price-variance"
+          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
+        >
+          Variancia de precios
+        </a>
+        <a
+          href="/compras/stockouts"
+          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
+        >
+          Cola de stockouts
+        </a>
+        <a
+          href="/compras/costos-bom"
+          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
+        >
+          Costos de BOM
+        </a>
+      </div>
+
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
