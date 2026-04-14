@@ -1,394 +1,838 @@
-"use client";
-
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { Suspense } from "react";
+import { notFound } from "next/navigation";
+import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
-
   Building2,
-  CreditCard,
-  DollarSign,
-  Heart,
+  Calendar,
+  FileText,
   Mail,
   Package,
-  Sparkles,
+  ShoppingCart,
   Truck,
   TrendingUp,
-  ShoppingCart,
-  Receipt,
-  Banknote,
-  Factory,
+  Users,
 } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { cn, formatCurrency, timeAgo } from "@/lib/utils";
-import type {
-  Company,
-  Contact,
-  Fact,
-  EntityRelationship,
-  Entity,
-  Alert,
-  ActionItem,
-  HealthScore,
-  CompanyFinancials,
-  CompanyLogistics,
-  CompanyPipeline,
-} from "@/lib/types";
-import { EnrichButton } from "@/components/shared/enrich-button";
-import { PageHeader } from "@/components/shared/page-header";
-import { ScoreGauge } from "@/components/shared/score-gauge";
-import { Breadcrumbs } from "@/components/shared/breadcrumbs";
-import { EmptyState } from "@/components/shared/empty-state";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import {
-  TabResumen,
-  TabContactos,
-  TabInteligencia,
-  TabFinanzas,
-  TabAlertas,
-  TabAcciones,
-  TabEmails,
-  TabProductos,
-  TabOperaciones,
-  TabSalud,
-  TabVentas,
-  TabCompras,
-  TabPagos,
-  TabManufactura,
-} from "./components";
-import type { ResolvedRelationship, RevenueRow } from "./components";
-import { CompanyIntelCards } from "./components/company-intel-cards";
+  KpiCard,
+  StatGrid,
+  PageHeader,
+  DataTable,
+  MobileCard,
+  Currency,
+  DateDisplay,
+  MetricRow,
+  StatusBadge,
+  EmptyState,
+  type DataTableColumn,
+} from "@/components/shared/v2";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
-export default function CompanyDetailPage() {
-  const params = useParams<{ id: string }>();
-  const router = useRouter();
-  const companyId = params.id;
+import {
+  getCompanyDetail,
+  getCompanyOrders,
+  getCompanyInvoices,
+  getCompanyDeliveries,
+  getCompanyTopProducts,
+  getCompanyActivities,
+  type CompanyOrderRow,
+  type CompanyInvoiceRow,
+  type CompanyDeliveryRow,
+  type CompanyProductRow,
+  type CompanyActivityRow,
+} from "@/lib/queries/companies";
+import { toMxn } from "@/lib/formatters";
 
-  const [loading, setLoading] = useState(true);
-  const [company, setCompany] = useState<Company | null>(null);
-  const [contacts, setContacts] = useState<Contact[]>([]);
-  const [facts, setFacts] = useState<Fact[]>([]);
-  const [relationships, setRelationships] = useState<ResolvedRelationship[]>([]);
+export const dynamic = "force-dynamic";
 
-  const [actions, setActions] = useState<ActionItem[]>([]);
-  const [companyAlerts, setCompanyAlerts] = useState<Alert[]>([]);
-  const [revenueRows, setRevenueRows] = useState<RevenueRow[]>([]);
-  const [healthScores, setHealthScores] = useState<HealthScore[]>([]);
-  const [financials, setFinancials] = useState<CompanyFinancials | null>(null);
-  const [logistics, setLogistics] = useState<CompanyLogistics | null>(null);
-  const [pipeline, setPipeline] = useState<CompanyPipeline | null>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [odooSnapshots, setOdooSnapshots] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [recentEmails, setRecentEmails] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [companyProducts, setCompanyProducts] = useState<any[]>([]);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [profile, setProfile] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [handler, setHandler] = useState<any>(null);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const [reorderPrediction, setReorderPrediction] = useState<any>(null);
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id } = await params;
+  const company = await getCompanyDetail(Number(id));
+  return { title: company?.name ?? "Empresa" };
+}
 
-  useEffect(() => {
-    async function fetchAll() {
-      // Try RPC first for full context
-      const { data: rpcData, error: rpcError } = await supabase.rpc("get_company_full_context", { p_company_id: Number(companyId) });
+export default async function CompanyDetailPage({
+  params,
+}: {
+  params: Promise<{ id: string }>;
+}) {
+  const { id: idParam } = await params;
+  const id = Number(idParam);
+  if (!Number.isFinite(id)) notFound();
 
-      if (!rpcError && rpcData) {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ctx = rpcData as any;
-        const comp = (ctx.company ?? ctx) as Company;
-        setCompany(comp);
-        setContacts((ctx.contacts as Contact[] | null) ?? []);
-        setFacts((ctx.facts as Fact[] | null) ?? []);
-
-        setActions((ctx.actions as ActionItem[] | null) ?? []);
-        setHealthScores((ctx.health_scores as HealthScore[] | null) ?? []);
-        setRevenueRows((ctx.revenue as RevenueRow[] | null) ?? []);
-        setOdooSnapshots(ctx.snapshots ?? []);
-        setRecentEmails(ctx.recent_emails ?? []);
-
-        const cid = Number(companyId);
-        fetchSecondaryData(cid, ctx, comp);
-        setLoading(false);
-        return;
-      }
-
-      // Fallback: fetch company directly
-      const { data: companyData } = await supabase
-        .from("companies")
-        .select("*")
-        .eq("id", companyId)
-        .single();
-
-      if (!companyData) {
-        setLoading(false);
-        return;
-      }
-
-      const comp = companyData as Company;
-      setCompany(comp);
-
-      const cid = Number(companyId);
-      fetchSecondaryData(cid, null, comp);
-
-      // Parallel fetches
-      const [
-        contactsRes, factsRes, actionsRes,
-        revenueRes, healthRes, snapshotsRes, emailsRes,
-      ] = await Promise.all([
-        supabase.from("contacts").select("*").eq("company_id", comp.id).order("name"),
-        comp.entity_id
-          ? supabase.from("facts").select("*").eq("entity_id", comp.entity_id).order("created_at", { ascending: false }).limit(100)
-          : Promise.resolve({ data: [], error: null }),
-        supabase.from("action_items").select("*").eq("company_id", comp.id).order("created_at", { ascending: false }),
-        supabase.from("revenue_metrics").select("*").eq("company_id", comp.id).order("period_start", { ascending: false }).limit(12),
-        supabase.from("health_scores").select("*").eq("company_id", comp.id).order("score_date", { ascending: false }).limit(30),
-        supabase.from("odoo_snapshots").select("*").eq("company_id", comp.id).order("snapshot_date", { ascending: false }).limit(12),
-        supabase.from("emails").select("*").eq("company_id", comp.id).order("email_date", { ascending: false }).limit(20),
-      ]);
-
-      setContacts((contactsRes.data as Contact[] | null) ?? []);
-      setFacts((factsRes.data as Fact[] | null) ?? []);
-
-      setActions((actionsRes.data as ActionItem[] | null) ?? []);
-      setRevenueRows((revenueRes.data as RevenueRow[] | null) ?? []);
-      setOdooSnapshots(snapshotsRes.data ?? []);
-      setRecentEmails(emailsRes.data ?? []);
-      setHealthScores((healthRes.data as HealthScore[] | null) ?? []);
-
-      // Fetch relationships
-      await fetchRelationships(comp.entity_id);
-      setLoading(false);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function fetchSecondaryData(cid: number, ctx: any | null, comp: Company) {
-      // Company profile (tier, risk, trend, revenue)
-      supabase.from("company_profile").select("*").eq("company_id", cid).single().then(({ data }) => {
-        if (data) setProfile(data);
-      });
-      // Company handler (who manages this account)
-      supabase.from("company_handlers").select("*").eq("company_id", cid).single().then(({ data }) => {
-        if (data) setHandler(data);
-      });
-      // Reorder prediction
-      supabase.from("client_reorder_predictions").select("*").eq("company_id", cid).single().then(({ data }) => {
-        if (data) setReorderPrediction(data);
-      });
-
-      // Alerts (insights for this company)
-      supabase.from("agent_insights").select("*").eq("company_id", cid)
-        .in("state", ["new", "seen"]).gte("confidence", 0.80)
-        .order("created_at", { ascending: false }).limit(50)
-        .then(({ data }) => { if (data) setCompanyAlerts(data as Alert[]); });
-
-      // Products
-      Promise.resolve(supabase.rpc("get_company_products", { p_company_id: cid })).then(({ data }) => {
-        if (Array.isArray(data)) setCompanyProducts(data);
-      }).catch(err => console.error("[company detail]", err));
-
-      // Financials
-      if (ctx?.financials) {
-        setFinancials(ctx.financials as CompanyFinancials);
-      } else {
-        Promise.resolve(supabase.rpc("get_company_financials", { p_company_id: cid })).then(({ data }) => {
-          if (data) setFinancials(data as CompanyFinancials);
-        }).catch(err => console.error("[company detail]", err));
-      }
-
-      // Logistics
-      if (ctx?.logistics) {
-        setLogistics(ctx.logistics as CompanyLogistics);
-      } else {
-        Promise.resolve(supabase.rpc("get_company_logistics", { p_company_id: cid })).then(({ data }) => {
-          if (data) setLogistics(data as CompanyLogistics);
-        }).catch(err => console.error("[company detail]", err));
-      }
-
-      // Pipeline
-      if (ctx?.pipeline) {
-        setPipeline(ctx.pipeline as CompanyPipeline);
-      } else {
-        Promise.resolve(supabase.rpc("get_company_pipeline", { p_company_id: cid })).then(({ data }) => {
-          if (data) setPipeline(data as CompanyPipeline);
-        }).catch(err => console.error("[company detail]", err));
-      }
-
-      // Relationships
-      fetchRelationships(comp.entity_id);
-    }
-
-    async function fetchRelationships(entityId: number | null | undefined) {
-      if (!entityId) return;
-      // Single RPC call with server-side JOIN (replaces 2-query N+1)
-      const { data } = await supabase.rpc("get_company_relationships", {
-        p_entity_id: entityId,
-      });
-      const resolved = ((data ?? []) as Array<EntityRelationship & { related_entity: Entity | null }>)
-        .map(r => ({ ...r, related_entity: r.related_entity ?? null }));
-      setRelationships(resolved as ResolvedRelationship[]);
-    }
-
-    fetchAll();
-  }, [companyId]);
-
-  // ── Loading state ──
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <Skeleton className="h-8 w-32" />
-        <Skeleton className="h-10 w-72" />
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-20" />
-          ))}
-        </div>
-        <Skeleton className="h-10 w-full max-w-2xl" />
-        <Skeleton className="h-64" />
-      </div>
-    );
-  }
-
-  // ── Not found ──
-  if (!company) {
-    return (
-      <div>
-        <Button variant="ghost" size="sm" onClick={() => router.push("/companies")} className="mb-4">
-          <ArrowLeft className="mr-1 h-4 w-4" />
-          Empresas
-        </Button>
-        <EmptyState
-          icon={Building2}
-          title="Empresa no encontrada"
-          description="La empresa solicitada no existe o fue eliminada."
-        />
-      </div>
-    );
-  }
-
-  // ── Derived ──
-  const latestHealth = healthScores.length > 0 ? healthScores[0] : null;
-  const aging = financials?.aging;
-  const overdue = aging
-    ? (aging["1_30"] ?? 0) + (aging["31_60"] ?? 0) + (aging["61_90"] ?? 0) + (aging["90_plus"] ?? 0)
-    : null;
+  const company = await getCompanyDetail(id);
+  if (!company) notFound();
 
   return (
-    <div className="space-y-4">
-      <Breadcrumbs items={[
-        { label: "Empresas", href: "/companies" },
-        { label: company.name },
-      ]} />
+    <div className="space-y-5 pb-24 md:pb-6">
+      {/* Back link */}
+      <Link
+        href="/companies"
+        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      >
+        <ArrowLeft className="h-3 w-3" />
+        Todas las empresas
+      </Link>
 
       {/* Header */}
-      <div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <h1 className="text-xl font-black truncate">{company.name}</h1>
-          {profile?.tier && (
-            <Badge variant={profile.tier === "strategic" ? "info" : profile.tier === "important" ? "success" : "secondary"} className="text-[10px]">
-              {profile.tier}
-            </Badge>
-          )}
-          {profile?.risk_level && profile.risk_level !== "low" && (
-            <Badge variant={profile.risk_level === "critical" ? "critical" : "warning"} className="text-[10px]">
-              Riesgo: {profile.risk_level}
-            </Badge>
-          )}
-        </div>
-        <p className="text-sm text-muted-foreground mt-1">
-          {company.industry ?? (company.is_customer ? "Cliente" : company.is_supplier ? "Proveedor" : "")}
-          {handler?.sales_handler_name && <> · {handler.sales_handler_name}</>}
-        </p>
-      </div>
+      <PageHeader
+        title={company.name}
+        subtitle={
+          [company.industry, company.city, company.rfc]
+            .filter(Boolean)
+            .join(" · ") || undefined
+        }
+        actions={
+          <div className="flex gap-2">
+            {company.tier && (
+              <Badge
+                variant={
+                  company.tier === "A"
+                    ? "success"
+                    : company.tier === "B"
+                      ? "info"
+                      : "secondary"
+                }
+              >
+                Pareto {company.tier}
+              </Badge>
+            )}
+            {company.isCustomer && <Badge variant="info">Cliente</Badge>}
+            {company.isSupplier && (
+              <Badge variant="secondary">Proveedor</Badge>
+            )}
+          </div>
+        }
+      />
 
-      {/* 4 inline stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center">
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-lg font-black tabular-nums">{formatCurrency(company.lifetime_value)}</p>
-            <p className="text-[10px] text-muted-foreground">revenue total</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <p className="text-lg font-black tabular-nums">{profile?.revenue_90d != null ? formatCurrency(profile.revenue_90d) : "—"}</p>
-            <p className="text-[10px] text-muted-foreground">90 dias</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <p className={cn("text-lg font-black tabular-nums", overdue && overdue > 0 ? "text-danger" : "")}>
-              {overdue != null ? formatCurrency(overdue) : "—"}
-            </p>
-            <p className="text-[10px] text-muted-foreground">vencido</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-3">
-            <p className={cn("text-lg font-black tabular-nums",
-              profile?.trend_pct > 0 ? "text-success" : profile?.trend_pct < 0 ? "text-danger" : ""
-            )}>
-              {profile?.trend_pct != null ? `${profile.trend_pct > 0 ? "+" : ""}${Number(profile.trend_pct).toFixed(0)}%` : "—"}
-            </p>
-            <p className="text-[10px] text-muted-foreground">tendencia</p>
-          </CardContent>
-        </Card>
-      </div>
+      {/* KPIs */}
+      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+        <KpiCard
+          title="Revenue total"
+          value={company.totalRevenue}
+          format="currency"
+          compact
+          icon={TrendingUp}
+        />
+        <KpiCard
+          title="Revenue 90d"
+          value={company.revenue90d}
+          format="currency"
+          compact
+          icon={TrendingUp}
+          trend={
+            company.trendPct !== 0
+              ? { value: company.trendPct, good: "up" }
+              : undefined
+          }
+        />
+        <KpiCard
+          title="Cartera vencida"
+          value={company.overdueAmount}
+          format="currency"
+          compact
+          icon={AlertTriangle}
+          subtitle={
+            company.maxDaysOverdue
+              ? `máx ${company.maxDaysOverdue} días`
+              : "—"
+          }
+          tone={company.overdueAmount > 0 ? "danger" : "default"}
+        />
+        <KpiCard
+          title="OTD"
+          value={company.otdRate}
+          format="percent"
+          icon={Truck}
+          subtitle={`${company.lateDeliveries} tardías`}
+          tone={
+            company.otdRate == null
+              ? "default"
+              : company.otdRate >= 90
+                ? "success"
+                : company.otdRate >= 75
+                  ? "warning"
+                  : "danger"
+          }
+        />
+      </StatGrid>
 
       {/* Tabs */}
-      <Tabs defaultValue="general">
-        <div className="overflow-x-auto -mx-4 px-4 md:mx-0 md:px-0">
-          <TabsList className="inline-flex w-auto min-w-full md:min-w-0 gap-0.5 h-9">
-            <TabsTrigger value="general" className="text-xs px-3">General</TabsTrigger>
-            <TabsTrigger value="inteligencia" className="text-xs px-3">Inteligencia</TabsTrigger>
-            <TabsTrigger value="finanzas" className="text-xs px-3">Finanzas</TabsTrigger>
-            <TabsTrigger value="operaciones" className="text-xs px-3">Operaciones</TabsTrigger>
-            <TabsTrigger value="salud" className="text-xs px-3">Salud</TabsTrigger>
-            <TabsTrigger value="alertas" className="text-xs px-3">Alertas{companyAlerts.length > 0 ? ` (${companyAlerts.length})` : ""}</TabsTrigger>
-            <TabsTrigger value="acciones" className="text-xs px-3">Acciones{actions.length > 0 ? ` (${actions.length})` : ""}</TabsTrigger>
-            <TabsTrigger value="emails" className="text-xs px-3">Emails</TabsTrigger>
-          </TabsList>
-        </div>
+      <Tabs defaultValue="overview" className="w-full">
+        <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
+          <TabsTrigger value="overview">Overview</TabsTrigger>
+          <TabsTrigger value="finance">Finanzas</TabsTrigger>
+          <TabsTrigger value="orders">Pedidos</TabsTrigger>
+          <TabsTrigger value="products">Productos</TabsTrigger>
+          <TabsTrigger value="activity">Actividad</TabsTrigger>
+        </TabsList>
 
-        {/* General = Intel cards + contacts */}
-        <TabsContent value="general" className="space-y-4">
-          <CompanyIntelCards companyId={company.id} companyName={company.name} />
-          <TabContactos contacts={contacts} />
+        <TabsContent value="overview" className="mt-4 space-y-4">
+          <OverviewTab
+            company={company}
+          />
         </TabsContent>
-        <TabsContent value="inteligencia">
-          <TabInteligencia facts={facts} companyId={company.id} />
+
+        <TabsContent value="finance" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Facturas recientes</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[300px]" />}>
+                <InvoicesSection companyId={id} />
+              </Suspense>
+            </CardContent>
+          </Card>
         </TabsContent>
-        <TabsContent value="finanzas" className="space-y-6">
-          <TabFinanzas financials={financials} revenueRows={revenueRows} odooSnapshots={odooSnapshots} />
-          <TabVentas companyId={company.id} />
-          <TabCompras companyId={company.id} />
-          <TabPagos companyId={company.id} />
+
+        <TabsContent value="orders" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Pedidos recientes</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[300px]" />}>
+                <OrdersSection companyId={id} />
+              </Suspense>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Entregas</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[240px]" />}>
+                <DeliveriesSection companyId={id} />
+              </Suspense>
+            </CardContent>
+          </Card>
         </TabsContent>
-        <TabsContent value="operaciones" className="space-y-6">
-          <TabOperaciones logistics={logistics} pipeline={pipeline} />
-          <TabProductos companyProducts={companyProducts} />
-          <TabManufactura companyId={company.id} />
+
+        <TabsContent value="products" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Top productos comprados</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[300px]" />}>
+                <ProductsSection companyId={id} />
+              </Suspense>
+            </CardContent>
+          </Card>
         </TabsContent>
-        <TabsContent value="salud" className="space-y-6">
-          <TabSalud healthScores={healthScores} />
-        </TabsContent>
-        <TabsContent value="alertas">
-          <TabAlertas alerts={companyAlerts} />
-        </TabsContent>
-        <TabsContent value="acciones">
-          <TabAcciones actions={actions} />
-        </TabsContent>
-        <TabsContent value="emails">
-          <TabEmails recentEmails={recentEmails} />
+
+        <TabsContent value="activity" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Actividades pendientes
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[240px]" />}>
+                <ActivitiesSection companyId={id} />
+              </Suspense>
+            </CardContent>
+          </Card>
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Overview tab — métricas consolidadas
+// ──────────────────────────────────────────────────────────────────────────
+function OverviewTab({
+  company,
+}: {
+  company: Awaited<ReturnType<typeof getCompanyDetail>>;
+}) {
+  if (!company) return null;
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Revenue & órdenes</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <MetricRow
+            label="Revenue total"
+            value={company.totalRevenue}
+            format="currency"
+            compact
+          />
+          <MetricRow
+            label="Revenue 12m"
+            value={company.revenue12m}
+            format="currency"
+            compact
+          />
+          <MetricRow
+            label="Revenue 3m"
+            value={company.revenue3m}
+            format="currency"
+            compact
+          />
+          <MetricRow
+            label="Revenue 90d"
+            value={company.revenue90d}
+            format="currency"
+            compact
+          />
+          <MetricRow
+            label="Pedidos totales"
+            value={company.totalOrders}
+            format="number"
+          />
+          <MetricRow
+            label="Último pedido"
+            value={
+              company.lastOrderDate
+                ? `hace ${company.daysSinceLastOrder ?? "—"} días`
+                : "sin pedidos"
+            }
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Riesgo & health</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <MetricRow
+            label="LTV"
+            value={company.ltvMxn ?? 0}
+            format="currency"
+            compact
+          />
+          <MetricRow
+            label="Churn risk"
+            value={company.churnRiskScore ?? 0}
+            format="number"
+            alert={(company.churnRiskScore ?? 0) > 70}
+          />
+          <MetricRow
+            label="Overdue risk"
+            value={company.overdueRiskScore ?? 0}
+            format="number"
+            alert={(company.overdueRiskScore ?? 0) > 70}
+          />
+          <MetricRow
+            label="Vencido total"
+            value={company.overdueAmount}
+            format="currency"
+            compact
+            alert={company.overdueAmount > 0}
+          />
+          <MetricRow
+            label="Facturas vencidas"
+            value={company.overdueCount}
+            format="number"
+          />
+          <MetricRow
+            label="Máx días vencido"
+            value={company.maxDaysOverdue ?? 0}
+            format="days"
+            alert={(company.maxDaysOverdue ?? 0) > 30}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Operaciones & entregas</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <MetricRow
+            label="Entregas totales"
+            value={company.totalDeliveries}
+            format="number"
+          />
+          <MetricRow
+            label="Entregas tardías"
+            value={company.lateDeliveries}
+            format="number"
+            alert={company.lateDeliveries > 0}
+          />
+          <MetricRow
+            label="OTD rate"
+            value={company.otdRate ?? 0}
+            format="percent"
+          />
+          <MetricRow
+            label="Crédito"
+            value={company.creditLimit ?? 0}
+            format="currency"
+            compact
+          />
+          <MetricRow
+            label="Término de pago"
+            value={company.paymentTerm ?? "—"}
+          />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Comunicación & equipo</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <MetricRow
+            label="Emails totales"
+            value={company.emailCount}
+            format="number"
+          />
+          <MetricRow
+            label="Emails 30d"
+            value={company.emails30d}
+            format="number"
+          />
+          <MetricRow
+            label="Último email"
+            value={
+              company.lastEmailDate
+                ? new Date(company.lastEmailDate).toLocaleDateString("es-MX")
+                : "—"
+            }
+          />
+          <MetricRow
+            label="Quejas"
+            value={company.complaints}
+            format="number"
+            alert={company.complaints > 0}
+          />
+          <MetricRow
+            label="Compromisos"
+            value={company.commitments}
+            format="number"
+          />
+          <MetricRow
+            label="Requests"
+            value={company.requests}
+            format="number"
+          />
+          {company.salespeople && (
+            <MetricRow
+              label="Vendedores"
+              value={company.salespeople}
+            />
+          )}
+        </CardContent>
+      </Card>
+
+      {company.recentComplaints && (
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Quejas recientes</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
+              {company.recentComplaints}
+            </p>
+          </CardContent>
+        </Card>
+      )}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Invoices tab
+// ──────────────────────────────────────────────────────────────────────────
+const invoiceColumns: DataTableColumn<CompanyInvoiceRow>[] = [
+  {
+    key: "name",
+    header: "Factura",
+    cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
+  },
+  {
+    key: "date",
+    header: "Fecha",
+    cell: (r) => <DateDisplay date={r.invoice_date} />,
+    hideOnMobile: true,
+  },
+  {
+    key: "due",
+    header: "Vence",
+    cell: (r) => <DateDisplay date={r.due_date} />,
+  },
+  {
+    key: "total",
+    header: "Total",
+    cell: (r) => <Currency amount={toMxn(r.amount_total, r.currency)} />,
+    align: "right",
+  },
+  {
+    key: "residual",
+    header: "Saldo",
+    cell: (r) =>
+      r.amount_residual && r.amount_residual > 0 ? (
+        <Currency amount={toMxn(r.amount_residual, r.currency)} />
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "state",
+    header: "Estado",
+    cell: (r) => (
+      <StatusBadge status={(r.payment_state ?? "pending") as "paid"} />
+    ),
+  },
+];
+
+async function InvoicesSection({ companyId }: { companyId: number }) {
+  const rows = await getCompanyInvoices(companyId, 30);
+  return (
+    <DataTable
+      data={rows}
+      columns={invoiceColumns}
+      rowKey={(r) => String(r.id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.name ?? "—"}
+          subtitle={<DateDisplay date={r.invoice_date} />}
+          badge={
+            <StatusBadge status={(r.payment_state ?? "pending") as "paid"} />
+          }
+          fields={[
+            {
+              label: "Total",
+              value: <Currency amount={toMxn(r.amount_total, r.currency)} />,
+            },
+            {
+              label: "Saldo",
+              value: (
+                <Currency
+                  amount={toMxn(r.amount_residual, r.currency)}
+                />
+              ),
+            },
+            { label: "Vence", value: <DateDisplay date={r.due_date} /> },
+            {
+              label: "Días vencido",
+              value: r.days_overdue && r.days_overdue > 0 ? r.days_overdue : "—",
+              className: r.days_overdue && r.days_overdue > 0 ? "text-danger" : "",
+            },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: FileText,
+        title: "Sin facturas",
+        description: "No hay facturas registradas para esta empresa.",
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Orders tab
+// ──────────────────────────────────────────────────────────────────────────
+const orderColumns: DataTableColumn<CompanyOrderRow>[] = [
+  {
+    key: "name",
+    header: "Pedido",
+    cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
+  },
+  {
+    key: "date",
+    header: "Fecha",
+    cell: (r) => <DateDisplay date={r.date_order} />,
+  },
+  {
+    key: "amount",
+    header: "Monto",
+    cell: (r) => <Currency amount={r.amount_total_mxn} />,
+    align: "right",
+  },
+  {
+    key: "salesperson",
+    header: "Vendedor",
+    cell: (r) => r.salesperson_name ?? "—",
+    hideOnMobile: true,
+  },
+  {
+    key: "state",
+    header: "Estado",
+    cell: (r) => <StatusBadge status={(r.state ?? "draft") as "draft"} />,
+  },
+];
+
+async function OrdersSection({ companyId }: { companyId: number }) {
+  const rows = await getCompanyOrders(companyId, 30);
+  return (
+    <DataTable
+      data={rows}
+      columns={orderColumns}
+      rowKey={(r) => String(r.id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.name ?? "—"}
+          subtitle={r.salesperson_name ?? undefined}
+          badge={<StatusBadge status={(r.state ?? "draft") as "draft"} />}
+          fields={[
+            {
+              label: "Monto",
+              value: <Currency amount={r.amount_total_mxn} />,
+            },
+            { label: "Fecha", value: <DateDisplay date={r.date_order} /> },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: ShoppingCart,
+        title: "Sin pedidos",
+        description: "No hay pedidos registrados.",
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Deliveries
+// ──────────────────────────────────────────────────────────────────────────
+const deliveryColumns: DataTableColumn<CompanyDeliveryRow>[] = [
+  {
+    key: "name",
+    header: "Movimiento",
+    cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
+  },
+  {
+    key: "type",
+    header: "Tipo",
+    cell: (r) =>
+      r.picking_type_code === "outgoing"
+        ? "Salida"
+        : r.picking_type_code === "incoming"
+          ? "Entrada"
+          : "—",
+    hideOnMobile: true,
+  },
+  {
+    key: "scheduled",
+    header: "Programada",
+    cell: (r) => <DateDisplay date={r.scheduled_date} />,
+  },
+  {
+    key: "state",
+    header: "Estado",
+    cell: (r) =>
+      r.is_late ? (
+        <StatusBadge status="overdue" />
+      ) : r.date_done ? (
+        <StatusBadge status="delivered" />
+      ) : (
+        <StatusBadge status={(r.state ?? "pending") as "pending"} />
+      ),
+  },
+];
+
+async function DeliveriesSection({ companyId }: { companyId: number }) {
+  const rows = await getCompanyDeliveries(companyId, 20);
+  return (
+    <DataTable
+      data={rows}
+      columns={deliveryColumns}
+      rowKey={(r) => String(r.id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.name ?? "—"}
+          subtitle={
+            r.picking_type_code === "outgoing"
+              ? "Salida"
+              : r.picking_type_code === "incoming"
+                ? "Entrada"
+                : undefined
+          }
+          badge={
+            r.is_late ? (
+              <StatusBadge status="overdue" />
+            ) : r.date_done ? (
+              <StatusBadge status="delivered" />
+            ) : (
+              <StatusBadge status={(r.state ?? "pending") as "pending"} />
+            )
+          }
+          fields={[
+            {
+              label: "Programada",
+              value: <DateDisplay date={r.scheduled_date} />,
+            },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: Truck,
+        title: "Sin entregas",
+        description: "No hay movimientos de inventario.",
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Products tab
+// ──────────────────────────────────────────────────────────────────────────
+const productColumns: DataTableColumn<CompanyProductRow>[] = [
+  {
+    key: "ref",
+    header: "Ref",
+    cell: (r) => (
+      <span className="font-mono text-xs">{r.product_ref ?? "—"}</span>
+    ),
+  },
+  {
+    key: "name",
+    header: "Producto",
+    cell: (r) => <span className="truncate">{r.product_name ?? "—"}</span>,
+  },
+  {
+    key: "qty",
+    header: "Qty",
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.total_qty)}</span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "revenue",
+    header: "Revenue",
+    cell: (r) => <Currency amount={r.total_revenue} compact />,
+    align: "right",
+  },
+  {
+    key: "last",
+    header: "Último",
+    cell: (r) => <DateDisplay date={r.last_order_date} relative />,
+    hideOnMobile: true,
+  },
+];
+
+async function ProductsSection({ companyId }: { companyId: number }) {
+  const rows = await getCompanyTopProducts(companyId, 15);
+  return (
+    <DataTable
+      data={rows}
+      columns={productColumns}
+      rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.product_name ?? r.product_ref ?? "—"}
+          subtitle={r.product_ref ?? undefined}
+          fields={[
+            { label: "Qty", value: Math.round(r.total_qty) },
+            {
+              label: "Revenue",
+              value: <Currency amount={r.total_revenue} compact />,
+            },
+            {
+              label: "Último",
+              value: <DateDisplay date={r.last_order_date} relative />,
+            },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: Package,
+        title: "Sin productos",
+        description: "No hay líneas de pedido para esta empresa.",
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Activities
+// ──────────────────────────────────────────────────────────────────────────
+const activityColumns: DataTableColumn<CompanyActivityRow>[] = [
+  {
+    key: "type",
+    header: "Tipo",
+    cell: (r) => r.activity_type ?? "—",
+  },
+  {
+    key: "summary",
+    header: "Resumen",
+    cell: (r) => (
+      <span className="truncate">{r.summary ?? "—"}</span>
+    ),
+  },
+  {
+    key: "deadline",
+    header: "Vence",
+    cell: (r) => <DateDisplay date={r.date_deadline} relative />,
+  },
+  {
+    key: "assigned",
+    header: "Asignado",
+    cell: (r) => r.assigned_to ?? "—",
+    hideOnMobile: true,
+  },
+  {
+    key: "state",
+    header: "Estado",
+    cell: (r) =>
+      r.is_overdue ? (
+        <StatusBadge status="overdue" />
+      ) : (
+        <StatusBadge status="pending" />
+      ),
+  },
+];
+
+async function ActivitiesSection({ companyId }: { companyId: number }) {
+  const rows = await getCompanyActivities(companyId, 15);
+  return (
+    <DataTable
+      data={rows}
+      columns={activityColumns}
+      rowKey={(r) => String(r.id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.activity_type ?? r.summary ?? "—"}
+          subtitle={r.summary ?? undefined}
+          badge={
+            r.is_overdue ? (
+              <StatusBadge status="overdue" />
+            ) : (
+              <StatusBadge status="pending" />
+            )
+          }
+          fields={[
+            {
+              label: "Vence",
+              value: <DateDisplay date={r.date_deadline} relative />,
+            },
+            { label: "Asignado", value: r.assigned_to ?? "—" },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: Users,
+        title: "Sin actividades",
+        description: "No hay actividades pendientes para esta empresa.",
+      }}
+    />
   );
 }

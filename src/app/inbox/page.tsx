@@ -1,313 +1,304 @@
-"use client";
+import { Suspense } from "react";
+import Link from "next/link";
+import {
+  AlertTriangle,
+  CheckCircle2,
+  ChevronRight,
+  Inbox,
+  XCircle,
+} from "lucide-react";
 
-import { useCallback, useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
-import { PartyPopper, RefreshCw } from "lucide-react";
-import { supabase } from "@/lib/supabase";
-import { cached } from "@/lib/ttl-cache";
-import type { AgentInsight, CompanyProfile } from "@/lib/types";
-import { Button } from "@/components/ui/button";
-import { InboxFilters } from "./components/inbox-filters";
-import { InboxMobile } from "./components/inbox-mobile";
-import { InboxDesktop } from "./components/inbox-desktop";
+import {
+  PageHeader,
+  SeverityBadge,
+  DateDisplay,
+  EmptyState,
+  StatGrid,
+  KpiCard,
+} from "@/components/shared/v2";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import {
+  getInsights,
+  getInsightCounts,
+  type InsightRow,
+  type InsightState,
+} from "@/lib/queries/insights";
 
-const PAGE_SIZE = 50;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const metadata = { title: "Insights" };
 
-function computeTier(insight: AgentInsight): string {
-  const ev = insight.evidence as { priority_tier?: string }[] | null;
-  const evTier = ev?.[0]?.priority_tier ?? "fyi";
-  if (evTier !== "fyi") return evTier;
-  if (insight.severity === "critical") return "urgent";
-  if (insight.severity === "high") return "important";
-  return "fyi";
+type FilterState = "active" | "new" | "seen" | "acted_on" | "dismissed";
+
+const FILTER_STATES: Record<FilterState, InsightState[]> = {
+  active: ["new", "seen"],
+  new: ["new"],
+  seen: ["seen"],
+  acted_on: ["acted_on"],
+  dismissed: ["dismissed"],
+};
+
+const FILTER_LABELS: Record<FilterState, string> = {
+  active: "Pendientes",
+  new: "Nuevos",
+  seen: "Vistos",
+  acted_on: "Accionados",
+  dismissed: "Descartados",
+};
+
+export default async function InboxPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ state?: string; severity?: string }>;
+}) {
+  const params = await searchParams;
+  const state = (params.state as FilterState) ?? "active";
+  const stateFilter = FILTER_STATES[state] ?? FILTER_STATES.active;
+  const severity = params.severity;
+
+  return (
+    <div className="space-y-4 pb-24 md:pb-6">
+      <PageHeader
+        title="Insights"
+        subtitle="Alertas accionables de los agentes"
+      />
+
+      <Suspense
+        fallback={
+          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[96px] rounded-xl" />
+            ))}
+          </StatGrid>
+        }
+      >
+        <InboxKpis />
+      </Suspense>
+
+      <FilterTabs active={state} severity={severity} />
+
+      <Suspense
+        fallback={
+          <div className="space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-20 rounded-xl" />
+            ))}
+          </div>
+        }
+        key={`${state}-${severity ?? "all"}`}
+      >
+        <InsightsList stateFilter={stateFilter} severity={severity} />
+      </Suspense>
+    </div>
+  );
 }
 
-export default function InboxPage() {
-  const router = useRouter();
-  const [insights, setInsights] = useState<AgentInsight[]>([]);
-  const [agents, setAgents] = useState<Record<number, { slug: string; name: string; domain: string }>>({});
-  const [loading, setLoading] = useState(true);
-  const [acting, setActing] = useState<number | null>(null);
-  const [freshness, setFreshness] = useState<{ lastSync: string | null; lastAnalyze: string | null; lastAgents: string | null }>({ lastSync: null, lastAnalyze: null, lastAgents: null });
-  const [seenIds, setSeenIds] = useState<Set<number>>(new Set());
-  const [filterMode, setFilterMode] = useState<"all" | "urgent" | "important" | "fyi">("all");
-  const [assigneeFilter, setAssigneeFilter] = useState("all");
-  const [categoryFilter, setCategoryFilter] = useState("all");
-  const [dateFilter, setDateFilter] = useState("all");
-  const [allAssignees, setAllAssignees] = useState<string[]>([]);
-  const [companyProfiles, setCompanyProfiles] = useState<Map<number, CompanyProfile>>(new Map());
-  const [hasMore, setHasMore] = useState(true);
+async function InboxKpis() {
+  const c = await getInsightCounts();
+  return (
+    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+      <KpiCard
+        title="Nuevos"
+        value={c.new}
+        format="number"
+        icon={Inbox}
+        tone={c.new > 0 ? "info" : "default"}
+      />
+      <KpiCard
+        title="Críticos"
+        value={c.critical}
+        format="number"
+        icon={AlertTriangle}
+        tone={c.critical > 0 ? "danger" : "default"}
+      />
+      <KpiCard
+        title="Accionados"
+        value={c.acted_on}
+        format="number"
+        icon={CheckCircle2}
+        tone="success"
+      />
+      <KpiCard
+        title="Descartados"
+        value={c.dismissed}
+        format="number"
+        icon={XCircle}
+      />
+    </StatGrid>
+  );
+}
 
-  // Load seen IDs from localStorage
-  useEffect(() => {
-    try {
-      const stored = localStorage.getItem("qb-seen-insights");
-      if (stored) setSeenIds(new Set(JSON.parse(stored)));
-    } catch { /* ignore */ }
-  }, []);
+function FilterTabs({
+  active,
+  severity,
+}: {
+  active: FilterState;
+  severity?: string;
+}) {
+  const states: FilterState[] = [
+    "active",
+    "new",
+    "seen",
+    "acted_on",
+    "dismissed",
+  ];
+  const severities: Array<{ key: string; label: string }> = [
+    { key: "critical", label: "Crítico" },
+    { key: "high", label: "Alto" },
+    { key: "medium", label: "Medio" },
+    { key: "low", label: "Bajo" },
+  ];
 
-  const markSeen = useCallback((id: number) => {
-    setSeenIds(prev => {
-      const next = new Set(prev);
-      next.add(id);
-      const arr = Array.from(next);
-      if (arr.length > 200) arr.splice(0, arr.length - 200);
-      const trimmed = new Set(arr);
-      try { localStorage.setItem("qb-seen-insights", JSON.stringify(Array.from(trimmed))); } catch { /* ignore */ }
-      return trimmed;
-    });
-  }, []);
+  return (
+    <div className="space-y-2">
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+        {states.map((s) => {
+          const query = new URLSearchParams();
+          query.set("state", s);
+          if (severity) query.set("severity", severity);
+          return (
+            <Link
+              key={s}
+              href={`/inbox?${query.toString()}`}
+              className={`shrink-0 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                active === s
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "border-border bg-background text-muted-foreground hover:bg-accent"
+              }`}
+            >
+              {FILTER_LABELS[s]}
+            </Link>
+          );
+        })}
+      </div>
+      <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:flex-wrap sm:overflow-visible">
+        <Link
+          href={`/inbox?state=${active}`}
+          className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+            !severity
+              ? "border-primary bg-primary/10 text-primary"
+              : "border-border text-muted-foreground"
+          }`}
+        >
+          Todas severidades
+        </Link>
+        {severities.map((sev) => (
+          <Link
+            key={sev.key}
+            href={`/inbox?state=${active}&severity=${sev.key}`}
+            className={`shrink-0 rounded-full border px-3 py-1.5 text-[11px] font-medium transition-colors ${
+              severity === sev.key
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border text-muted-foreground"
+            }`}
+          >
+            {sev.label}
+          </Link>
+        ))}
+      </div>
+    </div>
+  );
+}
 
-  const load = useCallback(async () => {
-    const [insightsRes, agentsRes, freshnessRes, assigneesRes, profilesRes] = await Promise.all([
-      supabase
-        .from("agent_insights").select("id, agent_id, title, description, category, severity, confidence, state, assignee_name, assignee_department, company_id, contact_id, business_impact_estimate, evidence, created_at")
-        .in("state", ["new", "seen"]).gte("confidence", 0.80)
-        .order("created_at", { ascending: false }).range(0, PAGE_SIZE - 1),
-      supabase.from("ai_agents").select("id, slug, name, domain"),
-      Promise.all([
-        supabase.from("odoo_users").select("updated_at").order("updated_at", { ascending: false }).limit(1),
-        supabase.from("emails").select("created_at").order("created_at", { ascending: false }).limit(1),
-        supabase.from("agent_runs").select("completed_at").eq("status", "completed").order("completed_at", { ascending: false }).limit(1),
-      ]),
-      supabase.from("agent_insights").select("assignee_name")
-        .in("state", ["new", "seen"]).gte("confidence", 0.80).not("assignee_name", "is", null),
-      cached("inbox:company_profiles:strategic", 30_000, async () => {
-        const res = await supabase.from("company_profile")
-          .select("company_id, name, total_revenue, revenue_90d, trend_pct, overdue_amount, tier, risk_level")
-          .in("tier", ["strategic", "important", "key_supplier"])
-          .order("total_revenue", { ascending: false })
-          .limit(50);
-        return res;
-      }),
-    ]);
-
-    const [odooFresh, emailFresh, agentFresh] = freshnessRes;
-    setFreshness({
-      lastSync: odooFresh.data?.[0]?.updated_at ?? null,
-      lastAnalyze: emailFresh.data?.[0]?.created_at ?? null,
-      lastAgents: agentFresh.data?.[0]?.completed_at ?? null,
-    });
-
-    const agentMap: Record<number, { slug: string; name: string; domain: string }> = {};
-    for (const a of agentsRes.data ?? []) agentMap[a.id] = { slug: a.slug, name: a.name, domain: a.domain };
-    setAgents(agentMap);
-
-    const profileMap = new Map<number, CompanyProfile>();
-    for (const p of profilesRes.data ?? []) profileMap.set(p.company_id, p as CompanyProfile);
-    setCompanyProfiles(profileMap);
-
-    const assigneeNames = Array.from(new Set(
-      (assigneesRes.data ?? []).map((r: { assignee_name: string }) => r.assignee_name).filter(Boolean)
-    )) as string[];
-    setAllAssignees(assigneeNames.sort());
-
-    setInsights((insightsRes.data ?? []) as AgentInsight[]);
-    setHasMore((insightsRes.data ?? []).length === PAGE_SIZE);
-    setLoading(false);
-  }, []);
-
-  const loadMore = useCallback(async () => {
-    const offset = insights.length;
-    const { data } = await supabase
-      .from("agent_insights")
-      .select("id, agent_id, title, description, category, severity, confidence, state, assignee_name, assignee_department, company_id, contact_id, business_impact_estimate, evidence, created_at")
-      .in("state", ["new", "seen"])
-      .gte("confidence", 0.80)
-      .order("created_at", { ascending: false })
-      .range(offset, offset + PAGE_SIZE - 1);
-
-    if (data?.length) {
-      setInsights(prev => {
-        const existingIds = new Set(prev.map(i => i.id));
-        const newItems = (data as AgentInsight[]).filter(i => !existingIds.has(i.id));
-        return [...prev, ...newItems];
-      });
-      setHasMore(data.length === PAGE_SIZE);
-    } else {
-      setHasMore(false);
-    }
-  }, [insights.length]);
-
-  useEffect(() => { load(); }, [load]);
-
-  // Real-time subscription
-  useEffect(() => {
-    const channel = supabase
-      .channel("inbox-new-insights")
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "agent_insights" }, (payload) => {
-        const ni = payload.new as AgentInsight;
-        if ((ni.confidence ?? 0) >= 0.80 && ["new", "seen"].includes(ni.state ?? "")) {
-          setInsights(prev => prev.find(i => i.id === ni.id) ? prev : [ni, ...prev]);
-          toast("Nuevo insight", { description: ni.title, duration: 5000 });
-        }
-      })
-      .subscribe();
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  // Filter logic
-  const filteredInsights = insights.filter(insight => {
-    if (filterMode !== "all" && computeTier(insight) !== filterMode) return false;
-    if (assigneeFilter !== "all" && insight.assignee_name !== assigneeFilter) return false;
-    if (categoryFilter !== "all" && insight.category !== categoryFilter) return false;
-    if (dateFilter !== "all") {
-      const created = new Date(insight.created_at).getTime();
-      const now = Date.now();
-      if (dateFilter === "today" && now - created > 86400_000) return false;
-      if (dateFilter === "7d" && now - created > 7 * 86400_000) return false;
-      if (dateFilter === "30d" && now - created > 30 * 86400_000) return false;
-    }
-    return true;
+async function InsightsList({
+  stateFilter,
+  severity,
+}: {
+  stateFilter: InsightState[];
+  severity?: string;
+}) {
+  const insights = await getInsights({
+    state: stateFilter,
+    severity,
+    limit: 100,
   });
 
-  const tierCounts = { urgent: 0, important: 0, fyi: 0 };
-  for (const insight of insights) {
-    const tier = computeTier(insight);
-    if (tier in tierCounts) tierCounts[tier as keyof typeof tierCounts]++;
-  }
-
-  // Actions
-  const actOnInsight = useCallback(async (id: number) => {
-    setActing(id);
-    try {
-      const { error } = await supabase.from("agent_insights").update({ state: "acted_on", was_useful: true }).eq("id", id);
-      if (error) { toast.error("Error al marcar insight: " + error.message); return; }
-      setInsights(prev => prev.filter(i => i.id !== id));
-      toast.success("Marcado como util");
-    } finally { setActing(null); }
-  }, []);
-
-  const dismissInsight = useCallback(async (id: number) => {
-    const { error } = await supabase.from("agent_insights").update({ state: "dismissed", was_useful: false }).eq("id", id);
-    if (error) { toast.error("Error al descartar insight: " + error.message); return; }
-    setInsights(prev => prev.filter(i => i.id !== id));
-    toast("Descartado");
-  }, []);
-
-  const goToDetail = useCallback((id: number) => {
-    markSeen(id);
-    router.push(`/inbox/insight/${id}`);
-  }, [router, markSeen]);
-
-  // Loading
-  if (loading) {
-    return (
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div><Skeleton className="h-7 w-24 mb-2" /><Skeleton className="h-4 w-48" /></div>
-          <Skeleton className="h-8 w-8 rounded-md" />
-        </div>
-        <div className="flex gap-2">
-          {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-8 w-20 rounded-full" />)}
-        </div>
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <Card key={i}><CardContent className="py-3 px-4">
-              <div className="flex items-center gap-4">
-                <Skeleton className="h-10 w-10 rounded-full" />
-                <div className="flex-1 space-y-2">
-                  <Skeleton className="h-5 w-3/4" />
-                  <Skeleton className="h-3 w-1/2" />
-                </div>
-              </div>
-            </CardContent></Card>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // Empty
   if (insights.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] gap-5">
-        <div className="h-16 w-16 rounded-full bg-success/10 flex items-center justify-center">
-          <PartyPopper className="h-8 w-8 text-success" />
-        </div>
-        <div className="text-center">
-          <h2 className="text-xl font-black">Todo al dia</h2>
-          <p className="text-sm text-muted-foreground mt-1">Sin insights pendientes</p>
-        </div>
-        <Button variant="outline" size="sm" onClick={load}>
-          <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Actualizar
-        </Button>
-      </div>
+      <EmptyState
+        icon={Inbox}
+        title="Sin insights"
+        description="No hay insights con estos filtros."
+      />
     );
   }
 
   return (
-    <div className="min-h-[calc(100vh-4rem)]">
-      <InboxFilters
-        totalCount={insights.length}
-        filteredCount={filteredInsights.length}
-        tierCounts={tierCounts}
-        filterMode={filterMode}
-        setFilterMode={setFilterMode}
-        assigneeFilter={assigneeFilter}
-        setAssigneeFilter={setAssigneeFilter}
-        allAssignees={allAssignees}
-        categoryFilter={categoryFilter}
-        setCategoryFilter={setCategoryFilter}
-        availableCategories={Array.from(new Set(insights.map(i => i.category).filter((c): c is string => !!c)))}
-        dateFilter={dateFilter}
-        setDateFilter={setDateFilter}
-        freshness={freshness}
-        onRefresh={load}
-      />
-
-      {/* Empty filtered state */}
-      {filteredInsights.length === 0 && insights.length > 0 && (
-        <div className="flex flex-col items-center justify-center py-16 gap-3">
-          <p className="text-sm text-muted-foreground">No hay insights con este filtro</p>
-          <Button variant="ghost" size="sm" onClick={() => { setFilterMode("all"); setAssigneeFilter("all"); setCategoryFilter("all"); setDateFilter("all"); }}>
-            Limpiar filtros
-          </Button>
-        </div>
-      )}
-
-      {/* Mobile */}
-      {filteredInsights.length > 0 && (
-        <div className="md:hidden">
-          <InboxMobile
-            insights={filteredInsights}
-            agents={agents}
-            seenIds={seenIds}
-            acting={acting}
-            onAct={actOnInsight}
-            onDismiss={dismissInsight}
-            onDetail={goToDetail}
-            onMarkSeen={markSeen}
-          />
-        </div>
-      )}
-
-      {/* Desktop */}
-      {filteredInsights.length > 0 && (
-        <div className="hidden md:block">
-          <InboxDesktop
-            insights={filteredInsights}
-            agents={agents}
-            companyProfiles={companyProfiles}
-            seenIds={seenIds}
-            acting={acting}
-            onAct={actOnInsight}
-            onDismiss={dismissInsight}
-            onDetail={goToDetail}
-          />
-        </div>
-      )}
-
-      {hasMore && insights.length > 0 && (
-        <div className="flex justify-center py-6">
-          <Button variant="outline" size="sm" onClick={loadMore}>
-            Cargar mas insights
-          </Button>
-        </div>
-      )}
+    <div className="flex flex-col gap-2">
+      {insights.map((i) => (
+        <InsightListItem key={i.id} insight={i} />
+      ))}
     </div>
+  );
+}
+
+function InsightListItem({ insight: i }: { insight: InsightRow }) {
+  return (
+    <Link href={`/inbox/insight/${i.id}`} className="block">
+      <Card className="gap-1 py-3 transition-colors active:bg-accent/50">
+        <div className="flex items-start justify-between gap-2 px-4">
+          <div className="min-w-0 flex-1">
+            <div className="mb-1 flex flex-wrap items-center gap-2">
+              <SeverityBadge
+                level={i.severity ?? "medium"}
+                pulse={i.state === "new"}
+              />
+              {i.category && (
+                <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {i.category}
+                </span>
+              )}
+              {i.state === "new" && (
+                <Badge
+                  variant="info"
+                  className="h-4 px-1 text-[9px] uppercase"
+                >
+                  Nuevo
+                </Badge>
+              )}
+            </div>
+            <div className="truncate text-sm font-semibold">
+              {i.title ?? "—"}
+            </div>
+            {i.description && (
+              <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
+                {i.description}
+              </p>
+            )}
+            <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+              {i.company_name && (
+                <span className="truncate max-w-[180px]">
+                  {i.company_name}
+                </span>
+              )}
+              {i.agent_name && (
+                <>
+                  <span>·</span>
+                  <span>{i.agent_name}</span>
+                </>
+              )}
+              {i.assignee_name && (
+                <>
+                  <span>·</span>
+                  <span>{i.assignee_name}</span>
+                </>
+              )}
+              {i.created_at && (
+                <>
+                  <span>·</span>
+                  <DateDisplay date={i.created_at} relative />
+                </>
+              )}
+            </div>
+          </div>
+          <ChevronRight
+            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        </div>
+      </Card>
+    </Link>
   );
 }
