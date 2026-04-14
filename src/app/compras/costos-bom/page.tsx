@@ -30,8 +30,10 @@ import {
   getBomsMissingComponents,
   getTopRevenueBoms,
   getBomsWithMultipleVersions,
+  getBomDuplicates,
   type BomCostRow,
   type BomCostSummary,
+  type BomDuplicateRow,
 } from "@/lib/queries/products";
 
 export const dynamic = "force-dynamic";
@@ -396,6 +398,38 @@ export default function CostosBomPage() {
         </CardContent>
       </Card>
 
+      {/* Componentes duplicados dentro de BOMs */}
+      <Card className="border-warning/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <AlertTriangle className="h-4 w-4 text-warning" />
+            Componentes duplicados dentro del BOM
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Detecta dos casos: (A) un mismo componente listado más de una vez en
+            el mismo BOM, (B) dos componentes con el mismo <strong>nombre</strong>
+            {" "}pero <code>odoo_product_id</code> diferente (ej. dos SKUs de
+            "HILO POLIESTER ALGODON 22/1" creados para distintos batches o
+            proveedores). Mi rolldown los suma a ambos → el costo BOM está
+            sobrecontado por la diferencia. Producción debería consolidar uno
+            solo. Detecta duplicados en cualquier nivel del árbol.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <DuplicatesTable />
+          </Suspense>
+        </CardContent>
+      </Card>
+
       {/* BOMs con múltiples versiones */}
       <Card className="border-info/40">
         <CardHeader>
@@ -737,6 +771,142 @@ const multiBomColumns: DataTableColumn<BomCostRow>[] = [
     hideOnMobile: true,
   },
 ];
+
+const dupColumns: DataTableColumn<BomDuplicateRow>[] = [
+  {
+    key: "product",
+    header: "Producto",
+    cell: (r) => (
+      <div className="min-w-0">
+        <div className="font-mono text-xs font-semibold">
+          {r.product_ref ?? "—"}
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {r.product_name ?? ""}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: "kind",
+    header: "Tipo",
+    cell: (r) => (
+      <div className="flex flex-wrap gap-1 text-[10px]">
+        {r.intra_dupe_components > 0 && (
+          <Badge variant="warning" className="text-[10px]">
+            {r.intra_dupe_components} intra
+          </Badge>
+        )}
+        {r.same_name_groups > 0 && (
+          <Badge variant="critical" className="text-[10px]">
+            {r.same_name_groups} same-name
+          </Badge>
+        )}
+      </div>
+    ),
+    hideOnMobile: true,
+  },
+  {
+    key: "real",
+    header: "BOM costo",
+    cell: (r) => (
+      <span className="text-xs tabular-nums text-muted-foreground">
+        <Currency amount={r.real_unit_cost} compact />
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "over",
+    header: "Δ over/unit",
+    cell: (r) => (
+      <span className="font-bold tabular-nums text-warning">
+        <Currency amount={r.total_overcounted_per_unit_mxn} compact />
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "pct",
+    header: "% del costo",
+    cell: (r) => (
+      <span className="text-xs tabular-nums text-muted-foreground">
+        {r.overcounted_pct_of_cost != null
+          ? `${r.overcounted_pct_of_cost.toFixed(0)}%`
+          : "—"}
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "impact",
+    header: "$ inflado 12m",
+    cell: (r) => (
+      <span className="font-semibold tabular-nums text-danger">
+        <Currency amount={r.total_revenue_impact_mxn} compact />
+      </span>
+    ),
+    align: "right",
+  },
+];
+
+async function DuplicatesTable() {
+  const rows = await getBomDuplicates(30);
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Sin duplicados detectados"
+        description="Ningún BOM tiene componentes duplicados."
+        compact
+      />
+    );
+  }
+  return (
+    <DataTable
+      data={rows}
+      columns={dupColumns}
+      rowKey={(r) => `${r.odoo_product_id}`}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <div>
+              <div className="font-mono text-xs font-bold">
+                {r.product_ref ?? "—"}
+              </div>
+              <div className="truncate text-[11px] font-normal text-muted-foreground">
+                {r.product_name ?? ""}
+              </div>
+            </div>
+          }
+          badge={
+            <Badge variant="warning" className="text-[10px] uppercase">
+              {r.intra_dupe_components + r.same_name_groups} dupes
+            </Badge>
+          }
+          fields={[
+            {
+              label: "Costo BOM",
+              value: <Currency amount={r.real_unit_cost} compact />,
+            },
+            {
+              label: "Sobrecontado/unit",
+              value: <Currency amount={r.total_overcounted_per_unit_mxn} compact />,
+              className: "text-warning font-semibold",
+            },
+            {
+              label: "$ inflado 12m",
+              value: <Currency amount={r.total_revenue_impact_mxn} compact />,
+              className: "text-danger font-semibold",
+            },
+          ]}
+        />
+      )}
+    />
+  );
+}
 
 async function MultiBomTable() {
   const rows = await getBomsWithMultipleVersions(30);

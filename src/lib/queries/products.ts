@@ -590,6 +590,102 @@ export async function getTopRevenueBoms(limit = 30): Promise<BomCostRow[]> {
     .slice(0, limit);
 }
 
+export interface BomDuplicateRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  intra_dupe_components: number;
+  same_name_groups: number;
+  intra_dupe_overcounted_mxn: number;
+  same_name_overcounted_mxn: number;
+  total_overcounted_per_unit_mxn: number;
+  real_unit_cost: number;
+  overcounted_pct_of_cost: number | null;
+  revenue_12m: number;
+  // estimate of total $ overcounted across all sales of this product
+  // = total_overcounted_per_unit * total_qty_ordered (in product UoM)
+  total_revenue_impact_mxn: number;
+}
+
+export async function getBomDuplicates(limit = 30): Promise<BomDuplicateRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("bom_duplicate_components")
+    .select(
+      "odoo_product_id, product_ref, product_name, intra_dupe_components, same_name_groups, intra_dupe_overcounted_mxn, same_name_overcounted_mxn, total_overcounted_per_unit_mxn"
+    )
+    .gt("total_overcounted_per_unit_mxn", 0)
+    .order("total_overcounted_per_unit_mxn", { ascending: false })
+    .limit(limit);
+
+  const rows = (data ?? []) as Array<{
+    odoo_product_id: number;
+    product_ref: string | null;
+    product_name: string | null;
+    intra_dupe_components: number;
+    same_name_groups: number;
+    intra_dupe_overcounted_mxn: number;
+    same_name_overcounted_mxn: number;
+    total_overcounted_per_unit_mxn: number;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // Pull cost + revenue context for the same products
+  const ids = rows.map((r) => r.odoo_product_id);
+  const [costRes, pmaRes] = await Promise.all([
+    sb
+      .from("product_real_cost")
+      .select("odoo_product_id, real_unit_cost")
+      .in("odoo_product_id", ids),
+    sb
+      .from("product_margin_analysis")
+      .select("odoo_product_id, total_order_value, total_qty_ordered")
+      .in("odoo_product_id", ids),
+  ]);
+
+  const costMap = new Map<number, number>();
+  for (const c of (costRes.data ?? []) as Array<{
+    odoo_product_id: number;
+    real_unit_cost: number | null;
+  }>) {
+    costMap.set(c.odoo_product_id, c.real_unit_cost ?? 0);
+  }
+
+  const revMap = new Map<number, { rev: number; qty: number }>();
+  for (const p of (pmaRes.data ?? []) as Array<{
+    odoo_product_id: number;
+    total_order_value: number | null;
+    total_qty_ordered: number | null;
+  }>) {
+    const cur = revMap.get(p.odoo_product_id) ?? { rev: 0, qty: 0 };
+    cur.rev += p.total_order_value ?? 0;
+    cur.qty += p.total_qty_ordered ?? 0;
+    revMap.set(p.odoo_product_id, cur);
+  }
+
+  return rows.map((r) => {
+    const cost = costMap.get(r.odoo_product_id) ?? 0;
+    const ctx = revMap.get(r.odoo_product_id) ?? { rev: 0, qty: 0 };
+    const pct =
+      cost > 0 ? (r.total_overcounted_per_unit_mxn / cost) * 100 : null;
+    return {
+      odoo_product_id: r.odoo_product_id,
+      product_ref: r.product_ref,
+      product_name: r.product_name,
+      intra_dupe_components: r.intra_dupe_components ?? 0,
+      same_name_groups: r.same_name_groups ?? 0,
+      intra_dupe_overcounted_mxn: r.intra_dupe_overcounted_mxn ?? 0,
+      same_name_overcounted_mxn: r.same_name_overcounted_mxn ?? 0,
+      total_overcounted_per_unit_mxn: r.total_overcounted_per_unit_mxn ?? 0,
+      real_unit_cost: cost,
+      overcounted_pct_of_cost: pct,
+      revenue_12m: ctx.rev,
+      total_revenue_impact_mxn: r.total_overcounted_per_unit_mxn * ctx.qty,
+    };
+  });
+}
+
 export async function getBomsWithMultipleVersions(
   limit = 30
 ): Promise<BomCostRow[]> {
