@@ -1134,7 +1134,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier, overdue_amount, max_days_overdue").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
-        sb.from("odoo_sale_orders").select("company_id, name, amount_total, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
+        sb.from("odoo_sale_orders").select("company_id, name, amount_total_mxn, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
         sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10),
         // Threads from clients waiting for Quimibond response
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").eq("last_sender_type", "external").gt("hours_without_response", 24).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
@@ -1162,7 +1162,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, available_qty, reorder_min, standard_price").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(15),
         // NEW: Pending purchase orders (material on the way)
-        sb.from("odoo_purchase_orders").select("company_id, name, amount_total, date_order, buyer_name").eq("state", "purchase").order("date_order", { ascending: false }).limit(10),
+        sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, date_order, buyer_name").eq("state", "purchase").order("date_order", { ascending: false }).limit(10),
         // NEW: All pending outgoing deliveries (not just late)
         sb.from("odoo_deliveries").select("company_id, name, state, scheduled_date, origin").not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(15),
       ]);
@@ -1172,11 +1172,11 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
       const [singleSource, supplierDep, recentPOs, priceChanges, priceAnomalies, weOweSuppliers, supplierThreads] = await Promise.all([
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(15),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
-        sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15),
-        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, price_unit, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20),
+        sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15),
+        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, price_unit, subtotal_mxn, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20),
         sb.from("purchase_price_intelligence").select("product_ref, product_name, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, price_change_pct, qty_vs_avg_pct, avg_qty, last_qty, total_purchases, total_spent, price_flag, qty_flag, last_order_name").in("price_flag", ["price_above_avg", "price_below_avg"]).order("total_spent", { ascending: false }).limit(25),
         // NEW: Supplier invoices we need to pay (what we owe)
-        sb.from("odoo_invoices").select("company_id, name, amount_total, amount_residual, days_overdue, due_date").eq("move_type", "in_invoice").in("payment_state", ["not_paid", "partial"]).order("amount_residual", { ascending: false }).limit(15),
+        sb.from("odoo_invoices").select("company_id, name, amount_total_mxn, amount_residual_mxn, days_overdue, due_date").eq("move_type", "in_invoice").in("payment_state", ["not_paid", "partial"]).order("amount_residual_mxn", { ascending: false }).limit(15),
         // NEW: Emails from/to suppliers without response
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
       ]);
@@ -1226,7 +1226,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20),
         sb.from("threads").select("subject, last_sender, hours_without_response, account, company_id").eq("last_sender_type", "external").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(15),
         // NEW: Active orders per salesperson (workload)
-        sb.from("odoo_sale_orders").select("salesperson_name, company_id, amount_total").eq("state", "sale").order("amount_total", { ascending: false }).limit(50),
+        sb.from("odoo_sale_orders").select("salesperson_name, company_id, amount_total_mxn").eq("state", "sale").order("amount_total_mxn", { ascending: false }).limit(50),
         // NEW: Overdue amounts grouped by salesperson (revenue at risk)
         sb.from("company_profile").select("name, total_revenue, overdue_amount, tier").gt("overdue_amount", 10000).order("overdue_amount", { ascending: false }).limit(20),
       ]);
@@ -1249,7 +1249,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         const name = String(o.salesperson_name ?? "Sin asignar");
         if (!workload[name]) workload[name] = { orders: 0, totalValue: 0 };
         workload[name].orders++;
-        workload[name].totalValue += Number(o.amount_total ?? 0);
+        workload[name].totalValue += Number(o.amount_total_mxn ?? 0);
       }
       const workloadSummary = Object.entries(workload)
         .sort((a, b) => b[1].totalValue - a[1].totalValue)
@@ -1262,9 +1262,9 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     // ═══════════════════════════════════════════════════════════════
     case "sales": {
       const [orders, top, recentSaleOrders, margins, customerConcentration, reorderRisk] = await Promise.all([
-        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
+        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal_mxn, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(25),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(20),
-        sb.from("odoo_sale_orders").select("company_id, name, state, amount_total, date_order, salesperson_name").order("date_order", { ascending: false }).limit(15),
+        sb.from("odoo_sale_orders").select("company_id, name, state, amount_total_mxn, date_order, salesperson_name").order("date_order", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
         sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
@@ -1273,7 +1273,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     }
     case "finance": {
       const [inv, ow, payments, trends, margins, payPredictions] = await Promise.all([
-        sb.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
+        sb.from("odoo_invoices").select("company_id, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue, invoice_date").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
         sb.from("company_profile").select("name, pending_amount, overdue_amount, overdue_count, overdue_30d_count, max_days_overdue, total_revenue, tier").gt("overdue_amount", 0).order("overdue_amount", { ascending: false }).limit(20),
         sb.from("odoo_account_payments").select("company_id, amount, date, journal_name, state").order("date", { ascending: false }).limit(15),
         sb.from("weekly_trends").select("company_name, tier, overdue_now, overdue_delta, pending_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(15),
@@ -1302,7 +1302,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     }
     case "risk": {
       const [inv, risk, lateDeliveries, churning, trends, singleSource, payRisk] = await Promise.all([
-        sb.from("odoo_invoices").select("company_id, amount_residual, days_overdue, invoice_date").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual", { ascending: false }).limit(15),
+        sb.from("odoo_invoices").select("company_id, amount_residual_mxn, days_overdue, invoice_date").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual_mxn", { ascending: false }).limit(15),
         sb.from("company_profile").select("name, total_revenue, overdue_amount, max_days_overdue, revenue_share_pct, risk_level, tier").in("risk_level", ["high", "critical"]).order("overdue_amount", { ascending: false }).limit(15),
         sb.from("odoo_deliveries").select("company_id, name, scheduled_date, is_late").eq("is_late", true).not("state", "in", '("done","cancel")').limit(10),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
@@ -1373,8 +1373,8 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     case "suppliers": {
       const [topSuppliers, recentPOs, priceChanges, supplierDep] = await Promise.all([
         sb.from("company_profile").select("name, total_purchases, total_revenue, email_count, contact_count, tier").gt("total_purchases", 50000).order("total_purchases", { ascending: false }).limit(20),
-        sb.from("odoo_purchase_orders").select("company_id, name, amount_total, state, date_order").order("date_order", { ascending: false }).limit(20),
-        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
+        sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, state, date_order").order("date_order", { ascending: false }).limit(20),
+        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, subtotal_mxn, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(30),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
       ]);
       return `${profileSection}## Top proveedores (por monto de compra)\n${safeJSON(topSuppliers.data)}\n## Ordenes de compra recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra recientes\n${safeJSON(priceChanges.data)}\n## Dependencia de proveedores por producto (quién provee qué y % de concentración)\n${safeJSON(supplierDep.data)}`;

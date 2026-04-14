@@ -314,8 +314,8 @@ export interface CompanyInvoiceRow {
   name: string | null;
   invoice_date: string | null;
   due_date: string | null;
-  amount_total: number | null;
-  amount_residual: number | null;
+  amount_total_mxn: number | null;
+  amount_residual_mxn: number | null;
   currency: string | null;
   payment_state: string | null;
   days_overdue: number | null;
@@ -329,7 +329,7 @@ export async function getCompanyInvoices(
   const { data } = await sb
     .from("odoo_invoices")
     .select(
-      "id, name, invoice_date, due_date, amount_total, amount_residual, currency, payment_state, days_overdue"
+      "id, name, invoice_date, due_date, amount_total_mxn, amount_residual_mxn, currency, payment_state, days_overdue"
     )
     .eq("company_id", companyId)
     .eq("move_type", "out_invoice")
@@ -373,7 +373,8 @@ export interface CompanyProductRow {
 }
 
 /**
- * Top productos comprados por esta empresa (agregado desde odoo_order_lines).
+ * Top productos comprados por esta empresa (agregado desde odoo_order_lines
+ * usando `subtotal_mxn` per spec).
  */
 export async function getCompanyTopProducts(
   companyId: number,
@@ -382,14 +383,14 @@ export async function getCompanyTopProducts(
   const sb = getServiceClient();
   const { data } = await sb
     .from("odoo_order_lines")
-    .select("product_ref, product_name, qty, subtotal, order_date")
+    .select("product_ref, product_name, qty, subtotal_mxn, order_date")
     .eq("company_id", companyId)
     .eq("order_type", "sale");
   const rows = (data ?? []) as Array<{
     product_ref: string | null;
     product_name: string | null;
     qty: number | null;
-    subtotal: number | null;
+    subtotal_mxn: number | null;
     order_date: string | null;
   }>;
   const byProduct = new Map<string, CompanyProductRow>();
@@ -405,7 +406,7 @@ export async function getCompanyTopProducts(
         last_order_date: null,
       } satisfies CompanyProductRow);
     entry.total_qty += Number(r.qty) || 0;
-    entry.total_revenue += Number(r.subtotal) || 0;
+    entry.total_revenue += Number(r.subtotal_mxn) || 0;
     if (
       r.order_date &&
       (!entry.last_order_date || r.order_date > entry.last_order_date)

@@ -551,11 +551,9 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
     align: "right",
   },
   {
-    key: "bucket",
-    header: "Bucket",
-    cell: (r) => (
-      <span className="text-xs uppercase">{r.aging_bucket ?? "—"}</span>
-    ),
+    key: "salesperson",
+    header: "Vendedor",
+    cell: (r) => r.salesperson_name ?? "—",
     hideOnMobile: true,
   },
   {
@@ -565,6 +563,16 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
     hideOnMobile: true,
   },
 ];
+
+function bucketFromDays(days: number | null): string {
+  const d = Number(days) || 0;
+  if (d <= 0) return "current";
+  if (d <= 30) return "1-30";
+  if (d <= 60) return "31-60";
+  if (d <= 90) return "61-90";
+  if (d <= 120) return "91-120";
+  return "120+";
+}
 
 async function OverdueTable() {
   const rows = await getOverdueInvoices(50);
@@ -600,7 +608,11 @@ async function OverdueTable() {
             { label: "Vence", value: <DateDisplay date={r.due_date} /> },
             {
               label: "Bucket",
-              value: r.aging_bucket ?? "—",
+              value: bucketFromDays(r.days_overdue),
+            },
+            {
+              label: "Vendedor",
+              value: r.salesperson_name ?? "—",
               className: "col-span-2",
             },
           ]}

@@ -56,14 +56,14 @@ export async function POST(request: NextRequest) {
         for (const company of unenriched) {
           const { data: orders } = await supabase
             .from("odoo_order_lines")
-            .select("product_name, order_type, subtotal")
+            .select("product_name, order_type, subtotal_mxn")
             .eq("company_id", company.id)
-            .order("subtotal", { ascending: false })
+            .order("subtotal_mxn", { ascending: false })
             .limit(10);
 
           const productContext = orders?.length
-            ? orders.map((o: { product_name: string; order_type: string; subtotal: number }) =>
-                `${o.order_type === "sale" ? "Les vendemos" : "Nos venden"}: ${o.product_name} ($${o.subtotal})`
+            ? orders.map((o: { product_name: string; order_type: string; subtotal_mxn: number }) =>
+                `${o.order_type === "sale" ? "Les vendemos" : "Nos venden"}: ${o.product_name} ($${o.subtotal_mxn})`
               ).join("\n")
             : "Sin ordenes registradas";
 

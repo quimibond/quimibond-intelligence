@@ -1,70 +1,71 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { toMxn } from "@/lib/formatters";
+import { joinedCompanyName } from "./_helpers";
 
 /**
- * Cobranza queries v2 — usa views canónicas:
- * - `cash_flow_aging` — AR por empresa con buckets (current/1-30/31-60/61-90/90+)
- * - `ar_aging_detail` — AR por factura con aging_bucket pre-computado
- *
- * Como `odoo_invoices.amount_*_mxn` está NULL, sumamos con `toMxn(amount, currency)`.
+ * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.
+ * - `odoo_invoices.amount_total_mxn` / `amount_residual_mxn` → para sumas
+ * - `cash_flow_aging` (view) — buckets por empresa (ya normalizada)
+ * - `payment_predictions` (MV) — riesgo anormal de pago
  */
 
+// ──────────────────────────────────────────────────────────────────────────
+// AR aging buckets (calculado de odoo_invoices con _mxn)
+// ──────────────────────────────────────────────────────────────────────────
 export interface ArAgingBucket {
   bucket: string; // "1-30" | "31-60" | "61-90" | "91-120" | "120+"
   count: number;
   amount_mxn: number;
 }
 
-/**
- * Buckets del AR usando la MV `ar_aging_detail` (una fila por factura vencida).
- * Filtra "current" (no vencido).
- */
+const BUCKET_DEFS: Array<{
+  label: string;
+  min: number;
+  max: number | null;
+  sort: number;
+}> = [
+  { label: "1-30", min: 1, max: 30, sort: 1 },
+  { label: "31-60", min: 31, max: 60, sort: 2 },
+  { label: "61-90", min: 61, max: 90, sort: 3 },
+  { label: "91-120", min: 91, max: 120, sort: 4 },
+  { label: "120+", min: 121, max: null, sort: 5 },
+];
+
 export async function getArAging(): Promise<ArAgingBucket[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("ar_aging_detail")
-    .select("aging_bucket, amount_residual, currency, bucket_sort")
-    .gt("bucket_sort", 1);
+    .from("odoo_invoices")
+    .select("amount_residual_mxn, days_overdue")
+    .eq("move_type", "out_invoice")
+    .in("payment_state", ["not_paid", "partial"])
+    .gt("days_overdue", 0);
 
   const rows = (data ?? []) as Array<{
-    aging_bucket: string | null;
-    amount_residual: number | null;
-    currency: string | null;
-    bucket_sort: number | null;
+    amount_residual_mxn: number | null;
+    days_overdue: number | null;
   }>;
 
-  const buckets = new Map<
-    string,
-    { count: number; total: number; sort: number }
-  >();
-  for (const r of rows) {
-    const key = r.aging_bucket ?? "—";
-    const b = buckets.get(key) ?? {
-      count: 0,
-      total: 0,
-      sort: Number(r.bucket_sort) || 99,
+  return BUCKET_DEFS.map((b) => {
+    const inBucket = rows.filter((r) => {
+      const d = Number(r.days_overdue) || 0;
+      if (d < b.min) return false;
+      if (b.max != null && d > b.max) return false;
+      return true;
+    });
+    return {
+      bucket: b.label,
+      count: inBucket.length,
+      amount_mxn: inBucket.reduce(
+        (acc, r) => acc + (Number(r.amount_residual_mxn) || 0),
+        0
+      ),
     };
-    b.count += 1;
-    b.total += toMxn(r.amount_residual, r.currency);
-    buckets.set(key, b);
-  }
-
-  return [...buckets.entries()]
-    .map(([bucket, v]) => ({
-      bucket,
-      count: v.count,
-      amount_mxn: v.total,
-      _sort: v.sort,
-    }))
-    .sort((a, b) => a._sort - b._sort)
-    .map(({ bucket, count, amount_mxn }) => ({ bucket, count, amount_mxn }));
+  });
 }
 
-/**
- * Empresas con cartera vencida (view: cash_flow_aging).
- * Ya está pre-agregada por empresa con buckets 1-30, 31-60, 61-90, 90+.
- */
+// ──────────────────────────────────────────────────────────────────────────
+// Empresas con cartera vencida (view: cash_flow_aging — ya normalizada)
+// ──────────────────────────────────────────────────────────────────────────
 export interface CompanyAgingRow {
   company_id: number;
   company_name: string | null;
@@ -113,10 +114,45 @@ export interface OverdueInvoice {
   amount_residual_mxn: number;
   currency: string | null;
   days_overdue: number | null;
-  aging_bucket: string | null;
   due_date: string | null;
   invoice_date: string | null;
   payment_state: string | null;
+  salesperson_name: string | null;
+}
+
+/**
+ * Facturas vencidas — query directo a odoo_invoices con _mxn.
+ */
+export async function getOverdueInvoices(
+  limit = 50
+): Promise<OverdueInvoice[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("odoo_invoices")
+    .select(
+      "id, name, company_id, amount_total_mxn, amount_residual_mxn, currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, companies:company_id(name)"
+    )
+    .eq("move_type", "out_invoice")
+    .in("payment_state", ["not_paid", "partial"])
+    .gt("days_overdue", 0)
+    .order("amount_residual_mxn", { ascending: false, nullsFirst: false })
+    .limit(limit);
+
+  type Raw = Omit<OverdueInvoice, "company_name"> & { companies: unknown };
+  return ((data ?? []) as unknown as Raw[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    company_id: row.company_id,
+    company_name: joinedCompanyName(row.companies),
+    amount_total_mxn: Number(row.amount_total_mxn) || 0,
+    amount_residual_mxn: Number(row.amount_residual_mxn) || 0,
+    currency: row.currency,
+    days_overdue: row.days_overdue,
+    due_date: row.due_date,
+    invoice_date: row.invoice_date,
+    payment_state: row.payment_state,
+    salesperson_name: row.salesperson_name,
+  }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -136,10 +172,6 @@ export interface PaymentPredictionRow {
   predicted_payment_date: string | null;
 }
 
-/**
- * Devuelve solo los clientes con patrón anormal de pago (no NORMAL).
- * `payment_risk` viene como texto largo: "CRITICO: excede maximo historico", etc.
- */
 export async function getPaymentPredictions(
   limit = 30
 ): Promise<PaymentPredictionRow[]> {
@@ -171,9 +203,6 @@ export async function getPaymentPredictions(
   }));
 }
 
-/**
- * Conteo y suma de los clientes con riesgo crítico/alto/medio.
- */
 export async function getPaymentRiskKpis(): Promise<{
   abnormalCount: number;
   abnormalPending: number;
@@ -207,50 +236,4 @@ export async function getPaymentRiskKpis(): Promise<{
     criticalCount: critical.length,
     criticalPending,
   };
-}
-
-/**
- * Facturas vencidas (view: ar_aging_detail).
- * Una fila por factura, con aging_bucket pre-computado.
- */
-export async function getOverdueInvoices(
-  limit = 50
-): Promise<OverdueInvoice[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("ar_aging_detail")
-    .select(
-      "invoice_id, invoice_name, company_id, company_name, amount_total, amount_residual, currency, days_overdue, aging_bucket, due_date, invoice_date, payment_state, bucket_sort"
-    )
-    .gt("bucket_sort", 1)
-    .order("amount_residual", { ascending: false })
-    .limit(limit);
-
-  return ((data ?? []) as Array<{
-    invoice_id: number;
-    invoice_name: string | null;
-    company_id: number | null;
-    company_name: string | null;
-    amount_total: number | null;
-    amount_residual: number | null;
-    currency: string | null;
-    days_overdue: number | null;
-    aging_bucket: string | null;
-    due_date: string | null;
-    invoice_date: string | null;
-    payment_state: string | null;
-  }>).map((r) => ({
-    id: r.invoice_id,
-    name: r.invoice_name,
-    company_id: r.company_id,
-    company_name: r.company_name,
-    amount_total_mxn: toMxn(r.amount_total, r.currency),
-    amount_residual_mxn: toMxn(r.amount_residual, r.currency),
-    currency: r.currency,
-    days_overdue: r.days_overdue,
-    aging_bucket: r.aging_bucket,
-    due_date: r.due_date,
-    invoice_date: r.invoice_date,
-    payment_state: r.payment_state,
-  }));
 }

@@ -51,7 +51,6 @@ import {
   type CompanyProductRow,
   type CompanyActivityRow,
 } from "@/lib/queries/companies";
-import { toMxn } from "@/lib/formatters";
 
 export const dynamic = "force-dynamic";
 
@@ -476,15 +475,15 @@ const invoiceColumns: DataTableColumn<CompanyInvoiceRow>[] = [
   {
     key: "total",
     header: "Total",
-    cell: (r) => <Currency amount={toMxn(r.amount_total, r.currency)} />,
+    cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
   },
   {
     key: "residual",
     header: "Saldo",
     cell: (r) =>
-      r.amount_residual && r.amount_residual > 0 ? (
-        <Currency amount={toMxn(r.amount_residual, r.currency)} />
+      r.amount_residual_mxn && r.amount_residual_mxn > 0 ? (
+        <Currency amount={r.amount_residual_mxn} />
       ) : (
         <span className="text-muted-foreground">—</span>
       ),
@@ -517,15 +516,11 @@ async function InvoicesSection({ companyId }: { companyId: number }) {
           fields={[
             {
               label: "Total",
-              value: <Currency amount={toMxn(r.amount_total, r.currency)} />,
+              value: <Currency amount={r.amount_total_mxn} />,
             },
             {
               label: "Saldo",
-              value: (
-                <Currency
-                  amount={toMxn(r.amount_residual, r.currency)}
-                />
-              ),
+              value: <Currency amount={r.amount_residual_mxn} />,
             },
             { label: "Vence", value: <DateDisplay date={r.due_date} /> },
             {

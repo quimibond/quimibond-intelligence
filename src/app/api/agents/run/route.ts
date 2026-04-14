@@ -193,7 +193,7 @@ async function buildContext(supabase: any, domain: string): Promise<string> {
   switch (domain) {
     case "sales": {
       const [orders, leads, topClients] = await Promise.all([
-        supabase.from("odoo_order_lines").select("company_id, product_name, subtotal, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(30),
+        supabase.from("odoo_order_lines").select("company_id, product_name, subtotal_mxn, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(30),
         supabase.from("odoo_crm_leads").select("*").eq("active", true),
         supabase.from("companies").select("id, name, lifetime_value, trend_pct").eq("is_customer", true).not("lifetime_value", "is", null).order("lifetime_value", { ascending: false }).limit(15),
       ]);
@@ -201,7 +201,7 @@ async function buildContext(supabase: any, domain: string): Promise<string> {
     }
     case "finance": {
       const [invoices, overdue] = await Promise.all([
-        supabase.from("odoo_invoices").select("company_id, amount_total, amount_residual, payment_state, days_overdue").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
+        supabase.from("odoo_invoices").select("company_id, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
         supabase.from("companies").select("id, name, total_pending, lifetime_value").not("total_pending", "is", null).gt("total_pending", 0).order("total_pending", { ascending: false }).limit(20),
       ]);
       return `## Facturas\n${JSON.stringify(invoices.data)}\n\n## Empresas con saldo\n${JSON.stringify(overdue.data)}`;
@@ -222,7 +222,7 @@ async function buildContext(supabase: any, domain: string): Promise<string> {
     }
     case "risk": {
       const [overdueInv, atRisk] = await Promise.all([
-        supabase.from("odoo_invoices").select("company_id, amount_residual, days_overdue").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual", { ascending: false }).limit(15),
+        supabase.from("odoo_invoices").select("company_id, amount_residual_mxn, days_overdue").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual_mxn", { ascending: false }).limit(15),
         supabase.from("contacts").select("id, name, risk_level, current_health_score").in("risk_level", ["high", "critical"]).limit(15),
       ]);
       return `## Facturas vencidas\n${JSON.stringify(overdueInv.data)}\n\n## Contactos en riesgo\n${JSON.stringify(atRisk.data)}`;

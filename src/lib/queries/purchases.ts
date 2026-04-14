@@ -1,7 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { resolveCompanyNames } from "./_helpers";
-import { toMxn } from "@/lib/formatters";
 
 /**
  * Purchases queries v2 — usa views canónicas:
@@ -55,7 +54,7 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
       .lt("date_order", thisStart),
     sb
       .from("odoo_invoices")
-      .select("amount_residual, currency")
+      .select("amount_residual_mxn")
       .eq("move_type", "in_invoice")
       .in("payment_state", ["not_paid", "partial"]),
     sb.from("cfo_dashboard").select("pagos_prov_30d").maybeSingle(),
@@ -72,9 +71,8 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
     amount_total_mxn: number | null;
   }>).reduce((a, r) => a + (Number(r.amount_total_mxn) || 0), 0);
   const supplierPayable = ((ap.data ?? []) as Array<{
-    amount_residual: number | null;
-    currency: string | null;
-  }>).reduce((a, r) => a + toMxn(r.amount_residual, r.currency), 0);
+    amount_residual_mxn: number | null;
+  }>).reduce((a, r) => a + (Number(r.amount_residual_mxn) || 0), 0);
 
   const ssRows = (herfindahl.data ?? []) as Array<{
     total_spent_12m: number | null;

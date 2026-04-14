@@ -12,7 +12,7 @@ interface PartnerContext {
   is_customer: boolean;
   is_supplier: boolean;
   recent_sales: { name: string; date: string; amount: number; state: string }[];
-  pending_invoices: { name: string; date: string; amount: number; amount_residual: number; days_overdue: number }[];
+  pending_invoices: { name: string; date: string; amount: number; amount_residual_mxn: number; days_overdue: number }[];
   recent_payments: { name: string; date: string; amount: number; payment_type: string }[];
   pending_deliveries: { name: string; scheduled: string; state: string; is_late: boolean; origin: string }[];
   crm_leads: { name: string; stage: string; expected_revenue: number; probability: number }[];
@@ -130,8 +130,8 @@ export async function buildOdooContext(
       .map(i => ({
         name: i.name,
         date: i.invoice_date ?? "",
-        amount: i.amount_total ?? 0,
-        amount_residual: i.amount_residual ?? i.amount_total ?? 0,
+        amount: i.amount_total_mxn ?? 0,
+        amount_residual_mxn: i.amount_residual_mxn ?? i.amount_total_mxn ?? 0,
         days_overdue: i.days_overdue ?? 0,
       }));
 
@@ -198,7 +198,7 @@ export async function buildOdooContext(
     }
 
     if (pendingInvoices.length) {
-      const totalPend = pendingInvoices.reduce((s, i) => s + i.amount_residual, 0);
+      const totalPend = pendingInvoices.reduce((s, i) => s + i.amount_residual_mxn, 0);
       const overdue = pendingInvoices.filter(i => i.days_overdue > 0);
       if (overdue.length) {
         const maxOverdue = Math.max(...overdue.map(i => i.days_overdue));

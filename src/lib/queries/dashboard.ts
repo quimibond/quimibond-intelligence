@@ -6,8 +6,7 @@ import { getServiceClient } from "@/lib/supabase-server";
  * (`cfo_dashboard`, `financial_runway`, `pl_estado_resultados`,
  *  `ops_delivery_health_weekly`, `customer_ltv_health`, `agent_insights`).
  *
- * Las views ya están normalizadas a MXN — nunca tocamos `odoo_invoices.amount_*`
- * directamente.
+ * SIEMPRE usa columnas `_mxn` cuando hay que tocar tablas crudas.
  */
 
 export interface DashboardKpis {

@@ -463,8 +463,8 @@ export interface OdooInvoice {
   odoo_partner_id: number;
   name: string;
   move_type: "out_invoice" | "out_refund" | "in_invoice" | "in_refund";
-  amount_total: number;
-  amount_residual: number;
+  amount_total_mxn: number;
+  amount_residual_mxn: number;
   currency: string;
   invoice_date: string | null;
   due_date: string | null;

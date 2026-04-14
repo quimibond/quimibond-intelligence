@@ -246,7 +246,7 @@ async function gatherContext(
       const companyIds = matchedCompanies.map(c => c.id);
       const { data: companyInvoices } = await supabase
         .from("odoo_invoices")
-        .select("name, move_type, amount_total, amount_residual, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
+        .select("name, move_type, amount_total_mxn, amount_residual_mxn, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
         .eq("state", "posted")
         .in("company_id", companyIds)
         .order("invoice_date", { ascending: false })
@@ -264,7 +264,7 @@ async function gatherContext(
     if (invoiceData.length === 0) {
       const { data: topOverdue } = await supabase
         .from("odoo_invoices")
-        .select("name, amount_total, amount_residual, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
+        .select("name, amount_total_mxn, amount_residual_mxn, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
         .eq("move_type", "out_invoice")
         .in("payment_state", ["not_paid", "partial"])
         .eq("state", "posted")
@@ -281,7 +281,7 @@ async function gatherContext(
         const co = inv._company_name ? `[${inv._company_name}] ` : "";
         const tipo = String(inv.move_type ?? "").includes("in_") ? "PROVEEDOR" : "CLIENTE";
         const status = Number(inv.days_overdue ?? 0) > 0 ? `vencida ${inv.days_overdue}d` : (inv.payment_state === "paid" ? "PAGADA" : "vigente");
-        return `- ${co}${inv.name} (${tipo}): $${Number(inv.amount_residual ?? 0).toLocaleString()} ${inv.currency} ${status} (total $${Number(inv.amount_total ?? 0).toLocaleString()}, pagado $${Number(inv.amount_paid ?? 0).toLocaleString()}, vence ${inv.due_date ?? "?"})`;
+        return `- ${co}${inv.name} (${tipo}): $${Number(inv.amount_residual_mxn ?? 0).toLocaleString()} ${inv.currency} ${status} (total $${Number(inv.amount_total_mxn ?? 0).toLocaleString()}, pagado $${Number(inv.amount_paid ?? 0).toLocaleString()}, vence ${inv.due_date ?? "?"})`;
       }).join("\n")
     : "";
 

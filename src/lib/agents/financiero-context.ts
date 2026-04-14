@@ -26,7 +26,7 @@ export async function buildFinancieroContextOperativo(
       .order("date", { ascending: false })
       .limit(10),
     sb.from("odoo_invoices")
-      .select("company_id, name, amount_total, amount_residual, days_overdue, due_date, payment_term")
+      .select("company_id, name, amount_total_mxn, amount_residual_mxn, days_overdue, due_date, payment_term")
       .eq("move_type", "in_invoice")
       .in("payment_state", ["not_paid", "partial"])
       .gt("days_overdue", 0)

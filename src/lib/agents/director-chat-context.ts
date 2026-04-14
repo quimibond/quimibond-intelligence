@@ -186,11 +186,11 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
     sb.from("financial_runway").select("*").limit(1),
     sb.from("cfo_dashboard").select("*").limit(1),
     sb.from("odoo_invoices")
-      .select("company_id, name, amount_total, amount_residual, payment_state, days_overdue, due_date, invoice_date")
+      .select("company_id, name, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue, due_date, invoice_date")
       .eq("move_type", "out_invoice")
       .in("payment_state", ["not_paid", "partial"])
       .gt("days_overdue", 0)
-      .order("amount_residual", { ascending: false })
+      .order("amount_residual_mxn", { ascending: false })
       .limit(20),
     sb.from("odoo_account_payments")
       .select("company_id, amount, date, journal_name, state, currency")
@@ -228,7 +228,7 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
       .order("total_spent_12m", { ascending: false })
       .limit(15),
     sb.from("odoo_purchase_orders")
-      .select("company_id, name, amount_total, state, date_order, buyer_name")
+      .select("company_id, name, amount_total_mxn, state, date_order, buyer_name")
       .order("date_order", { ascending: false })
       .limit(15),
     sb.from("purchase_price_intelligence")
@@ -237,10 +237,10 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
       .order("total_spent", { ascending: false })
       .limit(15),
     sb.from("odoo_invoices")
-      .select("company_id, name, amount_total, amount_residual, days_overdue, due_date")
+      .select("company_id, name, amount_total_mxn, amount_residual_mxn, days_overdue, due_date")
       .eq("move_type", "in_invoice")
       .in("payment_state", ["not_paid", "partial"])
-      .order("amount_residual", { ascending: false })
+      .order("amount_residual_mxn", { ascending: false })
       .limit(15),
     sb.from("supplier_product_matrix")
       .select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases")
@@ -332,7 +332,7 @@ async function buildOperaciones(sb: SupabaseClient): Promise<string> {
       .order("inventory_value", { ascending: false })
       .limit(10),
     sb.from("odoo_purchase_orders")
-      .select("company_id, name, amount_total, date_order, buyer_name, state")
+      .select("company_id, name, amount_total_mxn, date_order, buyer_name, state")
       .eq("state", "purchase")
       .order("date_order", { ascending: false })
       .limit(10),
@@ -419,9 +419,9 @@ async function buildEquipo(sb: SupabaseClient): Promise<string> {
       .order("hours_without_response", { ascending: false })
       .limit(10),
     sb.from("odoo_sale_orders")
-      .select("salesperson_name, amount_total")
+      .select("salesperson_name, amount_total_mxn")
       .eq("state", "sale")
-      .order("amount_total", { ascending: false })
+      .order("amount_total_mxn", { ascending: false })
       .limit(50),
     sb.from("company_profile")
       .select("name, total_revenue, overdue_amount, tier")
@@ -430,11 +430,11 @@ async function buildEquipo(sb: SupabaseClient): Promise<string> {
       .limit(15),
   ]);
   const workload: Record<string, { orders: number; totalValue: number }> = {};
-  for (const o of (salesByPerson.data ?? []) as { salesperson_name?: string; amount_total?: number }[]) {
+  for (const o of (salesByPerson.data ?? []) as { salesperson_name?: string; amount_total_mxn?: number }[]) {
     const name = o.salesperson_name ?? "Sin asignar";
     if (!workload[name]) workload[name] = { orders: 0, totalValue: 0 };
     workload[name].orders++;
-    workload[name].totalValue += Number(o.amount_total ?? 0);
+    workload[name].totalValue += Number(o.amount_total_mxn ?? 0);
   }
   const workloadSummary = Object.entries(workload)
     .sort((a, b) => b[1].totalValue - a[1].totalValue)

@@ -38,11 +38,11 @@ export async function POST(request: NextRequest) {
         .select("company_id, name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_deliveries, late_deliveries, otd_rate, email_count, last_email_date, contact_count, tier"),
 
       supabase.from("odoo_invoices")
-        .select("company_id, amount_total, amount_residual, payment_state, days_overdue")
+        .select("company_id, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue")
         .eq("move_type", "out_invoice").eq("state", "posted"),
 
       supabase.from("odoo_sale_orders")
-        .select("company_id, amount_total, date_order")
+        .select("company_id, amount_total_mxn, date_order")
         .in("state", ["sale", "done"]),
 
       supabase.from("odoo_deliveries")
