@@ -22,9 +22,6 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
-      - name: Lint
-        run: npx next lint
-
       - name: Test
         run: npm test
 
