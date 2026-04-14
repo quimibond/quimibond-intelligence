@@ -1,6 +1,7 @@
+import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Bot, Building2, Calendar, User } from "lucide-react";
+import { ArrowLeft, Bot, Building2, Calendar, Database, User } from "lucide-react";
 
 import {
   PageHeader,
@@ -8,11 +9,14 @@ import {
   DateDisplay,
   CompanyLink,
   MetricRow,
+  EvidencePackView,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Skeleton } from "@/components/ui/skeleton";
 
 import { getInsightById } from "@/lib/queries/insights";
+import { getCompanyEvidencePack } from "@/lib/queries/evidence";
 import { markInsightSeen } from "../../actions";
 import { InsightActions } from "./_components/insight-actions";
 
@@ -191,19 +195,54 @@ export default async function InsightDetailPage({
         </Card>
       )}
 
-      {/* Evidence */}
+      {/* Evidence pack — cross-referenced data about the company */}
+      {insight.company_id && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Evidencia cruzada
+          </h2>
+          <Suspense fallback={<EvidencePackSkeleton />}>
+            <EvidenceSection companyId={insight.company_id} />
+          </Suspense>
+        </section>
+      )}
+
+      {/* Raw evidence JSON (collapsible, for debugging) */}
       {insight.evidence != null && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Evidencia</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <pre className="max-h-96 overflow-auto rounded-md bg-muted p-3 text-[11px] font-mono">
-              {JSON.stringify(insight.evidence, null, 2)}
-            </pre>
-          </CardContent>
-        </Card>
+        <details className="group">
+          <summary className="flex cursor-pointer items-center gap-2 text-[11px] text-muted-foreground hover:text-foreground">
+            <Database className="h-3 w-3" aria-hidden />
+            <span>Evidencia raw del agente (JSON)</span>
+          </summary>
+          <pre className="mt-2 max-h-96 overflow-auto rounded-md bg-muted p-3 text-[10px] font-mono">
+            {JSON.stringify(insight.evidence, null, 2)}
+          </pre>
+        </details>
       )}
     </div>
   );
+}
+
+function EvidencePackSkeleton() {
+  return (
+    <div className="space-y-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-24 rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
+async function EvidenceSection({ companyId }: { companyId: number }) {
+  const pack = await getCompanyEvidencePack(companyId);
+  if (!pack) {
+    return (
+      <Card>
+        <CardContent className="py-6 text-center text-xs text-muted-foreground">
+          No se pudo cargar el evidence pack para esta empresa.
+        </CardContent>
+      </Card>
+    );
+  }
+  return <EvidencePackView pack={pack} />;
 }
