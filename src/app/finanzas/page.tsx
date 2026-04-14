@@ -31,6 +31,7 @@ import {
   getWorkingCapital,
   getCashPosition,
   getPlHistory,
+  getWorkingCapitalCycle,
   type BankBalance,
   type PlPoint,
 } from "@/lib/queries/finance";
@@ -100,6 +101,32 @@ export default function FinanzasPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Working Capital Cycle — DSO/DPO/DIO/CCC con COGS real */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Ciclo de capital de trabajo
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            DSO + DIO − DPO = CCC. Días entre que comprometemos cash y lo
+            recuperamos. COGS desde plan de cuentas oficial.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[96px] rounded-xl" />
+                ))}
+              </StatGrid>
+            }
+          >
+            <WorkingCapitalCycleSection />
+          </Suspense>
+        </CardContent>
+      </Card>
 
       {/* P&L chart */}
       <Card>
@@ -412,5 +439,131 @@ async function BanksSection() {
         />
       )}
     />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Working Capital Cycle — Sprint 8/10
+// ──────────────────────────────────────────────────────────────────────────
+function cycleTone(
+  metric: "dso" | "dpo" | "dio" | "ccc",
+  days: number | null
+): "success" | "warning" | "danger" | "default" {
+  if (days == null) return "default";
+  // Benchmarks textil B2B
+  if (metric === "dso") {
+    if (days <= 30) return "success";
+    if (days <= 50) return "warning";
+    return "danger";
+  }
+  if (metric === "dio") {
+    if (days <= 60) return "success";
+    if (days <= 90) return "warning";
+    return "danger";
+  }
+  if (metric === "dpo") {
+    // DPO alto = bueno (pagamos lento, retenemos cash)
+    if (days >= 60) return "success";
+    if (days >= 30) return "warning";
+    return "danger";
+  }
+  // CCC
+  if (days <= 60) return "success";
+  if (days <= 90) return "warning";
+  return "danger";
+}
+
+async function WorkingCapitalCycleSection() {
+  const wcc = await getWorkingCapitalCycle();
+  if (!wcc) {
+    return (
+      <EmptyState
+        icon={Scale}
+        title="Sin datos de ciclo de capital"
+        description="working_capital_cycle no devolvió resultados."
+        compact
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+        <KpiCard
+          title="DSO (cobro)"
+          value={wcc.dsoDays ?? 0}
+          format="days"
+          icon={ArrowDownCircle}
+          subtitle="días para cobrar"
+          tone={cycleTone("dso", wcc.dsoDays)}
+          size="sm"
+        />
+        <KpiCard
+          title="DPO (pago)"
+          value={wcc.dpoDays ?? 0}
+          format="days"
+          icon={ArrowUpCircle}
+          subtitle="días para pagar"
+          tone={cycleTone("dpo", wcc.dpoDays)}
+          size="sm"
+        />
+        <KpiCard
+          title="DIO (inventario)"
+          value={wcc.dioDays ?? 0}
+          format="days"
+          icon={Wallet}
+          subtitle="días de stock"
+          tone={cycleTone("dio", wcc.dioDays)}
+          size="sm"
+        />
+        <KpiCard
+          title="CCC"
+          value={wcc.cccDays ?? 0}
+          format="days"
+          icon={TrendingUp}
+          subtitle="días totales en ciclo"
+          tone={cycleTone("ccc", wcc.cccDays)}
+          size="sm"
+        />
+      </StatGrid>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricRow
+          label="Revenue 12m"
+          value={<Currency amount={wcc.revenue12mMxn} compact />}
+        />
+        <MetricRow
+          label="COGS 12m"
+          value={<Currency amount={wcc.cogs12mMxn} compact />}
+        />
+        <MetricRow
+          label="Gross margin"
+          value={
+            <span
+              className={
+                wcc.grossMarginPct >= 25
+                  ? "text-success font-semibold tabular-nums"
+                  : wcc.grossMarginPct >= 15
+                    ? "text-warning font-semibold tabular-nums"
+                    : "text-danger font-semibold tabular-nums"
+              }
+            >
+              {wcc.grossMarginPct.toFixed(1)}%
+            </span>
+          }
+        />
+        <MetricRow
+          label="Capital atrapado"
+          value={<Currency amount={wcc.workingCapitalMxn} compact />}
+        />
+      </div>
+
+      <p className="text-[10px] text-muted-foreground">
+        Benchmarks textil B2B: DSO ≤30 saludable · DIO ≤60 saludable ·
+        DPO ≥60 saludable · CCC ≤60 saludable. COGS desde
+        odoo_account_balances filtrado por account_type=expense_direct_cost
+        (NO el proxy in_invoices).
+      </p>
+    </div>
   );
 }
