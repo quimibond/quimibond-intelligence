@@ -220,6 +220,126 @@ export async function getAgentEffectiveness(): Promise<
   }));
 }
 
+/**
+ * Get a single agent by slug, joined with its effectiveness metrics.
+ */
+export async function getAgentBySlug(slug: string): Promise<
+  | (AgentEffectivenessRow & {
+      description: string | null;
+      analysis_schedule: string | null;
+    })
+  | null
+> {
+  const sb = getServiceClient();
+  const { data: agentData } = await sb
+    .from("ai_agents")
+    .select("id, slug, name, domain, description, analysis_schedule, is_active")
+    .eq("slug", slug)
+    .maybeSingle();
+  if (!agentData) return null;
+
+  const ag = agentData as {
+    id: number;
+    slug: string;
+    name: string;
+    domain: string | null;
+    description: string | null;
+    analysis_schedule: string | null;
+    is_active: boolean | null;
+  };
+
+  const { data: effData } = await sb
+    .from("agent_effectiveness")
+    .select("*")
+    .eq("agent_id", ag.id)
+    .maybeSingle();
+  const e = (effData ?? {}) as Partial<AgentEffectivenessRow>;
+
+  return {
+    agent_id: ag.id,
+    slug: ag.slug,
+    name: ag.name,
+    domain: ag.domain,
+    is_active: !!ag.is_active,
+    description: ag.description,
+    analysis_schedule: ag.analysis_schedule,
+    total_insights: Number(e.total_insights) || 0,
+    insights_24h: Number(e.insights_24h) || 0,
+    state_new: Number(e.state_new) || 0,
+    state_acted: Number(e.state_acted) || 0,
+    state_dismissed: Number(e.state_dismissed) || 0,
+    acted_rate_pct:
+      e.acted_rate_pct != null ? Number(e.acted_rate_pct) : null,
+    dismiss_rate_pct:
+      e.dismiss_rate_pct != null ? Number(e.dismiss_rate_pct) : null,
+    avg_confidence:
+      e.avg_confidence != null ? Number(e.avg_confidence) : null,
+    avg_impact_mxn:
+      e.avg_impact_mxn != null ? Number(e.avg_impact_mxn) : null,
+    impact_delivered_mxn:
+      e.impact_delivered_mxn != null ? Number(e.impact_delivered_mxn) : null,
+    last_run_at: e.last_run_at ?? null,
+    runs_24h: Number(e.runs_24h) || 0,
+    avg_duration_s:
+      e.avg_duration_s != null ? Number(e.avg_duration_s) : null,
+  };
+}
+
+export interface AgentRunRow {
+  id: number;
+  status: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  duration_seconds: number | null;
+  entities_analyzed: number | null;
+  insights_generated: number | null;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  error_message: string | null;
+}
+
+export async function getAgentRuns(
+  agentId: number,
+  limit = 20
+): Promise<AgentRunRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("agent_runs")
+    .select(
+      "id, status, started_at, completed_at, duration_seconds, entities_analyzed, insights_generated, input_tokens, output_tokens, error_message"
+    )
+    .eq("agent_id", agentId)
+    .order("started_at", { ascending: false })
+    .limit(limit);
+  return (data ?? []) as AgentRunRow[];
+}
+
+export interface AgentMemoryRow {
+  id: number;
+  memory_type: string | null;
+  content: string | null;
+  importance: number | null;
+  times_used: number | null;
+  last_used_at: string | null;
+  created_at: string | null;
+}
+
+export async function getAgentMemory(
+  agentId: number,
+  limit = 20
+): Promise<AgentMemoryRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("agent_memory")
+    .select(
+      "id, memory_type, content, importance, times_used, last_used_at, created_at"
+    )
+    .eq("agent_id", agentId)
+    .order("importance", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  return (data ?? []) as AgentMemoryRow[];
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Data quality
 // ──────────────────────────────────────────────────────────────────────────

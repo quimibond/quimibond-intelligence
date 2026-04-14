@@ -1,373 +1,232 @@
-"use client";
-
-import { useEffect, useState, useCallback } from "react";
+import { Suspense } from "react";
 import Link from "next/link";
-import { toast } from "sonner";
-import { supabase } from "@/lib/supabase";
-import { cn, timeAgo, formatCurrency, truncate } from "@/lib/utils";
-import { getDomainConfig } from "@/lib/domains";
-import { PageHeader } from "@/components/shared/page-header";
-import { SeverityBadge } from "@/components/shared/severity-badge";
-import { LoadingGrid } from "@/components/shared/loading-grid";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Skeleton } from "@/components/ui/skeleton";
-import { EffectivenessPanel } from "./components/effectiveness-panel";
 import {
-  ArrowRight, Bot, Brain, CheckCircle2,
-  Loader2, MessageSquare, Play, XCircle, Zap,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  Inbox,
+  Target,
+  TrendingUp,
 } from "lucide-react";
 
-interface AgentOverview {
-  agent_id: number;
-  slug: string;
-  name: string;
-  domain: string;
-  is_active: boolean;
-  last_run_at: string | null;
-  last_run_status: string | null;
-  total_runs: number;
-  total_insights: number;
-  new_insights: number;
-  avg_confidence: number | null;
-}
+import {
+  PageHeader,
+  StatGrid,
+  KpiCard,
+  EmptyState,
+  Currency,
+  DateDisplay,
+} from "@/components/shared/v2";
+import { Card } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import { Badge } from "@/components/ui/badge";
+
+import {
+  getAgentEffectiveness,
+  type AgentEffectivenessRow,
+} from "@/lib/queries/system";
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const metadata = { title: "Directores" };
 
 export default function AgentsPage() {
-  const [agents, setAgents] = useState<AgentOverview[]>([]);
-  const [recentInsights, setRecentInsights] = useState<{ id: number; title: string; severity: string; agent_id: number; created_at: string }[]>([]);
-  const [feedbackItems, setFeedbackItems] = useState<{ id: number; title: string; state: string; agent_id: number; updated_at: string }[]>([]);
-  const [recentMemories, setRecentMemories] = useState<{ id: number; content: string; memory_type: string; importance: number; agent_id: number; created_at: string }[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [runningAgent, setRunningAgent] = useState<string | null>(null);
-  const [runningAll, setRunningAll] = useState(false);
-  const [showInactive, setShowInactive] = useState(false);
+  return (
+    <div className="space-y-5 pb-24 md:pb-6">
+      <PageHeader
+        title="Directores AI"
+        subtitle="Agentes que generan insights cada 15 minutos"
+      />
 
-  const load = useCallback(async () => {
-    const [agentsRes, insightsRes, feedbackRes, memoriesRes] = await Promise.all([
-      supabase.rpc("get_agents_overview"),
-      supabase
-        .from("agent_insights")
-        .select("id, title, severity, agent_id, created_at")
-        .in("state", ["new", "seen"])
-        .gte("confidence", 0.80)
-        .order("created_at", { ascending: false })
-        .limit(5),
-      supabase
-        .from("agent_insights")
-        .select("id, title, state, agent_id, updated_at")
-        .in("state", ["acted_on", "dismissed"])
-        .order("updated_at", { ascending: false })
-        .limit(10),
-      supabase
-        .from("agent_memory")
-        .select("id, content, memory_type, importance, agent_id, created_at")
-        .order("created_at", { ascending: false })
-        .limit(5),
-    ]);
-    setAgents(agentsRes.data ?? []);
-    setRecentInsights(insightsRes.data ?? []);
-    setFeedbackItems(feedbackRes.data ?? []);
-    setRecentMemories(memoriesRes.data ?? []);
-    setLoading(false);
-  }, []);
+      <Suspense fallback={<KpisSkeleton />}>
+        <AgentsKpisSection />
+      </Suspense>
 
-  useEffect(() => { load(); }, [load]);
+      <Suspense
+        fallback={
+          <div className="space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-[110px] rounded-xl" />
+            ))}
+          </div>
+        }
+      >
+        <AgentsList />
+      </Suspense>
+    </div>
+  );
+}
 
-  async function handleRun(slug: string) {
-    setRunningAgent(slug);
-    try {
-      const res = await fetch("/api/agents/run", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_slug: slug }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(`Error: ${data.error ?? res.statusText}`);
-        return;
-      }
-      await load();
-    } finally {
-      setRunningAgent(null);
-    }
-  }
+function KpisSkeleton() {
+  return (
+    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+      {Array.from({ length: 4 }).map((_, i) => (
+        <Skeleton key={i} className="h-[96px] rounded-xl" />
+      ))}
+    </StatGrid>
+  );
+}
 
-  async function handleRunNext() {
-    setRunningAll(true);
-    try {
-      await fetch("/api/agents/orchestrate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      await load();
-    } finally {
-      setRunningAll(false);
-    }
-  }
-
-  if (loading) {
-    return (
-      <div className="space-y-6">
-        <div className="h-7 w-32 bg-muted rounded animate-pulse" />
-        <LoadingGrid rows={6} rowHeight="h-[160px]" />
-      </div>
-    );
-  }
-
-  const activeAgents = agents.filter(a => a.is_active);
-  const inactiveAgents = agents.filter(a => !a.is_active);
-  const totalInsights = activeAgents.reduce((s, a) => s + a.total_insights, 0);
-  const newInsights = activeAgents.reduce((s, a) => s + a.new_insights, 0);
+async function AgentsKpisSection() {
+  const agents = await getAgentEffectiveness();
+  const totalInsights = agents.reduce((a, r) => a + r.total_insights, 0);
+  const insights24h = agents.reduce((a, r) => a + r.insights_24h, 0);
+  const totalImpact = agents.reduce(
+    (a, r) => a + (r.impact_delivered_mxn ?? 0),
+    0
+  );
+  const avgActed =
+    agents.filter((a) => a.acted_rate_pct != null).length > 0
+      ? agents.reduce((a, r) => a + (r.acted_rate_pct ?? 0), 0) /
+        agents.filter((a) => a.acted_rate_pct != null).length
+      : 0;
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-black">Directores IA</h1>
-          <p className="text-xs text-muted-foreground">{activeAgents.length} activos · {totalInsights} insights{newInsights > 0 ? ` · ${newInsights} nuevos` : ""}</p>
-        </div>
-        <Button
-          onClick={handleRunNext}
-          disabled={runningAll || runningAgent !== null}
-          className="shrink-0 w-full sm:w-auto"
-        >
-          {runningAll ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Zap className="h-4 w-4 mr-2" />}
-          Ejecutar Siguiente
-        </Button>
-      </div>
+    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+      <KpiCard
+        title="Directores activos"
+        value={agents.length}
+        format="number"
+        icon={Bot}
+      />
+      <KpiCard
+        title="Insights generados"
+        value={totalInsights}
+        format="number"
+        icon={Inbox}
+        subtitle={`${insights24h} en 24h`}
+      />
+      <KpiCard
+        title="Acted rate promedio"
+        value={avgActed}
+        format="percent"
+        icon={Target}
+        tone={
+          avgActed >= 30 ? "success" : avgActed >= 15 ? "warning" : "danger"
+        }
+      />
+      <KpiCard
+        title="Impacto entregado"
+        value={totalImpact}
+        format="currency"
+        compact
+        icon={TrendingUp}
+        subtitle="acciones del CEO"
+        tone="success"
+      />
+    </StatGrid>
+  );
+}
 
-      {/* Effectiveness scorecard — real-time ROI per agent */}
-      <EffectivenessPanel />
+async function AgentsList() {
+  const agents = await getAgentEffectiveness();
+  if (agents.length === 0) {
+    return (
+      <EmptyState
+        icon={Bot}
+        title="Sin directores activos"
+        description="No hay agentes activos en agent_effectiveness."
+      />
+    );
+  }
+  return (
+    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+      {agents.map((a) => (
+        <AgentCard key={a.agent_id} agent={a} />
+      ))}
+    </div>
+  );
+}
 
-      {/* Active Directors */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {activeAgents.map((agent) => {
-          const dc = getDomainConfig(agent.domain);
-          const Icon = dc.icon;
-          const color = dc.color;
-          const bg = dc.bg;
-          const isRunning = runningAgent === agent.slug;
-          const desc = dc.description;
+function AgentCard({ agent: a }: { agent: AgentEffectivenessRow }) {
+  const actedTone =
+    a.acted_rate_pct == null
+      ? "secondary"
+      : a.acted_rate_pct >= 30
+        ? "success"
+        : a.acted_rate_pct >= 15
+          ? "warning"
+          : "critical";
 
-          return (
-            <Card key={agent.slug} className="relative overflow-hidden">
-              <CardContent className="pt-4 pb-3 space-y-3">
-                {/* Agent header */}
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg", bg)}>
-                      <Icon className={cn("h-4.5 w-4.5", color)} />
-                    </div>
-                    <div className="min-w-0">
-                      <Link href={`/agents/${agent.slug}`} className="text-sm font-semibold truncate hover:underline">{agent.name}</Link>
-                      <p className="text-[10px] text-muted-foreground truncate">{desc}</p>
-                    </div>
-                  </div>
-                  {agent.is_active ? (
-                    <span className="h-2 w-2 rounded-full bg-success shrink-0 mt-1" title="Activo" />
-                  ) : (
-                    <span className="h-2 w-2 rounded-full bg-muted-foreground/50 shrink-0 mt-1" title="Inactivo" />
-                  )}
-                </div>
-
-                {/* Stats */}
-                <div className="grid grid-cols-3 gap-2 text-center">
-                  <div>
-                    <p className="text-lg font-bold tabular-nums">{agent.total_runs}</p>
-                    <p className="text-[10px] text-muted-foreground">corridas</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold tabular-nums">
-                      {agent.total_insights}
-                      {agent.new_insights > 0 && (
-                        <span className="text-xs text-success ml-0.5">+{agent.new_insights}</span>
-                      )}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">insights</p>
-                  </div>
-                  <div>
-                    <p className="text-lg font-bold tabular-nums">
-                      {agent.avg_confidence != null ? `${(agent.avg_confidence * 100).toFixed(0)}%` : "—"}
-                    </p>
-                    <p className="text-[10px] text-muted-foreground">confianza</p>
-                  </div>
-                </div>
-
-                {/* Status + Run button */}
-                <div className="flex items-center justify-between gap-2 pt-1 border-t">
-                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground min-w-0">
-                    {agent.last_run_status === "completed" ? (
-                      <CheckCircle2 className="h-3.5 w-3.5 text-success shrink-0" />
-                    ) : agent.last_run_status === "failed" ? (
-                      <XCircle className="h-3.5 w-3.5 text-danger shrink-0" />
-                    ) : agent.last_run_status === "running" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-warning shrink-0" />
-                    ) : (
-                      <Bot className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span className="truncate">{agent.last_run_at ? timeAgo(agent.last_run_at) : "nunca ejecutado"}</span>
-                  </div>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0 h-7 px-2.5"
-                    onClick={() => handleRun(agent.slug)}
-                    disabled={isRunning || runningAll}
-                  >
-                    {isRunning ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <><Play className="h-3 w-3 mr-1" /><span className="text-xs">Ejecutar</span></>
-                    )}
-                  </Button>
-                </div>
-              </CardContent>
-            </Card>
-          );
-        })}
-      </div>
-
-      {/* Inactive agents toggle */}
-      {inactiveAgents.length > 0 && (
-        <div>
-          <button
-            onClick={() => setShowInactive(!showInactive)}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-          >
-            {showInactive ? "Ocultar" : "Mostrar"} {inactiveAgents.length} inactivos
-          </button>
-          {showInactive && (
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 mt-3 opacity-50">
-              {inactiveAgents.map((agent) => {
-                const dc = getDomainConfig(agent.domain);
-                const Icon = dc.icon;
-                return (
-                  <Card key={agent.slug} className="relative overflow-hidden">
-                    <CardContent className="pt-4 pb-3">
-                      <div className="flex items-center gap-2.5">
-                        <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted")}>
-                          <Icon className="h-4.5 w-4.5 text-muted-foreground" />
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate line-through">{agent.name}</p>
-                          <p className="text-[10px] text-muted-foreground">Desactivado — {agent.total_insights} insights historicos</p>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                );
-              })}
+  return (
+    <Link href={`/agents/${a.slug}`} className="block">
+      <Card className="gap-2 py-4 transition-colors active:bg-accent/50">
+        <div className="flex items-start justify-between gap-2 px-4">
+          <div className="flex items-start gap-2 min-w-0 flex-1">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <Bot className="h-4 w-4 text-primary" aria-hidden />
             </div>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-sm font-semibold">{a.name}</div>
+              {a.domain && (
+                <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                  {a.domain}
+                </div>
+              )}
+            </div>
+          </div>
+          <ChevronRight
+            className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
+        </div>
+
+        <div className="grid grid-cols-3 gap-2 px-4 pt-1 text-center">
+          <div>
+            <div className="text-lg font-bold tabular-nums">
+              {a.total_insights}
+            </div>
+            <div className="text-[10px] uppercase text-muted-foreground">
+              Insights
+            </div>
+          </div>
+          <div>
+            <div className="text-lg font-bold tabular-nums">
+              {a.state_acted}
+            </div>
+            <div className="text-[10px] uppercase text-muted-foreground">
+              Acted
+            </div>
+          </div>
+          <div>
+            <div className="text-lg font-bold tabular-nums">{a.runs_24h}</div>
+            <div className="text-[10px] uppercase text-muted-foreground">
+              Runs 24h
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center justify-between gap-2 px-4 pt-1">
+          <Badge variant={actedTone}>
+            {a.acted_rate_pct != null
+              ? `${a.acted_rate_pct.toFixed(0)}% acted`
+              : "Sin datos"}
+          </Badge>
+          {a.impact_delivered_mxn != null && a.impact_delivered_mxn > 0 && (
+            <span className="text-xs font-semibold text-success">
+              <Currency amount={a.impact_delivered_mxn} compact /> impacto
+            </span>
           )}
         </div>
-      )}
 
-      {/* Recent insights — compact preview, links to inbox */}
-      {recentInsights.length > 0 && (
-        <Card>
-          <CardHeader className="pb-2">
-            <Link href="/inbox" className="flex items-center justify-between group">
-              <div className="flex items-center gap-2">
-                <Bot className="h-4 w-4 text-domain-meta" />
-                <CardTitle className="text-sm sm:text-base">Insights Recientes</CardTitle>
-                <Badge variant="outline" className="text-[10px]">{newInsights} nuevos</Badge>
-              </div>
-              <div className="flex items-center gap-1 text-sm text-muted-foreground">
-                <span className="hidden sm:inline text-xs">Ver todos en Inbox</span>
-                <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
-              </div>
-            </Link>
-          </CardHeader>
-          <CardContent className="space-y-1.5">
-            {recentInsights.map((ins) => {
-              const agent = agents.find(a => a.agent_id === ins.agent_id);
-              const insDc = getDomainConfig(agent?.domain ?? "");
-              const AgentIcon = insDc.icon;
-              return (
-                <Link
-                  key={ins.id}
-                  href={`/inbox/insight/${ins.id}`}
-                  className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5 hover:bg-muted/50 transition-colors"
-                >
-                  <AgentIcon className={cn("h-4 w-4 shrink-0", insDc.color)} />
-                  <SeverityBadge severity={ins.severity} />
-                  <span className="text-sm font-medium truncate flex-1 min-w-0">{ins.title}</span>
-                  <span className="text-[10px] sm:text-xs text-muted-foreground shrink-0">{timeAgo(ins.created_at)}</span>
-                </Link>
-              );
-            })}
-          </CardContent>
-        </Card>
-      )}
+        {a.last_run_at && (
+          <div className="flex items-center gap-1 px-4 pt-1 text-[11px] text-muted-foreground">
+            <Clock className="h-3 w-3" aria-hidden />
+            Última corrida <DateDisplay date={a.last_run_at} relative />
+            {a.avg_duration_s != null && (
+              <span> · {a.avg_duration_s.toFixed(1)}s prom.</span>
+            )}
+          </div>
+        )}
 
-      {/* Feedback & Learning */}
-      {(feedbackItems.length > 0 || recentMemories.length > 0) && (
-        <div className="grid gap-3 lg:grid-cols-2">
-          {/* Feedback Reciente */}
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <MessageSquare className="h-4 w-4 text-domain-meta" />
-                <CardTitle className="text-sm sm:text-base">Feedback Reciente</CardTitle>
-                <Badge variant="outline" className="text-[10px]">{feedbackItems.length}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {feedbackItems.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">Sin feedback reciente</p>
-              ) : (
-                feedbackItems.map((item) => {
-                  const agent = agents.find(a => a.agent_id === item.agent_id);
-                  const wasUseful = item.state === "acted_on";
-                  return (
-                    <div
-                      key={item.id}
-                      className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5"
-                    >
-                      <Badge variant={wasUseful ? "default" : "secondary"} className="shrink-0 text-[10px]">
-                        {wasUseful ? "Util" : "Descartado"}
-                      </Badge>
-                      <span className="text-sm truncate flex-1 min-w-0">{truncate(item.title, 60)}</span>
-                      <span className="text-[10px] text-muted-foreground shrink-0">{agent?.name ?? "—"}</span>
-                      <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(item.updated_at)}</span>
-                    </div>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Aprendizajes Recientes */}
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center gap-2">
-                <Brain className="h-4 w-4 text-domain-meta" />
-                <CardTitle className="text-sm sm:text-base">Aprendizajes Recientes</CardTitle>
-                <Badge variant="outline" className="text-[10px]">{recentMemories.length}</Badge>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-1.5">
-              {recentMemories.length === 0 ? (
-                <p className="text-xs text-muted-foreground py-2">Sin aprendizajes recientes</p>
-              ) : (
-                recentMemories.map((mem) => (
-                  <div
-                    key={mem.id}
-                    className="flex items-center gap-2 sm:gap-3 rounded-lg border p-2 sm:p-2.5"
-                  >
-                    <Badge variant="outline" className="shrink-0 text-[10px]">{mem.memory_type}</Badge>
-                    <span className="text-sm truncate flex-1 min-w-0">{truncate(mem.content, 120)}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0 tabular-nums">{mem.importance}</span>
-                    <span className="text-[10px] text-muted-foreground shrink-0">{timeAgo(mem.created_at)}</span>
-                  </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      )}
-    </div>
+        {a.insights_24h > 0 && (
+          <div className="flex items-center gap-1 px-4 text-[11px] text-success">
+            <CheckCircle2 className="h-3 w-3" aria-hidden />
+            {a.insights_24h} insights en últimas 24h
+          </div>
+        )}
+      </Card>
+    </Link>
   );
 }
