@@ -7,6 +7,7 @@ import {
   Info,
   Layers,
   PackageSearch,
+  Scale,
   ShieldAlert,
 } from "lucide-react";
 
@@ -31,9 +32,11 @@ import {
   getTopRevenueBoms,
   getBomsWithMultipleVersions,
   getBomDuplicates,
+  getUomMismatchProducts,
   type BomCostRow,
   type BomCostSummary,
   type BomDuplicateRow,
+  type UomMismatchRow,
 } from "@/lib/queries/products";
 
 export const dynamic = "force-dynamic";
@@ -394,6 +397,38 @@ export default function CostosBomPage() {
             }
           >
             <TopRevenueTable />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      {/* UoM mismatch en líneas de venta */}
+      <Card className="border-warning/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Scale className="h-4 w-4 text-warning" />
+            Productos con UoM inconsistente en ventas
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Productos donde alguna línea de venta o factura usa una unidad de
+            medida <strong>diferente</strong> a la unidad canónica del producto
+            (ej. tela marcada en metros pero vendida por kilos). Mi PMA
+            excluye esas líneas del cálculo de qty/precio promedio para no
+            mezclar metros con kilos. <strong>Acción</strong>: Producción debe
+            decidir si vender por m o kg y consolidar el UoM del producto en
+            Odoo.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <UomMismatchTable />
           </Suspense>
         </CardContent>
       </Card>
@@ -771,6 +806,120 @@ const multiBomColumns: DataTableColumn<BomCostRow>[] = [
     hideOnMobile: true,
   },
 ];
+
+const uomMismatchColumns: DataTableColumn<UomMismatchRow>[] = [
+  {
+    key: "product",
+    header: "Producto",
+    cell: (r) => (
+      <div className="min-w-0">
+        <div className="font-mono text-xs font-semibold">
+          {r.product_ref ?? "—"}
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {r.product_name ?? ""}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: "uom",
+    header: "UoM canónica",
+    cell: (r) => (
+      <Badge variant="info" className="text-[10px]">
+        {r.product_uom ?? "—"}
+      </Badge>
+    ),
+    align: "center",
+  },
+  {
+    key: "lines",
+    header: "Líneas malas",
+    cell: (r) => (
+      <div className="text-right text-[11px] tabular-nums leading-tight">
+        <div>{r.mismatch_order_lines} órdenes</div>
+        <div className="text-muted-foreground">
+          {r.mismatch_invoice_lines} facturas
+        </div>
+      </div>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "rev",
+    header: "$ con UoM mala",
+    cell: (r) => (
+      <span className="font-semibold tabular-nums text-warning">
+        <Currency amount={r.mismatch_revenue_mxn} compact />
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "total",
+    header: "$ total prod",
+    cell: (r) => (
+      <span className="text-xs tabular-nums text-muted-foreground">
+        <Currency amount={r.total_revenue_mxn} compact />
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+];
+
+async function UomMismatchTable() {
+  const rows = await getUomMismatchProducts(30);
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={Scale}
+        title="Sin UoM inconsistentes"
+        description="Todos los productos se venden en su unidad canónica."
+        compact
+      />
+    );
+  }
+  return (
+    <DataTable
+      data={rows}
+      columns={uomMismatchColumns}
+      rowKey={(r) => `${r.odoo_product_id}`}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <div>
+              <div className="font-mono text-xs font-bold">
+                {r.product_ref ?? "—"}
+              </div>
+              <div className="truncate text-[11px] font-normal text-muted-foreground">
+                {r.product_name ?? ""}
+              </div>
+            </div>
+          }
+          badge={
+            <Badge variant="warning" className="text-[10px] uppercase">
+              {r.mismatch_order_lines + r.mismatch_invoice_lines} bad
+            </Badge>
+          }
+          fields={[
+            { label: "UoM canónica", value: r.product_uom ?? "—" },
+            {
+              label: "Revenue malo",
+              value: <Currency amount={r.mismatch_revenue_mxn} compact />,
+              className: "text-warning font-semibold",
+            },
+            {
+              label: "Revenue total",
+              value: <Currency amount={r.total_revenue_mxn} compact />,
+            },
+          ]}
+        />
+      )}
+    />
+  );
+}
 
 const dupColumns: DataTableColumn<BomDuplicateRow>[] = [
   {

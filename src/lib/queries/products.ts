@@ -281,6 +281,109 @@ export async function getTopMarginProducts(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// UoM mismatch (Sprint 13e)
+// ──────────────────────────────────────────────────────────────────────────
+//
+// Surfaces products where some sale/invoice line was sold in a different
+// UoM than the product's canonical UoM (e.g. CHIFON NEGRO 011 marked in
+// meters but sold by kilos). The matview already excludes those lines
+// from the qty / avg-price math; this query lists which products are
+// affected so Production / Compras can clean up the Odoo data.
+
+export interface UomMismatchRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  product_uom: string | null;
+  mismatch_order_lines: number;
+  mismatch_invoice_lines: number;
+  mismatch_revenue_mxn: number;
+  total_revenue_mxn: number;
+}
+
+export async function getUomMismatchProducts(
+  limit = 30
+): Promise<UomMismatchRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("product_margin_analysis")
+    .select(
+      "odoo_product_id, product_ref, product_name, total_order_value, uom_mismatch_order_lines, uom_mismatch_invoice_lines, uom_mismatch_revenue_mxn"
+    )
+    .eq("has_uom_mismatch", true);
+
+  const rows = (data ?? []) as Array<{
+    odoo_product_id: number;
+    product_ref: string | null;
+    product_name: string | null;
+    total_order_value: number | null;
+    uom_mismatch_order_lines: number | null;
+    uom_mismatch_invoice_lines: number | null;
+    uom_mismatch_revenue_mxn: number | null;
+  }>;
+
+  if (rows.length === 0) return [];
+
+  // Roll up per product (matview is per product x company)
+  const byProduct = new Map<
+    number,
+    {
+      odoo_product_id: number;
+      product_ref: string | null;
+      product_name: string | null;
+      orders: number;
+      invoices: number;
+      mismatch_rev: number;
+      total_rev: number;
+    }
+  >();
+  for (const r of rows) {
+    const cur = byProduct.get(r.odoo_product_id) ?? {
+      odoo_product_id: r.odoo_product_id,
+      product_ref: r.product_ref,
+      product_name: r.product_name,
+      orders: 0,
+      invoices: 0,
+      mismatch_rev: 0,
+      total_rev: 0,
+    };
+    cur.orders += r.uom_mismatch_order_lines ?? 0;
+    cur.invoices += r.uom_mismatch_invoice_lines ?? 0;
+    cur.mismatch_rev += r.uom_mismatch_revenue_mxn ?? 0;
+    cur.total_rev += r.total_order_value ?? 0;
+    byProduct.set(r.odoo_product_id, cur);
+  }
+
+  // Pull product UoM
+  const ids = [...byProduct.keys()];
+  const { data: prods } = await sb
+    .from("odoo_products")
+    .select("odoo_product_id, uom")
+    .in("odoo_product_id", ids);
+  const uomMap = new Map<number, string>();
+  for (const p of (prods ?? []) as Array<{
+    odoo_product_id: number;
+    uom: string | null;
+  }>) {
+    uomMap.set(p.odoo_product_id, p.uom ?? "");
+  }
+
+  return [...byProduct.values()]
+    .map((p) => ({
+      odoo_product_id: p.odoo_product_id,
+      product_ref: p.product_ref,
+      product_name: p.product_name,
+      product_uom: uomMap.get(p.odoo_product_id) ?? null,
+      mismatch_order_lines: p.orders,
+      mismatch_invoice_lines: p.invoices,
+      mismatch_revenue_mxn: p.mismatch_rev,
+      total_revenue_mxn: p.total_rev,
+    }))
+    .sort((a, b) => b.mismatch_revenue_mxn - a.mismatch_revenue_mxn)
+    .slice(0, limit);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // BOM real cost insights (Sprint 13)
 // ──────────────────────────────────────────────────────────────────────────
 //
