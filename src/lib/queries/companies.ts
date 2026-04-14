@@ -170,7 +170,7 @@ export async function getCompanyDetail(
     sb
       .from("companies")
       .select(
-        "id, name, canonical_name, rfc, industry, city, country, is_customer, is_supplier, credit_limit, payment_term"
+        "id, name, canonical_name, rfc, industry, city, country, is_customer, is_supplier, credit_limit, payment_term, monthly_avg"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -201,6 +201,7 @@ export async function getCompanyDetail(
     is_supplier: boolean | null;
     credit_limit: number | null;
     payment_term: string | null;
+    monthly_avg: number | null;
   };
   const p = (profile.data ?? {}) as Partial<{
     total_revenue: number;
@@ -221,7 +222,6 @@ export async function getCompanyDetail(
     risk_level: string;
   }>;
   const n = (narrative.data ?? {}) as Partial<{
-    monthly_avg: number;
     days_since_last_order: number;
     emails_30d: number;
     complaints: number;
@@ -260,7 +260,7 @@ export async function getCompanyDetail(
     revenue12m: Number(l.revenue_12m) || 0,
     revenue3m: Number(l.revenue_3m) || 0,
     trendPct: Number(p.trend_pct) || 0,
-    monthlyAvg: Number(n.monthly_avg) || 0,
+    monthlyAvg: Number(b.monthly_avg) || 0,
     totalOrders: Number(p.total_orders) || 0,
     lastOrderDate: p.last_order_date ?? null,
     daysSinceLastOrder: Number(n.days_since_last_order) || null,
