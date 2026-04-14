@@ -4,9 +4,10 @@ import {
   AlertTriangle,
   Banknote,
   ChevronRight,
+  Factory,
   Flame,
   Inbox,
-  ShoppingCart,
+  Target,
   TrendingUp,
   Truck,
   Users,
@@ -26,7 +27,11 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { getDashboardKpis, getRevenueTrend } from "@/lib/queries/dashboard";
+import {
+  getDashboardKpis,
+  getTopAtRiskClients,
+  getRevenueTrend,
+} from "@/lib/queries/dashboard";
 import { getInsights } from "@/lib/queries/insights";
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 
@@ -47,59 +52,59 @@ export default function CeoDashboardPage() {
       <div className="space-y-5 pb-24 md:pb-6">
         <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
 
-      {/* Runway alert — la señal más crítica */}
-      <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
-        <RunwayBanner />
-      </Suspense>
-
-      <Suspense fallback={<KpisSkeleton />}>
-        <Kpis />
-      </Suspense>
-
-      {/* Spec: "lista de insights urgentes abajo" */}
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Insights urgentes
-          </h2>
-          <Link
-            href="/inbox"
-            className="flex items-center gap-1 text-xs font-medium text-primary"
-          >
-            Ver todos
-            <ChevronRight className="h-3 w-3" />
-          </Link>
-        </div>
-        <Suspense fallback={<InsightsSkeleton />}>
-          <UrgentInsights />
+        {/* Runway alert — la señal más crítica */}
+        <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
+          <RunwayBanner />
         </Suspense>
-      </section>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Suspense
-              fallback={<Skeleton className="h-[220px] w-full rounded-md" />}
+        <Suspense fallback={<KpisSkeleton />}>
+          <Kpis />
+        </Suspense>
+
+        {/* Insights urgentes — spec: "lista de insights urgentes abajo" */}
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+              Insights urgentes
+            </h2>
+            <Link
+              href="/inbox"
+              className="flex items-center gap-1 text-xs font-medium text-primary"
             >
-              <RevenueChartSection />
-            </Suspense>
-          </CardContent>
-        </Card>
+              Ver todos
+              <ChevronRight className="h-3 w-3" />
+            </Link>
+          </div>
+          <Suspense fallback={<InsightsSkeleton />}>
+            <UrgentInsights />
+          </Suspense>
+        </section>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Clientes en riesgo</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<InsightsSkeleton rows={5} />}>
-              <AtRiskClients />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          <Card className="lg:col-span-2">
+            <CardHeader>
+              <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Suspense
+                fallback={<Skeleton className="h-[220px] w-full rounded-md" />}
+              >
+                <RevenueChartSection />
+              </Suspense>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Clientes en riesgo</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<InsightsSkeleton rows={5} />}>
+                <AtRiskClientsPanel />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </PullToRefresh>
   );
@@ -110,8 +115,10 @@ export default function CeoDashboardPage() {
 // ──────────────────────────────────────────────────────────────────────────
 async function RunwayBanner() {
   const k = await getDashboardKpis();
+  if (!k) return null;
+  const days = k.cash.runway_days;
   const tone =
-    k.runwayDias <= 7 ? "danger" : k.runwayDias <= 30 ? "warning" : "success";
+    days <= 7 ? "danger" : days <= 30 ? "warning" : "success";
   const toneClass = {
     danger: "border-l-danger bg-danger/10",
     warning: "border-l-warning bg-warning/10",
@@ -125,22 +132,29 @@ async function RunwayBanner() {
 
   return (
     <Link href="/finanzas" className="block">
-      <Card className={`gap-2 border-l-4 transition-colors active:bg-accent/60 ${toneClass}`}>
+      <Card
+        className={`gap-2 border-l-4 transition-colors active:bg-accent/60 ${toneClass}`}
+      >
         <div className="flex items-start gap-3 px-4 py-3">
           <Flame className={`h-6 w-6 shrink-0 ${iconColor}`} aria-hidden />
           <div className="flex-1 min-w-0">
             <div className="flex items-baseline gap-2">
               <span className={`text-3xl font-bold tabular-nums ${iconColor}`}>
-                {k.runwayDias}
+                {days}
               </span>
               <span className="text-sm font-medium">días de runway</span>
             </div>
             <p className="text-xs text-muted-foreground">
-              Burn diario <Currency amount={k.burnDiario} compact /> · Efectivo
-              neto <Currency amount={k.efectivoNeto} compact colorBySign />
+              Cash total{" "}
+              <Currency amount={k.cash.total_mxn} compact colorBySign /> ·{" "}
+              <Currency amount={k.cash.cash_mxn} compact /> MXN ·{" "}
+              <Currency amount={k.cash.cash_usd} compact /> USD
             </p>
           </div>
-          <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" aria-hidden />
+          <ChevronRight
+            className="h-5 w-5 shrink-0 text-muted-foreground"
+            aria-hidden
+          />
         </div>
       </Card>
     </Link>
@@ -169,83 +183,101 @@ function InsightsSkeleton({ rows = 4 }: { rows?: number }) {
 
 async function Kpis() {
   const k = await getDashboardKpis();
+  if (!k) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Sin datos del dashboard"
+        description="get_dashboard_kpis() no devolvió resultados."
+      />
+    );
+  }
+
+  const momPct =
+    k.revenue.last_month > 0
+      ? ((k.revenue.this_month - k.revenue.last_month) / k.revenue.last_month) *
+        100
+      : 0;
 
   return (
     <>
       <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 6 }}>
         <KpiCard
           title="Ingresos del mes"
-          value={k.ingresosMes}
+          value={k.revenue.this_month}
           format="currency"
           compact
           icon={TrendingUp}
-          trend={{ value: k.ingresosTrendPct, good: "up" }}
-          subtitle="vs mes anterior"
-          tone={k.ingresosTrendPct >= 0 ? "success" : "warning"}
+          trend={{ value: momPct, good: "up" }}
+          subtitle={`YTD ${formatCurrencyMXN(k.revenue.ytd, { compact: true })}`}
+          tone={momPct >= 0 ? "success" : "warning"}
           href="/ventas"
         />
         <KpiCard
           title="Cartera vencida"
-          value={k.carteraVencida}
+          value={k.collections.total_overdue_mxn}
           format="currency"
           compact
           icon={AlertTriangle}
-          subtitle={`${k.clientesMorosos} clientes morosos`}
+          subtitle={`${k.collections.overdue_count} facturas · ${formatCurrencyMXN(
+            k.collections.expected_collections_30d,
+            { compact: true }
+          )} esperado 30d`}
           tone="danger"
           href="/cobranza"
         />
         <KpiCard
-          title="Efectivo neto"
-          value={k.efectivoNeto}
+          title="Reorden en riesgo"
+          value={k.predictions.reorders_at_risk_mxn}
           format="currency"
           compact
-          icon={Banknote}
-          subtitle="efectivo − tarjetas"
-          tone={k.efectivoNeto >= 0 ? "success" : "danger"}
-          href="/finanzas"
-        />
-        <KpiCard
-          title="Ventas 30d"
-          value={k.ventas30d}
-          format="currency"
-          compact
-          icon={ShoppingCart}
-          subtitle={`Cobrado ${formatCurrencyMXN(k.cobros30d, { compact: true })}`}
+          icon={Target}
+          subtitle={`${k.predictions.reorders_overdue} vencidos · ${k.predictions.reorders_lost} perdidos`}
+          tone={k.predictions.reorders_overdue > 0 ? "warning" : "default"}
           href="/ventas"
         />
         <KpiCard
-          title="Insights nuevos"
-          value={k.insightsNew}
+          title="Insights urgentes"
+          value={k.insights.urgent_count}
           format="number"
           icon={Inbox}
           subtitle={
-            k.insightsCritical > 0
-              ? `${k.insightsCritical} críticos`
-              : "sin críticos"
+            k.insights.new_count > 0
+              ? `${k.insights.new_count} nuevos · ${k.insights.acceptance_rate.toFixed(0)}% aceptados`
+              : `${k.insights.acceptance_rate.toFixed(0)}% aceptados`
           }
-          tone={k.insightsCritical > 0 ? "danger" : "default"}
+          tone={k.insights.urgent_count > 0 ? "danger" : "default"}
           href="/inbox"
         />
         <KpiCard
           title="OTD rate"
-          value={k.otdPct}
+          value={k.operations.otd_rate}
           format="percent"
           icon={Truck}
-          subtitle="última semana"
+          subtitle={`${k.operations.late_deliveries} tarde · ${k.operations.pending_deliveries} pendientes`}
           tone={
-            k.otdPct == null
+            k.operations.otd_rate == null
               ? "default"
-              : k.otdPct >= 90
+              : k.operations.otd_rate >= 90
                 ? "success"
-                : k.otdPct >= 75
+                : k.operations.otd_rate >= 75
                   ? "warning"
                   : "danger"
           }
           href="/operaciones"
         />
+        <KpiCard
+          title="Manufactura"
+          value={k.operations.manufacturing_active}
+          format="number"
+          icon={Factory}
+          subtitle={`${k.operations.overdue_activities} actividades vencidas`}
+          tone={k.operations.overdue_activities > 100 ? "warning" : "default"}
+          href="/operaciones"
+        />
       </StatGrid>
       <p className="text-[11px] text-muted-foreground">
-        Actualizado {formatRelative(k.lastUpdated)}
+        Actualizado {formatRelative(k.generated_at)}
       </p>
     </>
   );
@@ -310,9 +342,15 @@ async function UrgentInsights() {
                   {i.company_name && (
                     <span className="truncate">{i.company_name}</span>
                   )}
-                  {i.created_at && (
+                  {i.assignee_name && (
                     <>
                       {i.company_name && <span>·</span>}
+                      <span className="truncate">{i.assignee_name}</span>
+                    </>
+                  )}
+                  {i.created_at && (
+                    <>
+                      <span>·</span>
                       <DateDisplay date={i.created_at} relative />
                     </>
                   )}
@@ -330,21 +368,26 @@ async function UrgentInsights() {
   );
 }
 
-async function AtRiskClients() {
-  const k = await getDashboardKpis();
-  if (k.topAtRiskClients.length === 0) {
+async function AtRiskClientsPanel() {
+  const [k, clients] = await Promise.all([
+    getDashboardKpis(),
+    getTopAtRiskClients(5),
+  ]);
+  const totalAtRisk = k?.collections.clients_at_risk ?? 0;
+
+  if (clients.length === 0) {
     return (
       <EmptyState
         icon={Users}
         title="Sin clientes en riesgo"
-        description={`${k.atRiskCount} clientes con churn > 70 y LTV > 100K`}
+        description={`${totalAtRisk} clientes con churn score elevado`}
         compact
       />
     );
   }
   return (
     <div className="flex flex-col">
-      {k.topAtRiskClients.map((c, i) => (
+      {clients.map((c, i) => (
         <div
           key={`${c.company_id}-${i}`}
           className="space-y-1 border-b border-border/60 py-2 last:border-b-0"
@@ -352,7 +395,7 @@ async function AtRiskClients() {
           <CompanyLink
             companyId={c.company_id ?? 0}
             name={c.company_name}
-            tier={c.tier ?? undefined}
+            tier={(c.tier as "A" | "B" | "C") ?? undefined}
             truncate
           />
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
@@ -368,12 +411,12 @@ async function AtRiskClients() {
           )}
         </div>
       ))}
-      {k.atRiskCount > k.topAtRiskClients.length && (
+      {totalAtRisk > clients.length && (
         <Link
           href="/companies"
           className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-primary"
         >
-          Ver los {k.atRiskCount} clientes en riesgo
+          Ver los {totalAtRisk} clientes en riesgo
           <ChevronRight className="h-3 w-3" />
         </Link>
       )}

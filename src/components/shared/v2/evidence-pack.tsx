@@ -26,6 +26,8 @@ import { DateDisplay } from "./date-display";
 import { CompanyLink } from "./company-link";
 import { TrendIndicator } from "./trend-indicator";
 import { MiniChart } from "./mini-chart";
+import { EvidenceChip } from "./evidence-chip";
+import { InvoiceDetailView } from "./invoice-detail";
 import type {
   EvidencePack,
   EvidencePackFinancials,
@@ -199,12 +201,14 @@ function FinancialsSection({ data: f }: { data: EvidencePackFinancials }) {
             </div>
             <div className="flex flex-wrap gap-1.5">
               {overdue.map((inv) => (
-                <InvoiceChip
+                <EvidenceChip
                   key={inv.name}
-                  name={inv.name}
+                  type="invoice"
+                  reference={inv.name}
                   amount={inv.amount_mxn}
-                  daysOverdue={inv.days_overdue}
-                  dueDate={inv.due_date}
+                  status="overdue"
+                  hint={`${inv.days_overdue}d`}
+                  detail={<InvoiceDetailView reference={inv.name} />}
                 />
               ))}
             </div>
@@ -212,42 +216,6 @@ function FinancialsSection({ data: f }: { data: EvidencePackFinancials }) {
         )}
       </CardContent>
     </Card>
-  );
-}
-
-function InvoiceChip({
-  name,
-  amount,
-  daysOverdue,
-  dueDate,
-}: {
-  name: string;
-  amount: number;
-  daysOverdue: number;
-  dueDate: string;
-}) {
-  const tone =
-    daysOverdue >= 60
-      ? "bg-danger/15 text-danger-foreground border-danger/30"
-      : daysOverdue >= 30
-        ? "bg-warning/15 text-warning-foreground border-warning/30"
-        : "bg-info/15 text-info-foreground border-info/30";
-  return (
-    <span
-      className={cn(
-        "inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[10px] font-medium",
-        tone
-      )}
-      title={`Vence ${dueDate}`}
-    >
-      <span className="font-mono">{name}</span>
-      <span className="text-muted-foreground">·</span>
-      <span className="tabular-nums">
-        <Currency amount={amount} compact />
-      </span>
-      <span className="text-muted-foreground">·</span>
-      <span className="font-bold tabular-nums">{daysOverdue}d</span>
-    </span>
   );
 }
 

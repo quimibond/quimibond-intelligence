@@ -3,7 +3,8 @@ import { formatValue, type FormatKind } from "@/lib/formatters";
 
 interface MetricRowProps {
   label: string;
-  value: number | string | null | undefined;
+  /** Puede ser número (se formatea), string o cualquier ReactNode (JSX crudo) */
+  value: React.ReactNode;
   format?: FormatKind;
   compact?: boolean;
   alert?: boolean;
@@ -13,7 +14,8 @@ interface MetricRowProps {
 
 /**
  * MetricRow — fila label / valor para listas de métricas en Company 360,
- * finance detail, etc.
+ * finance detail, etc. Acepta ReactNode para permitir componentes custom
+ * (CompanyLink, DateDisplay, Currency, etc).
  */
 export function MetricRow({
   label,
@@ -27,7 +29,9 @@ export function MetricRow({
   const display =
     typeof value === "number"
       ? formatValue(value, format, { compact })
-      : (value ?? "—");
+      : value == null
+        ? "—"
+        : value;
 
   return (
     <div
