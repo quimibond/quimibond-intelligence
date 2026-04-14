@@ -1,14 +1,13 @@
 import {
   AlertTriangle,
-  Calendar,
   Check,
   FileText,
   Flame,
   History,
-  Inbox,
   Mail,
   Package,
   ShoppingCart,
+  Target,
   Truck,
   TrendingDown,
   TrendingUp,
@@ -35,6 +34,7 @@ import type {
   EvidencePackDeliveries,
   EvidencePackActivities,
   EvidencePackHistory,
+  EvidencePackPredictions,
 } from "@/lib/queries/evidence";
 
 interface Props {
@@ -52,6 +52,7 @@ export function EvidencePackView({ pack }: Props) {
   return (
     <div className="space-y-4">
       <EvidenceHeader pack={pack} />
+      {pack.predictions && <PredictionsSection data={pack.predictions} />}
       <FinancialsSection data={pack.financials} />
       <OrdersSection data={pack.orders} />
       <CommunicationSection data={pack.communication} />
@@ -750,6 +751,270 @@ function HealthTrendDelta({
       {first} → {last} ({delta > 0 ? "+" : ""}
       {delta})
     </span>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Predictions (solo en briefings) — reorder / payment / cashflow / churn
+// ──────────────────────────────────────────────────────────────────────────
+function reorderStatusVariant(
+  status: string
+): "success" | "warning" | "critical" | "secondary" {
+  if (status === "on_track") return "success";
+  if (status === "at_risk") return "warning";
+  if (status === "overdue" || status === "critical") return "critical";
+  if (status === "lost") return "secondary";
+  return "secondary";
+}
+function reorderStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    on_track: "En ciclo",
+    at_risk: "En riesgo",
+    overdue: "Vencido",
+    critical: "Crítico",
+    lost: "Perdido",
+  };
+  return map[status] ?? status;
+}
+
+function customerStatusVariant(
+  status: string
+): "success" | "warning" | "critical" | "secondary" {
+  if (status === "active") return "success";
+  if (status === "cooling") return "warning";
+  if (status === "at_risk") return "critical";
+  if (status === "churned") return "secondary";
+  return "secondary";
+}
+function customerStatusLabel(status: string): string {
+  const map: Record<string, string> = {
+    active: "Activo",
+    cooling: "Enfriando",
+    at_risk: "En riesgo",
+    churned: "Perdido",
+  };
+  return map[status] ?? status;
+}
+
+function paymentRiskVariant(
+  raw: string
+): "success" | "warning" | "critical" | "info" {
+  const upper = raw.toUpperCase();
+  if (upper.startsWith("CRITICO")) return "critical";
+  if (upper.startsWith("ALTO")) return "warning";
+  if (upper.startsWith("MEDIO")) return "warning";
+  if (upper.startsWith("NORMAL")) return "success";
+  return "info";
+}
+
+function PredictionsSection({ data: p }: { data: EvidencePackPredictions }) {
+  const has =
+    p.reorder != null ||
+    p.payment != null ||
+    p.cashflow != null ||
+    p.ltv_health != null;
+  if (!has) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <Target className="h-4 w-4 text-muted-foreground" aria-hidden />
+          Predicciones
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3 pb-4">
+        {p.reorder && (
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Reorden
+              </span>
+              <Badge variant={reorderStatusVariant(p.reorder.reorder_status)}>
+                {reorderStatusLabel(p.reorder.reorder_status)}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+              <Stat
+                label="Ciclo promedio"
+                value={
+                  p.reorder.avg_cycle_days != null
+                    ? `${Math.round(p.reorder.avg_cycle_days)}d`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Sin pedir"
+                value={
+                  p.reorder.days_since_last != null
+                    ? `${p.reorder.days_since_last}d`
+                    : "—"
+                }
+                danger={
+                  p.reorder.days_overdue_reorder != null &&
+                  p.reorder.days_overdue_reorder > 0
+                }
+              />
+              <Stat
+                label="Ticket promedio"
+                value={<Currency amount={p.reorder.avg_order_value} compact />}
+              />
+              <Stat
+                label="Predicho"
+                value={p.reorder.predicted_next_order ?? "—"}
+              />
+            </div>
+            {p.reorder.days_overdue_reorder != null &&
+              p.reorder.days_overdue_reorder > 0 && (
+                <p className="mt-1 text-[11px] text-danger">
+                  Vencido hace {Math.round(p.reorder.days_overdue_reorder)} días
+                  {p.reorder.top_product_ref && (
+                    <>
+                      {" "}
+                      · top:{" "}
+                      <span className="font-mono">
+                        {p.reorder.top_product_ref}
+                      </span>
+                    </>
+                  )}
+                </p>
+              )}
+          </div>
+        )}
+
+        {p.payment && (
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Patrón de pago
+              </span>
+              <Badge variant={paymentRiskVariant(p.payment.payment_risk)}>
+                {p.payment.payment_risk.split(":")[0]}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+              <Stat
+                label="Prom histórico"
+                value={
+                  p.payment.avg_days_to_pay != null
+                    ? `${Math.round(p.payment.avg_days_to_pay)}d`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Reciente 6m"
+                value={
+                  p.payment.avg_recent_6m != null
+                    ? `${Math.round(p.payment.avg_recent_6m)}d`
+                    : "—"
+                }
+              />
+              <Stat
+                label="Máx vencido"
+                value={
+                  p.payment.max_days_overdue != null
+                    ? `${p.payment.max_days_overdue}d`
+                    : "—"
+                }
+                danger={
+                  p.payment.max_days_overdue != null &&
+                  p.payment.max_days_overdue > 30
+                }
+              />
+              <Stat
+                label="Pendiente"
+                value={<Currency amount={p.payment.total_pending} compact />}
+              />
+            </div>
+            {p.payment.payment_trend && (
+              <p className="mt-1 text-[11px] text-muted-foreground">
+                Tendencia: {p.payment.payment_trend}
+                {p.payment.predicted_payment_date && (
+                  <>
+                    {" · cobro esperado "}
+                    {new Date(
+                      p.payment.predicted_payment_date
+                    ).toLocaleDateString("es-MX")}
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+
+        {p.cashflow && p.cashflow.total_receivable != null && (
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="mb-1 text-[10px] uppercase tracking-wide text-muted-foreground">
+              Cashflow esperado
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <Stat
+                label="Por cobrar"
+                value={
+                  <Currency amount={p.cashflow.total_receivable} compact />
+                }
+              />
+              <Stat
+                label="Esperado"
+                value={
+                  <Currency amount={p.cashflow.expected_collection} compact />
+                }
+              />
+              <Stat
+                label="Probabilidad"
+                value={
+                  p.cashflow.collection_probability != null
+                    ? `${Math.round(p.cashflow.collection_probability * 100)}%`
+                    : "—"
+                }
+              />
+            </div>
+          </div>
+        )}
+
+        {p.ltv_health && (
+          <div className="rounded-md border border-border/60 p-3">
+            <div className="mb-1 flex items-center justify-between gap-2">
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Health cliente
+              </span>
+              {p.ltv_health.customer_status && (
+                <Badge
+                  variant={customerStatusVariant(p.ltv_health.customer_status)}
+                >
+                  {customerStatusLabel(p.ltv_health.customer_status)}
+                </Badge>
+              )}
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <Stat
+                label="Churn risk"
+                value={p.ltv_health.churn_risk_score ?? "—"}
+                danger={(p.ltv_health.churn_risk_score ?? 0) > 70}
+              />
+              <Stat
+                label="Overdue risk"
+                value={p.ltv_health.overdue_risk_score ?? "—"}
+                danger={(p.ltv_health.overdue_risk_score ?? 0) > 70}
+              />
+              <Stat
+                label="Trend vs Q ant"
+                value={
+                  p.ltv_health.trend_pct != null ? (
+                    <TrendIndicator
+                      value={p.ltv_health.trend_pct}
+                      good="up"
+                    />
+                  ) : (
+                    "—"
+                  )
+                }
+              />
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

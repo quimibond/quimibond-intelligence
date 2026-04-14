@@ -21,6 +21,7 @@ import {
   Currency,
   DateDisplay,
   SeverityBadge,
+  PullToRefresh,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -42,8 +43,9 @@ function greet() {
 
 export default function CeoDashboardPage() {
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
-      <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
+    <PullToRefresh>
+      <div className="space-y-5 pb-24 md:pb-6">
+        <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
 
       {/* Runway alert — la señal más crítica */}
       <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
@@ -98,7 +100,8 @@ export default function CeoDashboardPage() {
           </CardContent>
         </Card>
       </div>
-    </div>
+      </div>
+    </PullToRefresh>
   );
 }
 

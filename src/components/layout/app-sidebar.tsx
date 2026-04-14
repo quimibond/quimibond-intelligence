@@ -17,6 +17,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   Factory,
+  FileText,
   Home,
   Inbox,
   Package,
@@ -31,6 +32,7 @@ import {
 const navItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/inbox", label: "Insights", icon: Inbox },
+  { href: "/briefings", label: "Briefings", icon: FileText },
   { href: "/companies", label: "Empresas", icon: Building2 },
   { href: "/ventas", label: "Ventas", icon: TrendingUp },
   { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },

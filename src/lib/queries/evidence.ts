@@ -114,6 +114,48 @@ export interface EvidencePackHistory {
     | null;
 }
 
+/**
+ * Predicciones adicionales que solo devuelve `get_director_briefing` (NO el
+ * `company_evidence_pack` básico). Todas las subsecciones pueden ser null.
+ */
+export interface EvidencePackPredictions {
+  payment: {
+    payment_risk: string;
+    payment_trend: string | null;
+    avg_days_to_pay: number | null;
+    median_days_to_pay: number | null;
+    avg_recent_6m: number | null;
+    avg_older: number | null;
+    max_days_overdue: number | null;
+    pending_count: number;
+    total_pending: number;
+    predicted_payment_date: string | null;
+  } | null;
+  reorder: {
+    reorder_status: string;
+    avg_cycle_days: number | null;
+    days_since_last: number | null;
+    days_overdue_reorder: number | null;
+    avg_order_value: number | null;
+    total_revenue: number | null;
+    predicted_next_order: string | null;
+    top_product_ref: string | null;
+    salesperson_name: string | null;
+    salesperson_email: string | null;
+  } | null;
+  cashflow: {
+    total_receivable: number | null;
+    expected_collection: number | null;
+    collection_probability: number | null;
+  } | null;
+  ltv_health: {
+    customer_status: string | null;
+    churn_risk_score: number | null;
+    overdue_risk_score: number | null;
+    trend_pct: number | null;
+  } | null;
+}
+
 export interface EvidencePack {
   company_id: number;
   company_name: string;
@@ -128,6 +170,8 @@ export interface EvidencePack {
   deliveries: EvidencePackDeliveries;
   activities: EvidencePackActivities;
   history: EvidencePackHistory;
+  /** Solo presente en packs de get_director_briefing, no en company_evidence_pack */
+  predictions?: EvidencePackPredictions | null;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -148,15 +192,30 @@ export async function getCompanyEvidencePack(
   return data as EvidencePack;
 }
 
+export type DirectorSlug =
+  | "comercial"
+  | "financiero"
+  | "operaciones"
+  | "compras"
+  | "riesgo"
+  | "equipo"
+  | "costos";
+
 export interface DirectorBriefing {
-  director: string;
-  computed_at: string;
+  director: DirectorSlug;
+  generated_at: string;
+  companies_analyzed: number;
+  instructions: string | null;
+  agent_feedback?: {
+    accepted_patterns?: unknown;
+    follow_up_results?: unknown;
+    recent_acted_titles?: string[] | null;
+  } | null;
   evidence_packs: EvidencePack[];
-  summary?: Record<string, unknown> | null;
 }
 
 export async function getDirectorBriefing(
-  director: "comercial" | "financiero" | "operaciones" | "compras" | "riesgo" | "equipo" | "costos",
+  director: DirectorSlug,
   maxCompanies = 5
 ): Promise<DirectorBriefing | null> {
   const sb = getServiceClient();
@@ -171,3 +230,13 @@ export async function getDirectorBriefing(
   if (!data) return null;
   return data as DirectorBriefing;
 }
+
+export const DIRECTOR_LABELS: Record<DirectorSlug, string> = {
+  comercial: "Comercial",
+  financiero: "Financiero",
+  operaciones: "Operaciones",
+  compras: "Compras",
+  riesgo: "Riesgo",
+  equipo: "Equipo",
+  costos: "Costos",
+};

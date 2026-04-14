@@ -23,9 +23,9 @@ import {
   MobileCard,
   Currency,
   DateDisplay,
-  MetricRow,
   StatusBadge,
   EmptyState,
+  EvidencePackView,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import {
@@ -51,6 +51,7 @@ import {
   type CompanyProductRow,
   type CompanyActivityRow,
 } from "@/lib/queries/companies";
+import { getCompanyEvidencePack } from "@/lib/queries/evidence";
 
 export const dynamic = "force-dynamic";
 
@@ -181,9 +182,9 @@ export default async function CompanyDetailPage({
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
-          <OverviewTab
-            company={company}
-          />
+          <Suspense fallback={<OverviewSkeleton />}>
+            <OverviewEvidenceSection companyId={id} />
+          </Suspense>
         </TabsContent>
 
         <TabsContent value="finance" className="mt-4 space-y-4">
@@ -255,201 +256,30 @@ export default async function CompanyDetailPage({
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Overview tab — métricas consolidadas
+// Overview tab — evidence pack cruzado
 // ──────────────────────────────────────────────────────────────────────────
-function OverviewTab({
-  company,
-}: {
-  company: Awaited<ReturnType<typeof getCompanyDetail>>;
-}) {
-  if (!company) return null;
+function OverviewSkeleton() {
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Revenue & órdenes</CardTitle>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <MetricRow
-            label="Revenue total"
-            value={company.totalRevenue}
-            format="currency"
-            compact
-          />
-          <MetricRow
-            label="Revenue 12m"
-            value={company.revenue12m}
-            format="currency"
-            compact
-          />
-          <MetricRow
-            label="Revenue 3m"
-            value={company.revenue3m}
-            format="currency"
-            compact
-          />
-          <MetricRow
-            label="Revenue 90d"
-            value={company.revenue90d}
-            format="currency"
-            compact
-          />
-          <MetricRow
-            label="Pedidos totales"
-            value={company.totalOrders}
-            format="number"
-          />
-          <MetricRow
-            label="Último pedido"
-            value={
-              company.lastOrderDate
-                ? `hace ${company.daysSinceLastOrder ?? "—"} días`
-                : "sin pedidos"
-            }
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Riesgo & health</CardTitle>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <MetricRow
-            label="LTV"
-            value={company.ltvMxn ?? 0}
-            format="currency"
-            compact
-          />
-          <MetricRow
-            label="Churn risk"
-            value={company.churnRiskScore ?? 0}
-            format="number"
-            alert={(company.churnRiskScore ?? 0) > 70}
-          />
-          <MetricRow
-            label="Overdue risk"
-            value={company.overdueRiskScore ?? 0}
-            format="number"
-            alert={(company.overdueRiskScore ?? 0) > 70}
-          />
-          <MetricRow
-            label="Vencido total"
-            value={company.overdueAmount}
-            format="currency"
-            compact
-            alert={company.overdueAmount > 0}
-          />
-          <MetricRow
-            label="Facturas vencidas"
-            value={company.overdueCount}
-            format="number"
-          />
-          <MetricRow
-            label="Máx días vencido"
-            value={company.maxDaysOverdue ?? 0}
-            format="days"
-            alert={(company.maxDaysOverdue ?? 0) > 30}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Operaciones & entregas</CardTitle>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <MetricRow
-            label="Entregas totales"
-            value={company.totalDeliveries}
-            format="number"
-          />
-          <MetricRow
-            label="Entregas tardías"
-            value={company.lateDeliveries}
-            format="number"
-            alert={company.lateDeliveries > 0}
-          />
-          <MetricRow
-            label="OTD rate"
-            value={company.otdRate ?? 0}
-            format="percent"
-          />
-          <MetricRow
-            label="Crédito"
-            value={company.creditLimit ?? 0}
-            format="currency"
-            compact
-          />
-          <MetricRow
-            label="Término de pago"
-            value={company.paymentTerm ?? "—"}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Comunicación & equipo</CardTitle>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <MetricRow
-            label="Emails totales"
-            value={company.emailCount}
-            format="number"
-          />
-          <MetricRow
-            label="Emails 30d"
-            value={company.emails30d}
-            format="number"
-          />
-          <MetricRow
-            label="Último email"
-            value={
-              company.lastEmailDate
-                ? new Date(company.lastEmailDate).toLocaleDateString("es-MX")
-                : "—"
-            }
-          />
-          <MetricRow
-            label="Quejas"
-            value={company.complaints}
-            format="number"
-            alert={company.complaints > 0}
-          />
-          <MetricRow
-            label="Compromisos"
-            value={company.commitments}
-            format="number"
-          />
-          <MetricRow
-            label="Requests"
-            value={company.requests}
-            format="number"
-          />
-          {company.salespeople && (
-            <MetricRow
-              label="Vendedores"
-              value={company.salespeople}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      {company.recentComplaints && (
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Quejas recientes</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <p className="whitespace-pre-wrap text-sm text-muted-foreground">
-              {company.recentComplaints}
-            </p>
-          </CardContent>
-        </Card>
-      )}
+    <div className="space-y-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <Skeleton key={i} className="h-24 rounded-xl" />
+      ))}
     </div>
   );
+}
+
+async function OverviewEvidenceSection({ companyId }: { companyId: number }) {
+  const pack = await getCompanyEvidencePack(companyId);
+  if (!pack) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Sin evidence pack"
+        description="No se pudo cargar el company_evidence_pack para esta empresa."
+      />
+    );
+  }
+  return <EvidencePackView pack={pack} />;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
