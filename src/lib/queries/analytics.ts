@@ -10,6 +10,9 @@ import { getServiceClient } from "@/lib/supabase-server";
  * - `supplier_price_index` (matview) — índice por proveedor vs benchmark
  * - `real_sale_price` (matview)      — precio real ponderado por cantidad
  *
+ * Sprint 12 agrega:
+ * - `customer_cohorts` (matview)     — retention quarterly heatmap
+ *
  * Todos los modelos están en MXN normalizado (no requieren conversión FX).
  */
 
@@ -453,4 +456,74 @@ export async function getRealSalePrices(
     list_price_is_stale: !!r.list_price_is_stale,
     last_sale_date: r.last_sale_date ?? null,
   }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Customer Cohorts (matview existente, sin UI hasta Sprint 12)
+// ──────────────────────────────────────────────────────────────────────────
+export interface CohortCellRow {
+  cohort_quarter: string;
+  revenue_quarter: string;
+  quarters_since_first: number;
+  active_customers: number;
+  cohort_revenue: number;
+  avg_revenue_per_customer: number;
+}
+
+export interface CohortMatrix {
+  cohorts: string[];
+  maxQuarters: number;
+  /** matrix[cohortIdx][quartersSinceFirst] = celda (o null) */
+  matrix: Array<Array<CohortCellRow | null>>;
+  /** baseSize[cohortIdx] = active_customers en quarter 0 */
+  baseSize: number[];
+}
+
+export async function getCustomerCohorts(
+  monthsBack = 24
+): Promise<CohortMatrix> {
+  const sb = getServiceClient();
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - monthsBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const { data } = await sb
+    .from("customer_cohorts")
+    .select("*")
+    .gte("cohort_quarter", cutoffStr)
+    .order("cohort_quarter", { ascending: true })
+    .order("quarters_since_first", { ascending: true });
+
+  const rows = ((data ?? []) as Array<Partial<CohortCellRow>>).map((r) => ({
+    cohort_quarter: r.cohort_quarter ?? "",
+    revenue_quarter: r.revenue_quarter ?? "",
+    quarters_since_first: Number(r.quarters_since_first) || 0,
+    active_customers: Number(r.active_customers) || 0,
+    cohort_revenue: Number(r.cohort_revenue) || 0,
+    avg_revenue_per_customer: Number(r.avg_revenue_per_customer) || 0,
+  }));
+
+  const cohortSet = new Set<string>();
+  let maxQuarters = 0;
+  for (const r of rows) {
+    cohortSet.add(r.cohort_quarter);
+    if (r.quarters_since_first > maxQuarters)
+      maxQuarters = r.quarters_since_first;
+  }
+  const cohorts = [...cohortSet].sort();
+  const matrix: Array<Array<CohortCellRow | null>> = cohorts.map(() =>
+    Array(maxQuarters + 1).fill(null)
+  );
+  const baseSize: number[] = Array(cohorts.length).fill(0);
+
+  const cohortIdx = new Map(cohorts.map((c, i) => [c, i]));
+  for (const r of rows) {
+    const i = cohortIdx.get(r.cohort_quarter);
+    if (i == null) continue;
+    if (r.quarters_since_first <= maxQuarters) {
+      matrix[i][r.quarters_since_first] = r;
+      if (r.quarters_since_first === 0) baseSize[i] = r.active_customers;
+    }
+  }
+
+  return { cohorts, maxQuarters, matrix, baseSize };
 }
