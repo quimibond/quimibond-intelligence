@@ -1,37 +1,189 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 
-export interface ProductRow {
-  id: number | string;
-  internal_ref: string | null;
-  name: string | null;
-  stock_qty: number | null;
-  reserved_qty: number | null;
-  available_qty: number | null;
-  standard_price: number | null;
-  list_price: number | null;
+/**
+ * Products queries v2 — usa views canónicas:
+ * - `inventory_velocity` (view) — daily run rate, days of stock, reorder_status
+ * - `dead_stock_analysis` (MV) — productos sin movimiento
+ * - `product_margin_analysis` (MV) — margen por producto×cliente
+ * - `odoo_products` (base) — catálogo
+ * - `odoo_orderpoints` (base) — reglas de reorden
+ */
+
+// ──────────────────────────────────────────────────────────────────────────
+// KPIs
+// ──────────────────────────────────────────────────────────────────────────
+export interface ProductsKpis {
+  catalogActive: number;
+  needsReorder: number;
+  noMovementCount: number;
+  noMovementValue: number;
+  stockValue: number;
+  avgMarginPct: number;
 }
 
-export async function getProducts(limit = 100): Promise<ProductRow[]> {
+export async function getProductsKpis(): Promise<ProductsKpis> {
+  const sb = getServiceClient();
+  const [catalog, velocity, deadStock, margin] = await Promise.all([
+    sb
+      .from("odoo_products")
+      .select("id", { count: "exact", head: true })
+      .eq("active", true),
+    sb
+      .from("inventory_velocity")
+      .select("reorder_status, stock_value"),
+    sb.from("dead_stock_analysis").select("inventory_value"),
+    sb.from("product_margin_analysis").select("gross_margin_pct"),
+  ]);
+
+  const velocityRows = (velocity.data ?? []) as Array<{
+    reorder_status: string | null;
+    stock_value: number | null;
+  }>;
+  const needsReorder = velocityRows.filter(
+    (r) =>
+      r.reorder_status === "urgent_14d" ||
+      r.reorder_status === "reorder_30d" ||
+      r.reorder_status === "stockout"
+  ).length;
+  const noMovement = velocityRows.filter(
+    (r) => r.reorder_status === "no_movement"
+  );
+  const noMovementValue = noMovement.reduce(
+    (a, r) => a + (Number(r.stock_value) || 0),
+    0
+  );
+  const stockValue = velocityRows.reduce(
+    (a, r) => a + (Number(r.stock_value) || 0),
+    0
+  );
+
+  const marginRows = (margin.data ?? []) as Array<{
+    gross_margin_pct: number | null;
+  }>;
+  const validMargins = marginRows.filter(
+    (r) => r.gross_margin_pct != null && Number(r.gross_margin_pct) > 0
+  );
+  const avgMarginPct =
+    validMargins.length > 0
+      ? validMargins.reduce(
+          (a, r) => a + (Number(r.gross_margin_pct) || 0),
+          0
+        ) / validMargins.length
+      : 0;
+
+  return {
+    catalogActive: catalog.count ?? 0,
+    needsReorder,
+    noMovementCount: noMovement.length,
+    noMovementValue: noMovementValue,
+    stockValue,
+    avgMarginPct,
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Reorder needed (urgent_14d + reorder_30d + stockout)
+// ──────────────────────────────────────────────────────────────────────────
+export interface ReorderRow {
+  product_ref: string | null;
+  product_name: string | null;
+  category: string | null;
+  reorder_status: string;
+  stock_qty: number;
+  available_qty: number;
+  daily_run_rate: number | null;
+  days_of_stock: number | null;
+  qty_sold_90d: number;
+  reorder_min: number | null;
+  customers_12m: number;
+  last_sale_date: string | null;
+}
+
+export async function getReorderNeeded(
+  limit = 50
+): Promise<ReorderRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("odoo_products")
+    .from("inventory_velocity")
     .select(
-      "id, internal_ref, name, stock_qty, reserved_qty, available_qty, standard_price, list_price"
+      "product_ref, product_name, category, reorder_status, stock_qty, available_qty, daily_run_rate, days_of_stock, qty_sold_90d, reorder_min, customers_12m, last_sale_date"
     )
-    .eq("active", true)
-    .order("stock_qty", { ascending: false })
+    .in("reorder_status", ["stockout", "urgent_14d", "reorder_30d"])
+    .order("daily_run_rate", { ascending: false, nullsFirst: false })
     .limit(limit);
-  return (data ?? []) as ProductRow[];
+  return ((data ?? []) as Array<Partial<ReorderRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    category: r.category ?? null,
+    reorder_status: r.reorder_status ?? "—",
+    stock_qty: Number(r.stock_qty) || 0,
+    available_qty: Number(r.available_qty) || 0,
+    daily_run_rate:
+      r.daily_run_rate != null ? Number(r.daily_run_rate) : null,
+    days_of_stock: r.days_of_stock != null ? Number(r.days_of_stock) : null,
+    qty_sold_90d: Number(r.qty_sold_90d) || 0,
+    reorder_min: r.reorder_min != null ? Number(r.reorder_min) : null,
+    customers_12m: Number(r.customers_12m) || 0,
+    last_sale_date: r.last_sale_date ?? null,
+  }));
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Top movers — productos con mayor velocidad de venta
+// ──────────────────────────────────────────────────────────────────────────
+export interface TopMoverRow {
+  product_ref: string | null;
+  product_name: string | null;
+  qty_sold_90d: number;
+  qty_sold_180d: number;
+  qty_sold_365d: number;
+  customers_12m: number;
+  daily_run_rate: number | null;
+  days_of_stock: number | null;
+  stock_value: number;
+  annual_turnover: number | null;
+}
+
+export async function getTopMovers(limit = 15): Promise<TopMoverRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("inventory_velocity")
+    .select(
+      "product_ref, product_name, qty_sold_90d, qty_sold_180d, qty_sold_365d, customers_12m, daily_run_rate, days_of_stock, stock_value, annual_turnover"
+    )
+    .gt("qty_sold_90d", 0)
+    .order("qty_sold_90d", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<TopMoverRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    qty_sold_90d: Number(r.qty_sold_90d) || 0,
+    qty_sold_180d: Number(r.qty_sold_180d) || 0,
+    qty_sold_365d: Number(r.qty_sold_365d) || 0,
+    customers_12m: Number(r.customers_12m) || 0,
+    daily_run_rate:
+      r.daily_run_rate != null ? Number(r.daily_run_rate) : null,
+    days_of_stock:
+      r.days_of_stock != null ? Number(r.days_of_stock) : null,
+    stock_value: Number(r.stock_value) || 0,
+    annual_turnover:
+      r.annual_turnover != null ? Number(r.annual_turnover) : null,
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Dead stock
+// ──────────────────────────────────────────────────────────────────────────
 export interface DeadStockRow {
   product_ref: string | null;
   product_name: string | null;
-  inventory_value: number | null;
-  days_since_last_sale: number | null;
-  stock_qty: number | null;
+  inventory_value: number;
+  days_since_last_sale: number;
+  stock_qty: number;
   last_sale_date: string | null;
+  historical_customers: number;
+  lifetime_revenue: number;
 }
 
 export async function getDeadStock(limit = 20): Promise<DeadStockRow[]> {
@@ -39,46 +191,91 @@ export async function getDeadStock(limit = 20): Promise<DeadStockRow[]> {
   const { data } = await sb
     .from("dead_stock_analysis")
     .select(
-      "product_ref, product_name, inventory_value, days_since_last_sale, stock_qty, last_sale_date"
+      "product_ref, product_name, inventory_value, days_since_last_sale, stock_qty, last_sale_date, historical_customers, lifetime_revenue"
     )
     .order("inventory_value", { ascending: false })
     .limit(limit);
-  return (data ?? []) as DeadStockRow[];
+  return ((data ?? []) as Array<Partial<DeadStockRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    inventory_value: Number(r.inventory_value) || 0,
+    days_since_last_sale: Number(r.days_since_last_sale) || 0,
+    stock_qty: Number(r.stock_qty) || 0,
+    last_sale_date: r.last_sale_date ?? null,
+    historical_customers: Number(r.historical_customers) || 0,
+    lifetime_revenue: Number(r.lifetime_revenue) || 0,
+  }));
 }
 
-export interface ProductsKpis {
-  catalogCount: number;
-  outOfStockCount: number;
-  deadStockValue: number;
-  reorderCount: number;
+// ──────────────────────────────────────────────────────────────────────────
+// Top margin products (aggregated por product across all customers)
+// ──────────────────────────────────────────────────────────────────────────
+export interface TopMarginProductRow {
+  product_ref: string | null;
+  product_name: string | null;
+  total_revenue: number;
+  weighted_margin_pct: number;
+  customers: number;
 }
 
-export async function getProductsKpis(): Promise<ProductsKpis> {
+export async function getTopMarginProducts(
+  limit = 15
+): Promise<TopMarginProductRow[]> {
   const sb = getServiceClient();
-  const [catalog, outStock, deadStockAgg, reorder] = await Promise.all([
-    sb
-      .from("odoo_products")
-      .select("id", { count: "exact", head: true })
-      .eq("active", true),
-    sb
-      .from("odoo_products")
-      .select("id", { count: "exact", head: true })
-      .eq("active", true)
-      .lte("available_qty", 0),
-    sb.from("dead_stock_analysis").select("inventory_value"),
-    sb
-      .from("odoo_orderpoints")
-      .select("id", { count: "exact", head: true })
-      .eq("active", true)
-      .gt("qty_to_order", 0),
-  ]);
-  const deadValue = ((deadStockAgg.data ?? []) as Array<{
-    inventory_value: number | null;
-  }>).reduce((a, r) => a + (Number(r.inventory_value) || 0), 0);
-  return {
-    catalogCount: catalog.count ?? 0,
-    outOfStockCount: outStock.count ?? 0,
-    deadStockValue: deadValue,
-    reorderCount: reorder.count ?? 0,
-  };
+  const { data } = await sb
+    .from("product_margin_analysis")
+    .select(
+      "product_ref, product_name, gross_margin_pct, total_order_value, company_id"
+    )
+    .gt("total_order_value", 0)
+    .not("gross_margin_pct", "is", null);
+  const rows = (data ?? []) as Array<{
+    product_ref: string | null;
+    product_name: string | null;
+    gross_margin_pct: number | null;
+    total_order_value: number | null;
+    company_id: number | null;
+  }>;
+
+  const byProduct = new Map<
+    string,
+    {
+      product_ref: string | null;
+      product_name: string | null;
+      revenue_sum: number;
+      margin_weighted: number;
+      customers: Set<number>;
+    }
+  >();
+
+  for (const r of rows) {
+    const key = r.product_ref ?? r.product_name ?? "—";
+    const entry =
+      byProduct.get(key) ??
+      {
+        product_ref: r.product_ref,
+        product_name: r.product_name,
+        revenue_sum: 0,
+        margin_weighted: 0,
+        customers: new Set<number>(),
+      };
+    const rev = Number(r.total_order_value) || 0;
+    const margin = Number(r.gross_margin_pct) || 0;
+    entry.revenue_sum += rev;
+    entry.margin_weighted += rev * margin;
+    if (r.company_id) entry.customers.add(r.company_id);
+    byProduct.set(key, entry);
+  }
+
+  return [...byProduct.values()]
+    .map((v) => ({
+      product_ref: v.product_ref,
+      product_name: v.product_name,
+      total_revenue: v.revenue_sum,
+      weighted_margin_pct:
+        v.revenue_sum > 0 ? v.margin_weighted / v.revenue_sum : 0,
+      customers: v.customers.size,
+    }))
+    .sort((a, b) => b.total_revenue - a.total_revenue)
+    .slice(0, limit);
 }
