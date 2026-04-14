@@ -55,6 +55,15 @@ export default function VentasPage() {
         subtitle="Ingresos del mes, reorder risk y pipeline"
       />
 
+      <div className="flex flex-wrap gap-2 text-xs">
+        <a
+          href="/ventas/cohorts"
+          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
+        >
+          Retención por cohorte
+        </a>
+      </div>
+
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>

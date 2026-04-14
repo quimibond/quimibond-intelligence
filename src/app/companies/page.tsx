@@ -48,6 +48,15 @@ export default function CompaniesPage() {
         subtitle="Portfolio de clientes con riesgo, revenue y tendencia"
       />
 
+      <div className="flex flex-wrap gap-2 text-xs">
+        <a
+          href="/companies/at-risk"
+          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
+        >
+          Clientes en riesgo (reactivación)
+        </a>
+      </div>
+
       <Suspense
         fallback={
           <div className="space-y-2">
