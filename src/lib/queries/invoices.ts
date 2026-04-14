@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { joinedCompanyName } from "./_helpers";
+import { getSelfCompanyIds, joinedCompanyName, pgInList } from "./_helpers";
 
 /**
  * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.
@@ -33,12 +33,14 @@ const BUCKET_DEFS: Array<{
 
 export async function getArAging(): Promise<ArAgingBucket[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("odoo_invoices")
     .select("amount_residual_mxn, days_overdue")
     .eq("move_type", "out_invoice")
     .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0);
+    .gt("days_overdue", 0)
+    .not("company_id", "in", pgInList(selfIds));
 
   const rows = (data ?? []) as Array<{
     amount_residual_mxn: number | null;
@@ -83,12 +85,14 @@ export async function getCompanyAging(
   limit = 50
 ): Promise<CompanyAgingRow[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("cash_flow_aging")
     .select(
       "company_id, company_name, tier, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, total_revenue"
     )
     .gt("total_receivable", 0)
+    .not("company_id", "in", pgInList(selfIds))
     .order("total_receivable", { ascending: false })
     .limit(limit);
   return ((data ?? []) as Array<Partial<CompanyAgingRow>>).map((r) => ({
@@ -127,6 +131,7 @@ export async function getOverdueInvoices(
   limit = 50
 ): Promise<OverdueInvoice[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("odoo_invoices")
     .select(
@@ -135,6 +140,7 @@ export async function getOverdueInvoices(
     .eq("move_type", "out_invoice")
     .in("payment_state", ["not_paid", "partial"])
     .gt("days_overdue", 0)
+    .not("company_id", "in", pgInList(selfIds))
     .order("amount_residual_mxn", { ascending: false, nullsFirst: false })
     .limit(limit);
 
@@ -176,6 +182,7 @@ export async function getPaymentPredictions(
   limit = 30
 ): Promise<PaymentPredictionRow[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("payment_predictions")
     .select(
@@ -183,6 +190,7 @@ export async function getPaymentPredictions(
     )
     .gt("total_pending", 0)
     .not("payment_risk", "ilike", "NORMAL%")
+    .not("company_id", "in", pgInList(selfIds))
     .order("total_pending", { ascending: false })
     .limit(limit);
   return ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map((r) => ({
@@ -210,11 +218,13 @@ export async function getPaymentRiskKpis(): Promise<{
   criticalPending: number;
 }> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("payment_predictions")
     .select("payment_risk, total_pending")
     .gt("total_pending", 0)
-    .not("payment_risk", "ilike", "NORMAL%");
+    .not("payment_risk", "ilike", "NORMAL%")
+    .not("company_id", "in", pgInList(selfIds));
   const rows = (data ?? []) as Array<{
     payment_risk: string | null;
     total_pending: number | null;

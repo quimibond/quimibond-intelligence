@@ -1,5 +1,32 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
+
+/**
+ * IDs de empresas marcadas como `relationship_type='self'` (la propia
+ * Quimibond + variantes basura del knowledge graph). Hay que excluirlas
+ * de TODA query de cobranza/cartera/CxC porque generan facturas
+ * inter-company que no son negocio externo.
+ *
+ * Cacheado por proceso para evitar query extra por cada llamada.
+ */
+let _selfCompanyIdsCache: number[] | null = null;
+export async function getSelfCompanyIds(): Promise<number[]> {
+  if (_selfCompanyIdsCache) return _selfCompanyIdsCache;
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("companies")
+    .select("id")
+    .eq("relationship_type", "self");
+  _selfCompanyIdsCache = ((data ?? []) as Array<{ id: number }>).map((r) => r.id);
+  return _selfCompanyIdsCache;
+}
+
+/** Formatea un array de IDs como `(1,2,3)` para el operador `not.in` de PostgREST. */
+export function pgInList(ids: number[]): string {
+  if (ids.length === 0) return "(0)";
+  return `(${ids.join(",")})`;
+}
 
 /**
  * Si el `name` de una company es basura (vacio, null, solo digitos o de

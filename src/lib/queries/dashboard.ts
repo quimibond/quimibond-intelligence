@@ -1,5 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
+import { getSelfCompanyIds, pgInList } from "./_helpers";
 
 /**
  * Dashboard queries v3 — UNA sola llamada a `get_dashboard_kpis()` RPC.
@@ -76,6 +77,7 @@ export interface AtRiskClient {
 
 export async function getTopAtRiskClients(limit = 5): Promise<AtRiskClient[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("customer_ltv_health")
     .select(
@@ -83,6 +85,7 @@ export async function getTopAtRiskClients(limit = 5): Promise<AtRiskClient[]> {
     )
     .gt("churn_risk_score", 70)
     .gt("ltv_mxn", 100_000)
+    .not("company_id", "in", pgInList(selfIds))
     .order("churn_risk_score", { ascending: false })
     .limit(limit);
   return (data ?? []) as AtRiskClient[];

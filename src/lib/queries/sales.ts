@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { resolveCompanyNames } from "./_helpers";
+import { getSelfCompanyIds, pgInList, resolveCompanyNames } from "./_helpers";
 
 /**
  * Sales queries v2 — usa views canónicas:
@@ -49,6 +49,7 @@ export async function getSalesKpis(): Promise<SalesKpis> {
     new Date(now.getFullYear(), now.getMonth() + 1, 1)
   );
 
+  const selfIds = await getSelfCompanyIds();
   const [pl, monthlyRev, salesOrders] = await Promise.all([
     sb
       .from("pl_estado_resultados")
@@ -65,7 +66,8 @@ export async function getSalesKpis(): Promise<SalesKpis> {
       .select("amount_total_mxn, salesperson_name")
       .gte("date_order", thisStart)
       .lt("date_order", nextStart)
-      .neq("state", "cancel"),
+      .neq("state", "cancel")
+      .not("company_id", "in", pgInList(selfIds)),
   ]);
 
   // P&L lookups (filter bad years)
@@ -213,12 +215,14 @@ export async function getReorderRisk(
   limit = 30
 ): Promise<ReorderRiskRow[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("client_reorder_predictions")
     .select(
       "company_id, company_name, tier, reorder_status, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, total_revenue, salesperson_name, top_product_ref, predicted_next_order"
     )
     .in("reorder_status", ["overdue", "at_risk", "critical"])
+    .not("company_id", "in", pgInList(selfIds))
     .order("total_revenue", { ascending: false })
     .limit(limit);
   return ((data ?? []) as Array<{
@@ -264,11 +268,13 @@ export interface TopCustomerRow {
 
 export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   // company_profile already has revenue_90d
   const { data } = await sb
     .from("company_profile")
     .select("company_id, name, revenue_90d, total_revenue")
     .gt("revenue_90d", 0)
+    .not("company_id", "in", pgInList(selfIds))
     .order("revenue_90d", { ascending: false })
     .limit(limit);
 
@@ -327,13 +333,15 @@ export async function getTopSalespeople(): Promise<SalespersonRow[]> {
     new Date(now.getFullYear(), now.getMonth() + 1, 1)
   );
 
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("odoo_sale_orders")
     .select("salesperson_name, amount_total_mxn")
     .gte("date_order", thisStart)
     .lt("date_order", nextStart)
     .neq("state", "cancel")
-    .not("salesperson_name", "is", null);
+    .not("salesperson_name", "is", null)
+    .not("company_id", "in", pgInList(selfIds));
 
   const buckets = new Map<string, { total: number; count: number }>();
   for (const r of (data ?? []) as Array<{
@@ -374,11 +382,13 @@ export async function getRecentSaleOrders(
   limit = 25
 ): Promise<RecentSaleOrder[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("odoo_sale_orders")
     .select(
       "id, name, company_id, amount_total_mxn, salesperson_name, date_order, state"
     )
+    .not("company_id", "in", pgInList(selfIds))
     .order("date_order", { ascending: false })
     .limit(limit);
 

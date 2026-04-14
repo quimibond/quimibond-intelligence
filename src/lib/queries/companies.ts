@@ -1,5 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
+import { getSelfCompanyIds, pgInList } from "./_helpers";
 
 /**
  * Companies queries v2 — usa views canónicas:
@@ -35,12 +36,14 @@ export async function getCompaniesList(
   limit = 100
 ): Promise<CompanyListRow[]> {
   const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("company_profile")
     .select(
       "company_id, name, tier, risk_level, total_revenue, revenue_90d, trend_pct, overdue_amount, max_days_overdue, otd_rate, last_order_date"
     )
     .gt("total_revenue", 0)
+    .not("company_id", "in", pgInList(selfIds))
     .order("total_revenue", { ascending: false })
     .limit(limit);
 
