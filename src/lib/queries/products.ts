@@ -301,8 +301,12 @@ export interface BomCostRow {
   product_ref: string | null;
   product_name: string | null;
   component_count: number;
+  distinct_raw_components: number;
+  max_depth: number;
   missing_cost_components: number;
   has_missing_costs: boolean;
+  has_multiple_boms: boolean;
+  active_boms_for_product: number;
   bom_type: string | null;
   cached_standard_price: number;
   real_unit_cost: number;
@@ -312,7 +316,7 @@ export interface BomCostRow {
   revenue_12m: number;
   avg_order_price: number;
   qty_ordered_12m: number;
-  impact_mxn: number; // abs(delta_pct) × revenue_12m / 100
+  impact_mxn: number;
 }
 
 export interface BomCostSummary {
@@ -322,29 +326,41 @@ export interface BomCostSummary {
   productsInSales: number;
   coverageOfSalesPct: number;
   medianDeltaPct: number | null;
-  suspiciousBomsCount: number; // delta > +50% (likely bad data)
+  medianDeltaCompletePct: number | null;
+  suspiciousBomsCount: number;
   revenueCoveredMxn: number;
+  productsWithMultipleBoms: number;
+  maxBomDepth: number;
+  productsByDepth: { depth: number; count: number }[];
+}
+
+function median(arr: number[]): number | null {
+  if (arr.length === 0) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  return s.length % 2 === 1
+    ? s[(s.length - 1) / 2]
+    : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 }
 
 export async function getBomCostSummary(): Promise<BomCostSummary> {
   const sb = getServiceClient();
-  const [boms, prc, pmaProducts, revenue] = await Promise.all([
+  const [boms, prc, pmaProducts] = await Promise.all([
     sb.from("mrp_boms").select("id", { count: "exact", head: true }).eq("active", true),
     sb
       .from("product_real_cost")
       .select(
-        "odoo_product_id, has_missing_costs, delta_vs_cached_pct, real_unit_cost"
+        "odoo_product_id, has_missing_costs, has_multiple_boms, max_depth, delta_vs_cached_pct, real_unit_cost"
       ),
     sb
       .from("product_margin_analysis")
       .select("odoo_product_id, total_order_value, cost_source"),
-    // noop placeholder
-    Promise.resolve(null),
   ]);
 
   const prcRows = (prc.data ?? []) as Array<{
     odoo_product_id: number;
     has_missing_costs: boolean;
+    has_multiple_boms: boolean;
+    max_depth: number;
     delta_vs_cached_pct: number | null;
     real_unit_cost: number | null;
   }>;
@@ -354,7 +370,6 @@ export async function getBomCostSummary(): Promise<BomCostSummary> {
     total_order_value: number | null;
     cost_source: string | null;
   }>;
-  void revenue;
 
   const bomProductIds = new Set(prcRows.map((r) => r.odoo_product_id));
   const saleProductRevenue = new Map<number, number>();
@@ -375,16 +390,24 @@ export async function getBomCostSummary(): Promise<BomCostSummary> {
     0
   );
 
-  const deltas = prcRows
+  const allDeltas = prcRows
     .map((r) => r.delta_vs_cached_pct)
-    .filter((d): d is number => d != null)
-    .sort((a, b) => a - b);
-  const median =
-    deltas.length === 0
-      ? null
-      : deltas.length % 2 === 1
-        ? deltas[(deltas.length - 1) / 2]
-        : (deltas[deltas.length / 2 - 1] + deltas[deltas.length / 2]) / 2;
+    .filter((d): d is number => d != null);
+  const completeDeltas = prcRows
+    .filter((r) => !r.has_missing_costs)
+    .map((r) => r.delta_vs_cached_pct)
+    .filter((d): d is number => d != null);
+
+  const depthBuckets = new Map<number, number>();
+  let maxDepth = 0;
+  for (const r of prcRows) {
+    const d = r.max_depth ?? 0;
+    if (d > maxDepth) maxDepth = d;
+    depthBuckets.set(d, (depthBuckets.get(d) ?? 0) + 1);
+  }
+  const productsByDepth = [...depthBuckets.entries()]
+    .map(([depth, count]) => ({ depth, count }))
+    .sort((a, b) => a.depth - b.depth);
 
   return {
     totalBoms: boms.count ?? 0,
@@ -395,11 +418,15 @@ export async function getBomCostSummary(): Promise<BomCostSummary> {
     productsInSales,
     coverageOfSalesPct:
       productsInSales === 0 ? 0 : (overlap.length / productsInSales) * 100,
-    medianDeltaPct: median,
+    medianDeltaPct: median(allDeltas),
+    medianDeltaCompletePct: median(completeDeltas),
     suspiciousBomsCount: prcRows.filter(
       (r) => (r.delta_vs_cached_pct ?? 0) > 50
     ).length,
     revenueCoveredMxn: revenueCovered,
+    productsWithMultipleBoms: prcRows.filter((r) => r.has_multiple_boms).length,
+    maxBomDepth: maxDepth,
+    productsByDepth,
   };
 }
 
@@ -450,63 +477,78 @@ async function getPmaRevenueMap(): Promise<
   return result;
 }
 
+type RawPrcRow = {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  raw_components_count: number | null;
+  distinct_raw_components: number | null;
+  max_depth: number | null;
+  missing_cost_components: number | null;
+  has_missing_costs: boolean | null;
+  has_multiple_boms: boolean | null;
+  active_boms_for_product: number | null;
+  bom_type: string | null;
+  cached_standard_price: number | null;
+  real_unit_cost: number | null;
+  delta_vs_cached_pct: number | null;
+  material_cost_total: number | null;
+  bom_yield: number | null;
+};
+
+const PRC_SELECT =
+  "odoo_product_id, product_ref, product_name, raw_components_count, distinct_raw_components, max_depth, missing_cost_components, has_missing_costs, has_multiple_boms, active_boms_for_product, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield";
+
+function mapPrcRow(
+  r: RawPrcRow,
+  pmaMap: Map<number, { revenue: number; avgPrice: number; qty: number }>
+): BomCostRow {
+  const pma = pmaMap.get(r.odoo_product_id) ?? {
+    revenue: 0,
+    avgPrice: 0,
+    qty: 0,
+  };
+  const delta = r.delta_vs_cached_pct ?? 0;
+  return {
+    odoo_product_id: r.odoo_product_id,
+    product_ref: r.product_ref,
+    product_name: r.product_name,
+    component_count: r.raw_components_count ?? 0,
+    distinct_raw_components: r.distinct_raw_components ?? 0,
+    max_depth: r.max_depth ?? 0,
+    missing_cost_components: r.missing_cost_components ?? 0,
+    has_missing_costs: r.has_missing_costs ?? false,
+    has_multiple_boms: r.has_multiple_boms ?? false,
+    active_boms_for_product: r.active_boms_for_product ?? 1,
+    bom_type: r.bom_type,
+    cached_standard_price: r.cached_standard_price ?? 0,
+    real_unit_cost: r.real_unit_cost ?? 0,
+    delta_vs_cached_pct: delta,
+    material_cost_total: r.material_cost_total ?? 0,
+    bom_yield: r.bom_yield ?? 1,
+    revenue_12m: pma.revenue,
+    avg_order_price: pma.avgPrice,
+    qty_ordered_12m: pma.qty,
+    impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
+  };
+}
+
 export async function getSuspiciousBoms(limit = 30): Promise<BomCostRow[]> {
-  // BOMs donde el costo derivado > standard_price histórico.
-  // Con MO/energéticos removidos desde abr-2026, el BOM debería ser LOWER
-  // que el standard histórico en casi todos los productos. Un delta positivo
-  // > 50% es casi siempre captura errónea (qty, uom, wrong component).
+  // BOMs donde el costo recursivo derivado > standard_price histórico por
+  // más de 50%. Con MO/energéticos removidos desde abr-2026, esto NO debería
+  // pasar: casi siempre es captura errónea (qty, uom, componente equivocado).
+  // EXCLUYE productos con missing_costs (que están subestimados artificialmente).
   const sb = getServiceClient();
   const { data } = await sb
     .from("product_real_cost")
-    .select(
-      "odoo_product_id, product_ref, product_name, component_count, missing_cost_components, has_missing_costs, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield"
-    )
+    .select(PRC_SELECT)
     .gt("delta_vs_cached_pct", 50)
+    .eq("has_missing_costs", false)
     .order("delta_vs_cached_pct", { ascending: false })
     .limit(limit);
 
-  const prcRows = (data ?? []) as Array<{
-    odoo_product_id: number;
-    product_ref: string | null;
-    product_name: string | null;
-    component_count: number;
-    missing_cost_components: number;
-    has_missing_costs: boolean;
-    bom_type: string | null;
-    cached_standard_price: number | null;
-    real_unit_cost: number | null;
-    delta_vs_cached_pct: number | null;
-    material_cost_total: number | null;
-    bom_yield: number | null;
-  }>;
-
   const pmaMap = await getPmaRevenueMap();
-  return prcRows.map((r) => {
-    const pma = pmaMap.get(r.odoo_product_id) ?? {
-      revenue: 0,
-      avgPrice: 0,
-      qty: 0,
-    };
-    const delta = r.delta_vs_cached_pct ?? 0;
-    return {
-      odoo_product_id: r.odoo_product_id,
-      product_ref: r.product_ref,
-      product_name: r.product_name,
-      component_count: r.component_count ?? 0,
-      missing_cost_components: r.missing_cost_components ?? 0,
-      has_missing_costs: r.has_missing_costs ?? false,
-      bom_type: r.bom_type,
-      cached_standard_price: r.cached_standard_price ?? 0,
-      real_unit_cost: r.real_unit_cost ?? 0,
-      delta_vs_cached_pct: delta,
-      material_cost_total: r.material_cost_total ?? 0,
-      bom_yield: r.bom_yield ?? 1,
-      revenue_12m: pma.revenue,
-      avg_order_price: pma.avgPrice,
-      qty_ordered_12m: pma.qty,
-      impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
-    };
-  });
+  return ((data ?? []) as RawPrcRow[]).map((r) => mapPrcRow(r, pmaMap));
 }
 
 export async function getBomsMissingComponents(
@@ -515,62 +557,19 @@ export async function getBomsMissingComponents(
   const sb = getServiceClient();
   const { data } = await sb
     .from("product_real_cost")
-    .select(
-      "odoo_product_id, product_ref, product_name, component_count, missing_cost_components, has_missing_costs, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield"
-    )
+    .select(PRC_SELECT)
     .eq("has_missing_costs", true)
     .order("missing_cost_components", { ascending: false })
     .limit(limit);
 
-  const prcRows = (data ?? []) as Array<{
-    odoo_product_id: number;
-    product_ref: string | null;
-    product_name: string | null;
-    component_count: number;
-    missing_cost_components: number;
-    has_missing_costs: boolean;
-    bom_type: string | null;
-    cached_standard_price: number | null;
-    real_unit_cost: number | null;
-    delta_vs_cached_pct: number | null;
-    material_cost_total: number | null;
-    bom_yield: number | null;
-  }>;
-
   const pmaMap = await getPmaRevenueMap();
-  return prcRows
-    .map((r) => {
-      const pma = pmaMap.get(r.odoo_product_id) ?? {
-        revenue: 0,
-        avgPrice: 0,
-        qty: 0,
-      };
-      const delta = r.delta_vs_cached_pct ?? 0;
-      return {
-        odoo_product_id: r.odoo_product_id,
-        product_ref: r.product_ref,
-        product_name: r.product_name,
-        component_count: r.component_count ?? 0,
-        missing_cost_components: r.missing_cost_components ?? 0,
-        has_missing_costs: r.has_missing_costs ?? false,
-        bom_type: r.bom_type,
-        cached_standard_price: r.cached_standard_price ?? 0,
-        real_unit_cost: r.real_unit_cost ?? 0,
-        delta_vs_cached_pct: delta,
-        material_cost_total: r.material_cost_total ?? 0,
-        bom_yield: r.bom_yield ?? 1,
-        revenue_12m: pma.revenue,
-        avg_order_price: pma.avgPrice,
-        qty_ordered_12m: pma.qty,
-        impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
-      };
-    })
+  return ((data ?? []) as RawPrcRow[])
+    .map((r) => mapPrcRow(r, pmaMap))
     .sort((a, b) => b.revenue_12m - a.revenue_12m);
 }
 
 export async function getTopRevenueBoms(limit = 30): Promise<BomCostRow[]> {
   // Productos vendidos con BOM (overlap PMA ↔ PRC), ordenados por revenue.
-  // Sirve para priorizar cuáles BOMs revisar primero por impacto económico.
   const pmaMap = await getPmaRevenueMap();
   const topPmaIds = [...pmaMap.entries()]
     .sort((a, b) => b[1].revenue - a[1].revenue)
@@ -582,53 +581,31 @@ export async function getTopRevenueBoms(limit = 30): Promise<BomCostRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("product_real_cost")
-    .select(
-      "odoo_product_id, product_ref, product_name, component_count, missing_cost_components, has_missing_costs, bom_type, cached_standard_price, real_unit_cost, delta_vs_cached_pct, material_cost_total, bom_yield"
-    )
+    .select(PRC_SELECT)
     .in("odoo_product_id", topPmaIds);
 
-  const prcRows = (data ?? []) as Array<{
-    odoo_product_id: number;
-    product_ref: string | null;
-    product_name: string | null;
-    component_count: number;
-    missing_cost_components: number;
-    has_missing_costs: boolean;
-    bom_type: string | null;
-    cached_standard_price: number | null;
-    real_unit_cost: number | null;
-    delta_vs_cached_pct: number | null;
-    material_cost_total: number | null;
-    bom_yield: number | null;
-  }>;
-
-  return prcRows
-    .map((r) => {
-      const pma = pmaMap.get(r.odoo_product_id) ?? {
-        revenue: 0,
-        avgPrice: 0,
-        qty: 0,
-      };
-      const delta = r.delta_vs_cached_pct ?? 0;
-      return {
-        odoo_product_id: r.odoo_product_id,
-        product_ref: r.product_ref,
-        product_name: r.product_name,
-        component_count: r.component_count ?? 0,
-        missing_cost_components: r.missing_cost_components ?? 0,
-        has_missing_costs: r.has_missing_costs ?? false,
-        bom_type: r.bom_type,
-        cached_standard_price: r.cached_standard_price ?? 0,
-        real_unit_cost: r.real_unit_cost ?? 0,
-        delta_vs_cached_pct: delta,
-        material_cost_total: r.material_cost_total ?? 0,
-        bom_yield: r.bom_yield ?? 1,
-        revenue_12m: pma.revenue,
-        avg_order_price: pma.avgPrice,
-        qty_ordered_12m: pma.qty,
-        impact_mxn: (Math.abs(delta) * pma.revenue) / 100,
-      };
-    })
+  return ((data ?? []) as RawPrcRow[])
+    .map((r) => mapPrcRow(r, pmaMap))
     .sort((a, b) => b.revenue_12m - a.revenue_12m)
     .slice(0, limit);
+}
+
+export async function getBomsWithMultipleVersions(
+  limit = 30
+): Promise<BomCostRow[]> {
+  // Productos con múltiples BOMs activos. El matview eligió el más reciente
+  // (highest odoo_bom_id). Útil para que Producción consolide o desactive
+  // los BOMs viejos que ya no aplican.
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("product_real_cost")
+    .select(PRC_SELECT)
+    .eq("has_multiple_boms", true)
+    .order("active_boms_for_product", { ascending: false })
+    .limit(limit);
+
+  const pmaMap = await getPmaRevenueMap();
+  return ((data ?? []) as RawPrcRow[])
+    .map((r) => mapPrcRow(r, pmaMap))
+    .sort((a, b) => b.revenue_12m - a.revenue_12m);
 }

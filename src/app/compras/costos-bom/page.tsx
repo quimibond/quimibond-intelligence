@@ -2,6 +2,8 @@ import { Suspense } from "react";
 import {
   AlertTriangle,
   Beaker,
+  Copy,
+  GitBranch,
   Info,
   Layers,
   PackageSearch,
@@ -27,6 +29,7 @@ import {
   getSuspiciousBoms,
   getBomsMissingComponents,
   getTopRevenueBoms,
+  getBomsWithMultipleVersions,
   type BomCostRow,
   type BomCostSummary,
 } from "@/lib/queries/products";
@@ -56,9 +59,12 @@ const suspiciousColumns: DataTableColumn<BomCostRow>[] = [
   },
   {
     key: "components",
-    header: "Comp.",
+    header: "MP",
     cell: (r) => (
-      <span className="text-xs tabular-nums">{r.component_count}</span>
+      <div className="text-right text-[10px] tabular-nums leading-tight">
+        <div>{r.distinct_raw_components} raw</div>
+        <div className="text-muted-foreground">d{r.max_depth}</div>
+      </div>
     ),
     align: "right",
     hideOnMobile: true,
@@ -260,24 +266,32 @@ export default function CostosBomPage() {
       <Card className="border-info/40 bg-info/5">
         <CardContent className="flex items-start gap-3 pt-4">
           <Info className="h-5 w-5 shrink-0 text-info" />
-          <div className="space-y-1 text-xs">
+          <div className="space-y-2 text-xs">
             <p className="font-semibold text-foreground">
-              Contexto importante
+              Cómo se calcula el BOM costo
             </p>
             <p className="text-muted-foreground">
-              Desde el <strong>1-Abr-2026</strong>, los BOMs se vaciaron de{" "}
-              <strong>mano de obra</strong> y <strong>energéticos</strong>.
-              Estos costos se incorporarán posteriormente vía{" "}
-              <strong>centros de trabajo</strong>. Por eso el{" "}
-              <code>BOM costo</code> aquí es <strong>sólo materia prima</strong>
-              : es un límite inferior del costo total real.
+              <strong>Rolldown recursivo</strong>: para cada producto vendido,
+              bajamos por todo el árbol de BOMs hasta llegar a las hojas
+              (productos sin BOM activo = materia prima pura) y sumamos{" "}
+              <code>cantidad × standard_price</code>. Profundidad máxima
+              observada: <strong>9 niveles</strong>. Multi-BOMs: usamos el más
+              reciente (<code>MAX(odoo_bom_id)</code>). Ciclos: cortados al
+              detectar repetición.
             </p>
             <p className="text-muted-foreground">
-              Consecuencia: un delta negativo vs <code>standard actual</code>{" "}
-              NO es "descubrimiento de margen", es simplemente la porción de
-              MO+energéticos aún no capturada. Un delta{" "}
+              <strong>Importante</strong>: desde el <strong>1-Abr-2026</strong>,
+              los BOMs no contienen <strong>mano de obra</strong> ni{" "}
+              <strong>energéticos</strong>. Se incorporarán posteriormente vía{" "}
+              <strong>centros de trabajo</strong>. Por eso el BOM costo es sólo
+              materia prima — un límite inferior del costo total. Un delta
+              negativo vs standard NO es margen descubierto.
+            </p>
+            <p className="text-muted-foreground">
+              Un delta{" "}
               <span className="font-semibold text-danger">positivo</span> (BOM
               &gt; standard) sí es anomalía: probablemente BOM mal capturado.
+              Ver tabla "BOMs sospechosos".
             </p>
           </div>
         </CardContent>
@@ -381,42 +395,107 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+
+      {/* BOMs con múltiples versiones */}
+      <Card className="border-info/40">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Copy className="h-4 w-4 text-info" />
+            BOMs con múltiples versiones activas
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Productos con más de un BOM activo. El cálculo usa el más reciente
+            (<code>MAX(odoo_bom_id)</code>) como fuente de verdad — pero los
+            BOMs viejos siguen existiendo y pueden ser usados accidentalmente
+            por Producción. Sugerido: desactivar los obsoletos en Odoo.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 5 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <MultiBomTable />
+          </Suspense>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
 async function BomKpis() {
   const s: BomCostSummary = await getBomCostSummary();
+  const medianText =
+    s.medianDeltaCompletePct != null
+      ? `${s.medianDeltaCompletePct > 0 ? "+" : ""}${s.medianDeltaCompletePct.toFixed(0)}% mediana (completos)`
+      : "sin data";
   return (
-    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-      <KpiCard
-        title="BOMs activos"
-        value={s.totalBoms}
-        subtitle={`${s.productsWithRealCost} con costo real`}
-        icon={Beaker}
-      />
-      <KpiCard
-        title="Cobertura de ventas"
-        value={`${s.coverageOfSalesPct.toFixed(0)}%`}
-        subtitle={`de productos vendidos tienen BOM`}
-        icon={Layers}
-        tone={s.coverageOfSalesPct >= 70 ? "success" : "warning"}
-      />
-      <KpiCard
-        title="BOMs sospechosos"
-        value={s.suspiciousBomsCount}
-        subtitle="Δ &gt; +50% (revisar)"
-        icon={ShieldAlert}
-        tone={s.suspiciousBomsCount > 0 ? "danger" : "success"}
-      />
-      <KpiCard
-        title="Componentes sin costear"
-        value={s.productsWithMissingComponents}
-        subtitle="BOMs con gaps"
-        icon={PackageSearch}
-        tone={s.productsWithMissingComponents > 0 ? "warning" : "success"}
-      />
-    </StatGrid>
+    <>
+      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+        <KpiCard
+          title="BOMs activos"
+          value={s.totalBoms}
+          subtitle={`${s.productsWithRealCost} con costo recursivo`}
+          icon={Beaker}
+        />
+        <KpiCard
+          title="Profundidad máx"
+          value={s.maxBomDepth}
+          subtitle={`niveles del árbol BOM`}
+          icon={Layers}
+          tone={s.maxBomDepth >= 5 ? "info" : "default"}
+        />
+        <KpiCard
+          title="BOMs sospechosos"
+          value={s.suspiciousBomsCount}
+          subtitle={medianText}
+          icon={ShieldAlert}
+          tone={s.suspiciousBomsCount > 0 ? "danger" : "success"}
+        />
+        <KpiCard
+          title="MP raíz sin costo"
+          value={s.productsWithMissingComponents}
+          subtitle="BOMs con leaves sin standard_price"
+          icon={PackageSearch}
+          tone={s.productsWithMissingComponents > 0 ? "warning" : "success"}
+        />
+      </StatGrid>
+      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+        <KpiCard
+          title="Cobertura ventas"
+          value={`${s.coverageOfSalesPct.toFixed(0)}%`}
+          subtitle={`${s.productsInSales} productos vendidos`}
+          icon={Layers}
+          tone={s.coverageOfSalesPct >= 70 ? "success" : "warning"}
+        />
+        <KpiCard
+          title="Productos multi-BOM"
+          value={s.productsWithMultipleBoms}
+          subtitle="usando BOM más reciente"
+          icon={Copy}
+          tone={s.productsWithMultipleBoms > 0 ? "info" : "default"}
+        />
+        <KpiCard
+          title="d1 / shallow"
+          value={s.productsByDepth.find((d) => d.depth === 1)?.count ?? 0}
+          subtitle="productos con BOM de 1 nivel"
+          icon={GitBranch}
+        />
+        <KpiCard
+          title="d4+ / deep"
+          value={s.productsByDepth
+            .filter((d) => d.depth >= 4)
+            .reduce((a, d) => a + d.count, 0)}
+          subtitle="productos con árbol profundo"
+          icon={GitBranch}
+        />
+      </StatGrid>
+    </>
   );
 }
 
@@ -592,6 +671,116 @@ async function TopRevenueTable() {
             {
               label: "Δ%",
               value: formatPct(r.delta_vs_cached_pct),
+            },
+          ]}
+        />
+      )}
+    />
+  );
+}
+
+const multiBomColumns: DataTableColumn<BomCostRow>[] = [
+  {
+    key: "product",
+    header: "Producto",
+    cell: (r) => (
+      <div className="min-w-0">
+        <div className="font-mono text-xs font-semibold">
+          {r.product_ref ?? "—"}
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {r.product_name ?? ""}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: "boms",
+    header: "# BOMs",
+    cell: (r) => (
+      <Badge variant="info" className="text-[10px]">
+        {r.active_boms_for_product}
+      </Badge>
+    ),
+    align: "right",
+  },
+  {
+    key: "depth",
+    header: "Depth",
+    cell: (r) => (
+      <span className="text-xs tabular-nums text-muted-foreground">
+        d{r.max_depth}
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "real",
+    header: "BOM costo (más reciente)",
+    cell: (r) => (
+      <span className="font-semibold tabular-nums">
+        <Currency amount={r.real_unit_cost} compact />
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "revenue",
+    header: "Revenue 12m",
+    cell: (r) => (
+      <span className="text-xs tabular-nums">
+        <Currency amount={r.revenue_12m} compact />
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+];
+
+async function MultiBomTable() {
+  const rows = await getBomsWithMultipleVersions(30);
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={Copy}
+        title="Sin productos multi-BOM"
+        description="Cada producto tiene exactamente un BOM activo."
+        compact
+      />
+    );
+  }
+  return (
+    <DataTable
+      data={rows}
+      columns={multiBomColumns}
+      rowKey={(r) => `${r.odoo_product_id}`}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <div>
+              <div className="font-mono text-xs font-bold">
+                {r.product_ref ?? "—"}
+              </div>
+              <div className="truncate text-[11px] font-normal text-muted-foreground">
+                {r.product_name ?? ""}
+              </div>
+            </div>
+          }
+          badge={
+            <Badge variant="info" className="text-[10px]">
+              {r.active_boms_for_product} BOMs
+            </Badge>
+          }
+          fields={[
+            { label: "Profundidad", value: `d${r.max_depth}` },
+            {
+              label: "BOM costo",
+              value: <Currency amount={r.real_unit_cost} compact />,
+            },
+            {
+              label: "Revenue 12m",
+              value: <Currency amount={r.revenue_12m} compact />,
             },
           ]}
         />
