@@ -1,6 +1,7 @@
 import { Target, TrendingDown, TrendingUp } from "lucide-react";
+
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 export type PredictionStatus =
@@ -31,7 +32,9 @@ const statusConfig: Record<
 };
 
 /**
- * PredictionCard — muestra una predicción con base histórica y confianza.
+ * PredictionCard — muestra una predicción con base histórica y barra de
+ * confianza. Construido sobre Card de shadcn con CardHeader/CardContent
+ * para preservar la jerarquia visual del design system.
  *
  * @example
  * <PredictionCard
@@ -54,47 +57,58 @@ export function PredictionCard({
   const confidencePct =
     confidence != null ? Math.round(confidence * 100) : null;
 
+  const confidenceTone =
+    confidencePct == null
+      ? null
+      : confidencePct >= 70
+        ? "bg-success"
+        : confidencePct >= 40
+          ? "bg-warning"
+          : "bg-danger";
+
   return (
-    <Card className={cn("gap-1 py-3", className)}>
-      <div className="flex items-start gap-3 px-4">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-primary/10">
-          <Target className="h-4 w-4 text-primary" aria-hidden />
+    <Card className={cn("gap-0 py-0", className)}>
+      <CardHeader className="flex-row items-start gap-3 px-4 pt-4 pb-2">
+        <div
+          className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary"
+          aria-hidden
+        >
+          <Target className="size-4" />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            <span className="text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
               {label}
-            </div>
+            </span>
             {cfg && <Badge variant={cfg.variant}>{cfg.label}</Badge>}
           </div>
-          <div className="mt-0.5 text-base font-bold">{predicted}</div>
-          {basedOn && (
-            <div className="mt-0.5 text-[11px] text-muted-foreground">
-              {basedOn}
-            </div>
-          )}
-          {confidencePct != null && (
-            <div className="mt-1 flex items-center gap-1">
-              <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
-                <div
-                  className={cn(
-                    "h-full transition-all",
-                    confidencePct >= 70
-                      ? "bg-success"
-                      : confidencePct >= 40
-                        ? "bg-warning"
-                        : "bg-danger"
-                  )}
-                  style={{ width: `${confidencePct}%` }}
-                />
-              </div>
-              <span className="text-[10px] tabular-nums text-muted-foreground">
-                {confidencePct}%
-              </span>
-            </div>
-          )}
+          <div className="mt-0.5 text-base font-bold leading-tight">
+            {predicted}
+          </div>
         </div>
-      </div>
+      </CardHeader>
+
+      <CardContent className="space-y-2 px-4 pb-4 pl-[60px]">
+        {basedOn && (
+          <p className="text-[11px] text-muted-foreground">{basedOn}</p>
+        )}
+        {confidencePct != null && (
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+              <div
+                className={cn(
+                  "h-full transition-all duration-500",
+                  confidenceTone
+                )}
+                style={{ width: `${confidencePct}%` }}
+              />
+            </div>
+            <span className="text-[10px] font-medium tabular-nums text-muted-foreground">
+              {confidencePct}%
+            </span>
+          </div>
+        )}
+      </CardContent>
     </Card>
   );
 }
@@ -139,7 +153,7 @@ export function PredictionDelta({
       >
         {actual}
         {unit}
-        {delta !== 0 && <Icon className="h-3 w-3" aria-hidden />}
+        {delta !== 0 && <Icon className="size-3" aria-hidden />}
       </span>
     </div>
   );

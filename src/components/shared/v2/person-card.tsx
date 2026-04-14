@@ -1,5 +1,7 @@
 import { Mail, Phone, User } from "lucide-react";
-import { Card } from "@/components/ui/card";
+
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
@@ -24,20 +26,9 @@ interface PersonCardProps {
 }
 
 /**
- * PersonCard — identifica a la persona responsable de actuar en un insight
- * con email clickeable (mailto) y acción sugerida.
- *
- * @example
- * <PersonCard
- *   name="Gilberto López"
- *   email="gilberto@quimibond.com"
- *   role="Vendedor"
- *   metrics={[
- *     { label: "Cuentas", value: 45 },
- *     { label: "Actividades vencidas", value: 12, danger: true },
- *   ]}
- *   action="Llamar a Carina Yazmin hoy antes del viernes"
- * />
+ * PersonCard — identifica a la persona responsable de actuar en un insight.
+ * Usa Avatar de shadcn (con fallback de iniciales), Card semantica y la
+ * accion como callout destacado en bg-primary/5.
  */
 export function PersonCard({
   name,
@@ -49,86 +40,87 @@ export function PersonCard({
   className,
   size = "default",
 }: PersonCardProps) {
-  const avatarSize = size === "sm" ? "h-8 w-8" : "h-10 w-10";
-  const iconSize = size === "sm" ? "h-4 w-4" : "h-5 w-5";
-
   const initials = name
-    .split(" ")
+    .split(/\s+/)
     .filter(Boolean)
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase() ?? "")
     .join("");
 
+  const avatarSize = size === "sm" ? "size-9" : "size-11";
+
   return (
-    <Card className={cn("gap-2 py-3", className)}>
-      <div className="flex items-start gap-3 px-4">
-        <div
-          className={cn(
-            "flex shrink-0 items-center justify-center rounded-full bg-primary/10 font-semibold text-primary",
-            avatarSize,
-            size === "sm" ? "text-[10px]" : "text-xs"
-          )}
-          aria-hidden
-        >
-          {initials || <User className={iconSize} />}
-        </div>
+    <Card className={cn("gap-0 py-0", className)}>
+      <CardHeader className="flex-row items-start gap-3 px-4 pt-4 pb-3">
+        <Avatar className={cn(avatarSize, "border border-border")}>
+          <AvatarFallback className="bg-primary/10 text-sm font-semibold text-primary">
+            {initials || <User className="size-4" />}
+          </AvatarFallback>
+        </Avatar>
+
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <div className="truncate text-sm font-semibold">{name}</div>
             {role && (
-              <Badge variant="secondary" className="text-[10px]">
+              <Badge variant="secondary" className="shrink-0 text-[10px]">
                 {role}
               </Badge>
             )}
           </div>
           {(email || phone) && (
-            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
               {email && (
                 <a
                   href={`mailto:${email}`}
-                  className="flex min-h-[24px] items-center gap-1 hover:text-primary"
+                  className="inline-flex min-h-[24px] items-center gap-1 transition-colors hover:text-primary"
                 >
-                  <Mail className="h-3 w-3" aria-hidden />
+                  <Mail className="size-3" aria-hidden />
                   <span className="truncate">{email}</span>
                 </a>
               )}
               {phone && (
                 <a
                   href={`tel:${phone}`}
-                  className="flex min-h-[24px] items-center gap-1 hover:text-primary"
+                  className="inline-flex min-h-[24px] items-center gap-1 transition-colors hover:text-primary"
                 >
-                  <Phone className="h-3 w-3" aria-hidden />
+                  <Phone className="size-3" aria-hidden />
                   <span>{phone}</span>
                 </a>
               )}
             </div>
           )}
         </div>
-      </div>
+      </CardHeader>
 
-      {metrics && metrics.length > 0 && (
-        <div className="flex flex-wrap gap-3 px-4 pt-1 text-[11px]">
-          {metrics.map((m, i) => (
-            <div key={i} className="flex items-baseline gap-1">
-              <span className="text-muted-foreground">{m.label}:</span>
-              <span
-                className={cn(
-                  "font-semibold tabular-nums",
-                  m.danger && "text-danger"
-                )}
-              >
-                {m.value}
-              </span>
+      {(metrics?.length || action) && (
+        <CardContent className="space-y-3 px-4 pb-4">
+          {metrics && metrics.length > 0 && (
+            <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+              {metrics.map((m, i) => (
+                <div key={i} className="flex items-baseline gap-1">
+                  <span className="text-muted-foreground">{m.label}:</span>
+                  <span
+                    className={cn(
+                      "font-semibold tabular-nums",
+                      m.danger && "text-danger"
+                    )}
+                  >
+                    {m.value}
+                  </span>
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-      )}
+          )}
 
-      {action && (
-        <div className="mx-4 mt-1 rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-[11px] font-medium">
-          <span className="uppercase tracking-wide text-primary">Acción:</span>{" "}
-          <span className="text-foreground">{action}</span>
-        </div>
+          {action && (
+            <div className="rounded-md border border-primary/20 bg-primary/5 px-3 py-2 text-xs">
+              <span className="block text-[10px] font-semibold uppercase tracking-wider text-primary">
+                Acción
+              </span>
+              <span className="text-foreground">{action}</span>
+            </div>
+          )}
+        </CardContent>
       )}
     </Card>
   );
