@@ -1,0 +1,456 @@
+import "server-only";
+import { getServiceClient } from "@/lib/supabase-server";
+
+/**
+ * Analytics queries — wrappers tipados sobre los 6 modelos del Sprint 2:
+ * - `rfm_segments` (matview)         — segmentación RFM 8-buckets + priority score
+ * - `collection_effectiveness_index` — CEI cohort mensual + health_status
+ * - `revenue_concentration` (view)   — rank Pareto + tripwires top 5/10
+ * - `stockout_queue` (view)          — cola de productos en riesgo de faltante
+ * - `supplier_price_index` (matview) — índice por proveedor vs benchmark
+ * - `real_sale_price` (matview)      — precio real ponderado por cantidad
+ *
+ * Todos los modelos están en MXN normalizado (no requieren conversión FX).
+ */
+
+// ──────────────────────────────────────────────────────────────────────────
+// RFM Segments
+// ──────────────────────────────────────────────────────────────────────────
+export type RfmSegment =
+  | "CHAMPIONS"
+  | "LOYAL"
+  | "AT_RISK"
+  | "NEW"
+  | "NEED_ATTENTION"
+  | "HIBERNATING"
+  | "LOST"
+  | "OCCASIONAL";
+
+export interface RfmSegmentRow {
+  company_id: number;
+  company_name: string;
+  tier: string | null;
+  segment: RfmSegment;
+  recency_days: number;
+  frequency: number;
+  monetary_2y: number;
+  monetary_12m: number;
+  monetary_90d: number;
+  avg_ticket: number;
+  outstanding: number;
+  max_days_overdue: number | null;
+  last_purchase: string | null;
+  first_purchase: string | null;
+  r_score: number;
+  f_score: number;
+  m_score: number;
+  rfm_code: number;
+  contact_priority_score: number;
+}
+
+export async function getRfmSegments(
+  segment?: RfmSegment,
+  limit = 200
+): Promise<RfmSegmentRow[]> {
+  const sb = getServiceClient();
+  let q = sb
+    .from("rfm_segments")
+    .select(
+      "company_id, company_name, tier, segment, recency_days, frequency, monetary_2y, monetary_12m, monetary_90d, avg_ticket, outstanding, max_days_overdue, last_purchase, first_purchase, r_score, f_score, m_score, rfm_code, contact_priority_score"
+    )
+    .order("contact_priority_score", { ascending: false })
+    .limit(limit);
+  if (segment) q = q.eq("segment", segment);
+  const { data } = await q;
+  return ((data ?? []) as Array<Partial<RfmSegmentRow>>).map((r) => ({
+    company_id: Number(r.company_id) || 0,
+    company_name: r.company_name ?? "—",
+    tier: r.tier ?? null,
+    segment: (r.segment as RfmSegment) ?? "OCCASIONAL",
+    recency_days: Number(r.recency_days) || 0,
+    frequency: Number(r.frequency) || 0,
+    monetary_2y: Number(r.monetary_2y) || 0,
+    monetary_12m: Number(r.monetary_12m) || 0,
+    monetary_90d: Number(r.monetary_90d) || 0,
+    avg_ticket: Number(r.avg_ticket) || 0,
+    outstanding: Number(r.outstanding) || 0,
+    max_days_overdue: r.max_days_overdue != null ? Number(r.max_days_overdue) : null,
+    last_purchase: r.last_purchase ?? null,
+    first_purchase: r.first_purchase ?? null,
+    r_score: Number(r.r_score) || 0,
+    f_score: Number(r.f_score) || 0,
+    m_score: Number(r.m_score) || 0,
+    rfm_code: Number(r.rfm_code) || 0,
+    contact_priority_score: Number(r.contact_priority_score) || 0,
+  }));
+}
+
+export interface RfmSegmentSummary {
+  segment: RfmSegment;
+  customers: number;
+  revenue_12m: number;
+  outstanding: number;
+  avg_priority: number;
+}
+
+export async function getRfmSegmentSummary(): Promise<RfmSegmentSummary[]> {
+  const rows = await getRfmSegments(undefined, 1000);
+  const map = new Map<RfmSegment, RfmSegmentSummary>();
+  for (const r of rows) {
+    const cur =
+      map.get(r.segment) ??
+      ({
+        segment: r.segment,
+        customers: 0,
+        revenue_12m: 0,
+        outstanding: 0,
+        avg_priority: 0,
+      } satisfies RfmSegmentSummary);
+    cur.customers += 1;
+    cur.revenue_12m += r.monetary_12m;
+    cur.outstanding += r.outstanding;
+    cur.avg_priority += r.contact_priority_score;
+    map.set(r.segment, cur);
+  }
+  return [...map.values()]
+    .map((s) => ({
+      ...s,
+      avg_priority: s.customers > 0 ? Math.round(s.avg_priority / s.customers) : 0,
+    }))
+    .sort((a, b) => b.revenue_12m - a.revenue_12m);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Collection Effectiveness Index
+// ──────────────────────────────────────────────────────────────────────────
+export type CeiHealth = "too_recent" | "healthy" | "watch" | "at_risk" | "degraded";
+
+export interface CeiRow {
+  cohort_month: string;
+  cohort_age_months: number;
+  invoices_issued: number;
+  customers: number;
+  billed_mxn: number;
+  collected_mxn: number;
+  outstanding_mxn: number;
+  overdue_30d_mxn: number;
+  overdue_90d_mxn: number;
+  cei_pct: number;
+  leakage_90d_pct: number;
+  avg_days_to_pay: number | null;
+  health_status: CeiHealth;
+  cei_delta_vs_prev: number | null;
+}
+
+export async function getCollectionEffectiveness(
+  months = 12
+): Promise<CeiRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("collection_effectiveness_index")
+    .select("*")
+    .limit(months);
+  return ((data ?? []) as Array<Partial<CeiRow>>).map((r) => ({
+    cohort_month: r.cohort_month ?? "",
+    cohort_age_months: Number(r.cohort_age_months) || 0,
+    invoices_issued: Number(r.invoices_issued) || 0,
+    customers: Number(r.customers) || 0,
+    billed_mxn: Number(r.billed_mxn) || 0,
+    collected_mxn: Number(r.collected_mxn) || 0,
+    outstanding_mxn: Number(r.outstanding_mxn) || 0,
+    overdue_30d_mxn: Number(r.overdue_30d_mxn) || 0,
+    overdue_90d_mxn: Number(r.overdue_90d_mxn) || 0,
+    cei_pct: Number(r.cei_pct) || 0,
+    leakage_90d_pct: Number(r.leakage_90d_pct) || 0,
+    avg_days_to_pay:
+      r.avg_days_to_pay != null ? Number(r.avg_days_to_pay) : null,
+    health_status: (r.health_status as CeiHealth) ?? "too_recent",
+    cei_delta_vs_prev:
+      r.cei_delta_vs_prev != null ? Number(r.cei_delta_vs_prev) : null,
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Revenue Concentration
+// ──────────────────────────────────────────────────────────────────────────
+export type ConcentrationTripwire =
+  | "TOP5_DECLINE_25PCT"
+  | "TOP10_DECLINE_40PCT"
+  | "TOP5_NO_ORDER_45D";
+
+export interface ConcentrationRow {
+  company_id: number;
+  company_name: string;
+  tier: string | null;
+  rank_in_portfolio: number;
+  rev_12m: number;
+  rev_90d: number;
+  rev_30d: number;
+  rev_30d_prev: number;
+  share_pct: number;
+  cumulative_pct: number;
+  pareto_class: "A" | "B" | "C";
+  last_invoice_date: string | null;
+  days_since_last_invoice: number | null;
+  rev_30d_delta_pct: number | null;
+  tripwire: ConcentrationTripwire | null;
+}
+
+export async function getRevenueConcentration(
+  topN = 30
+): Promise<ConcentrationRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("revenue_concentration")
+    .select("*")
+    .lte("rank_in_portfolio", topN);
+  return ((data ?? []) as Array<Partial<ConcentrationRow>>).map((r) => ({
+    company_id: Number(r.company_id) || 0,
+    company_name: r.company_name ?? "—",
+    tier: r.tier ?? null,
+    rank_in_portfolio: Number(r.rank_in_portfolio) || 0,
+    rev_12m: Number(r.rev_12m) || 0,
+    rev_90d: Number(r.rev_90d) || 0,
+    rev_30d: Number(r.rev_30d) || 0,
+    rev_30d_prev: Number(r.rev_30d_prev) || 0,
+    share_pct: Number(r.share_pct) || 0,
+    cumulative_pct: Number(r.cumulative_pct) || 0,
+    pareto_class: (r.pareto_class as "A" | "B" | "C") ?? "C",
+    last_invoice_date: r.last_invoice_date ?? null,
+    days_since_last_invoice:
+      r.days_since_last_invoice != null
+        ? Number(r.days_since_last_invoice)
+        : null,
+    rev_30d_delta_pct:
+      r.rev_30d_delta_pct != null ? Number(r.rev_30d_delta_pct) : null,
+    tripwire: (r.tripwire as ConcentrationTripwire) ?? null,
+  }));
+}
+
+export async function getActiveTripwires(): Promise<ConcentrationRow[]> {
+  const all = await getRevenueConcentration(50);
+  return all.filter((r) => r.tripwire !== null);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Stockout Queue
+// ──────────────────────────────────────────────────────────────────────────
+export type StockoutUrgency =
+  | "STOCKOUT"
+  | "CRITICAL"
+  | "URGENT"
+  | "ATTENTION"
+  | "OK";
+
+export interface StockoutRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  category: string | null;
+  stock_qty: number;
+  reserved_qty: number;
+  available_qty: number;
+  daily_run_rate: number;
+  qty_sold_90d: number;
+  days_of_stock: number | null;
+  revenue_at_risk_30d_mxn: number;
+  replenish_cost_mxn: number;
+  suggested_order_qty: number;
+  qty_on_order: number;
+  top_consumer: string | null;
+  last_supplier_id: number | null;
+  last_supplier_name: string | null;
+  last_purchase_price: number | null;
+  last_purchase_date: string | null;
+  urgency: StockoutUrgency;
+  priority_score: number;
+}
+
+export async function getStockoutQueue(
+  urgency?: StockoutUrgency,
+  limit = 100
+): Promise<StockoutRow[]> {
+  const sb = getServiceClient();
+  let q = sb
+    .from("stockout_queue")
+    .select("*")
+    .order("priority_score", { ascending: false })
+    .limit(limit);
+  if (urgency) q = q.eq("urgency", urgency);
+  const { data } = await q;
+  return ((data ?? []) as Array<Partial<StockoutRow>>).map((r) => ({
+    odoo_product_id: Number(r.odoo_product_id) || 0,
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    category: r.category ?? null,
+    stock_qty: Number(r.stock_qty) || 0,
+    reserved_qty: Number(r.reserved_qty) || 0,
+    available_qty: Number(r.available_qty) || 0,
+    daily_run_rate: Number(r.daily_run_rate) || 0,
+    qty_sold_90d: Number(r.qty_sold_90d) || 0,
+    days_of_stock: r.days_of_stock != null ? Number(r.days_of_stock) : null,
+    revenue_at_risk_30d_mxn: Number(r.revenue_at_risk_30d_mxn) || 0,
+    replenish_cost_mxn: Number(r.replenish_cost_mxn) || 0,
+    suggested_order_qty: Number(r.suggested_order_qty) || 0,
+    qty_on_order: Number(r.qty_on_order) || 0,
+    top_consumer: r.top_consumer ?? null,
+    last_supplier_id:
+      r.last_supplier_id != null ? Number(r.last_supplier_id) : null,
+    last_supplier_name: r.last_supplier_name ?? null,
+    last_purchase_price:
+      r.last_purchase_price != null ? Number(r.last_purchase_price) : null,
+    last_purchase_date: r.last_purchase_date ?? null,
+    urgency: (r.urgency as StockoutUrgency) ?? "OK",
+    priority_score: Number(r.priority_score) || 0,
+  }));
+}
+
+export interface StockoutSummary {
+  urgency: StockoutUrgency;
+  count: number;
+  revenue_at_risk: number;
+}
+
+export async function getStockoutSummary(): Promise<StockoutSummary[]> {
+  const rows = await getStockoutQueue(undefined, 500);
+  const map = new Map<StockoutUrgency, StockoutSummary>();
+  for (const r of rows) {
+    const cur =
+      map.get(r.urgency) ??
+      ({ urgency: r.urgency, count: 0, revenue_at_risk: 0 } satisfies StockoutSummary);
+    cur.count += 1;
+    cur.revenue_at_risk += r.revenue_at_risk_30d_mxn;
+    map.set(r.urgency, cur);
+  }
+  const order: Record<StockoutUrgency, number> = {
+    STOCKOUT: 1,
+    CRITICAL: 2,
+    URGENT: 3,
+    ATTENTION: 4,
+    OK: 5,
+  };
+  return [...map.values()].sort((a, b) => order[a.urgency] - order[b.urgency]);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Supplier Price Index
+// ──────────────────────────────────────────────────────────────────────────
+export type PriceFlag =
+  | "single_source"
+  | "overpriced"
+  | "above_market"
+  | "aligned"
+  | "below_market";
+
+export interface SupplierPriceRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  supplier_id: number;
+  supplier_name: string;
+  month: string;
+  supplier_avg_price: number;
+  benchmark_price: number;
+  suppliers_in_month: number;
+  price_index: number;
+  price_delta: number;
+  overpaid_mxn: number;
+  saved_mxn: number;
+  supplier_qty: number;
+  supplier_spend: number;
+  supplier_lines: number;
+  last_po_date: string | null;
+  last_po_name: string | null;
+  price_flag: PriceFlag;
+}
+
+export async function getSupplierPriceAlerts(
+  flag: PriceFlag = "overpriced",
+  monthsBack = 6,
+  limit = 50
+): Promise<SupplierPriceRow[]> {
+  const sb = getServiceClient();
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - monthsBack);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const { data } = await sb
+    .from("supplier_price_index")
+    .select("*")
+    .eq("price_flag", flag)
+    .gte("month", cutoffStr)
+    .order("overpaid_mxn", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<SupplierPriceRow>>).map((r) => ({
+    odoo_product_id: Number(r.odoo_product_id) || 0,
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    supplier_id: Number(r.supplier_id) || 0,
+    supplier_name: r.supplier_name ?? "—",
+    month: r.month ?? "",
+    supplier_avg_price: Number(r.supplier_avg_price) || 0,
+    benchmark_price: Number(r.benchmark_price) || 0,
+    suppliers_in_month: Number(r.suppliers_in_month) || 0,
+    price_index: Number(r.price_index) || 0,
+    price_delta: Number(r.price_delta) || 0,
+    overpaid_mxn: Number(r.overpaid_mxn) || 0,
+    saved_mxn: Number(r.saved_mxn) || 0,
+    supplier_qty: Number(r.supplier_qty) || 0,
+    supplier_spend: Number(r.supplier_spend) || 0,
+    supplier_lines: Number(r.supplier_lines) || 0,
+    last_po_date: r.last_po_date ?? null,
+    last_po_name: r.last_po_name ?? null,
+    price_flag: (r.price_flag as PriceFlag) ?? "aligned",
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Real Sale Price
+// ──────────────────────────────────────────────────────────────────────────
+export interface RealSalePriceRow {
+  odoo_product_id: number;
+  product_ref: string | null;
+  product_name: string | null;
+  price_current: number | null;
+  price_90d: number | null;
+  price_180d: number | null;
+  price_12m: number | null;
+  cv_12m: number | null;
+  qty_sold_90d: number;
+  qty_sold_12m: number;
+  revenue_12m: number;
+  customers_12m: number;
+  odoo_cost: number | null;
+  markup_vs_cost_pct: number | null;
+  list_price_is_stale: boolean;
+  last_sale_date: string | null;
+}
+
+export async function getRealSalePrices(
+  limit = 100
+): Promise<RealSalePriceRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("real_sale_price")
+    .select("*")
+    .order("revenue_12m", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<RealSalePriceRow>>).map((r) => ({
+    odoo_product_id: Number(r.odoo_product_id) || 0,
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    price_current: r.price_current != null ? Number(r.price_current) : null,
+    price_90d: r.price_90d != null ? Number(r.price_90d) : null,
+    price_180d: r.price_180d != null ? Number(r.price_180d) : null,
+    price_12m: r.price_12m != null ? Number(r.price_12m) : null,
+    cv_12m: r.cv_12m != null ? Number(r.cv_12m) : null,
+    qty_sold_90d: Number(r.qty_sold_90d) || 0,
+    qty_sold_12m: Number(r.qty_sold_12m) || 0,
+    revenue_12m: Number(r.revenue_12m) || 0,
+    customers_12m: Number(r.customers_12m) || 0,
+    odoo_cost: r.odoo_cost != null ? Number(r.odoo_cost) : null,
+    markup_vs_cost_pct:
+      r.markup_vs_cost_pct != null ? Number(r.markup_vs_cost_pct) : null,
+    list_price_is_stale: !!r.list_price_is_stale,
+    last_sale_date: r.last_sale_date ?? null,
+  }));
+}

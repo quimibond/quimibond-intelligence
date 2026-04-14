@@ -33,6 +33,11 @@ import {
   getRevenueTrend,
 } from "@/lib/queries/dashboard";
 import { getInsights } from "@/lib/queries/insights";
+import {
+  getActiveTripwires,
+  type ConcentrationRow,
+  type ConcentrationTripwire,
+} from "@/lib/queries/analytics";
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 
 import { RevenueTrendChart } from "./_components/revenue-trend-chart";
@@ -55,6 +60,11 @@ export default function CeoDashboardPage() {
         {/* Runway alert — la señal más crítica */}
         <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
           <RunwayBanner />
+        </Suspense>
+
+        {/* Concentration tripwires — clientes top con caída brusca */}
+        <Suspense fallback={null}>
+          <ConcentrationTripwires />
         </Suspense>
 
         <Suspense fallback={<KpisSkeleton />}>
@@ -280,6 +290,84 @@ async function Kpis() {
         Actualizado {formatRelative(k.generated_at)}
       </p>
     </>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Concentration tripwires — Top customers con caída brusca
+// ──────────────────────────────────────────────────────────────────────────
+const tripwireLabel: Record<ConcentrationTripwire, string> = {
+  TOP5_DECLINE_25PCT: "Top 5 cayó −25% MoM",
+  TOP10_DECLINE_40PCT: "Top 10 cayó −40% MoM",
+  TOP5_NO_ORDER_45D: "Top 5 sin facturar 45+ días",
+};
+
+function tripwireMessage(t: ConcentrationRow): string {
+  switch (t.tripwire) {
+    case "TOP5_DECLINE_25PCT":
+      return `${t.rev_30d_delta_pct?.toFixed(0)}% MoM · ${t.share_pct.toFixed(1)}% del revenue`;
+    case "TOP10_DECLINE_40PCT":
+      return `${t.rev_30d_delta_pct?.toFixed(0)}% MoM · #${t.rank_in_portfolio}`;
+    case "TOP5_NO_ORDER_45D":
+      return `${t.days_since_last_invoice}d sin facturar · ${t.share_pct.toFixed(1)}% del revenue`;
+    default:
+      return "";
+  }
+}
+
+async function ConcentrationTripwires() {
+  const tripwires = await getActiveTripwires();
+  if (tripwires.length === 0) return null;
+
+  return (
+    <Card className="gap-2 border-l-4 border-l-warning bg-warning/5">
+      <CardHeader className="px-4 pt-3 pb-1">
+        <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-wide text-warning">
+          <AlertTriangle className="h-4 w-4" aria-hidden />
+          Tripwires de concentración ({tripwires.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-2 px-4 pb-4">
+        {tripwires.map((t) => (
+          <Link
+            key={t.company_id}
+            href={`/companies/${t.company_id}`}
+            className="block rounded-lg border bg-card p-3 transition-colors active:bg-accent/60"
+          >
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold text-muted-foreground">
+                    #{t.rank_in_portfolio}
+                  </span>
+                  <span className="truncate text-sm font-semibold">
+                    {t.company_name}
+                  </span>
+                </div>
+                <div className="mt-0.5 flex items-center gap-2 text-[11px]">
+                  <span className="font-semibold uppercase tracking-wide text-warning">
+                    {t.tripwire ? tripwireLabel[t.tripwire] : ""}
+                  </span>
+                </div>
+                <div className="mt-0.5 text-[11px] text-muted-foreground">
+                  {tripwireMessage(t)}
+                </div>
+              </div>
+              <div className="shrink-0 text-right">
+                <Currency amount={t.rev_12m} compact />
+                <div className="text-[9px] uppercase text-muted-foreground">
+                  rev 12m
+                </div>
+              </div>
+              <ChevronRight
+                className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+                aria-hidden
+              />
+            </div>
+          </Link>
+        ))}
+      </CardContent>
+    </Card>
   );
 }
 

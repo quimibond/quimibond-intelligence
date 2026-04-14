@@ -34,6 +34,11 @@ import {
   type PaymentPredictionRow,
 } from "@/lib/queries/invoices";
 import { getCfoSnapshot } from "@/lib/queries/finance";
+import {
+  getCollectionEffectiveness,
+  type CeiHealth,
+  type CeiRow,
+} from "@/lib/queries/analytics";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cobranza" };
@@ -58,6 +63,32 @@ export default function CobranzaPage() {
       >
         <CobranzaHeroKpis />
       </Suspense>
+
+      {/* Collection Effectiveness Index */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Collection Effectiveness Index (CEI)
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            % del facturado cobrado por cohort mensual. Detecta degradación
+            antes que llegue al aging bucket.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 rounded-lg" />
+                ))}
+              </div>
+            }
+          >
+            <CeiTimeline />
+          </Suspense>
+        </CardContent>
+      </Card>
 
       {/* Aging buckets */}
       <Card>
@@ -192,6 +223,136 @@ async function CobranzaHeroKpis() {
         tone={paymentRisk.criticalCount > 0 ? "danger" : "default"}
       />
     </StatGrid>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Collection Effectiveness Index timeline
+// ──────────────────────────────────────────────────────────────────────────
+const ceiHealthVariant: Record<
+  CeiHealth,
+  "success" | "info" | "warning" | "critical" | "secondary"
+> = {
+  healthy: "success",
+  watch: "info",
+  at_risk: "warning",
+  degraded: "critical",
+  too_recent: "secondary",
+};
+
+const ceiHealthLabel: Record<CeiHealth, string> = {
+  healthy: "Saludable",
+  watch: "Vigilar",
+  at_risk: "En riesgo",
+  degraded: "Degradado",
+  too_recent: "Reciente",
+};
+
+function ceiBarColor(health: CeiHealth): string {
+  if (health === "degraded") return "bg-danger";
+  if (health === "at_risk") return "bg-warning";
+  if (health === "watch") return "bg-info";
+  if (health === "healthy") return "bg-success";
+  return "bg-muted-foreground/40";
+}
+
+function formatCohortMonth(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("es-MX", { month: "short", year: "2-digit" });
+}
+
+async function CeiTimeline() {
+  const rows = await getCollectionEffectiveness(12);
+  // Excluir cohorts demasiado recientes (no son comparables)
+  const useful = rows.filter((r) => r.cohort_age_months >= 2).slice(0, 8);
+
+  if (useful.length === 0) {
+    return (
+      <EmptyState
+        icon={TrendingDown}
+        title="Sin datos de cohort"
+        description="No hay suficientes meses cerrados para calcular CEI."
+        compact
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {useful.map((r: CeiRow) => {
+        const pct = Math.min(100, Math.max(0, r.cei_pct));
+        const delta = r.cei_delta_vs_prev;
+        return (
+          <div
+            key={r.cohort_month}
+            className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2"
+          >
+            {/* Mes */}
+            <div className="w-14 shrink-0 font-mono text-xs uppercase tabular-nums text-muted-foreground">
+              {formatCohortMonth(r.cohort_month)}
+            </div>
+
+            {/* Barra de CEI */}
+            <div className="relative flex-1">
+              <div className="h-6 w-full overflow-hidden rounded-md bg-muted/40">
+                <div
+                  className={`h-full ${ceiBarColor(r.health_status)} transition-all`}
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <div className="absolute inset-0 flex items-center px-2">
+                <span className="text-xs font-bold tabular-nums text-foreground mix-blend-difference text-white">
+                  {r.cei_pct.toFixed(1)}%
+                </span>
+              </div>
+            </div>
+
+            {/* Delta */}
+            <div className="hidden w-16 shrink-0 text-right text-[11px] tabular-nums sm:block">
+              {delta != null ? (
+                <span
+                  className={
+                    delta < -5
+                      ? "font-semibold text-danger"
+                      : delta > 5
+                        ? "font-semibold text-success"
+                        : "text-muted-foreground"
+                  }
+                >
+                  {delta > 0 ? "+" : ""}
+                  {delta.toFixed(1)}pp
+                </span>
+              ) : (
+                <span className="text-muted-foreground">—</span>
+              )}
+            </div>
+
+            {/* Health badge */}
+            <Badge
+              variant={ceiHealthVariant[r.health_status]}
+              className="shrink-0 text-[10px] uppercase"
+            >
+              {ceiHealthLabel[r.health_status]}
+            </Badge>
+
+            {/* Outstanding (desktop only) */}
+            <div className="hidden w-24 shrink-0 text-right md:block">
+              <Currency amount={r.outstanding_mxn} compact />
+              <div className="text-[9px] uppercase text-muted-foreground">
+                pendiente
+              </div>
+            </div>
+          </div>
+        );
+      })}
+
+      <p className="pt-2 text-[10px] text-muted-foreground">
+        Cohorts con &lt; 2 meses se omiten porque aún están en periodo normal
+        de cobranza. Health: ≥95% saludable, 85-95% vigilar, 70-85% en riesgo,
+        &lt;70% degradado.
+      </p>
+    </div>
   );
 }
 
