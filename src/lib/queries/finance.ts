@@ -11,6 +11,7 @@ import { getServiceClient } from "@/lib/supabase-server";
  * - `working_capital` — ratios de liquidez + capital de trabajo
  * - `pl_estado_resultados` — P&L mensual por periodo
  * - `cash_position` — detalle de saldos bancarios
+ * - `working_capital_cycle` — DSO/DPO/DIO/CCC con COGS real (Sprint 8)
  */
 
 /** Snapshot ejecutivo del CFO (view: cfo_dashboard).
@@ -211,4 +212,64 @@ export async function getPlHistory(months = 12): Promise<PlPoint[]> {
       otrosNeto: Number(r.otros_neto) || 0,
     }))
     .reverse(); // orden cronológico ascendente
+}
+
+/**
+ * Working Capital Cycle (view: working_capital_cycle).
+ * DSO/DPO/DIO/CCC computados con COGS desde expense_direct_cost
+ * (no proxy de in_invoices). Sprint 8 / audit 2026-04-14.
+ */
+export interface WorkingCapitalCycle {
+  revenue12mMxn: number;
+  cogs12mMxn: number;
+  grossProfit12mMxn: number;
+  grossMarginPct: number;
+  arMxn: number;
+  apMxn: number;
+  inventoryMxn: number;
+  dsoDays: number | null;
+  dpoDays: number | null;
+  dioDays: number | null;
+  cccDays: number | null;
+  workingCapitalMxn: number;
+  computedAt: string | null;
+}
+
+export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | null> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("working_capital_cycle")
+    .select("*")
+    .maybeSingle();
+  if (!data) return null;
+  const d = data as {
+    revenue_12m_mxn: number | null;
+    cogs_12m_mxn: number | null;
+    gross_profit_12m_mxn: number | null;
+    gross_margin_pct: number | null;
+    ar_mxn: number | null;
+    ap_mxn: number | null;
+    inventory_mxn: number | null;
+    dso_days: number | null;
+    dpo_days: number | null;
+    dio_days: number | null;
+    ccc_days: number | null;
+    working_capital_mxn: number | null;
+    computed_at: string | null;
+  };
+  return {
+    revenue12mMxn: Number(d.revenue_12m_mxn) || 0,
+    cogs12mMxn: Number(d.cogs_12m_mxn) || 0,
+    grossProfit12mMxn: Number(d.gross_profit_12m_mxn) || 0,
+    grossMarginPct: Number(d.gross_margin_pct) || 0,
+    arMxn: Number(d.ar_mxn) || 0,
+    apMxn: Number(d.ap_mxn) || 0,
+    inventoryMxn: Number(d.inventory_mxn) || 0,
+    dsoDays: d.dso_days != null ? Number(d.dso_days) : null,
+    dpoDays: d.dpo_days != null ? Number(d.dpo_days) : null,
+    dioDays: d.dio_days != null ? Number(d.dio_days) : null,
+    cccDays: d.ccc_days != null ? Number(d.ccc_days) : null,
+    workingCapitalMxn: Number(d.working_capital_mxn) || 0,
+    computedAt: d.computed_at,
+  };
 }
