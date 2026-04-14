@@ -28,6 +28,7 @@ import { TrendIndicator } from "./trend-indicator";
 import { MiniChart } from "./mini-chart";
 import { EvidenceChip } from "./evidence-chip";
 import { InvoiceDetailView } from "./invoice-detail";
+import { PredictionCard, type PredictionStatus } from "./prediction-card";
 import type {
   EvidencePack,
   EvidencePackFinancials,
@@ -725,26 +726,6 @@ function HealthTrendDelta({
 // ──────────────────────────────────────────────────────────────────────────
 // Predictions (solo en briefings) — reorder / payment / cashflow / churn
 // ──────────────────────────────────────────────────────────────────────────
-function reorderStatusVariant(
-  status: string
-): "success" | "warning" | "critical" | "secondary" {
-  if (status === "on_track") return "success";
-  if (status === "at_risk") return "warning";
-  if (status === "overdue" || status === "critical") return "critical";
-  if (status === "lost") return "secondary";
-  return "secondary";
-}
-function reorderStatusLabel(status: string): string {
-  const map: Record<string, string> = {
-    on_track: "En ciclo",
-    at_risk: "En riesgo",
-    overdue: "Vencido",
-    critical: "Crítico",
-    lost: "Perdido",
-  };
-  return map[status] ?? status;
-}
-
 function customerStatusVariant(
   status: string
 ): "success" | "warning" | "critical" | "secondary" {
@@ -762,17 +743,6 @@ function customerStatusLabel(status: string): string {
     churned: "Perdido",
   };
   return map[status] ?? status;
-}
-
-function paymentRiskVariant(
-  raw: string
-): "success" | "warning" | "critical" | "info" {
-  const upper = raw.toUpperCase();
-  if (upper.startsWith("CRITICO")) return "critical";
-  if (upper.startsWith("ALTO")) return "warning";
-  if (upper.startsWith("MEDIO")) return "warning";
-  if (upper.startsWith("NORMAL")) return "success";
-  return "info";
 }
 
 function PredictionsSection({ data: p }: { data: EvidencePackPredictions }) {
@@ -793,16 +763,30 @@ function PredictionsSection({ data: p }: { data: EvidencePackPredictions }) {
       </CardHeader>
       <CardContent className="space-y-3 pb-4">
         {p.reorder && (
-          <div className="rounded-md border border-border/60 p-3">
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Reorden
-              </span>
-              <Badge variant={reorderStatusVariant(p.reorder.reorder_status)}>
-                {reorderStatusLabel(p.reorder.reorder_status)}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+          <div className="space-y-2">
+            <PredictionCard
+              label="Próximo pedido esperado"
+              predicted={
+                p.reorder.predicted_next_order
+                  ? formatPredictionDate(p.reorder.predicted_next_order)
+                  : "Sin predicción"
+              }
+              basedOn={
+                p.reorder.avg_cycle_days != null
+                  ? `ciclo ${Math.round(p.reorder.avg_cycle_days)}d · ${
+                      p.reorder.days_since_last ?? "?"
+                    }d sin pedir${
+                      p.reorder.top_product_ref
+                        ? ` · top: ${p.reorder.top_product_ref}`
+                        : ""
+                    }`
+                  : undefined
+              }
+              status={
+                reorderStatusToPrediction(p.reorder.reorder_status)
+              }
+            />
+            <div className="grid grid-cols-2 gap-2 px-4 text-[11px] sm:grid-cols-4">
               <Stat
                 label="Ciclo promedio"
                 value={
@@ -828,39 +812,35 @@ function PredictionsSection({ data: p }: { data: EvidencePackPredictions }) {
                 value={<Currency amount={p.reorder.avg_order_value} compact />}
               />
               <Stat
-                label="Predicho"
-                value={p.reorder.predicted_next_order ?? "—"}
+                label="Días vencido"
+                value={
+                  p.reorder.days_overdue_reorder != null &&
+                  p.reorder.days_overdue_reorder > 0
+                    ? `${Math.round(p.reorder.days_overdue_reorder)}d`
+                    : "—"
+                }
+                danger={
+                  p.reorder.days_overdue_reorder != null &&
+                  p.reorder.days_overdue_reorder > 0
+                }
               />
             </div>
-            {p.reorder.days_overdue_reorder != null &&
-              p.reorder.days_overdue_reorder > 0 && (
-                <p className="mt-1 text-[11px] text-danger">
-                  Vencido hace {Math.round(p.reorder.days_overdue_reorder)} días
-                  {p.reorder.top_product_ref && (
-                    <>
-                      {" "}
-                      · top:{" "}
-                      <span className="font-mono">
-                        {p.reorder.top_product_ref}
-                      </span>
-                    </>
-                  )}
-                </p>
-              )}
           </div>
         )}
 
         {p.payment && (
-          <div className="rounded-md border border-border/60 p-3">
-            <div className="mb-1 flex items-center justify-between gap-2">
-              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Patrón de pago
-              </span>
-              <Badge variant={paymentRiskVariant(p.payment.payment_risk)}>
-                {p.payment.payment_risk.split(":")[0]}
-              </Badge>
-            </div>
-            <div className="grid grid-cols-2 gap-2 text-[11px] sm:grid-cols-4">
+          <div className="space-y-2">
+            <PredictionCard
+              label="Próximo pago esperado"
+              predicted={
+                p.payment.predicted_payment_date
+                  ? formatPredictionDate(p.payment.predicted_payment_date)
+                  : "Sin predicción"
+              }
+              basedOn={buildPaymentBasedOn(p.payment)}
+              status={paymentRiskToPrediction(p.payment.payment_risk)}
+            />
+            <div className="grid grid-cols-2 gap-2 px-4 text-[11px] sm:grid-cols-4">
               <Stat
                 label="Prom histórico"
                 value={
@@ -894,19 +874,6 @@ function PredictionsSection({ data: p }: { data: EvidencePackPredictions }) {
                 value={<Currency amount={p.payment.total_pending} compact />}
               />
             </div>
-            {p.payment.payment_trend && (
-              <p className="mt-1 text-[11px] text-muted-foreground">
-                Tendencia: {p.payment.payment_trend}
-                {p.payment.predicted_payment_date && (
-                  <>
-                    {" · cobro esperado "}
-                    {new Date(
-                      p.payment.predicted_payment_date
-                    ).toLocaleDateString("es-MX")}
-                  </>
-                )}
-              </p>
-            )}
           </div>
         )}
 
@@ -984,6 +951,57 @@ function PredictionsSection({ data: p }: { data: EvidencePackPredictions }) {
       </CardContent>
     </Card>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Prediction helpers (bridge RPC statuses → PredictionCard status enum)
+// ──────────────────────────────────────────────────────────────────────────
+function reorderStatusToPrediction(status: string): PredictionStatus {
+  if (status === "on_track") return "on_track";
+  if (status === "at_risk") return "at_risk";
+  if (status === "overdue") return "overdue";
+  if (status === "critical") return "critical";
+  if (status === "lost") return "lost";
+  return "at_risk";
+}
+
+function paymentRiskToPrediction(raw: string): PredictionStatus {
+  const upper = raw.toUpperCase();
+  if (upper.startsWith("CRITICO")) return "critical";
+  if (upper.startsWith("ALTO")) return "at_risk";
+  if (upper.startsWith("MEDIO")) return "overdue";
+  if (upper.startsWith("NORMAL")) return "on_track";
+  return "at_risk";
+}
+
+function formatPredictionDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleDateString("es-MX", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function buildPaymentBasedOn(p: {
+  avg_days_to_pay: number | null;
+  avg_recent_6m: number | null;
+  avg_older: number | null;
+  payment_trend: string | null;
+  max_days_overdue: number | null;
+}): string | undefined {
+  const parts: string[] = [];
+  if (p.avg_days_to_pay != null) {
+    parts.push(`avg histórico ${Math.round(p.avg_days_to_pay)}d`);
+  }
+  if (p.avg_recent_6m != null && p.avg_recent_6m !== p.avg_days_to_pay) {
+    parts.push(`reciente ${Math.round(p.avg_recent_6m)}d`);
+  }
+  if (p.payment_trend) {
+    parts.push(`tendencia ${p.payment_trend}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

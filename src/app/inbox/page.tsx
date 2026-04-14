@@ -16,6 +16,7 @@ import {
   StatGrid,
   KpiCard,
   PullToRefresh,
+  EvidenceChip,
 } from "@/components/shared/v2";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,6 +27,7 @@ import {
   type InsightRow,
   type InsightState,
 } from "@/lib/queries/insights";
+import { extractEvidenceRefs } from "@/lib/queries/evidence-helpers";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -238,6 +240,8 @@ async function InsightsList({
 }
 
 function InsightListItem({ insight: i }: { insight: InsightRow }) {
+  const searchText = [i.title, i.description].filter(Boolean).join(" ");
+  const refs = extractEvidenceRefs(searchText).slice(0, 4);
   return (
     <Link href={`/inbox/insight/${i.id}`} className="block">
       <Card className="gap-1 py-3 transition-colors active:bg-accent/50">
@@ -269,6 +273,17 @@ function InsightListItem({ insight: i }: { insight: InsightRow }) {
               <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                 {i.description}
               </p>
+            )}
+            {refs.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {refs.map((ref, idx) => (
+                  <EvidenceChip
+                    key={`${ref.reference}-${idx}`}
+                    type={ref.type}
+                    reference={ref.reference}
+                  />
+                ))}
+              </div>
             )}
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
               {i.company_name && (
