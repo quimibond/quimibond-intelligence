@@ -2,16 +2,34 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
+ * Si el `name` de una company es basura (vacio, null, solo digitos o de
+ * 1-2 caracteres) lo descarta y devuelve null. Esto previene mostrar
+ * cosas como "11", "0021", "—" en el inbox o tarjetas de empresa.
+ *
+ * Hay 193 companies asi en producccion (~9% del total) porque la sync
+ * de Odoo importa partners sin nombre real. El fix de fondo va en el
+ * addon qb19 — esto es la salvaguarda en el frontend.
+ */
+export function sanitizeCompanyName(name: string | null | undefined): string | null {
+  if (name == null) return null;
+  const trimmed = String(name).trim();
+  if (trimmed.length < 3) return null;
+  if (/^[0-9]+$/.test(trimmed)) return null;
+  return trimmed;
+}
+
+/**
  * Supabase joined relation helper para tablas con FK declarada.
  * Dependiendo del tipo de join, la relación vendrá como objeto o array.
+ * Aplica `sanitizeCompanyName` para no propagar nombres basura.
  */
 export function joinedCompanyName(companies: unknown): string | null {
   if (!companies) return null;
   if (Array.isArray(companies)) {
     const first = companies[0] as { name?: string | null } | undefined;
-    return first?.name ?? null;
+    return sanitizeCompanyName(first?.name);
   }
-  return (companies as { name?: string | null }).name ?? null;
+  return sanitizeCompanyName((companies as { name?: string | null }).name);
 }
 
 /**
@@ -43,7 +61,8 @@ export async function resolveCompanyNames(
     id: number;
     name: string | null;
   }>) {
-    if (row.name) map.set(row.id, row.name);
+    const clean = sanitizeCompanyName(row.name);
+    if (clean) map.set(row.id, clean);
   }
   return map;
 }

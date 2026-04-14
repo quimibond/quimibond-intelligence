@@ -2,6 +2,9 @@ import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { joinedCompanyName } from "./_helpers";
 
+/** Slugs de agentes legacy/sistema cuyos insights NO deben llegar al CEO. */
+const LEGACY_AGENT_SLUGS = new Set(["data_quality", "meta", "cleanup", "odoo"]);
+
 export type InsightState =
   | "new"
   | "seen"
@@ -72,30 +75,32 @@ export async function getInsights(params?: {
     "company_name" | "agent_slug" | "agent_name"
   > & { companies: unknown; ai_agents: unknown };
 
-  return ((data ?? []) as unknown as Raw[]).map((row) => {
-    const ag = Array.isArray(row.ai_agents)
-      ? (row.ai_agents[0] as { slug?: string; name?: string } | undefined)
-      : (row.ai_agents as { slug?: string; name?: string } | null);
-    return {
-      id: row.id,
-      title: row.title,
-      description: row.description,
-      severity: row.severity,
-      state: row.state,
-      category: row.category,
-      company_id: row.company_id,
-      company_name: joinedCompanyName(row.companies),
-      created_at: row.created_at,
-      assignee_name: row.assignee_name,
-      assignee_email: row.assignee_email,
-      agent_id: row.agent_id,
-      agent_slug: ag?.slug ?? null,
-      agent_name: ag?.name ?? null,
-      business_impact_estimate: row.business_impact_estimate,
-      confidence: row.confidence,
-      recommendation: row.recommendation,
-    };
-  });
+  return ((data ?? []) as unknown as Raw[])
+    .map((row) => {
+      const ag = Array.isArray(row.ai_agents)
+        ? (row.ai_agents[0] as { slug?: string; name?: string } | undefined)
+        : (row.ai_agents as { slug?: string; name?: string } | null);
+      return {
+        id: row.id,
+        title: row.title,
+        description: row.description,
+        severity: row.severity,
+        state: row.state,
+        category: row.category,
+        company_id: row.company_id,
+        company_name: joinedCompanyName(row.companies),
+        created_at: row.created_at,
+        assignee_name: row.assignee_name,
+        assignee_email: row.assignee_email,
+        agent_id: row.agent_id,
+        agent_slug: ag?.slug ?? null,
+        agent_name: ag?.name ?? null,
+        business_impact_estimate: row.business_impact_estimate,
+        confidence: row.confidence,
+        recommendation: row.recommendation,
+      };
+    })
+    .filter((row) => !row.agent_slug || !LEGACY_AGENT_SLUGS.has(row.agent_slug));
 }
 
 export interface InsightDetail extends InsightRow {
