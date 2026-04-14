@@ -18,6 +18,7 @@ import { loadDirectorConfig, filterInsightsByConfig } from "@/lib/agents/directo
 import { hasConcreteEvidence, looksLikeMetaHallucination } from "@/lib/agents/grounding";
 import { buildFinancieroContextOperativo, buildFinancieroContextEstrategico } from "@/lib/agents/financiero-context";
 import { advanceMode } from "@/lib/agents/mode-rotation";
+import { getDirectorBriefing, type DirectorSlug, type DirectorBriefing } from "@/lib/queries/evidence";
 
 export const maxDuration = 300;
 
@@ -855,6 +856,163 @@ REGLAS para actions:
 - MINIMO 1 accion por insight, MAXIMO 3 acciones por insight`;
 }
 
+// ── Director briefing integration (PARTE 1: predictive evidence packs) ──
+// Maps the agent's `domain` to the director slug used by the
+// `get_director_briefing` RPC. Only the 7 business directors get briefings;
+// everything else (sales, finance, meta, cleanup, predictive, suppliers, etc.)
+// returns null and falls back to the legacy domain context.
+const DOMAIN_TO_DIRECTOR: Record<string, DirectorSlug> = {
+  comercial: "comercial",
+  financiero: "financiero",
+  operaciones_dir: "operaciones",
+  compras: "compras",
+  riesgo_dir: "riesgo",
+  costos: "costos",
+  equipo_dir: "equipo",
+};
+
+function fmtMxn(n: number | null | undefined): string {
+  if (n == null || !Number.isFinite(Number(n))) return "?";
+  return `$${Math.round(Number(n)).toLocaleString("es-MX")}`;
+}
+
+function formatBriefingForAgent(briefing: DirectorBriefing): string {
+  if (!briefing.evidence_packs?.length) return "";
+
+  const blocks: string[] = [];
+  blocks.push(
+    `## EVIDENCE PACKS — top ${briefing.companies_analyzed} empresas que requieren atencion`
+  );
+  blocks.push(
+    "Estos packs vienen del RPC get_director_briefing (datos reales, ya predigeridos). Cada pack incluye facturas vencidas concretas, vendedor responsable, predicciones de pago/reorden y comunicacion reciente. USA estos IDs y nombres EXACTOS en evidence."
+  );
+
+  for (const pack of briefing.evidence_packs) {
+    const fin = pack.financials;
+    const ord = pack.orders;
+    const com = pack.communication;
+    const del = pack.deliveries;
+    const act = pack.activities;
+    const pred = pack.predictions ?? null;
+    const hist = pack.history;
+
+    const lines: string[] = [];
+    lines.push(`### ${pack.company_name} (id=${pack.company_id}, tier=${pack.tier ?? "standard"})`);
+    if (pack.rfc) lines.push(`RFC: ${pack.rfc}`);
+    if (pack.credit_limit != null) lines.push(`Credit limit: ${fmtMxn(pack.credit_limit)} MXN`);
+
+    // Finance with concrete invoices
+    const overdueInvoices = fin?.overdue_invoices ?? [];
+    if (overdueInvoices.length) {
+      const invLines = overdueInvoices.slice(0, 6).map(inv =>
+        `  - ${inv.name ?? "?"} | ${fmtMxn(inv.amount_mxn)} MXN | vencida ${inv.days_overdue ?? "?"}d (due ${inv.due_date ?? "?"})`
+      );
+      lines.push(`Facturas vencidas (${overdueInvoices.length}):\n${invLines.join("\n")}`);
+    }
+    if (fin?.total_overdue_mxn != null) {
+      lines.push(`Total vencido: ${fmtMxn(fin.total_overdue_mxn)} MXN`);
+    }
+    if (fin?.avg_days_to_pay != null) {
+      lines.push(`Patron historico de pago: avg ${Number(fin.avg_days_to_pay).toFixed(0)}d`);
+    }
+    if (fin?.payables_overdue_mxn) {
+      lines.push(`Les debemos (vencido): ${fmtMxn(fin.payables_overdue_mxn)} MXN`);
+    }
+
+    // Orders + person responsible
+    if (ord?.salesperson) {
+      lines.push(`Vendedor: ${ord.salesperson} <${ord.salesperson_email ?? "?"}>`);
+    }
+    if (ord?.last_order_date) {
+      lines.push(`Ultimo pedido: ${ord.last_order_date} (${ord.days_since_last_order ?? "?"}d atras)`);
+    }
+    if (ord?.revenue_trend) {
+      lines.push(`Revenue 90d vs prev: ${fmtMxn(ord.revenue_trend.last_3m)} vs ${fmtMxn(ord.revenue_trend.prev_3m)}`);
+    }
+    const topProducts = ord?.top_products ?? [];
+    if (topProducts.length) {
+      lines.push(`Top productos: ${topProducts.slice(0, 3).map(p => `${p.ref ?? p.product ?? "?"} (${fmtMxn(p.total_mxn)})`).join(", ")}`);
+    }
+
+    // Communication signals
+    if (com?.days_since_last_email != null) {
+      lines.push(`Dias sin email: ${com.days_since_last_email}, threads sin respuesta: ${com.unanswered_threads ?? 0}`);
+    }
+    const recentThreads = com?.recent_threads ?? [];
+    if (recentThreads.length) {
+      lines.push(`Threads recientes:\n${recentThreads.slice(0, 3).map(t => `  - "${sanitizeEmailForClaude(String(t.subject ?? ""), 80)}" ult sender: ${t.last_sender ?? "?"} (${t.hours_waiting ?? "?"}h waiting)`).join("\n")}`);
+    }
+    const keyContacts = com?.key_contacts ?? [];
+    if (keyContacts.length) {
+      lines.push(`Contactos clave: ${keyContacts.slice(0, 3).map(c => `${c.name} <${c.email}>`).join(", ")}`);
+    }
+
+    // Deliveries
+    if (del && (del.late_deliveries || del.pending_shipments)) {
+      lines.push(`Entregas: ${del.pending_shipments ?? 0} pendientes, ${del.late_deliveries ?? 0} tarde, OTD ${del.otd_rate ?? "?"}%`);
+    }
+    const lateDetails = del?.late_details ?? [];
+    if (lateDetails.length) {
+      lines.push(`Detalles late: ${lateDetails.slice(0, 3).map(d => `${d.name} (sched ${d.scheduled})`).join(", ")}`);
+    }
+
+    // Activities with assignees
+    const overdueActs = act?.overdue_detail ?? [];
+    if (overdueActs.length) {
+      lines.push(`Actividades vencidas:\n${overdueActs.slice(0, 3).map(a => `  - ${a.type ?? "?"}: ${sanitizeEmailForClaude(String(a.summary ?? ""), 80)} → ${a.assigned_to ?? "?"} (deadline ${a.deadline ?? "?"})`).join("\n")}`);
+    }
+
+    // PREDICTIONS — the heart of PARTE 1
+    if (pred?.payment) {
+      const p = pred.payment;
+      lines.push(
+        `PREDICCION pago: predicted=${p.predicted_payment_date ?? "?"}, riesgo=${p.payment_risk ?? "?"}, trend=${p.payment_trend ?? "?"}, avg=${p.avg_days_to_pay ?? "?"}d, median=${p.median_days_to_pay ?? "?"}d, recent_6m=${p.avg_recent_6m ?? "?"}d`
+      );
+    }
+    if (pred?.reorder) {
+      const r = pred.reorder;
+      lines.push(
+        `PREDICCION reorden: ${r.reorder_status ?? "?"}, predicted=${r.predicted_next_order ?? "?"}, days_overdue=${r.days_overdue_reorder ?? 0}, ciclo=${r.avg_cycle_days ?? "?"}d, vendedor=${r.salesperson_name ?? "?"} <${r.salesperson_email ?? "?"}>`
+      );
+    }
+    if (pred?.ltv_health) {
+      const l = pred.ltv_health;
+      lines.push(
+        `LTV health: status=${l.customer_status ?? "?"}, churn_risk=${l.churn_risk_score ?? "?"}/100, overdue_risk=${l.overdue_risk_score ?? "?"}/100, trend=${l.trend_pct ?? "?"}%`
+      );
+    }
+    if (pred?.cashflow) {
+      const c = pred.cashflow;
+      lines.push(
+        `Cashflow esperado: ${fmtMxn(c.expected_collection)} MXN (prob ${c.collection_probability ?? "?"}, total receivable ${fmtMxn(c.total_receivable)})`
+      );
+    }
+
+    // Recent insights — DO NOT REPEAT
+    const recentInsights = hist?.recent_insights ?? [];
+    if (recentInsights.length) {
+      lines.push(`Insights previos (NO repetir):\n${recentInsights.slice(0, 4).map(i => `  - "${sanitizeEmailForClaude(String(i.title ?? ""), 100)}" [${i.state ?? "?"}/${i.category ?? "?"}]`).join("\n")}`);
+    }
+
+    blocks.push(lines.join("\n"));
+  }
+
+  // Agent feedback hints from briefing
+  const fb = briefing.agent_feedback;
+  if (fb) {
+    const accepted = Array.isArray(fb.recent_acted_titles) ? fb.recent_acted_titles.slice(0, 5) : [];
+    if (accepted.length) {
+      blocks.push(`## PATRONES QUE EL CEO ACCIONO (replica este formato)\n${accepted.map(t => `- "${t}"`).join("\n")}`);
+    }
+  }
+
+  if (briefing.instructions) {
+    blocks.push(`## INSTRUCCIONES ESPECIFICAS DEL DIRECTOR\n${briefing.instructions}`);
+  }
+
+  return blocks.join("\n\n") + "\n\n";
+}
+
 // ── Context builders ──────────────────────────────────────────────────
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildAgentContext(
@@ -864,6 +1022,16 @@ async function buildAgentContext(
   directorConfig?: import("@/lib/agents/director-config").DirectorConfig,
   companyIdToName?: Map<number, string>
 ): Promise<string> {
+  // PARTE 1: load director briefing in parallel with cross-cutting layers.
+  // Only the 7 business directors get briefings; for the rest this is a no-op.
+  const directorSlug = DOMAIN_TO_DIRECTOR[domain];
+  const briefingPromise = directorSlug
+    ? getDirectorBriefing(directorSlug, 5).catch(err => {
+        console.warn(`[orchestrate] briefing fetch failed for ${directorSlug}:`, err?.message ?? err);
+        return null;
+      })
+    : Promise.resolve(null);
+
   // Load 3 cross-cutting intelligence layers (all directors get these)
   const [emailFacts, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
     // Email facts per company (reduced from 15 to 8)
@@ -975,8 +1143,12 @@ async function buildAgentContext(
 
   const crossIntel = sections.length ? sections.join("\n\n") + "\n\n" : "";
 
+  // Director briefing (predictive evidence packs) — top of context, before legacy domain data
+  const briefing = await briefingPromise;
+  const briefingSection = briefing ? formatBriefingForAgent(briefing) : "";
+
   const domainData = await getDomainData(supabase, domain, agentId, directorConfig, companyIdToName);
-  return crossIntel + emailIntel + domainData;
+  return briefingSection + crossIntel + emailIntel + domainData;
 }
 
 /**
