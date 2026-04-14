@@ -11,7 +11,7 @@ interface RouteErrorProps {
   backLabel?: string;
 }
 
-export function RouteError({ error, reset, backHref = "/dashboard", backLabel = "Dashboard" }: RouteErrorProps) {
+export function RouteError({ error, reset, backHref = "/", backLabel = "Inicio" }: RouteErrorProps) {
   useEffect(() => {
     console.error("[RouteError]", error);
   }, [error]);

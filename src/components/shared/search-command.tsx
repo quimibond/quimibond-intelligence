@@ -146,13 +146,15 @@ export function SearchCommand() {
   const noResults = results && !hasResults && query.trim().length >= 2;
 
   const quickActions = [
-    { label: "Inbox", icon: Bell, href: "/inbox" },
-    { label: "Dashboard", icon: LayoutDashboard, href: "/dashboard" },
-    { label: "Agentes IA", icon: Bot, href: "/agents" },
-    { label: "Ultimo briefing", icon: FileText, href: "/briefings" },
-    { label: "Chat con IA", icon: MessageSquare, href: "/chat" },
+    { label: "Home", icon: LayoutDashboard, href: "/" },
+    { label: "Insights", icon: Bell, href: "/inbox" },
     { label: "Empresas", icon: Building2, href: "/companies" },
-    { label: "Knowledge", icon: Search, href: "/knowledge" },
+    { label: "Ventas", icon: Building2, href: "/ventas" },
+    { label: "Cobranza", icon: Bell, href: "/cobranza" },
+    { label: "Finanzas", icon: Building2, href: "/finanzas" },
+    { label: "Productos", icon: Building2, href: "/productos" },
+    { label: "Operaciones", icon: Building2, href: "/operaciones" },
+    { label: "Directores AI", icon: Bot, href: "/agents" },
     { label: "Sistema", icon: Settings, href: "/system" },
   ];
 
@@ -243,28 +245,6 @@ export function SearchCommand() {
                 </ResultGroup>
               )}
 
-              {/* Contactos */}
-              {results && (results.contacts?.length ?? 0) > 0 && (
-                <ResultGroup label="Contactos" icon={Users}>
-                  {results.contacts.map((c) => (
-                    <ResultItem
-                      key={c.id}
-                      onClick={() => navigate(`/contacts/${c.id}`)}
-                    >
-                      <div className="flex flex-1 items-center gap-2 min-w-0">
-                        <span className="truncate font-medium">{c.name}</span>
-                        {c.email && (
-                          <span className="truncate text-xs text-muted-foreground">
-                            {c.email}
-                          </span>
-                        )}
-                      </div>
-                      {c.risk_level && <RiskBadge level={c.risk_level} />}
-                    </ResultItem>
-                  ))}
-                </ResultGroup>
-              )}
-
               {/* Insights */}
               {results && (results.insights?.length ?? 0) > 0 && (
                 <ResultGroup label="Insights" icon={Lightbulb}>
@@ -307,31 +287,6 @@ export function SearchCommand() {
                 </ResultGroup>
               )}
 
-              {/* Emails */}
-              {results && (results.emails?.length ?? 0) > 0 && (
-                <ResultGroup label="Emails" icon={Mail}>
-                  {results.emails.map((e) => (
-                    <ResultItem
-                      key={e.id}
-                      onClick={() => navigate(`/emails/${e.id}`)}
-                    >
-                      <div className="flex flex-1 flex-col gap-0.5 min-w-0">
-                        <span className="truncate text-sm font-medium">
-                          {e.subject || "(sin asunto)"}
-                        </span>
-                        <span className="truncate text-xs text-muted-foreground">
-                          {e.sender}
-                        </span>
-                      </div>
-                      {e.email_date && (
-                        <span className="shrink-0 text-xs text-muted-foreground">
-                          {timeAgo(e.email_date)}
-                        </span>
-                      )}
-                    </ResultItem>
-                  ))}
-                </ResultGroup>
-              )}
             </div>
           </ScrollArea>
         </DialogContent>

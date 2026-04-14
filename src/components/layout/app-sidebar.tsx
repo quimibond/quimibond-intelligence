@@ -9,48 +9,37 @@ import { PipelineStatus } from "@/components/layout/pipeline-status";
 import { useSidebarCounts } from "@/components/layout/sidebar-badges";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import {
+  AlertTriangle,
+  Banknote,
+  Bot,
   Brain,
-  LayoutDashboard,
   Building2,
-  Users,
-  Mail,
-  Bell,
-  CheckSquare,
-  FileText,
-  Network,
-  MessageSquare,
-  Settings,
-  MessagesSquare,
-  Search,
-  Activity,
-  Swords,
-  BarChart3,
-  Menu,
-  X,
   ChevronsLeft,
   ChevronsRight,
+  Factory,
+  Home,
   Inbox,
-  Share2,
-  Bot,
-  UserCheck,
-  Layers,
-  BookOpen,
+  Package,
+  Search,
+  Settings,
+  ShoppingBag,
+  ShoppingCart,
+  TrendingUp,
+  Users,
 } from "lucide-react";
 
 const navItems = [
-  { href: "/inbox", label: "Inbox", icon: Inbox },
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { href: "/", label: "Home", icon: Home, exact: true },
+  { href: "/inbox", label: "Insights", icon: Inbox },
   { href: "/companies", label: "Empresas", icon: Building2 },
-  { href: "/contacts", label: "Contactos", icon: Users },
-  { href: "/employees", label: "Equipo", icon: UserCheck },
-  { href: "/analytics", label: "Analitica", icon: BarChart3 },
-  { href: "/budgets", label: "Presupuestos", icon: BookOpen },
-  { href: "/emails", label: "Emails", icon: Mail },
-  { href: "/threads", label: "Hilos", icon: MessagesSquare },
-  { href: "/knowledge", label: "Knowledge", icon: Share2 },
-  { href: "/briefings", label: "Briefings", icon: FileText },
-  { href: "/chat", label: "Chat IA", icon: MessageSquare },
-  { href: "/agents", label: "Directores IA", icon: Bot },
+  { href: "/ventas", label: "Ventas", icon: TrendingUp },
+  { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
+  { href: "/finanzas", label: "Finanzas", icon: Banknote },
+  { href: "/productos", label: "Productos", icon: Package },
+  { href: "/compras", label: "Compras", icon: ShoppingBag },
+  { href: "/operaciones", label: "Operaciones", icon: Factory },
+  { href: "/equipo", label: "Equipo", icon: Users },
+  { href: "/agents", label: "Directores AI", icon: Bot },
 ];
 
 const bottomItems = [
@@ -79,8 +68,10 @@ export function AppSidebar() {
 
   const toggleMobile = useCallback(() => setOpen((v) => !v), []);
 
-  const isActive = (href: string) =>
-    pathname === href || pathname.startsWith(href + "/");
+  const isActive = (href: string, exact?: boolean) => {
+    if (exact) return pathname === href;
+    return pathname === href || pathname.startsWith(href + "/");
+  };
 
   // Hide sidebar on login page
   if (pathname === "/login") return null;
@@ -101,7 +92,7 @@ export function AppSidebar() {
         <div className={cn("flex h-full w-64 flex-col", collapsed && "md:w-16")}>
           {/* Brand */}
           <div className={cn("flex items-center justify-between px-6 py-5", collapsed && "md:justify-center md:px-0")}>
-            <Link href="/dashboard" className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-3">
               <Brain className="h-7 w-7 shrink-0 text-sidebar-primary" />
               <div className={cn(collapsed && "md:hidden")}>
                 <div className="text-base font-bold leading-tight">Quimibond</div>
@@ -115,11 +106,11 @@ export function AppSidebar() {
 
           {/* Main navigation */}
           <nav aria-label="Navegacion principal" className={cn("flex-1 space-y-1 overflow-y-auto px-3", collapsed && "md:px-2")}>
-            {navItems.map(({ href, label, icon: Icon }) => {
+            {navItems.map(({ href, label, icon: Icon, exact }) => {
               const badge =
                 href === "/inbox" && counts.alerts > 0 ? counts.alerts :
                 null;
-              const active = isActive(href);
+              const active = isActive(href, exact);
               return (
                 <Link
                   key={href}

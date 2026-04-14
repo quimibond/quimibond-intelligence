@@ -33,7 +33,7 @@ export default function GlobalError({
         </p>
       )}
       <div className="flex items-center gap-3">
-        <Button variant="outline" onClick={() => (window.location.href = "/dashboard")}>
+        <Button variant="outline" onClick={() => (window.location.href = "/")}>
           <ArrowLeft className="mr-2 h-4 w-4" />
           Ir al inicio
         </Button>

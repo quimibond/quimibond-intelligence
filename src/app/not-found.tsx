@@ -15,7 +15,7 @@ export default function NotFound() {
         La pagina que buscas no existe o fue movida.
       </p>
       <Button asChild>
-        <Link href="/dashboard">Volver al inicio</Link>
+        <Link href="/">Volver al inicio</Link>
       </Button>
     </div>
   );
