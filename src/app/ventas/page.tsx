@@ -1,5 +1,13 @@
 import { Suspense } from "react";
-import { FileText, ShoppingCart, TrendingUp, User } from "lucide-react";
+import {
+  AlertTriangle,
+  ArrowDownRight,
+  ArrowUpRight,
+  ShoppingCart,
+  TrendingUp,
+  Trophy,
+  Users,
+} from "lucide-react";
 
 import {
   KpiCard,
@@ -11,94 +19,498 @@ import {
   Currency,
   DateDisplay,
   StatusBadge,
+  TrendIndicator,
   EmptyState,
   type DataTableColumn,
 } from "@/components/shared/v2";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getSalesKpis, getRecentSaleOrders, type RecentSaleOrder } from "@/lib/queries/sales";
+
+import {
+  getSalesKpis,
+  getSalesRevenueTrend,
+  getReorderRisk,
+  getTopCustomers,
+  getTopSalespeople,
+  getRecentSaleOrders,
+  type ReorderRiskRow,
+  type TopCustomerRow,
+  type SalespersonRow,
+  type RecentSaleOrder,
+} from "@/lib/queries/sales";
+import { formatCurrencyMXN } from "@/lib/formatters";
+
+import { SalesTrendChart } from "./_components/sales-trend-chart";
 
 export const dynamic = "force-dynamic";
+export const revalidate = 0;
 export const metadata = { title: "Ventas" };
 
 export default function VentasPage() {
   return (
-    <div className="space-y-4 pb-24 md:pb-6">
+    <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Ventas"
-        subtitle="Pedidos de venta y revenue del mes"
+        subtitle="Ingresos del mes, reorder risk y pipeline"
       />
 
-      <Suspense fallback={<StatsSkeleton />}>
-        <VentasKpis />
+      <Suspense
+        fallback={
+          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+            {Array.from({ length: 4 }).map((_, i) => (
+              <Skeleton key={i} className="h-[96px] rounded-xl" />
+            ))}
+          </StatGrid>
+        }
+      >
+        <SalesKpisSection />
       </Suspense>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold">Pedidos recientes</h2>
-        <Suspense
-          fallback={
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-16 rounded-xl" />
-              ))}
-            </div>
-          }
-        >
-          <RecentOrdersTable />
-        </Suspense>
-      </section>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <Suspense
+            fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
+          >
+            <RevenueChartSection />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Reorder risk — clientes que deberían haber comprado
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <Suspense
+              fallback={<Skeleton className="h-[300px] rounded-xl" />}
+            >
+              <ReorderRiskTable />
+            </Suspense>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">
+              Top clientes (revenue 90d)
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <Suspense
+              fallback={<Skeleton className="h-[300px] rounded-xl" />}
+            >
+              <TopCustomersTable />
+            </Suspense>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Ranking de vendedores este mes
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense fallback={<Skeleton className="h-[200px] rounded-xl" />}>
+            <SalespeopleTable />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Pedidos recientes</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <RecentOrdersTable />
+          </Suspense>
+        </CardContent>
+      </Card>
     </div>
   );
 }
 
-function StatsSkeleton() {
-  return (
-    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-[96px] rounded-xl" />
-      ))}
-    </StatGrid>
-  );
-}
-
-async function VentasKpis() {
+// ──────────────────────────────────────────────────────────────────────────
+// KPIs
+// ──────────────────────────────────────────────────────────────────────────
+async function SalesKpisSection() {
   const k = await getSalesKpis();
   return (
     <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
-        title="Ventas del mes"
-        value={k.monthTotal}
+        title="Ingresos del mes"
+        value={k.ingresosMes}
         format="currency"
         compact
         icon={TrendingUp}
-        trend={{ value: k.trendPct, good: "up" }}
+        trend={{ value: k.ingresosMomPct, good: "up" }}
         subtitle="vs mes anterior"
-        tone={k.trendPct >= 0 ? "success" : "warning"}
+        tone={k.ingresosMomPct >= 0 ? "success" : "warning"}
       />
       <KpiCard
-        title="Pedidos"
-        value={k.orderCount}
-        format="number"
-        icon={ShoppingCart}
-        subtitle="en el mes"
-      />
-      <KpiCard
-        title="Ticket promedio"
-        value={k.avgOrderValue}
+        title="Utilidad operativa"
+        value={k.utilidadOperativaMes}
         format="currency"
         compact
-        icon={FileText}
+        icon={k.utilidadOperativaMes >= 0 ? ArrowUpRight : ArrowDownRight}
+        subtitle="del mes"
+        tone={k.utilidadOperativaMes >= 0 ? "success" : "danger"}
       />
       <KpiCard
-        title="Top vendedor"
-        value={k.topSalesperson ?? "—"}
-        icon={User}
-        size="sm"
+        title="YoY"
+        value={k.ingresosYoyPct}
+        format="percent"
+        icon={TrendingUp}
+        subtitle={`vs ${formatCurrencyMXN(k.ingresosYoy, { compact: true })} año pasado`}
+        tone={k.ingresosYoyPct >= 0 ? "success" : "danger"}
+      />
+      <KpiCard
+        title="Pedidos del mes"
+        value={k.pedidosMes}
+        format="number"
+        icon={ShoppingCart}
+        subtitle={`Ticket ${formatCurrencyMXN(k.ticketPromedio, { compact: true })}`}
       />
     </StatGrid>
   );
 }
 
-const columns: DataTableColumn<RecentSaleOrder>[] = [
+async function RevenueChartSection() {
+  const data = await getSalesRevenueTrend(12);
+  if (!data || data.length === 0) {
+    return (
+      <EmptyState
+        icon={TrendingUp}
+        title="Sin datos de ingresos"
+        description="No hay datos en monthly_revenue_by_company."
+        compact
+      />
+    );
+  }
+  return <SalesTrendChart data={data} />;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Reorder risk
+// ──────────────────────────────────────────────────────────────────────────
+const reorderStatusVariant: Record<
+  string,
+  "warning" | "critical" | "info"
+> = {
+  overdue: "warning",
+  at_risk: "warning",
+  critical: "critical",
+};
+const reorderStatusLabel: Record<string, string> = {
+  overdue: "Vencido",
+  at_risk: "En riesgo",
+  critical: "Crítico",
+};
+
+const reorderColumns: DataTableColumn<ReorderRiskRow>[] = [
+  {
+    key: "company",
+    header: "Cliente",
+    cell: (r) => (
+      <CompanyLink
+        companyId={r.company_id}
+        name={r.company_name}
+        tier={(r.tier as "A" | "B" | "C") ?? undefined}
+        truncate
+      />
+    ),
+  },
+  {
+    key: "status",
+    header: "Estado",
+    cell: (r) => (
+      <Badge variant={reorderStatusVariant[r.status] ?? "warning"}>
+        {reorderStatusLabel[r.status] ?? r.status}
+      </Badge>
+    ),
+  },
+  {
+    key: "days",
+    header: "Días vencido",
+    cell: (r) => (
+      <span className="font-semibold tabular-nums text-warning-foreground">
+        {r.days_overdue_reorder ? Math.round(r.days_overdue_reorder) : "—"}
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "total_revenue",
+    header: "Revenue total",
+    cell: (r) => <Currency amount={r.total_revenue} compact />,
+    align: "right",
+  },
+  {
+    key: "salesperson",
+    header: "Vendedor",
+    cell: (r) => r.salesperson_name ?? "—",
+    hideOnMobile: true,
+  },
+];
+
+async function ReorderRiskTable() {
+  const rows = await getReorderRisk(20);
+  return (
+    <DataTable
+      data={rows}
+      columns={reorderColumns}
+      rowKey={(r) => String(r.company_id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <CompanyLink
+              companyId={r.company_id}
+              name={r.company_name}
+              tier={(r.tier as "A" | "B" | "C") ?? undefined}
+              truncate
+            />
+          }
+          subtitle={r.salesperson_name ?? undefined}
+          badge={
+            <Badge variant={reorderStatusVariant[r.status] ?? "warning"}>
+              {reorderStatusLabel[r.status] ?? r.status}
+            </Badge>
+          }
+          fields={[
+            {
+              label: "Días vencido",
+              value: r.days_overdue_reorder
+                ? Math.round(r.days_overdue_reorder)
+                : "—",
+            },
+            {
+              label: "Revenue total",
+              value: <Currency amount={r.total_revenue} compact />,
+            },
+            {
+              label: "Ciclo prom.",
+              value: r.avg_cycle_days
+                ? `${Math.round(r.avg_cycle_days)}d`
+                : "—",
+            },
+            {
+              label: "Top producto",
+              value: r.top_product_ref ?? "—",
+            },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: AlertTriangle,
+        title: "Sin reorder risk",
+        description: "Todos los clientes están comprando a tiempo.",
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Top customers
+// ──────────────────────────────────────────────────────────────────────────
+const customerColumns: DataTableColumn<TopCustomerRow>[] = [
+  {
+    key: "company",
+    header: "Cliente",
+    cell: (r) => (
+      <CompanyLink companyId={r.company_id} name={r.company_name} truncate />
+    ),
+  },
+  {
+    key: "revenue_90d",
+    header: "Revenue 90d",
+    cell: (r) => <Currency amount={r.revenue_90d} compact />,
+    align: "right",
+  },
+  {
+    key: "margin_12m",
+    header: "Margen 12m",
+    cell: (r) =>
+      r.margin_12m != null ? <Currency amount={r.margin_12m} compact /> : "—",
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "margin_pct",
+    header: "% Margen",
+    cell: (r) =>
+      r.margin_pct_12m != null ? (
+        <span
+          className={
+            r.margin_pct_12m >= 25
+              ? "text-success"
+              : r.margin_pct_12m >= 15
+                ? "text-warning"
+                : "text-danger"
+          }
+        >
+          {r.margin_pct_12m.toFixed(1)}%
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+];
+
+async function TopCustomersTable() {
+  const rows = await getTopCustomers(15);
+  return (
+    <DataTable
+      data={rows}
+      columns={customerColumns}
+      rowKey={(r) => String(r.company_id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <CompanyLink
+              companyId={r.company_id}
+              name={r.company_name}
+              truncate
+            />
+          }
+          fields={[
+            {
+              label: "90d",
+              value: <Currency amount={r.revenue_90d} compact />,
+            },
+            {
+              label: "Margen %",
+              value:
+                r.margin_pct_12m != null
+                  ? `${r.margin_pct_12m.toFixed(1)}%`
+                  : "—",
+            },
+            {
+              label: "Margen 12m",
+              value:
+                r.margin_12m != null ? (
+                  <Currency amount={r.margin_12m} compact />
+                ) : (
+                  "—"
+                ),
+              className: "col-span-2",
+            },
+          ]}
+        />
+      )}
+      emptyState={{
+        icon: Users,
+        title: "Sin clientes activos",
+        description: "No hay revenue en últimos 90d.",
+      }}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Salespeople ranking
+// ──────────────────────────────────────────────────────────────────────────
+interface SalespersonRanked extends SalespersonRow {
+  rank: number;
+}
+
+const salespersonColumns: DataTableColumn<SalespersonRanked>[] = [
+  {
+    key: "rank",
+    header: "#",
+    cell: (r) => <span className="text-muted-foreground">#{r.rank}</span>,
+  },
+  {
+    key: "name",
+    header: "Vendedor",
+    cell: (r) => <span className="font-semibold">{r.name}</span>,
+  },
+  {
+    key: "orders",
+    header: "Pedidos",
+    cell: (r) => r.order_count,
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "total",
+    header: "Total",
+    cell: (r) => <Currency amount={r.total_amount} compact />,
+    align: "right",
+  },
+];
+
+async function SalespeopleTable() {
+  const rows = await getTopSalespeople();
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={Trophy}
+        title="Sin pedidos del mes"
+        description="No hay sale orders en el mes actual."
+        compact
+      />
+    );
+  }
+  const ranked: SalespersonRanked[] = rows.map((r, i) => ({
+    ...r,
+    rank: i + 1,
+  }));
+  return (
+    <DataTable
+      data={ranked}
+      columns={salespersonColumns}
+      rowKey={(r) => r.name}
+      mobileCard={(r) => (
+        <MobileCard
+          title={`#${r.rank} ${r.name}`}
+          badge={
+            <span className="rounded bg-primary/15 px-2 py-0.5 text-[11px] font-semibold">
+              <Currency amount={r.total_amount} compact />
+            </span>
+          }
+          fields={[
+            { label: "Pedidos", value: r.order_count },
+            {
+              label: "Promedio",
+              value: (
+                <Currency
+                  amount={
+                    r.order_count > 0 ? r.total_amount / r.order_count : 0
+                  }
+                  compact
+                />
+              ),
+            },
+          ]}
+        />
+      )}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Recent sale orders
+// ──────────────────────────────────────────────────────────────────────────
+const orderColumns: DataTableColumn<RecentSaleOrder>[] = [
   {
     key: "name",
     header: "Pedido",
@@ -139,16 +551,16 @@ const columns: DataTableColumn<RecentSaleOrder>[] = [
   {
     key: "state",
     header: "Estado",
-    cell: (r) => <StatusBadge status={r.state ?? "draft"} />,
+    cell: (r) => <StatusBadge status={(r.state ?? "draft") as "draft"} />,
   },
 ];
 
 async function RecentOrdersTable() {
-  const rows = await getRecentSaleOrders(30);
+  const rows = await getRecentSaleOrders(25);
   return (
     <DataTable
       data={rows}
-      columns={columns}
+      columns={orderColumns}
       rowKey={(r) => String(r.id)}
       mobileCard={(r) => (
         <MobileCard
@@ -164,7 +576,7 @@ async function RecentOrdersTable() {
             )
           }
           subtitle={r.name ?? undefined}
-          badge={<StatusBadge status={r.state ?? "draft"} />}
+          badge={<StatusBadge status={(r.state ?? "draft") as "draft"} />}
           fields={[
             { label: "Monto", value: <Currency amount={r.amount_total_mxn} /> },
             {
@@ -182,7 +594,7 @@ async function RecentOrdersTable() {
       emptyState={{
         icon: ShoppingCart,
         title: "Sin pedidos recientes",
-        description: "Aún no hay pedidos de venta en el sistema.",
+        description: "No hay sale orders registradas.",
       }}
     />
   );
