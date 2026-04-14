@@ -162,6 +162,9 @@ export interface EvidencePack {
   tier: "strategic" | "important" | "standard" | null;
   is_customer: boolean;
   is_supplier: boolean;
+  /** True si la empresa es la propia Quimibond (relationship_type='self').
+   *  El frontend muestra un banner "Empresa propia" en lugar de KPIs. */
+  is_self?: boolean;
   rfc: string | null;
   credit_limit: number | null;
   financials: EvidencePackFinancials;

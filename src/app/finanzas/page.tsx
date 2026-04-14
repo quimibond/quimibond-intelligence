@@ -203,12 +203,12 @@ async function CfoKpisSection() {
     <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
         title="Efectivo disponible"
-        value={cfo.efectivoDisponible}
+        value={cfo.efectivoTotalMxn}
         format="currency"
         compact
         icon={Wallet}
-        subtitle="en cuentas"
-        tone={cfo.efectivoDisponible >= 0 ? "success" : "danger"}
+        subtitle={`MXN + USD (${cfo.efectivoUsd.toLocaleString("es-MX")} USD)`}
+        tone={cfo.efectivoTotalMxn >= 0 ? "success" : "danger"}
       />
       <KpiCard
         title="Deuda tarjetas"

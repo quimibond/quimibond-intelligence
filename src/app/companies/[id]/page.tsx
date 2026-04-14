@@ -279,6 +279,15 @@ async function OverviewEvidenceSection({ companyId }: { companyId: number }) {
       />
     );
   }
+  if (pack.is_self) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Esta es la propia Quimibond"
+        description="Esta empresa esta marcada como relationship_type='self'. Las facturas, ordenes y cobranza que aparezcan aqui son inter-company y no representan negocio externo."
+      />
+    );
+  }
   return <EvidencePackView pack={pack} />;
 }
 

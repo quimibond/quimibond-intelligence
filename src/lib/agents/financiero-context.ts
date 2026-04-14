@@ -100,7 +100,7 @@ export async function buildFinancieroContextEstrategico(
 
   return `${profileSection}## MODO: ESTRATEGICO (foto del mes y desvios)
 ## RESUMEN EJECUTIVO CFO
-Efectivo disponible: $${dash?.efectivo_disponible ?? "?"} | Deuda tarjetas: $${dash?.deuda_tarjetas ?? "?"} | Posición neta: $${dash?.posicion_neta ?? "?"} | CxC: $${dash?.cuentas_por_cobrar ?? "?"} | CxP: $${dash?.cuentas_por_pagar ?? "?"} | Cartera vencida: $${dash?.cartera_vencida ?? "?"} | Ventas 30d: $${dash?.ventas_30d ?? "?"} | Cobros 30d: $${dash?.cobros_30d ?? "?"}
+Efectivo total MXN (incluye USD a tipo de cambio): $${dash?.efectivo_total_mxn ?? "?"} | Solo MXN: $${dash?.efectivo_mxn ?? "?"} | Solo USD: $${dash?.efectivo_usd ?? "?"} | Deuda tarjetas: $${dash?.deuda_tarjetas ?? "?"} | Posición neta: $${dash?.posicion_neta ?? "?"} | CxC: $${dash?.cuentas_por_cobrar ?? "?"} | CxP: $${dash?.cuentas_por_pagar ?? "?"} | Cartera vencida: $${dash?.cartera_vencida ?? "?"} | Ventas 30d: $${dash?.ventas_30d ?? "?"} | Cobros 30d: $${dash?.cobros_30d ?? "?"}
 
 ## CAPITAL DE TRABAJO
 Efectivo neto: $${wc?.efectivo_neto ?? "?"} | Capital de trabajo: $${wc?.capital_de_trabajo ?? "?"} | Ratio liquidez: ${wc?.ratio_liquidez ?? "?"}

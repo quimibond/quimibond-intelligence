@@ -13,9 +13,14 @@ import { getServiceClient } from "@/lib/supabase-server";
  * - `cash_position` — detalle de saldos bancarios
  */
 
-/** Snapshot ejecutivo del CFO (view: cfo_dashboard) */
+/** Snapshot ejecutivo del CFO (view: cfo_dashboard).
+ *  El view expone efectivo_mxn (solo MXN) y efectivo_total_mxn (MXN + USD*rate).
+ *  El frontend usa el total como "efectivo disponible" porque es el numero real
+ *  que el CEO quiere ver en una sola moneda. */
 export interface CfoSnapshot {
-  efectivoDisponible: number;
+  efectivoMxn: number;
+  efectivoUsd: number;
+  efectivoTotalMxn: number;
   deudaTarjetas: number;
   posicionNeta: number;
   cuentasPorCobrar: number;
@@ -32,7 +37,9 @@ export async function getCfoSnapshot(): Promise<CfoSnapshot | null> {
   const { data } = await sb.from("cfo_dashboard").select("*").maybeSingle();
   if (!data) return null;
   const d = data as {
-    efectivo_disponible: number | null;
+    efectivo_mxn: number | null;
+    efectivo_usd: number | null;
+    efectivo_total_mxn: number | null;
     deuda_tarjetas: number | null;
     posicion_neta: number | null;
     cuentas_por_cobrar: number | null;
@@ -44,7 +51,9 @@ export async function getCfoSnapshot(): Promise<CfoSnapshot | null> {
     clientes_morosos: number | null;
   };
   return {
-    efectivoDisponible: Number(d.efectivo_disponible) || 0,
+    efectivoMxn: Number(d.efectivo_mxn) || 0,
+    efectivoUsd: Number(d.efectivo_usd) || 0,
+    efectivoTotalMxn: Number(d.efectivo_total_mxn) || 0,
     deudaTarjetas: Number(d.deuda_tarjetas) || 0,
     posicionNeta: Number(d.posicion_neta) || 0,
     cuentasPorCobrar: Number(d.cuentas_por_cobrar) || 0,
