@@ -33,12 +33,35 @@ const navItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/inbox", label: "Insights", icon: Inbox },
   { href: "/briefings", label: "Briefings", icon: FileText },
-  { href: "/companies", label: "Empresas", icon: Building2 },
-  { href: "/ventas", label: "Ventas", icon: TrendingUp },
+  {
+    href: "/companies",
+    label: "Empresas",
+    icon: Building2,
+    children: [
+      { href: "/companies/at-risk", label: "Clientes en riesgo" },
+    ],
+  },
+  {
+    href: "/ventas",
+    label: "Ventas",
+    icon: TrendingUp,
+    children: [
+      { href: "/ventas/cohorts", label: "Retención cohortes" },
+    ],
+  },
   { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
   { href: "/finanzas", label: "Finanzas", icon: Banknote },
   { href: "/productos", label: "Productos", icon: Package },
-  { href: "/compras", label: "Compras", icon: ShoppingBag },
+  {
+    href: "/compras",
+    label: "Compras",
+    icon: ShoppingBag,
+    children: [
+      { href: "/compras/price-variance", label: "Variancia precios" },
+      { href: "/compras/stockouts", label: "Stockouts" },
+      { href: "/compras/costos-bom", label: "Costos BOM" },
+    ],
+  },
   { href: "/operaciones", label: "Operaciones", icon: Factory },
   { href: "/equipo", label: "Equipo", icon: Users },
   { href: "/agents", label: "Directores AI", icon: Bot },
@@ -108,41 +131,72 @@ export function AppSidebar() {
 
           {/* Main navigation */}
           <nav aria-label="Navegacion principal" className={cn("flex-1 space-y-1 overflow-y-auto px-3", collapsed && "md:px-2")}>
-            {navItems.map(({ href, label, icon: Icon, exact }) => {
+            {navItems.map((item) => {
+              const { href, label, icon: Icon, exact, children } = item as {
+                href: string;
+                label: string;
+                icon: typeof Home;
+                exact?: boolean;
+                children?: { href: string; label: string }[];
+              };
               const badge =
                 href === "/inbox" && counts.alerts > 0 ? counts.alerts :
                 null;
               const active = isActive(href, exact);
+              const parentActive = active || (children?.some((c) => isActive(c.href)) ?? false);
               return (
-                <Link
-                  key={href}
-                  href={href}
-                  aria-current={active ? "page" : undefined}
-                  title={collapsed ? `${label}${badge ? ` (${badge})` : ""}` : undefined}
-                  className={cn(
-                    "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
-                    collapsed && "md:justify-center md:px-0",
-                    active
-                      ? "bg-sidebar-accent text-sidebar-accent-foreground"
-                      : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
-                  )}
-                >
-                  <div className="relative shrink-0">
-                    <Icon className="h-4 w-4" />
-                    {badge != null && collapsed && (
-                      <span className="absolute -right-1 -top-1 hidden md:flex h-3 w-3 items-center justify-center rounded-full bg-danger text-[8px] font-bold text-destructive-foreground" />
+                <div key={href}>
+                  <Link
+                    href={href}
+                    aria-current={active ? "page" : undefined}
+                    title={collapsed ? `${label}${badge ? ` (${badge})` : ""}` : undefined}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
+                      collapsed && "md:justify-center md:px-0",
+                      parentActive
+                        ? "bg-sidebar-accent text-sidebar-accent-foreground"
+                        : "text-sidebar-foreground/70 hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
                     )}
-                  </div>
-                  <span className={cn("flex-1", collapsed && "md:hidden")}>{label}</span>
-                  {badge != null && (
-                    <span className={cn(
-                      "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-danger/15 px-1.5 text-[11px] font-semibold text-danger-foreground",
-                      collapsed && "md:hidden"
-                    )}>
-                      {badge}
-                    </span>
+                  >
+                    <div className="relative shrink-0">
+                      <Icon className="h-4 w-4" />
+                      {badge != null && collapsed && (
+                        <span className="absolute -right-1 -top-1 hidden md:flex h-3 w-3 items-center justify-center rounded-full bg-danger text-[8px] font-bold text-destructive-foreground" />
+                      )}
+                    </div>
+                    <span className={cn("flex-1", collapsed && "md:hidden")}>{label}</span>
+                    {badge != null && (
+                      <span className={cn(
+                        "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-danger/15 px-1.5 text-[11px] font-semibold text-danger-foreground",
+                        collapsed && "md:hidden"
+                      )}>
+                        {badge}
+                      </span>
+                    )}
+                  </Link>
+                  {children && children.length > 0 && !collapsed && (
+                    <div className="ml-7 mt-0.5 mb-1 flex flex-col gap-0.5 border-l border-sidebar-border pl-2">
+                      {children.map((c) => {
+                        const childActive = pathname === c.href;
+                        return (
+                          <Link
+                            key={c.href}
+                            href={c.href}
+                            aria-current={childActive ? "page" : undefined}
+                            className={cn(
+                              "rounded-md px-2 py-1 text-xs transition-colors",
+                              childActive
+                                ? "bg-sidebar-accent/70 text-sidebar-accent-foreground font-medium"
+                                : "text-sidebar-foreground/60 hover:bg-sidebar-accent/30 hover:text-sidebar-foreground"
+                            )}
+                          >
+                            {c.label}
+                          </Link>
+                        );
+                      })}
+                    </div>
                   )}
-                </Link>
+                </div>
               );
             })}
 
