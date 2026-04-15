@@ -79,24 +79,14 @@ const topGroups: NavGroup[] = [
   {
     label: "Clientes",
     items: [
-      {
-        href: "/companies",
-        label: "Empresas",
-        icon: Building2,
-        children: [{ href: "/companies/at-risk", label: "En riesgo" }],
-      },
+      { href: "/companies", label: "Empresas", icon: Building2 },
       { href: "/contacts", label: "Contactos", icon: MessageSquare },
     ],
   },
   {
     label: "Financiero",
     items: [
-      {
-        href: "/ventas",
-        label: "Ventas",
-        icon: TrendingUp,
-        children: [{ href: "/ventas/cohorts", label: "Retención cohortes" }],
-      },
+      { href: "/ventas", label: "Ventas", icon: TrendingUp },
       { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
       { href: "/finanzas", label: "Finanzas", icon: Banknote },
     ],
@@ -108,11 +98,10 @@ const topGroups: NavGroup[] = [
         href: "/compras",
         label: "Compras",
         icon: ShoppingBag,
-        children: [
-          { href: "/compras/price-variance", label: "Variancia precios" },
-          { href: "/compras/stockouts", label: "Stockouts" },
-          { href: "/compras/costos-bom", label: "Costos BOM" },
-        ],
+        // Costos BOM es legítimamente una página standalone (7 vistas del
+        // problema de BOM costs). El resto de sub-páginas de compras se
+        // fusionaron como secciones dentro de /compras.
+        children: [{ href: "/compras/costos-bom", label: "Costos BOM" }],
       },
       { href: "/productos", label: "Productos", icon: Package },
       { href: "/operaciones", label: "Operaciones", icon: Factory },

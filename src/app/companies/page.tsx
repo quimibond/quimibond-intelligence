@@ -1,8 +1,20 @@
+/**
+ * /companies — pregunta que responde:
+ *   "¿Con quién hago negocio y qué pasa con cada cliente?"
+ *
+ * Secciones:
+ *   1. Resumen          — KPIs del portfolio
+ *   2. Reactivación     — clientes RFM en riesgo que vale la pena llamar
+ *   3. Portfolio        — lista completa filtrable
+ */
 import { Suspense } from "react";
-import { Building2 } from "lucide-react";
+import { AlertTriangle, Building2, Phone, TrendingDown, Users } from "lucide-react";
 
 import {
   PageHeader,
+  StatGrid,
+  KpiCard,
+  SectionNav,
   DataTable,
   DataTableToolbar,
   DataTablePagination,
@@ -24,6 +36,11 @@ import {
   getCompaniesPage,
   type CompanyListRow,
 } from "@/lib/queries/companies";
+import {
+  getRfmSegments,
+  getRfmSegmentSummary,
+  type RfmSegmentRow,
+} from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
@@ -55,28 +72,76 @@ export default async function CompaniesPage({
 }) {
   const sp = await searchParams;
   return (
-    <div className="space-y-4 pb-24 md:pb-6">
+    <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Empresas"
-        subtitle="Portfolio de clientes con riesgo, revenue y tendencia"
+        subtitle="Portfolio de clientes: revenue, tendencia y reactivación dirigida"
       />
 
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap gap-2 text-xs">
-          <a
-            href="/companies/at-risk"
-            className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
-          >
-            Clientes en riesgo (reactivación)
-          </a>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <TableViewOptions columns={companyViewColumns} />
-          <TableExportButton filename="companies" />
-        </div>
-      </div>
+      <SectionNav
+        items={[
+          { id: "resumen", label: "Resumen" },
+          { id: "reactivacion", label: "Reactivación" },
+          { id: "portfolio", label: "Portfolio completo" },
+        ]}
+      />
 
-      <div data-table-export-root>
+      <section id="resumen" className="scroll-mt-24">
+        <Suspense
+          fallback={
+            <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[96px] rounded-xl" />
+              ))}
+            </StatGrid>
+          }
+        >
+          <CompaniesResumen />
+        </Suspense>
+      </section>
+
+      <section id="reactivacion" className="scroll-mt-24 space-y-3">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Reactivación dirigida</h2>
+            <p className="text-xs text-muted-foreground">
+              Clientes con historial alto que llevan tiempo sin comprar
+              (segmentación RFM). Priorizado para que sepas a quién llamar
+              primero.
+            </p>
+          </div>
+        </div>
+        <Suspense
+          fallback={
+            <div className="space-y-2">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-16 rounded-xl" />
+              ))}
+            </div>
+          }
+        >
+          <ReactivacionSection />
+        </Suspense>
+      </section>
+
+      <section
+        id="portfolio"
+        className="scroll-mt-24 space-y-3"
+        data-table-export-root
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-base font-semibold">Portfolio completo</h2>
+            <p className="text-xs text-muted-foreground">
+              Todas las empresas con filtros por tier, riesgo y búsqueda libre.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions columns={companyViewColumns} />
+            <TableExportButton filename="companies" />
+          </div>
+        </div>
+
       <DataTableToolbar
         searchPlaceholder="Buscar empresa…"
         facets={[
@@ -113,8 +178,215 @@ export default async function CompaniesPage({
       >
         <CompaniesTable searchParams={sp} />
       </Suspense>
-      </div>
+      </section>
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Resumen — KPIs del portfolio
+// ──────────────────────────────────────────────────────────────────────────
+async function CompaniesResumen() {
+  const summary = await getRfmSegmentSummary();
+  const total = summary.reduce((a, s) => a + s.customers, 0);
+  const atRisk = summary.find((s) => s.segment === "AT_RISK");
+  const needAtt = summary.find((s) => s.segment === "NEED_ATTENTION");
+  const hibernating = summary.find((s) => s.segment === "HIBERNATING");
+  const lost = summary.find((s) => s.segment === "LOST");
+  const atRiskRevenue =
+    (atRisk?.revenue_12m ?? 0) +
+    (needAtt?.revenue_12m ?? 0) +
+    (hibernating?.revenue_12m ?? 0);
+  const atRiskCount =
+    (atRisk?.customers ?? 0) +
+    (needAtt?.customers ?? 0) +
+    (hibernating?.customers ?? 0);
+
+  return (
+    <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+      <KpiCard
+        title="Empresas con revenue"
+        value={total}
+        format="number"
+        icon={Building2}
+      />
+      <KpiCard
+        title="En riesgo"
+        value={atRiskCount}
+        format="number"
+        icon={AlertTriangle}
+        subtitle="AT_RISK + NEED_ATT + HIBERNATING"
+        tone={atRiskCount > 0 ? "warning" : "success"}
+      />
+      <KpiCard
+        title="Revenue en juego"
+        value={atRiskRevenue}
+        format="currency"
+        compact
+        icon={Phone}
+        subtitle="12m de clientes reactivables"
+        tone="info"
+      />
+      <KpiCard
+        title="Perdidos"
+        value={lost?.customers ?? 0}
+        format="number"
+        icon={TrendingDown}
+        subtitle="> 12 meses sin comprar"
+        tone={(lost?.customers ?? 0) > 0 ? "danger" : "default"}
+      />
+    </StatGrid>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Reactivación (RFM) — segmentos AT_RISK, NEED_ATTENTION, HIBERNATING
+// ──────────────────────────────────────────────────────────────────────────
+function priorityBadge(score: number) {
+  if (score >= 80)
+    return (
+      <Badge variant="danger" className="font-mono text-[10px]">
+        {score}
+      </Badge>
+    );
+  if (score >= 50)
+    return (
+      <Badge variant="warning" className="font-mono text-[10px]">
+        {score}
+      </Badge>
+    );
+  return (
+    <Badge variant="secondary" className="font-mono text-[10px]">
+      {score}
+    </Badge>
+  );
+}
+
+const segmentVariant: Record<string, "danger" | "warning" | "secondary"> = {
+  AT_RISK: "danger",
+  NEED_ATTENTION: "warning",
+  HIBERNATING: "warning",
+  LOST: "secondary",
+};
+
+const rfmColumns: DataTableColumn<RfmSegmentRow>[] = [
+  {
+    key: "company",
+    header: "Empresa",
+    alwaysVisible: true,
+    cell: (r) => (
+      <CompanyLink companyId={r.company_id} name={r.company_name} truncate />
+    ),
+  },
+  {
+    key: "segment",
+    header: "Segmento",
+    cell: (r) => (
+      <Badge
+        variant={segmentVariant[r.segment] ?? "secondary"}
+        className="text-[10px] uppercase"
+      >
+        {r.segment.replace("_", " ")}
+      </Badge>
+    ),
+  },
+  {
+    key: "priority",
+    header: "Prio",
+    sortable: true,
+    cell: (r) => priorityBadge(r.contact_priority_score),
+    align: "center",
+  },
+  {
+    key: "recency",
+    header: "Días sin comprar",
+    sortable: true,
+    cell: (r) => (
+      <span
+        className={
+          r.recency_days > 120
+            ? "font-semibold text-danger tabular-nums"
+            : "tabular-nums"
+        }
+      >
+        {r.recency_days}
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "frequency",
+    header: "# compras",
+    sortable: true,
+    cell: (r) => <span className="tabular-nums">{r.frequency}</span>,
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "monetary",
+    header: "Revenue 12m",
+    sortable: true,
+    cell: (r) => <Currency amount={r.monetary_12m} compact />,
+    align: "right",
+  },
+  {
+    key: "last_purchase",
+    header: "Última",
+    cell: (r) => <DateDisplay date={r.last_purchase} relative />,
+    hideOnMobile: true,
+  },
+];
+
+async function ReactivacionSection() {
+  const [atRisk, needAtt, hibernating] = await Promise.all([
+    getRfmSegments("AT_RISK", 100),
+    getRfmSegments("NEED_ATTENTION", 100),
+    getRfmSegments("HIBERNATING", 100),
+  ]);
+  const all = [...atRisk, ...needAtt, ...hibernating]
+    .filter((r) => r.monetary_12m > 0)
+    .sort((a, b) => b.contact_priority_score - a.contact_priority_score)
+    .slice(0, 25);
+
+  if (all.length === 0) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="Sin clientes en riesgo"
+        description="Todos tus clientes están activos."
+        compact
+      />
+    );
+  }
+
+  return (
+    <DataTable
+      data={all}
+      columns={rfmColumns}
+      rowKey={(r) => String(r.company_id)}
+      rowHref={(r) => `/companies/${r.company_id}`}
+      mobileCard={(r) => (
+        <MobileCard
+          title={
+            <CompanyLink
+              companyId={r.company_id}
+              name={r.company_name}
+              truncate
+            />
+          }
+          subtitle={r.segment.replace("_", " ")}
+          badge={priorityBadge(r.contact_priority_score)}
+          fields={[
+            { label: "Días sin comprar", value: r.recency_days },
+            {
+              label: "Revenue 12m",
+              value: <Currency amount={r.monetary_12m} compact />,
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
 

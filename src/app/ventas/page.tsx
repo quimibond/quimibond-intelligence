@@ -46,6 +46,10 @@ import {
   type SalespersonRow,
   type RecentSaleOrder,
 } from "@/lib/queries/sales";
+import {
+  getCustomerCohorts,
+  type CohortMatrix,
+} from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
@@ -82,6 +86,7 @@ export default async function VentasPage({
         items={[
           { id: "kpis", label: "Resumen" },
           { id: "trend", label: "Tendencia 12m" },
+          { id: "retention", label: "Retención" },
           { id: "reorder", label: "Reorder risk" },
           { id: "top-customers", label: "Top clientes" },
           { id: "salespeople", label: "Vendedores" },
@@ -113,6 +118,32 @@ export default async function VentasPage({
             fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
           >
             <RevenueChartSection />
+          </Suspense>
+        </CardContent>
+      </Card>
+      </section>
+
+      <section id="retention" className="scroll-mt-24">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Retención por cohorte</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            % de clientes de cada cohort trimestral que siguen activos N
+            trimestres después de su primera compra. Filas = trimestre de
+            adquisición. Columnas = trimestres desde primera compra.
+          </p>
+        </CardHeader>
+        <CardContent className="overflow-x-auto pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-10 rounded" />
+                ))}
+              </div>
+            }
+          >
+            <CohortHeatmapSection />
           </Suspense>
         </CardContent>
       </Card>
@@ -944,5 +975,107 @@ async function RecentOrdersTable({
       unit="pedidos"
     />
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Retención por cohorte (heatmap)
+// ──────────────────────────────────────────────────────────────────────────
+function formatCohortLabel(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  const q = Math.floor(d.getUTCMonth() / 3) + 1;
+  return `${d.getUTCFullYear()}-Q${q}`;
+}
+
+function retentionPct(
+  cell: { active_customers: number } | null,
+  base: number
+): number | null {
+  if (!cell || base === 0) return null;
+  return (cell.active_customers / base) * 100;
+}
+
+function cellBg(pct: number | null): string {
+  if (pct == null) return "bg-muted/20";
+  if (pct >= 90) return "bg-success/40";
+  if (pct >= 70) return "bg-success/25";
+  if (pct >= 50) return "bg-info/25";
+  if (pct >= 30) return "bg-warning/25";
+  if (pct >= 10) return "bg-warning/40";
+  return "bg-danger/30";
+}
+
+async function CohortHeatmapSection() {
+  const data = await getCustomerCohorts(36);
+  if (data.cohorts.length === 0) {
+    return (
+      <EmptyState
+        icon={Users}
+        title="Sin cohorts disponibles"
+        description="customer_cohorts no tiene datos en los últimos 3 años."
+        compact
+      />
+    );
+  }
+  return <RetentionTable data={data} />;
+}
+
+function RetentionTable({ data }: { data: CohortMatrix }) {
+  const { cohorts, maxQuarters, matrix, baseSize } = data;
+  return (
+    <table className="w-full min-w-[640px] border-collapse text-xs">
+      <thead>
+        <tr>
+          <th className="sticky left-0 z-10 border-b bg-background px-3 py-2 text-left font-semibold">
+            Cohort
+          </th>
+          <th className="border-b bg-background px-2 py-2 text-right font-semibold">
+            #
+          </th>
+          {Array.from({ length: maxQuarters + 1 }).map((_, q) => (
+            <th
+              key={q}
+              className="border-b bg-background px-2 py-2 text-center font-semibold"
+            >
+              Q+{q}
+            </th>
+          ))}
+        </tr>
+      </thead>
+      <tbody>
+        {cohorts.map((cohort, i) => (
+          <tr key={cohort}>
+            <td className="sticky left-0 z-10 border-b bg-background px-3 py-2 font-mono">
+              {formatCohortLabel(cohort)}
+            </td>
+            <td className="border-b px-2 py-2 text-right tabular-nums text-muted-foreground">
+              {baseSize[i]}
+            </td>
+            {Array.from({ length: maxQuarters + 1 }).map((_, q) => {
+              const cell = matrix[i][q];
+              const pct = retentionPct(cell, baseSize[i]);
+              return (
+                <td
+                  key={q}
+                  className={`border-b px-2 py-2 text-center tabular-nums ${cellBg(pct)} ${
+                    pct != null
+                      ? "font-semibold text-foreground"
+                      : "text-muted-foreground"
+                  }`}
+                  title={
+                    cell
+                      ? `${cell.active_customers}/${baseSize[i]} clientes activos`
+                      : "Sin data"
+                  }
+                >
+                  {pct != null ? `${pct.toFixed(0)}%` : "—"}
+                </td>
+              );
+            })}
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }

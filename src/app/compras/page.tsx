@@ -44,6 +44,14 @@ import {
   type RecentPurchaseOrder,
   type TopSupplierRow,
 } from "@/lib/queries/purchases";
+import {
+  getStockoutQueue,
+  getSupplierPriceAlerts,
+  type StockoutRow,
+  type StockoutUrgency,
+  type SupplierPriceRow,
+  type PriceFlag,
+} from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
@@ -89,8 +97,10 @@ export default async function ComprasPage({
       <SectionNav
         items={[
           { id: "kpis", label: "Resumen" },
+          { id: "stockouts", label: "Cola reposición" },
           { id: "single-source", label: "Proveedor único" },
-          { id: "price-anomalies", label: "Anomalías de precio" },
+          { id: "variance-market", label: "Vs mercado" },
+          { id: "price-anomalies", label: "Vs histórico" },
           { id: "top-suppliers", label: "Top proveedores" },
           { id: "orders", label: "Órdenes" },
         ]}
@@ -108,6 +118,35 @@ export default async function ComprasPage({
       >
         <PurchasesKpisSection />
       </Suspense>
+      </section>
+
+      {/* Cola de reposición — acción directa, lo más urgente arriba */}
+      <section id="stockouts" className="scroll-mt-24" data-table-export-root>
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Cola de reposición</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos en riesgo de faltante con proveedor sugerido y
+              cantidad recomendada. Lo que debes ordenar YA.
+            </p>
+          </div>
+          <TableExportButton filename="stockouts" />
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-16 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <StockoutsSection />
+          </Suspense>
+        </CardContent>
+      </Card>
       </section>
 
       {/* Single source risk — la sección crítica */}
@@ -161,12 +200,48 @@ export default async function ComprasPage({
       </Card>
       </section>
 
-      {/* Price anomalies */}
+      {/* Variancia vs mercado — comparando proveedores entre sí en el mismo mes */}
+      <section
+        id="variance-market"
+        className="scroll-mt-24"
+        data-table-export-root
+      >
+      <Card>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Variancia vs mercado
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Líneas pagadas por encima o debajo del benchmark del mes (mismo
+              producto comprado a distintos proveedores). Los sobreprecios son
+              renegociables; los buenos precios son candidatos para más volumen.
+            </p>
+          </div>
+          <TableExportButton filename="price-variance" />
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-2">
+                {Array.from({ length: 6 }).map((_, i) => (
+                  <Skeleton key={i} className="h-14 rounded-xl" />
+                ))}
+              </div>
+            }
+          >
+            <VarianceMarketSection />
+          </Suspense>
+        </CardContent>
+      </Card>
+      </section>
+
+      {/* Price anomalies — producto vs su propio histórico */}
       <section id="price-anomalies" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
-            <CardTitle className="text-base">Anomalías de precio</CardTitle>
+            <CardTitle className="text-base">Variancia vs histórico</CardTitle>
             <p className="text-xs text-muted-foreground">
               Productos comprados por arriba o debajo del promedio histórico.
             </p>
@@ -1011,5 +1086,367 @@ async function RecentPurchasesTable({
         unit="órdenes"
       />
     </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cola de reposición (era /compras/stockouts)
+// ──────────────────────────────────────────────────────────────────────────
+const urgencyVariant: Record<
+  StockoutUrgency,
+  "danger" | "warning" | "info" | "secondary"
+> = {
+  STOCKOUT: "danger",
+  CRITICAL: "danger",
+  URGENT: "warning",
+  ATTENTION: "info",
+  OK: "secondary",
+};
+
+const urgencyLabel: Record<StockoutUrgency, string> = {
+  STOCKOUT: "Sin stock",
+  CRITICAL: "Crítico",
+  URGENT: "Urgente",
+  ATTENTION: "Atención",
+  OK: "OK",
+};
+
+const stockoutColumns: DataTableColumn<StockoutRow>[] = [
+  {
+    key: "urgency",
+    header: "Urgencia",
+    alwaysVisible: true,
+    cell: (r) => (
+      <Badge variant={urgencyVariant[r.urgency]} className="text-[10px] uppercase">
+        {urgencyLabel[r.urgency]}
+      </Badge>
+    ),
+  },
+  {
+    key: "product",
+    header: "Producto",
+    cell: (r) => (
+      <div className="min-w-0">
+        <div className="font-mono text-xs font-semibold">
+          {r.product_ref ?? "—"}
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {r.product_name ?? ""}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: "stock",
+    header: "Disponible",
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.available_qty)}</span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "days_stock",
+    header: "Días stock",
+    sortable: true,
+    cell: (r) => (
+      <span
+        className={`tabular-nums ${
+          r.days_of_stock != null && r.days_of_stock <= 7
+            ? "font-bold text-danger"
+            : r.days_of_stock != null && r.days_of_stock <= 15
+              ? "text-warning"
+              : ""
+        }`}
+      >
+        {r.days_of_stock != null ? Math.round(r.days_of_stock) : "—"}
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "suggested",
+    header: "Orden sugerida",
+    sortable: true,
+    cell: (r) => (
+      <span className="font-semibold tabular-nums">
+        {Math.round(r.suggested_order_qty)}
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "supplier",
+    header: "Proveedor",
+    cell: (r) =>
+      r.last_supplier_id && r.last_supplier_name ? (
+        <CompanyLink
+          companyId={r.last_supplier_id}
+          name={r.last_supplier_name}
+          truncate
+        />
+      ) : (
+        <span className="truncate text-xs text-muted-foreground">
+          {r.last_supplier_name ?? "—"}
+        </span>
+      ),
+  },
+  {
+    key: "cost",
+    header: "Costo reposición",
+    sortable: true,
+    cell: (r) => <Currency amount={r.replenish_cost_mxn} compact />,
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "risk",
+    header: "Revenue en riesgo 30d",
+    sortable: true,
+    cell: (r) => (
+      <span className="font-semibold text-danger tabular-nums">
+        <Currency amount={r.revenue_at_risk_30d_mxn} compact />
+      </span>
+    ),
+    align: "right",
+  },
+];
+
+async function StockoutsSection() {
+  const rows = await getStockoutQueue(undefined, 50);
+  const actionable = rows.filter(
+    (r) => r.urgency !== "OK" && r.urgency !== "ATTENTION"
+  );
+  if (actionable.length === 0) {
+    return (
+      <EmptyState
+        icon={ShoppingBag}
+        title="Sin productos urgentes"
+        description="Todo el inventario está en buen nivel."
+        compact
+      />
+    );
+  }
+  return (
+    <DataTable
+      data={actionable}
+      columns={stockoutColumns}
+      rowKey={(r) => String(r.odoo_product_id)}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.product_name ?? r.product_ref ?? "—"}
+          subtitle={r.product_ref ?? undefined}
+          badge={
+            <Badge variant={urgencyVariant[r.urgency]}>
+              {urgencyLabel[r.urgency]}
+            </Badge>
+          }
+          fields={[
+            {
+              label: "Días stock",
+              value: r.days_of_stock != null ? Math.round(r.days_of_stock) : "—",
+            },
+            {
+              label: "Orden sugerida",
+              value: Math.round(r.suggested_order_qty),
+            },
+            {
+              label: "Proveedor",
+              value: r.last_supplier_name ?? "—",
+              className: "col-span-2 truncate",
+            },
+            {
+              label: "Revenue en riesgo",
+              value: <Currency amount={r.revenue_at_risk_30d_mxn} compact />,
+              className: "col-span-2 text-danger font-semibold",
+            },
+          ]}
+        />
+      )}
+    />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Variancia vs mercado (era /compras/price-variance)
+// ──────────────────────────────────────────────────────────────────────────
+const priceFlagVariant: Record<
+  PriceFlag,
+  "danger" | "warning" | "info" | "success" | "secondary"
+> = {
+  overpriced: "danger",
+  above_market: "warning",
+  aligned: "info",
+  below_market: "success",
+  single_source: "secondary",
+};
+
+const priceFlagLabel: Record<PriceFlag, string> = {
+  overpriced: "Sobreprecio",
+  above_market: "Encima",
+  aligned: "Alineado",
+  below_market: "Debajo",
+  single_source: "Único",
+};
+
+function formatMonthShort(iso: string): string {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  return d.toLocaleDateString("es-MX", {
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+const varianceColumns: DataTableColumn<SupplierPriceRow>[] = [
+  {
+    key: "month",
+    header: "Mes",
+    cell: (r) => (
+      <span className="font-mono text-[10px] uppercase tabular-nums text-muted-foreground">
+        {formatMonthShort(r.month)}
+      </span>
+    ),
+    hideOnMobile: true,
+  },
+  {
+    key: "product",
+    header: "Producto",
+    cell: (r) => (
+      <div className="min-w-0">
+        <div className="font-mono text-xs font-semibold">
+          {r.product_ref ?? "—"}
+        </div>
+        <div className="truncate text-[11px] text-muted-foreground">
+          {r.product_name ?? ""}
+        </div>
+      </div>
+    ),
+  },
+  {
+    key: "supplier",
+    header: "Proveedor",
+    cell: (r) => (
+      <span className="truncate text-xs">{r.supplier_name}</span>
+    ),
+  },
+  {
+    key: "flag",
+    header: "Flag",
+    cell: (r) => (
+      <Badge
+        variant={priceFlagVariant[r.price_flag]}
+        className="text-[10px] uppercase"
+      >
+        {priceFlagLabel[r.price_flag]}
+      </Badge>
+    ),
+  },
+  {
+    key: "delta",
+    header: "vs benchmark",
+    sortable: true,
+    cell: (r) => (
+      <span
+        className={`font-semibold tabular-nums ${
+          r.price_delta > 0 ? "text-danger" : "text-success"
+        }`}
+      >
+        {r.price_delta > 0 ? "+" : ""}
+        {r.price_delta.toFixed(0)}%
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "price",
+    header: "Precio",
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.supplier_avg_price.toLocaleString("es-MX", {
+          maximumFractionDigits: 2,
+        })}
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "overpaid",
+    header: "Sobreprecio",
+    sortable: true,
+    cell: (r) =>
+      r.overpaid_mxn > 0 ? (
+        <span className="font-semibold text-danger tabular-nums">
+          <Currency amount={r.overpaid_mxn} compact />
+        </span>
+      ) : r.saved_mxn > 0 ? (
+        <span className="text-success tabular-nums">
+          −<Currency amount={r.saved_mxn} compact />
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+];
+
+async function VarianceMarketSection() {
+  // Combinamos overpriced + above_market + below_market en una tabla.
+  const [overpriced, aboveMarket, belowMarket] = await Promise.all([
+    getSupplierPriceAlerts("overpriced", 6, 60),
+    getSupplierPriceAlerts("above_market", 6, 40),
+    getSupplierPriceAlerts("below_market", 6, 20),
+  ]);
+  const all = [...overpriced, ...aboveMarket, ...belowMarket].sort(
+    (a, b) => b.overpaid_mxn + b.saved_mxn - (a.overpaid_mxn + a.saved_mxn)
+  );
+  if (all.length === 0) {
+    return (
+      <EmptyState
+        icon={ShoppingBag}
+        title="Sin variancia detectable"
+        description="Todos los precios están alineados con el mercado."
+        compact
+      />
+    );
+  }
+  return (
+    <DataTable
+      data={all}
+      columns={varianceColumns}
+      rowKey={(r, i) => `${r.odoo_product_id}-${r.supplier_id}-${r.month}-${i}`}
+      mobileCard={(r) => (
+        <MobileCard
+          title={r.product_name ?? r.product_ref ?? "—"}
+          subtitle={`${r.supplier_name} · ${formatMonthShort(r.month)}`}
+          badge={
+            <Badge variant={priceFlagVariant[r.price_flag]}>
+              {priceFlagLabel[r.price_flag]}
+            </Badge>
+          }
+          fields={[
+            {
+              label: "vs benchmark",
+              value: `${r.price_delta > 0 ? "+" : ""}${r.price_delta.toFixed(0)}%`,
+              className:
+                r.price_delta > 0
+                  ? "text-danger font-semibold"
+                  : "text-success",
+            },
+            {
+              label: r.overpaid_mxn > 0 ? "Sobreprecio" : "Ahorro",
+              value: (
+                <Currency
+                  amount={r.overpaid_mxn > 0 ? r.overpaid_mxn : r.saved_mxn}
+                  compact
+                />
+              ),
+            },
+          ]}
+        />
+      )}
+    />
   );
 }
