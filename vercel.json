@@ -87,6 +87,18 @@
     {
       "path": "/api/pipeline/retention",
       "schedule": "0 3 * * 0"
+    },
+    {
+      "path": "/api/pipeline/send-notifications",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/pipeline/daily-digest",
+      "schedule": "0 7 * * *"
+    },
+    {
+      "path": "/api/pipeline/cleanup-data",
+      "schedule": "0 2 * * *"
     }
   ]
 }
