@@ -2,14 +2,12 @@ import * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import {
-  Table,
   TableBody,
   TableCell,
   TableHead,
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Card } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "./empty-state";
 
@@ -240,7 +238,10 @@ export function DataTable<T>({
   };
 
   const tableEl = (
-    <Table>
+    <table
+      data-slot="table"
+      className="w-full caption-bottom text-sm"
+    >
       {caption && <caption className="sr-only">{caption}</caption>}
       <TableHeader>
         <TableRow>
@@ -248,7 +249,7 @@ export function DataTable<T>({
         </TableRow>
       </TableHeader>
       <TableBody>{data.map((row, i) => renderRow(row, i))}</TableBody>
-    </Table>
+    </table>
   );
 
   return (
@@ -278,21 +279,30 @@ export function DataTable<T>({
         </div>
       )}
 
-      {/* Desktop: table */}
-      <Card
+      {/* Desktop: table plana sin wrapper (sin doble-caja).
+          - Sin Card, sin border-y, sin background extra.
+          - Los TableRow ya tienen border-b de shadcn, así que se leen las
+            filas solas sin ruido visual.
+          - La primera celda de cada row tiene pl-0 para alinear con el
+            texto del CardHeader (que usa px-6), y la última celda pr-0
+            para simetría. */}
+      <div
+        data-slot="data-table"
         className={cn(
-          "overflow-hidden py-0",
+          "relative w-full",
+          "[&_th:first-child]:pl-0 [&_th:last-child]:pr-0",
+          "[&_td:first-child]:pl-0 [&_td:last-child]:pr-0",
           mobileCard ? "hidden sm:block" : "",
           className
         )}
+        style={
+          maxHeight
+            ? { maxHeight, overflow: "auto" }
+            : undefined
+        }
       >
-        <div
-          className="relative overflow-auto"
-          style={maxHeight ? { maxHeight } : undefined}
-        >
-          {tableEl}
-        </div>
-      </Card>
+        {tableEl}
+      </div>
     </>
   );
 }
