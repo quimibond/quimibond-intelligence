@@ -4,6 +4,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Banknote,
+  CalendarClock,
   CreditCard,
   Flame,
   Scale,
@@ -33,6 +34,7 @@ import {
   getWorkingCapital,
   getCashPosition,
   getPlHistory,
+  getProjectedCashFlow,
   getWorkingCapitalCycle,
   type BankBalance,
   type PlPoint,
@@ -40,6 +42,8 @@ import {
 import { formatRelative } from "@/lib/formatters";
 
 import { PlHistoryChart } from "./_components/pl-history-chart";
+import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
+import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,6 +71,7 @@ export default function FinanzasPage() {
           { id: "runway", label: "Runway" },
           { id: "kpis", label: "KPIs CFO" },
           { id: "flow", label: "Flujo 30d" },
+          { id: "projection", label: "Proyección 13s" },
           { id: "cycle", label: "Ciclo CxT" },
           { id: "pl", label: "P&L 12m" },
           { id: "cash", label: "Posición de caja" },
@@ -119,6 +124,37 @@ export default function FinanzasPage() {
           </CardContent>
         </Card>
       </div>
+      </section>
+
+      <section id="projection" className="scroll-mt-24">
+      {/* Flujo de efectivo proyectado 13 semanas — v2 */}
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Flujo de efectivo proyectado · 13 semanas
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              CxC ajustada por atraso histórico, CxP comprometidos, nómina
+              quincenal, OpEx recurrente y pipeline — todo desde Odoo + CFDI.
+            </p>
+          </div>
+          <TableExportButton filename="projected-cash-flow" />
+        </CardHeader>
+        <CardContent className="space-y-4 pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-3">
+                <Skeleton className="h-[96px] rounded-xl" />
+                <Skeleton className="h-[280px] rounded-xl" />
+                <Skeleton className="h-48 rounded-xl" />
+              </div>
+            }
+          >
+            <ProjectedCashFlowSection />
+          </Suspense>
+        </CardContent>
+      </Card>
       </section>
 
       <section id="cycle" className="scroll-mt-24">
@@ -590,6 +626,225 @@ async function WorkingCapitalCycleSection() {
         odoo_account_balances filtrado por account_type=expense_direct_cost
         (NO el proxy in_invoices).
       </p>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Projected Cash Flow — 13 weeks (v2)
+// ──────────────────────────────────────────────────────────────────────────
+const monthShortPf = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+];
+
+function shortWeekLabel(weekStart: string, weekIndex: number) {
+  const [y, m, d] = weekStart.split("-").map((x) => Number(x));
+  if (!y || !m || !d) return `S${weekIndex + 1}`;
+  return `${d}${monthShortPf[m - 1] ? " " + monthShortPf[m - 1] : ""}`;
+}
+
+function scenarioTone(
+  min: number
+): "success" | "warning" | "danger" {
+  if (min < 0) return "danger";
+  if (min < 100000) return "warning";
+  return "success";
+}
+
+function formatSignedCompact(n: number): string {
+  if (n === 0) return "neutro";
+  const sign = n > 0 ? "+" : "−";
+  const abs = Math.abs(n);
+  const compact = new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(abs);
+  return `${sign}${compact}`;
+}
+
+async function ProjectedCashFlowSection() {
+  const { summary, weeks, topArByWeek } = await getProjectedCashFlow();
+
+  if (!summary || weeks.length === 0) {
+    return (
+      <EmptyState
+        icon={CalendarClock}
+        title="Sin datos de proyección"
+        description="La vista projected_cash_flow_weekly no devolvió resultados. Verifica que la migración 20260415_projected_cash_flow_v2.sql esté aplicada."
+      />
+    );
+  }
+
+  const chartData = weeks.map((w) => ({
+    label: shortWeekLabel(w.weekStart, w.weekIndex),
+    inflows: w.inflowsTotal,
+    outflows: w.outflowsTotal,
+    closingBalance: w.closingBalance,
+  }));
+
+  const baseToneClass = {
+    danger: "border-danger bg-danger/10",
+    warning: "border-warning bg-warning/10",
+    success: "border-success bg-success/10",
+  }[scenarioTone(summary.minClosingBalance)];
+
+  return (
+    <div className="space-y-4">
+      {/* Alert band si hay semana con cierre negativo */}
+      {summary.firstNegativeWeek && (
+        <Card className={`gap-2 border-l-4 ${baseToneClass}`}>
+          <div className="flex items-start gap-3 px-4 py-3">
+            <AlertTriangle
+              className="h-5 w-5 shrink-0 text-danger"
+              aria-hidden
+            />
+            <div className="flex-1 min-w-0 text-sm">
+              <p className="font-semibold text-danger">
+                Saldo negativo proyectado en semana{" "}
+                {summary.firstNegativeWeek.weekIndex + 1}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Cierre estimado{" "}
+                <Currency
+                  amount={summary.firstNegativeWeek.closingBalance}
+                  compact
+                  colorBySign
+                />{" "}
+                para la semana del {summary.firstNegativeWeek.weekStart}.
+                Revisar cobranza y posponer pagos no críticos.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* KPIs del horizonte */}
+      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+        <KpiCard
+          title="Efectivo hoy"
+          value={summary.cashNow}
+          format="currency"
+          compact
+          icon={Wallet}
+          subtitle="bancos − tarjetas"
+          tone={summary.cashNow >= 0 ? "success" : "danger"}
+          size="sm"
+        />
+        <KpiCard
+          title="Entradas 13s"
+          value={summary.totalInflows13w}
+          format="currency"
+          compact
+          icon={ArrowDownCircle}
+          subtitle="CxC ajustada"
+          tone="success"
+          size="sm"
+        />
+        <KpiCard
+          title="Salidas 13s"
+          value={summary.totalOutflows13w}
+          format="currency"
+          compact
+          icon={ArrowUpCircle}
+          subtitle="CxP + nómina + opex"
+          tone="danger"
+          size="sm"
+        />
+        <KpiCard
+          title="Saldo mínimo"
+          value={summary.minClosingBalance}
+          format="currency"
+          compact
+          icon={Flame}
+          subtitle={`Neto 13s ${formatSignedCompact(summary.netFlow13w)}`}
+          tone={scenarioTone(summary.minClosingBalance)}
+          size="sm"
+        />
+      </StatGrid>
+
+      {/* Escenarios — stress test del CEO */}
+      <div className="grid gap-3 rounded-md border border-border/60 bg-muted/20 p-3 sm:grid-cols-3">
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Optimista · +10% neto
+          </div>
+          <div
+            className={`mt-1 text-sm font-semibold tabular-nums ${
+              scenarioTone(summary.scenarioOptimisticMin) === "danger"
+                ? "text-danger"
+                : scenarioTone(summary.scenarioOptimisticMin) === "warning"
+                  ? "text-warning"
+                  : "text-success"
+            }`}
+          >
+            min{" "}
+            <Currency amount={summary.scenarioOptimisticMin} compact />
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Base · proyección real
+          </div>
+          <div
+            className={`mt-1 text-sm font-semibold tabular-nums ${
+              scenarioTone(summary.scenarioBaseMin) === "danger"
+                ? "text-danger"
+                : scenarioTone(summary.scenarioBaseMin) === "warning"
+                  ? "text-warning"
+                  : "text-success"
+            }`}
+          >
+            min <Currency amount={summary.scenarioBaseMin} compact />
+          </div>
+        </div>
+        <div>
+          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Conservador · −15% CxC, +10% CxP
+          </div>
+          <div
+            className={`mt-1 text-sm font-semibold tabular-nums ${
+              scenarioTone(summary.scenarioConservativeMin) === "danger"
+                ? "text-danger"
+                : scenarioTone(summary.scenarioConservativeMin) === "warning"
+                  ? "text-warning"
+                  : "text-success"
+            }`}
+          >
+            min{" "}
+            <Currency amount={summary.scenarioConservativeMin} compact />
+          </div>
+        </div>
+      </div>
+
+      {/* Chart */}
+      <ProjectedCashFlowChart data={chartData} />
+
+      {/* Vencidos acumulados hoy — informativo */}
+      {(summary.arOverdueToday > 0 || summary.apOverdueToday > 0) && (
+        <div className="grid gap-2 sm:grid-cols-2">
+          <MetricRow
+            label="CxC vencida cargada en semana 1"
+            value={summary.arOverdueToday}
+            format="currency"
+            compact
+            hint="Cobrable inmediato"
+          />
+          <MetricRow
+            label="CxP vencida cargada en semana 1"
+            value={summary.apOverdueToday}
+            format="currency"
+            compact
+            alert={summary.apOverdueToday > summary.cashNow}
+            hint="Pagos vencidos a proveedores"
+          />
+        </div>
+      )}
+
+      {/* Tabla detallada + drill-down */}
+      <ProjectedCashFlowTable weeks={weeks} topArByWeek={topArByWeek} />
     </div>
   );
 }

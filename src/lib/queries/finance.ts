@@ -273,3 +273,191 @@ export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | nu
     computedAt: d.computed_at,
   };
 }
+
+/**
+ * Projected Cash Flow v2 (view: projected_cash_flow_weekly + RPC
+ * get_projected_cash_flow_summary + view projected_cash_flow_top_ar_by_week).
+ *
+ * Devuelve 13 semanas de proyección con entradas/salidas/running balance, top
+ * contribuyentes de CxC por semana, y 3 escenarios agregados (base, optimistic,
+ * conservative) para stress-test del CEO.
+ *
+ * Migration: `20260415_projected_cash_flow_v2.sql`.
+ */
+export interface ProjectedCashFlowWeek {
+  weekIndex: number;
+  weekStart: string;
+  weekEnd: string;
+  arCommitted: number;
+  arOverdue: number;
+  soPipeline: number;
+  apCommitted: number;
+  apOverdue: number;
+  poPipeline: number;
+  payrollEstimated: number;
+  opexRecurring: number;
+  inflowsTotal: number;
+  outflowsTotal: number;
+  netFlow: number;
+  openingBalance: number;
+  closingBalance: number;
+}
+
+export interface ProjectedCashFlowTopAr {
+  weekIndex: number;
+  rank: number;
+  companyId: string | null;
+  companyName: string | null;
+  totalAmount: number;
+  invoicesCount: number;
+}
+
+export interface ProjectedCashFlowSummary {
+  cashNow: number;
+  totalInflows13w: number;
+  totalOutflows13w: number;
+  netFlow13w: number;
+  minClosingBalance: number;
+  maxClosingBalance: number;
+  firstNegativeWeek: {
+    weekIndex: number;
+    weekStart: string;
+    closingBalance: number;
+  } | null;
+  arOverdueToday: number;
+  apOverdueToday: number;
+  scenarioBaseMin: number;
+  scenarioOptimisticMin: number;
+  scenarioConservativeMin: number;
+  computedAt: string | null;
+}
+
+export interface ProjectedCashFlow {
+  summary: ProjectedCashFlowSummary | null;
+  weeks: ProjectedCashFlowWeek[];
+  topArByWeek: ProjectedCashFlowTopAr[];
+}
+
+type RawWeek = {
+  week_index: number | null;
+  week_start: string | null;
+  week_end: string | null;
+  ar_committed: number | null;
+  ar_overdue: number | null;
+  so_pipeline: number | null;
+  ap_committed: number | null;
+  ap_overdue: number | null;
+  po_pipeline: number | null;
+  payroll_estimated: number | null;
+  opex_recurring: number | null;
+  inflows_total: number | null;
+  outflows_total: number | null;
+  net_flow: number | null;
+  opening_balance: number | null;
+  closing_balance: number | null;
+};
+
+type RawTopAr = {
+  week_index: number | null;
+  rank: number | null;
+  company_id: string | null;
+  company_name: string | null;
+  total_amount: number | null;
+  invoices_count: number | null;
+};
+
+function mapWeek(r: RawWeek): ProjectedCashFlowWeek {
+  return {
+    weekIndex: Number(r.week_index) || 0,
+    weekStart: r.week_start ?? "",
+    weekEnd: r.week_end ?? "",
+    arCommitted: Number(r.ar_committed) || 0,
+    arOverdue: Number(r.ar_overdue) || 0,
+    soPipeline: Number(r.so_pipeline) || 0,
+    apCommitted: Number(r.ap_committed) || 0,
+    apOverdue: Number(r.ap_overdue) || 0,
+    poPipeline: Number(r.po_pipeline) || 0,
+    payrollEstimated: Number(r.payroll_estimated) || 0,
+    opexRecurring: Number(r.opex_recurring) || 0,
+    inflowsTotal: Number(r.inflows_total) || 0,
+    outflowsTotal: Number(r.outflows_total) || 0,
+    netFlow: Number(r.net_flow) || 0,
+    openingBalance: Number(r.opening_balance) || 0,
+    closingBalance: Number(r.closing_balance) || 0,
+  };
+}
+
+export async function getProjectedCashFlow(): Promise<ProjectedCashFlow> {
+  const sb = getServiceClient();
+  const [{ data: weeksRaw }, { data: summaryRaw }, { data: topArRaw }] =
+    await Promise.all([
+      sb
+        .from("projected_cash_flow_weekly")
+        .select("*")
+        .order("week_index", { ascending: true }),
+      sb.rpc("get_projected_cash_flow_summary"),
+      sb
+        .from("projected_cash_flow_top_ar_by_week")
+        .select("*")
+        .order("week_index", { ascending: true })
+        .order("rank", { ascending: true }),
+    ]);
+
+  const weeks = ((weeksRaw ?? []) as RawWeek[]).map(mapWeek);
+
+  const topArByWeek = ((topArRaw ?? []) as RawTopAr[]).map((r) => ({
+    weekIndex: Number(r.week_index) || 0,
+    rank: Number(r.rank) || 0,
+    companyId: r.company_id,
+    companyName: r.company_name,
+    totalAmount: Number(r.total_amount) || 0,
+    invoicesCount: Number(r.invoices_count) || 0,
+  }));
+
+  const s = (summaryRaw ?? null) as {
+    cash_now: number | null;
+    total_inflows_13w: number | null;
+    total_outflows_13w: number | null;
+    net_flow_13w: number | null;
+    min_closing_balance: number | null;
+    max_closing_balance: number | null;
+    first_negative_week: {
+      week_index: number;
+      week_start: string;
+      closing_balance: number;
+    } | null;
+    ar_overdue_today: number | null;
+    ap_overdue_today: number | null;
+    scenario_base_min: number | null;
+    scenario_optimistic_min: number | null;
+    scenario_conservative_min: number | null;
+    computed_at: string | null;
+  } | null;
+
+  const summary: ProjectedCashFlowSummary | null = s
+    ? {
+        cashNow: Number(s.cash_now) || 0,
+        totalInflows13w: Number(s.total_inflows_13w) || 0,
+        totalOutflows13w: Number(s.total_outflows_13w) || 0,
+        netFlow13w: Number(s.net_flow_13w) || 0,
+        minClosingBalance: Number(s.min_closing_balance) || 0,
+        maxClosingBalance: Number(s.max_closing_balance) || 0,
+        firstNegativeWeek: s.first_negative_week
+          ? {
+              weekIndex: Number(s.first_negative_week.week_index) || 0,
+              weekStart: String(s.first_negative_week.week_start ?? ""),
+              closingBalance:
+                Number(s.first_negative_week.closing_balance) || 0,
+            }
+          : null,
+        arOverdueToday: Number(s.ar_overdue_today) || 0,
+        apOverdueToday: Number(s.ap_overdue_today) || 0,
+        scenarioBaseMin: Number(s.scenario_base_min) || 0,
+        scenarioOptimisticMin: Number(s.scenario_optimistic_min) || 0,
+        scenarioConservativeMin: Number(s.scenario_conservative_min) || 0,
+        computedAt: s.computed_at,
+      }
+    : null;
+
+  return { summary, weeks, topArByWeek };
+}
