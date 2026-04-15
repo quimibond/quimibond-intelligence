@@ -273,3 +273,314 @@ export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | nu
     computedAt: d.computed_at,
   };
 }
+/**
+ * Projected Cash Flow v2 — método directo 13 semanas.
+ *
+ * Backend: VIEW projected_cash_flow_weekly + RPC get_projected_cash_flow_summary.
+ * Cada flujo (AR/SO/AP/PO) se expone en gross y weighted (confidence-adjusted).
+ * Cash operativo clasifica bancos en operative/restricted/cc_debt y el opening
+ * balance ya incluye cash en tránsito (cuentas transitorias del CoA) y ajusta
+ * por pagos no conciliados para evitar doble conteo.
+ */
+export interface ProjectedCashFlowWeek {
+  weekIndex: number;
+  weekStart: string;
+  weekEnd: string;
+  // Inflows
+  arGross: number;
+  arWeighted: number;
+  arOverdueGross: number;
+  soGross: number;
+  soWeighted: number;
+  inflowsWeighted: number;
+  inflowsGross: number;
+  // Outflows
+  apGross: number;
+  apWeighted: number;
+  apOverdueGross: number;
+  poGross: number;
+  poWeighted: number;
+  payrollEstimated: number;
+  opexRecurring: number;
+  taxEstimated: number;
+  outflowsWeighted: number;
+  outflowsGross: number;
+  // Balance
+  netFlow: number;
+  openingBalance: number;
+  closingBalance: number;
+}
+
+export interface ProjectedCashFlowCash {
+  netMxn: number;
+  operativeMxn: number;
+  restrictedMxn: number;
+  ccDebtMxn: number;
+  inTransitMxn: number;
+  effectiveMxn: number;
+  usdRate: number | null;
+  eurRate: number | null;
+  activeAccounts: number;
+  inTransitAccounts: number;
+}
+
+export interface ProjectedCashFlowUnreconciled {
+  unmatchedInboundMxn: number;
+  unmatchedOutboundMxn: number;
+  pendingInboundMxn: number;
+  pendingOutboundMxn: number;
+  nUnmatchedInbound: number;
+  nUnmatchedOutbound: number;
+  nPendingInbound: number;
+  nPendingOutbound: number;
+}
+
+export interface ProjectedCashFlowOpenPositions {
+  arTotalMxn: number;
+  arOverdueMxn: number;
+  apTotalMxn: number;
+  apOverdueMxn: number;
+  soBacklogMxn: number;
+  poBacklogMxn: number;
+}
+
+export interface RecurringSource {
+  monthlyMxn: number;
+  weeklyMxn?: number;
+  monthsUsed: number;
+  periods?: string;
+}
+
+export interface ProjectedCashFlowRecurringSources {
+  payroll: RecurringSource;
+  opex: RecurringSource;
+  tax: RecurringSource;
+}
+
+export interface ProjectedCashFlowSummary {
+  cash: ProjectedCashFlowCash;
+  unreconciled: ProjectedCashFlowUnreconciled;
+  totals13w: {
+    inflowsWeighted: number;
+    inflowsGross: number;
+    outflowsWeighted: number;
+    outflowsGross: number;
+    netFlow: number;
+    minClosingBalance: number | null;
+    maxClosingBalance: number | null;
+  };
+  firstNegativeWeek: {
+    weekIndex: number;
+    weekStart: string;
+    closingBalance: number;
+  } | null;
+  openPositions: ProjectedCashFlowOpenPositions;
+  recurringSources: ProjectedCashFlowRecurringSources;
+  computedAt: string | null;
+}
+
+export interface ProjectedCashFlow {
+  summary: ProjectedCashFlowSummary | null;
+  weeks: ProjectedCashFlowWeek[];
+}
+
+type RawWeek = {
+  week_index: number | null;
+  week_start: string | null;
+  week_end: string | null;
+  ar_gross: number | null;
+  ar_weighted: number | null;
+  ar_overdue_gross: number | null;
+  so_gross: number | null;
+  so_weighted: number | null;
+  ap_gross: number | null;
+  ap_weighted: number | null;
+  ap_overdue_gross: number | null;
+  po_gross: number | null;
+  po_weighted: number | null;
+  payroll_estimated: number | null;
+  opex_recurring: number | null;
+  tax_estimated: number | null;
+  inflows_weighted: number | null;
+  inflows_gross: number | null;
+  outflows_weighted: number | null;
+  outflows_gross: number | null;
+  net_flow: number | null;
+  opening_balance: number | null;
+  closing_balance: number | null;
+};
+
+function mapWeek(r: RawWeek): ProjectedCashFlowWeek {
+  return {
+    weekIndex: Number(r.week_index) || 0,
+    weekStart: r.week_start ?? "",
+    weekEnd: r.week_end ?? "",
+    arGross: Number(r.ar_gross) || 0,
+    arWeighted: Number(r.ar_weighted) || 0,
+    arOverdueGross: Number(r.ar_overdue_gross) || 0,
+    soGross: Number(r.so_gross) || 0,
+    soWeighted: Number(r.so_weighted) || 0,
+    apGross: Number(r.ap_gross) || 0,
+    apWeighted: Number(r.ap_weighted) || 0,
+    apOverdueGross: Number(r.ap_overdue_gross) || 0,
+    poGross: Number(r.po_gross) || 0,
+    poWeighted: Number(r.po_weighted) || 0,
+    payrollEstimated: Number(r.payroll_estimated) || 0,
+    opexRecurring: Number(r.opex_recurring) || 0,
+    taxEstimated: Number(r.tax_estimated) || 0,
+    inflowsWeighted: Number(r.inflows_weighted) || 0,
+    inflowsGross: Number(r.inflows_gross) || 0,
+    outflowsWeighted: Number(r.outflows_weighted) || 0,
+    outflowsGross: Number(r.outflows_gross) || 0,
+    netFlow: Number(r.net_flow) || 0,
+    openingBalance: Number(r.opening_balance) || 0,
+    closingBalance: Number(r.closing_balance) || 0,
+  };
+}
+
+type RawSummary = {
+  computed_at: string | null;
+  cash: {
+    net_mxn: number | null;
+    operative_mxn: number | null;
+    restricted_mxn: number | null;
+    cc_debt_mxn: number | null;
+    in_transit_mxn: number | null;
+    effective_mxn: number | null;
+    usd_rate: number | null;
+    eur_rate: number | null;
+    active_accounts: number | null;
+    in_transit_accounts: number | null;
+  };
+  unreconciled: {
+    unmatched_inbound_mxn: number | null;
+    unmatched_outbound_mxn: number | null;
+    pending_inbound_mxn: number | null;
+    pending_outbound_mxn: number | null;
+    n_unmatched_inbound: number | null;
+    n_unmatched_outbound: number | null;
+    n_pending_inbound: number | null;
+    n_pending_outbound: number | null;
+  };
+  totals_13w: {
+    inflows_weighted: number | null;
+    inflows_gross: number | null;
+    outflows_weighted: number | null;
+    outflows_gross: number | null;
+    net_flow: number | null;
+    min_closing_balance: number | null;
+    max_closing_balance: number | null;
+  };
+  first_negative_week: {
+    week_index: number;
+    week_start: string;
+    closing_balance: number;
+  } | null;
+  open_positions: {
+    ar_total_mxn: number | null;
+    ar_overdue_mxn: number | null;
+    ap_total_mxn: number | null;
+    ap_overdue_mxn: number | null;
+    so_backlog_mxn: number | null;
+    po_backlog_mxn: number | null;
+  };
+  recurring_sources: {
+    payroll: { monthly_mxn: number | null; months_used: number | null; periods?: string; weekly_mxn?: number };
+    opex: { monthly_mxn: number | null; months_used: number | null; periods?: string; weekly_mxn?: number };
+    tax: { monthly_mxn: number | null; months_used: number | null };
+  };
+};
+
+function mapSource(s: {
+  monthly_mxn: number | null;
+  months_used: number | null;
+  periods?: string;
+  weekly_mxn?: number;
+}): RecurringSource {
+  return {
+    monthlyMxn: Number(s.monthly_mxn) || 0,
+    weeklyMxn: s.weekly_mxn != null ? Number(s.weekly_mxn) : undefined,
+    monthsUsed: Number(s.months_used) || 0,
+    periods: s.periods,
+  };
+}
+
+export async function getProjectedCashFlow(): Promise<ProjectedCashFlow> {
+  const sb = getServiceClient();
+  const [{ data: weeksRaw }, { data: summaryRaw }] = await Promise.all([
+    sb
+      .from("projected_cash_flow_weekly")
+      .select("*")
+      .order("week_index", { ascending: true }),
+    sb.rpc("get_projected_cash_flow_summary"),
+  ]);
+
+  const weeks = ((weeksRaw ?? []) as RawWeek[]).map(mapWeek);
+
+  const s = (summaryRaw ?? null) as RawSummary | null;
+  const summary: ProjectedCashFlowSummary | null = s
+    ? {
+        computedAt: s.computed_at,
+        cash: {
+          netMxn: Number(s.cash?.net_mxn) || 0,
+          operativeMxn: Number(s.cash?.operative_mxn) || 0,
+          restrictedMxn: Number(s.cash?.restricted_mxn) || 0,
+          ccDebtMxn: Number(s.cash?.cc_debt_mxn) || 0,
+          inTransitMxn: Number(s.cash?.in_transit_mxn) || 0,
+          effectiveMxn: Number(s.cash?.effective_mxn) || 0,
+          usdRate: s.cash?.usd_rate != null ? Number(s.cash.usd_rate) : null,
+          eurRate: s.cash?.eur_rate != null ? Number(s.cash.eur_rate) : null,
+          activeAccounts: Number(s.cash?.active_accounts) || 0,
+          inTransitAccounts: Number(s.cash?.in_transit_accounts) || 0,
+        },
+        unreconciled: {
+          unmatchedInboundMxn: Number(s.unreconciled?.unmatched_inbound_mxn) || 0,
+          unmatchedOutboundMxn: Number(s.unreconciled?.unmatched_outbound_mxn) || 0,
+          pendingInboundMxn: Number(s.unreconciled?.pending_inbound_mxn) || 0,
+          pendingOutboundMxn: Number(s.unreconciled?.pending_outbound_mxn) || 0,
+          nUnmatchedInbound: Number(s.unreconciled?.n_unmatched_inbound) || 0,
+          nUnmatchedOutbound: Number(s.unreconciled?.n_unmatched_outbound) || 0,
+          nPendingInbound: Number(s.unreconciled?.n_pending_inbound) || 0,
+          nPendingOutbound: Number(s.unreconciled?.n_pending_outbound) || 0,
+        },
+        totals13w: {
+          inflowsWeighted: Number(s.totals_13w?.inflows_weighted) || 0,
+          inflowsGross: Number(s.totals_13w?.inflows_gross) || 0,
+          outflowsWeighted: Number(s.totals_13w?.outflows_weighted) || 0,
+          outflowsGross: Number(s.totals_13w?.outflows_gross) || 0,
+          netFlow: Number(s.totals_13w?.net_flow) || 0,
+          minClosingBalance:
+            s.totals_13w?.min_closing_balance != null
+              ? Number(s.totals_13w.min_closing_balance)
+              : null,
+          maxClosingBalance:
+            s.totals_13w?.max_closing_balance != null
+              ? Number(s.totals_13w.max_closing_balance)
+              : null,
+        },
+        firstNegativeWeek: s.first_negative_week
+          ? {
+              weekIndex: Number(s.first_negative_week.week_index) || 0,
+              weekStart: String(s.first_negative_week.week_start ?? ""),
+              closingBalance: Number(s.first_negative_week.closing_balance) || 0,
+            }
+          : null,
+        openPositions: {
+          arTotalMxn: Number(s.open_positions?.ar_total_mxn) || 0,
+          arOverdueMxn: Number(s.open_positions?.ar_overdue_mxn) || 0,
+          apTotalMxn: Number(s.open_positions?.ap_total_mxn) || 0,
+          apOverdueMxn: Number(s.open_positions?.ap_overdue_mxn) || 0,
+          soBacklogMxn: Number(s.open_positions?.so_backlog_mxn) || 0,
+          poBacklogMxn: Number(s.open_positions?.po_backlog_mxn) || 0,
+        },
+        recurringSources: {
+          payroll: mapSource(s.recurring_sources?.payroll ?? { monthly_mxn: 0, months_used: 0 }),
+          opex: mapSource(s.recurring_sources?.opex ?? { monthly_mxn: 0, months_used: 0 }),
+          tax: mapSource(s.recurring_sources?.tax ?? { monthly_mxn: 0, months_used: 0 }),
+        },
+      }
+    : null;
+
+  return { summary, weeks };
+}
+

@@ -4,6 +4,7 @@ import {
   ArrowDownCircle,
   ArrowUpCircle,
   Banknote,
+  CalendarClock,
   CreditCard,
   Flame,
   Scale,
@@ -33,6 +34,7 @@ import {
   getWorkingCapital,
   getCashPosition,
   getPlHistory,
+  getProjectedCashFlow,
   getWorkingCapitalCycle,
   type BankBalance,
   type PlPoint,
@@ -40,6 +42,8 @@ import {
 import { formatRelative } from "@/lib/formatters";
 
 import { PlHistoryChart } from "./_components/pl-history-chart";
+import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
+import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -67,6 +71,7 @@ export default function FinanzasPage() {
           { id: "runway", label: "Runway" },
           { id: "kpis", label: "KPIs CFO" },
           { id: "flow", label: "Flujo 30d" },
+          { id: "projection", label: "Proyección 13s" },
           { id: "cycle", label: "Ciclo CxT" },
           { id: "pl", label: "P&L 12m" },
           { id: "cash", label: "Posición de caja" },
@@ -119,6 +124,38 @@ export default function FinanzasPage() {
           </CardContent>
         </Card>
       </div>
+      </section>
+
+      <section id="projection" className="scroll-mt-24">
+      {/* Flujo de efectivo proyectado 13 semanas (v2 método directo) */}
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Flujo de efectivo proyectado · 13 semanas
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Método directo · AR/SO/AP/PO ponderados por behavior real del
+              cliente, nómina quincenal desde cuentas contables, ajuste por pagos
+              no conciliados y cash clasificado (operativo / en tránsito / restringido).
+            </p>
+          </div>
+          <TableExportButton filename="projected-cash-flow" />
+        </CardHeader>
+        <CardContent className="space-y-4 pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-3">
+                <Skeleton className="h-[96px] rounded-xl" />
+                <Skeleton className="h-[280px] rounded-xl" />
+                <Skeleton className="h-48 rounded-xl" />
+              </div>
+            }
+          >
+            <ProjectedCashFlowSection />
+          </Suspense>
+        </CardContent>
+      </Card>
       </section>
 
       <section id="cycle" className="scroll-mt-24">
@@ -592,4 +629,283 @@ async function WorkingCapitalCycleSection() {
       </p>
     </div>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Projected Cash Flow — 13 weeks
+// ──────────────────────────────────────────────────────────────────────────
+const monthShortPf = [
+  "ene", "feb", "mar", "abr", "may", "jun",
+  "jul", "ago", "sep", "oct", "nov", "dic",
+];
+
+function shortWeekLabel(weekStart: string, weekIndex: number) {
+  const [y, m, d] = weekStart.split("-").map((x) => Number(x));
+  if (!y || !m || !d) return `S${weekIndex + 1}`;
+  return `${d}${monthShortPf[m - 1] ? " " + monthShortPf[m - 1] : ""}`;
+}
+
+async function ProjectedCashFlowSection() {
+  const { summary, weeks } = await getProjectedCashFlow();
+
+  if (!summary || weeks.length === 0) {
+    return (
+      <EmptyState
+        icon={CalendarClock}
+        title="Sin datos de proyección"
+        description="La vista projected_cash_flow_weekly no devolvió resultados. Verifica que la migración 20260415_projected_cash_flow_v2.sql esté aplicada."
+      />
+    );
+  }
+
+  const chartData = weeks.map((w) => ({
+    label: shortWeekLabel(w.weekStart, w.weekIndex),
+    inflows: w.inflowsWeighted,
+    outflows: w.outflowsWeighted,
+    closingBalance: w.closingBalance,
+  }));
+
+  const minClose = summary.totals13w.minClosingBalance ?? 0;
+  const minToneClass =
+    minClose < 0
+      ? "border-danger bg-danger/10"
+      : minClose < 100000
+        ? "border-warning bg-warning/10"
+        : "border-success bg-success/10";
+
+  const effectiveCash = summary.cash.effectiveMxn;
+  const apOverdue = summary.openPositions.apOverdueMxn;
+  const arOverdue = summary.openPositions.arOverdueMxn;
+  const unrecHasData =
+    summary.unreconciled.unmatchedInboundMxn > 0 ||
+    summary.unreconciled.unmatchedOutboundMxn > 0;
+
+  return (
+    <div className="space-y-4">
+      {/* Alert band si hay semana con cierre negativo */}
+      {summary.firstNegativeWeek && (
+        <Card className={`gap-2 border-l-4 ${minToneClass}`}>
+          <div className="flex items-start gap-3 px-4 py-3">
+            <AlertTriangle className="h-5 w-5 shrink-0 text-danger" aria-hidden />
+            <div className="flex-1 min-w-0 text-sm">
+              <p className="font-semibold text-danger">
+                Saldo negativo proyectado en semana {summary.firstNegativeWeek.weekIndex + 1}
+              </p>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Cierre estimado{" "}
+                <Currency
+                  amount={summary.firstNegativeWeek.closingBalance}
+                  compact
+                  colorBySign
+                />{" "}
+                para la semana del {summary.firstNegativeWeek.weekStart}. Revisar
+                cobranza y posponer pagos no críticos.
+              </p>
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Desglose del cash actual */}
+      <div className="rounded-lg border bg-muted/20 px-4 py-3">
+        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-xs">
+          <div>
+            <p className="text-muted-foreground">Cash operativo</p>
+            <Currency amount={summary.cash.operativeMxn} compact />
+          </div>
+          {summary.cash.inTransitMxn !== 0 && (
+            <div>
+              <p className="text-muted-foreground">
+                En tránsito ({summary.cash.inTransitAccounts})
+              </p>
+              <Currency amount={summary.cash.inTransitMxn} compact colorBySign />
+            </div>
+          )}
+          {summary.cash.ccDebtMxn !== 0 && (
+            <div>
+              <p className="text-muted-foreground">Deuda TC</p>
+              <Currency amount={summary.cash.ccDebtMxn} compact colorBySign />
+            </div>
+          )}
+          {summary.cash.restrictedMxn !== 0 && (
+            <div>
+              <p className="text-muted-foreground">Restringido</p>
+              <Currency amount={summary.cash.restrictedMxn} compact />
+            </div>
+          )}
+          <div className="ml-auto">
+            <p className="text-muted-foreground">Efectivo efectivo</p>
+            <span className="font-semibold">
+              <Currency amount={effectiveCash} compact />
+            </span>
+          </div>
+          {summary.cash.usdRate && (
+            <div>
+              <p className="text-muted-foreground">USD/MXN</p>
+              <span className="font-mono tabular-nums">
+                {summary.cash.usdRate.toFixed(2)}
+              </span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* KPIs del horizonte */}
+      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+        <KpiCard
+          title="Efectivo hoy"
+          value={effectiveCash}
+          format="currency"
+          compact
+          icon={Wallet}
+          subtitle="operativo + en tránsito"
+          tone={effectiveCash >= 0 ? "success" : "danger"}
+          size="sm"
+        />
+        <KpiCard
+          title="Entradas 13s"
+          value={summary.totals13w.inflowsWeighted}
+          format="currency"
+          compact
+          icon={ArrowDownCircle}
+          subtitle={`gross ${compactMxn(summary.totals13w.inflowsGross)}`}
+          tone="success"
+          size="sm"
+        />
+        <KpiCard
+          title="Salidas 13s"
+          value={summary.totals13w.outflowsWeighted}
+          format="currency"
+          compact
+          icon={ArrowUpCircle}
+          subtitle={`gross ${compactMxn(summary.totals13w.outflowsGross)}`}
+          tone="danger"
+          size="sm"
+        />
+        <KpiCard
+          title="Saldo mínimo"
+          value={minClose}
+          format="currency"
+          compact
+          icon={Flame}
+          subtitle={`Neto 13s ${formatSign(summary.totals13w.netFlow)}`}
+          tone={
+            minClose < 0
+              ? "danger"
+              : minClose < 100000
+                ? "warning"
+                : "success"
+          }
+          size="sm"
+        />
+      </StatGrid>
+
+      {/* Chart */}
+      <ProjectedCashFlowChart data={chartData} />
+
+      {/* Open positions + recurring sources */}
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <MetricRow
+          label="CxC abierta"
+          value={<Currency amount={summary.openPositions.arTotalMxn} compact />}
+          hint={`${compactMxn(arOverdue)} vencido`}
+        />
+        <MetricRow
+          label="CxP abierta"
+          value={<Currency amount={summary.openPositions.apTotalMxn} compact />}
+          hint={`${compactMxn(apOverdue)} vencido`}
+          alert={apOverdue > effectiveCash}
+        />
+        <MetricRow
+          label="SO backlog"
+          value={<Currency amount={summary.openPositions.soBacklogMxn} compact />}
+          hint="pendiente facturar"
+        />
+        <MetricRow
+          label="PO backlog"
+          value={<Currency amount={summary.openPositions.poBacklogMxn} compact />}
+          hint="pendiente recibir"
+        />
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        <MetricRow
+          label={`Nómina mensual (${summary.recurringSources.payroll.monthsUsed}m avg)`}
+          value={
+            <Currency
+              amount={summary.recurringSources.payroll.monthlyMxn}
+              compact
+            />
+          }
+          hint={summary.recurringSources.payroll.periods ?? undefined}
+        />
+        <MetricRow
+          label={`OpEx mensual (${summary.recurringSources.opex.monthsUsed}m avg)`}
+          value={
+            <Currency
+              amount={summary.recurringSources.opex.monthlyMxn}
+              compact
+            />
+          }
+          hint={summary.recurringSources.opex.periods ?? undefined}
+        />
+        <MetricRow
+          label="IVA neto mensual"
+          value={
+            <Currency
+              amount={summary.recurringSources.tax.monthlyMxn}
+              compact
+            />
+          }
+          hint={
+            summary.recurringSources.tax.monthlyMxn === 0
+              ? "a favor / sin pago"
+              : "pagado día 17"
+          }
+        />
+      </div>
+
+      {/* Unreconciled warning — pagos con doble-conteo evitado */}
+      {unrecHasData && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
+          <p className="font-medium text-warning">
+            Ajuste por pagos no conciliados activo
+          </p>
+          <p className="mt-1 text-muted-foreground">
+            {summary.unreconciled.nUnmatchedInbound} pagos inbound por{" "}
+            <Currency amount={summary.unreconciled.unmatchedInboundMxn} compact />{" "}
+            y {summary.unreconciled.nUnmatchedOutbound} outbound por{" "}
+            <Currency amount={summary.unreconciled.unmatchedOutboundMxn} compact />
+            {" "}ya golpearon el banco pero sus facturas siguen abiertas. Se restan
+            de CxC/CxP en la semana 1 para evitar doble conteo.
+          </p>
+        </div>
+      )}
+
+      {/* Tabla detallada */}
+      <ProjectedCashFlowTable weeks={weeks} />
+    </div>
+  );
+}
+
+function compactMxn(n: number): string {
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(n);
+}
+
+function formatSign(n: number): string {
+  if (n === 0) return "neutro";
+  const sign = n > 0 ? "+" : "−";
+  const abs = Math.abs(n);
+  const compact = new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(abs);
+  return `${sign}${compact}`;
 }
