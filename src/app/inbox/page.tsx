@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   getInsights,
   getInsightCounts,
+  isVisibleToCEO,
   type InsightRow,
   type InsightState,
 } from "@/lib/queries/insights";
@@ -211,11 +212,14 @@ async function InsightsList({
   stateFilter: InsightState[];
   severity?: string;
 }) {
-  const insights = await getInsights({
+  const rawInsights = await getInsights({
     state: stateFilter,
     severity,
-    limit: 100,
+    limit: 150, // pre-filter buffer for isVisibleToCEO
   });
+  // Audit 2026-04-15 sprint 2: hide low-impact cobranza from CEO inbox.
+  // Sandra still sees all of them in her own view (via assignee_email).
+  const insights = rawInsights.filter(isVisibleToCEO).slice(0, 100);
 
   if (insights.length === 0) {
     return (

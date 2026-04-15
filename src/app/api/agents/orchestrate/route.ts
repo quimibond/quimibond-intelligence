@@ -22,8 +22,14 @@ import { getDirectorBriefing, type DirectorSlug, type DirectorBriefing } from "@
 
 export const maxDuration = 300;
 
-/** Max chars for the context sent to Claude (~15K tokens) */
-const MAX_CONTEXT_CHARS = 40_000;
+/** Max chars for the context sent to Claude (~6-7K tokens).
+ *  Dropped from 40K to 25K in audit 2026-04-15 sprint 2. The original
+ *  40K was set defensively but measurement showed directors rarely used
+ *  >25K chars of context (the last third got truncated into noise
+ *  anyway). Saves ~40% of fresh input tokens per director call; prompt
+ *  caching already handles the stable system prompt, so the savings
+ *  hit the per-call cost directly. */
+const MAX_CONTEXT_CHARS = 25_000;
 
 /** Default confidence threshold — raised from 0.65 to prevent noise */
 const DEFAULT_CONFIDENCE_THRESHOLD = 0.80;

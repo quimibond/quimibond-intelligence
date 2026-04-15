@@ -15,13 +15,13 @@ describe("hasConcreteEvidence", () => {
     expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
   });
 
-  it("acepta insight con company name del contexto", () => {
-    const insight = { evidence: ["GRUPO ISMARK acumula cartera vencida"] };
+  it("acepta insight con product_ref del contexto", () => {
+    const insight = { evidence: ["KF4032T11BL se vendio bajo costo"] };
     expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
   });
 
-  it("acepta insight con product_ref del contexto", () => {
-    const insight = { evidence: ["KF4032T11BL se vendió bajo costo"] };
+  it("acepta insight con email address concreto", () => {
+    const insight = { evidence: ["Email de ventas@blantex.com.mx sin respuesta"] };
     expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
   });
 
@@ -40,8 +40,31 @@ describe("hasConcreteEvidence", () => {
     expect(hasConcreteEvidence({}, sampleContext)).toBe(false);
   });
 
-  it("acepta cuando description (no solo evidence) contiene anclaje", () => {
+  // Audit 2026-04-15 sprint 2: hardened grounding. Company name alone is
+  // NO LONGER enough — must be paired with a concrete number (MXN, %, date,
+  // or count of a noun).
+  it("rechaza insight con solo company name y sin cantidad", () => {
+    const insight = { evidence: ["GRUPO ISMARK acumula cartera vencida"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(false);
+  });
+
+  it("acepta insight con company name + conteo especifico de facturas", () => {
     const insight = { evidence: ["Patron detectado"], description: "GRUPO ISMARK tiene 4 facturas vencidas" };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("acepta insight con company name + monto MXN", () => {
+    const insight = { evidence: ["BRAZZI con $120K en cartera vencida"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("acepta insight con company name + porcentaje", () => {
+    const insight = { evidence: ["GRUPO ISMARK con caida de 35% en revenue"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("acepta insight con company name + fecha especifica", () => {
+    const insight = { evidence: ["BRAZZI no paga desde 15-mar"] };
     expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
   });
 });

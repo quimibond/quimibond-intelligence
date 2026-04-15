@@ -31,7 +31,7 @@ import {
   getTopAtRiskClients,
   getRevenueTrend,
 } from "@/lib/queries/dashboard";
-import { getInsights } from "@/lib/queries/insights";
+import { getInsights, isVisibleToCEO } from "@/lib/queries/insights";
 import {
   getActiveTripwires,
   type ConcentrationRow,
@@ -387,8 +387,9 @@ async function RevenueChartSection() {
 }
 
 async function UrgentInsights() {
-  const insights = await getInsights({ state: "new", limit: 10 });
+  const insights = await getInsights({ state: "new", limit: 20 });
   const urgent = insights
+    .filter(isVisibleToCEO) // hide low-impact cobranza — audit 2026-04-15
     .filter((i) => i.severity === "critical" || i.severity === "high")
     .slice(0, 5);
 

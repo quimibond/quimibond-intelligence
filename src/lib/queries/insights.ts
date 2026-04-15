@@ -5,6 +5,33 @@ import { joinedCompanyName } from "./_helpers";
 /** Slugs de agentes legacy/sistema cuyos insights NO deben llegar al CEO. */
 const LEGACY_AGENT_SLUGS = new Set(["data_quality", "meta", "cleanup", "odoo"]);
 
+/**
+ * CEO inbox filter (audit 2026-04-15 sprint 2).
+ *
+ * Categoria `cobranza` tenia 91 insights en 30d con 2.2% de tasa de accion
+ * del CEO (vs 22% para ventas/proveedores). La razon no es que los insights
+ * esten mal — es que cobranza no es chamba del CEO, es de Sandra Davila, y
+ * el routing ya la asigna a ella via trigger. El CEO solo necesita verlo
+ * cuando el monto es estrategicamente grande o la urgencia es maxima.
+ *
+ * Regla: ocultar insights de cobranza del inbox del CEO EXCEPTO cuando
+ *  - severity = 'critical'  (urgencia maxima declarada por el director)
+ *  - business_impact_estimate >= 500,000 MXN  (cartera estrategica)
+ *
+ * Sandra sigue viendo todos los de cobranza en su propia vista.
+ */
+export function isVisibleToCEO(insight: {
+  category: string | null;
+  severity: string | null;
+  business_impact_estimate: number | null;
+}): boolean {
+  if (insight.category !== "cobranza") return true;
+  if (insight.severity === "critical") return true;
+  const impact = Number(insight.business_impact_estimate ?? 0);
+  if (Number.isFinite(impact) && impact >= 500_000) return true;
+  return false;
+}
+
 export type InsightState =
   | "new"
   | "seen"
