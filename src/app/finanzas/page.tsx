@@ -39,6 +39,9 @@ import {
   getCashflowRecommendations,
   getProjectedCashFlow,
   getWorkingCapitalCycle,
+  getPartnerPaymentProfiles,
+  getJournalFlowProfiles,
+  getAccountPaymentProfiles,
   type BankBalance,
   type PlPoint,
 } from "@/lib/queries/finance";
@@ -48,6 +51,7 @@ import { PlHistoryChart } from "./_components/pl-history-chart";
 import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
 import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table";
 import { CashflowRecommendations } from "./_components/cashflow-recommendations";
+import { CashflowProfiles } from "./_components/cashflow-profiles";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -80,6 +84,7 @@ export default function FinanzasPage() {
           { id: "cycle", label: "Ciclo CxT" },
           { id: "pl", label: "P&L 12m" },
           { id: "cash", label: "Posición de caja" },
+          { id: "profiles", label: "Perfiles" },
         ]}
       />
 
@@ -248,6 +253,28 @@ export default function FinanzasPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
+
+      <section id="profiles" className="scroll-mt-24">
+      {/* Perfiles estadísticos v3 · validación */}
+      <div className="mb-3">
+        <h2 className="text-base font-semibold">Perfiles de cashflow</h2>
+        <p className="text-xs text-muted-foreground">
+          Comportamiento de pago real derivado de los últimos 24 meses de
+          movimientos bancarios. Fuente del próximo modelo v3 de proyección.
+        </p>
+      </div>
+      <Suspense
+        fallback={
+          <div className="space-y-3">
+            <Skeleton className="h-[240px] rounded-xl" />
+            <Skeleton className="h-[240px] rounded-xl" />
+            <Skeleton className="h-[240px] rounded-xl" />
+          </div>
+        }
+      >
+        <CashflowProfilesSection />
+      </Suspense>
       </section>
     </div>
   );
@@ -1056,3 +1083,24 @@ async function RecommendationsSection() {
   }
   return <CashflowRecommendations data={data} />;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cashflow Profiles Section (v3 validation)
+// ──────────────────────────────────────────────────────────────────────────
+async function CashflowProfilesSection() {
+  const [inboundPartners, outboundPartners, journals, accounts] = await Promise.all([
+    getPartnerPaymentProfiles("inbound", 0.5, 25),
+    getPartnerPaymentProfiles("outbound", 0.5, 25),
+    getJournalFlowProfiles(),
+    getAccountPaymentProfiles(),
+  ]);
+  return (
+    <CashflowProfiles
+      inboundPartners={inboundPartners}
+      outboundPartners={outboundPartners}
+      journals={journals}
+      accounts={accounts}
+    />
+  );
+}
+

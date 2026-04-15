@@ -695,3 +695,179 @@ export async function getCashflowRecommendations(): Promise<CashflowRecommendati
     })),
   };
 }
+
+/* ──────────────────────────────────────────────────────────────
+ * Cashflow profiles v3 (Fase 1) — materialized views
+ * - partner_payment_profile
+ * - journal_flow_profile
+ * - account_payment_profile
+ * ──────────────────────────────────────────────────────────── */
+
+export interface PartnerPaymentProfile {
+  odooPartnerId: number;
+  partnerName: string | null;
+  paymentType: 'inbound' | 'outbound';
+  paymentCount24m: number;
+  monthsActive: number;
+  totalPaidMxn: number;
+  avgPaymentAmount: number;
+  typicalDayOfMonth: number | null;
+  preferredBankJournal: string | null;
+  preferredPaymentMethod: string | null;
+  invoiceCount24m: number;
+  paidInvoiceCount: number;
+  avgDaysToPay: number | null;
+  medianDaysToPay: number | null;
+  stddevDaysToPay: number | null;
+  totalInvoicedMxn: number;
+  writeoffRiskCount: number;
+  writeoffRiskPct: number;
+  confidence: number;
+}
+
+export async function getPartnerPaymentProfiles(
+  paymentType: 'inbound' | 'outbound' | 'all' = 'all',
+  minConfidence = 0.5,
+  limit = 50,
+): Promise<PartnerPaymentProfile[]> {
+  const sb = getServiceClient();
+  let q = sb
+    .from('partner_payment_profile')
+    .select(
+      'odoo_partner_id, payment_type, payment_count_24m, months_active, total_paid_mxn, avg_payment_amount, typical_day_of_month, preferred_bank_journal, preferred_payment_method, invoice_count_24m, paid_invoice_count, avg_days_to_pay, median_days_to_pay, stddev_days_to_pay, total_invoiced_mxn, writeoff_risk_count, writeoff_risk_pct, confidence',
+    )
+    .gte('confidence', minConfidence)
+    .order('total_paid_mxn', { ascending: false })
+    .limit(limit);
+  if (paymentType !== 'all') q = q.eq('payment_type', paymentType);
+  const { data: rows } = await q;
+  if (!rows?.length) return [];
+
+  const partnerIds = Array.from(
+    new Set(rows.map((r) => (r as { odoo_partner_id: number }).odoo_partner_id).filter(Boolean)),
+  );
+  const nameMap = new Map<number, string>();
+  if (partnerIds.length) {
+    const { data: companies } = await sb
+      .from('companies')
+      .select('odoo_partner_id, name')
+      .in('odoo_partner_id', partnerIds);
+    (companies ?? []).forEach((c) => {
+      const row = c as { odoo_partner_id: number; name: string | null };
+      if (row.odoo_partner_id && row.name) nameMap.set(row.odoo_partner_id, row.name);
+    });
+  }
+
+  return rows.map((row) => {
+    const r = row as Record<string, unknown>;
+    const num = (v: unknown) => (v == null ? 0 : Number(v));
+    const numOrNull = (v: unknown) => (v == null ? null : Number(v));
+    const pid = Number(r.odoo_partner_id);
+    return {
+      odooPartnerId: pid,
+      partnerName: nameMap.get(pid) ?? null,
+      paymentType: r.payment_type as 'inbound' | 'outbound',
+      paymentCount24m: num(r.payment_count_24m),
+      monthsActive: num(r.months_active),
+      totalPaidMxn: num(r.total_paid_mxn),
+      avgPaymentAmount: num(r.avg_payment_amount),
+      typicalDayOfMonth: numOrNull(r.typical_day_of_month),
+      preferredBankJournal: (r.preferred_bank_journal as string | null) ?? null,
+      preferredPaymentMethod: (r.preferred_payment_method as string | null) ?? null,
+      invoiceCount24m: num(r.invoice_count_24m),
+      paidInvoiceCount: num(r.paid_invoice_count),
+      avgDaysToPay: numOrNull(r.avg_days_to_pay),
+      medianDaysToPay: numOrNull(r.median_days_to_pay),
+      stddevDaysToPay: numOrNull(r.stddev_days_to_pay),
+      totalInvoicedMxn: num(r.total_invoiced_mxn),
+      writeoffRiskCount: num(r.writeoff_risk_count),
+      writeoffRiskPct: num(r.writeoff_risk_pct),
+      confidence: num(r.confidence),
+    };
+  });
+}
+
+export interface JournalFlowProfile {
+  journalName: string;
+  paymentType: 'inbound' | 'outbound';
+  monthsActive: number;
+  totalPayments12m: number;
+  totalAmount12m: number;
+  avgMonthlyAmount: number;
+  stddevMonthlyAmount: number;
+  volatilityCv: number | null;
+}
+
+export async function getJournalFlowProfiles(): Promise<JournalFlowProfile[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from('journal_flow_profile')
+    .select(
+      'journal_name, payment_type, months_active, total_payments_12m, total_amount_12m, avg_monthly_amount, stddev_monthly_amount, volatility_cv',
+    )
+    .order('total_amount_12m', { ascending: false });
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const num = (v: unknown) => (v == null ? 0 : Number(v));
+    return {
+      journalName: (r.journal_name as string) ?? '',
+      paymentType: r.payment_type as 'inbound' | 'outbound',
+      monthsActive: num(r.months_active),
+      totalPayments12m: num(r.total_payments_12m),
+      totalAmount12m: num(r.total_amount_12m),
+      avgMonthlyAmount: num(r.avg_monthly_amount),
+      stddevMonthlyAmount: num(r.stddev_monthly_amount),
+      volatilityCv: r.volatility_cv == null ? null : Number(r.volatility_cv),
+    };
+  });
+}
+
+export interface AccountPaymentProfile {
+  odooAccountId: number;
+  accountCode: string | null;
+  accountName: string;
+  accountType: string;
+  detectedCategory: string;
+  frequency: 'monthly' | 'irregular_monthly' | 'occasional' | 'dormant';
+  monthsWithActivity: number;
+  monthsInLast12m: number;
+  avgMonthlyNet: number;
+  medianMonthlyNet: number;
+  stddevMonthlyNet: number;
+  confidence: number;
+  lastPeriodActive: string | null;
+}
+
+export async function getAccountPaymentProfiles(
+  categoryFilter?: string,
+): Promise<AccountPaymentProfile[]> {
+  const sb = getServiceClient();
+  let q = sb
+    .from('account_payment_profile')
+    .select(
+      'odoo_account_id, account_code, account_name, account_type, detected_category, frequency, months_with_activity, months_in_last_12m, avg_monthly_net, median_monthly_net, stddev_monthly_net, confidence, last_period_active',
+    )
+    .order('avg_monthly_net', { ascending: false });
+  if (categoryFilter) q = q.eq('detected_category', categoryFilter);
+  const { data } = await q;
+  return (data ?? []).map((row) => {
+    const r = row as Record<string, unknown>;
+    const num = (v: unknown) => (v == null ? 0 : Number(v));
+    return {
+      odooAccountId: num(r.odoo_account_id),
+      accountCode: (r.account_code as string | null) || null,
+      accountName: (r.account_name as string) ?? '',
+      accountType: (r.account_type as string) ?? '',
+      detectedCategory: (r.detected_category as string) ?? 'other',
+      frequency: r.frequency as AccountPaymentProfile['frequency'],
+      monthsWithActivity: num(r.months_with_activity),
+      monthsInLast12m: num(r.months_in_last_12m),
+      avgMonthlyNet: num(r.avg_monthly_net),
+      medianMonthlyNet: num(r.median_monthly_net),
+      stddevMonthlyNet: num(r.stddev_monthly_net),
+      confidence: num(r.confidence),
+      lastPeriodActive: (r.last_period_active as string | null) ?? null,
+    };
+  });
+}
+
