@@ -1,6 +1,7 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "./_helpers";
+import { paginationRange, type TableParams } from "./table-params";
 
 /**
  * Companies queries v2 — usa views canónicas:
@@ -104,6 +105,118 @@ export async function getCompaniesList(
     customer_status: paretoMap.get(r.company_id)?.customer_status ?? null,
     churn_risk_score: ltvMap.get(r.company_id) ?? null,
   }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Companies paginadas + filtrables (para listado con toolbar)
+// ──────────────────────────────────────────────────────────────────────────
+export interface CompaniesPage {
+  rows: CompanyListRow[];
+  total: number;
+}
+
+const COMPANIES_SORT_MAP: Record<string, string> = {
+  revenue: "total_revenue",
+  revenue_90d: "revenue_90d",
+  trend: "trend_pct",
+  overdue: "overdue_amount",
+  name: "name",
+  last_order: "last_order_date",
+  otd: "otd_rate",
+};
+
+export async function getCompaniesPage(
+  params: TableParams & {
+    tier?: string[];
+    risk?: string[];
+  }
+): Promise<CompaniesPage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const [start, end] = paginationRange(params.page, params.size);
+
+  const sortCol =
+    (params.sort && COMPANIES_SORT_MAP[params.sort]) ?? "total_revenue";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("company_profile")
+    .select(
+      "company_id, name, tier, risk_level, total_revenue, revenue_90d, trend_pct, overdue_amount, max_days_overdue, otd_rate, last_order_date",
+      { count: "exact" }
+    )
+    .gt("total_revenue", 0)
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.tier && params.tier.length > 0) {
+    query = query.in("tier", params.tier);
+  }
+  if (params.risk && params.risk.length > 0) {
+    query = query.in("risk_level", params.risk);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const baseRows = (data ?? []) as Array<Omit<
+    CompanyListRow,
+    "pareto_class" | "customer_status" | "churn_risk_score"
+  >>;
+
+  if (baseRows.length === 0) return { rows: [], total: count ?? 0 };
+
+  const ids = baseRows.map((r) => r.company_id);
+  const [pareto, ltv] = await Promise.all([
+    sb
+      .from("portfolio_concentration")
+      .select("company_id, pareto_class, customer_status")
+      .in("company_id", ids),
+    sb
+      .from("customer_ltv_health")
+      .select("company_id, churn_risk_score")
+      .in("company_id", ids),
+  ]);
+
+  const normalizePareto = (raw: string | null): "A" | "B" | "C" | null => {
+    if (!raw) return null;
+    const first = raw.trim().charAt(0).toUpperCase();
+    if (first === "A" || first === "B" || first === "C") return first;
+    return null;
+  };
+
+  const paretoMap = new Map<
+    number,
+    { pareto_class: string | null; customer_status: string | null }
+  >();
+  for (const p of (pareto.data ?? []) as Array<{
+    company_id: number;
+    pareto_class: string | null;
+    customer_status: string | null;
+  }>) {
+    paretoMap.set(p.company_id, {
+      pareto_class: normalizePareto(p.pareto_class),
+      customer_status: p.customer_status,
+    });
+  }
+
+  const ltvMap = new Map<number, number | null>();
+  for (const l of (ltv.data ?? []) as Array<{
+    company_id: number;
+    churn_risk_score: number | null;
+  }>) {
+    ltvMap.set(l.company_id, l.churn_risk_score);
+  }
+
+  const rows: CompanyListRow[] = baseRows.map((r) => ({
+    ...r,
+    pareto_class: paretoMap.get(r.company_id)?.pareto_class ?? null,
+    customer_status: paretoMap.get(r.company_id)?.customer_status ?? null,
+    churn_risk_score: ltvMap.get(r.company_id) ?? null,
+  }));
+
+  return { rows, total: count ?? rows.length };
 }
 
 // ──────────────────────────────────────────────────────────────────────────

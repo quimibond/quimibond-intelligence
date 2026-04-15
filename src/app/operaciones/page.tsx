@@ -13,6 +13,8 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
   MobileCard,
   CompanyLink,
   DateDisplay,
@@ -28,20 +30,26 @@ import { Progress } from "@/components/ui/progress";
 import {
   getOperationsKpis,
   getWeeklyTrend,
-  getLateDeliveries,
-  getPendingDeliveries,
+  getDeliveriesPage,
   getActiveManufacturing,
-  type LateDeliveryRow,
-  type PendingDeliveryRow,
+  type DeliveryRow,
   type ManufacturingRow,
 } from "@/lib/queries/operations";
+import { parseTableParams } from "@/lib/queries/table-params";
 
 import { OtdWeeklyChart } from "./_components/otd-weekly-chart";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Operaciones" };
 
-export default function OperacionesPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function OperacionesPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -78,11 +86,47 @@ export default function OperacionesPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Entregas tarde abiertas
-          </CardTitle>
+          <CardTitle className="text-base">Entregas</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Busca por número u origen. Filtra por estado, tipo de picking,
+            fecha programada o solo tarde.
+          </p>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="dl_"
+            searchPlaceholder="Buscar entrega u origen…"
+            dateRange={{ label: "Fecha programada" }}
+            facets={[
+              {
+                key: "state",
+                label: "Estado",
+                options: [
+                  { value: "draft", label: "Borrador" },
+                  { value: "waiting", label: "Esperando" },
+                  { value: "confirmed", label: "Confirmada" },
+                  { value: "assigned", label: "Asignada" },
+                  { value: "done", label: "Completada" },
+                  { value: "cancel", label: "Cancelada" },
+                ],
+              },
+              {
+                key: "picking_type",
+                label: "Tipo",
+                options: [
+                  { value: "outgoing", label: "Salida" },
+                  { value: "incoming", label: "Entrada" },
+                  { value: "internal", label: "Interno" },
+                ],
+              },
+              {
+                key: "late",
+                label: "Atraso",
+                multiple: false,
+                options: [{ value: "1", label: "Solo tarde" }],
+              },
+            ]}
+          />
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -92,38 +136,23 @@ export default function OperacionesPage() {
               </div>
             }
           >
-            <LateDeliveriesTable />
+            <DeliveriesTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Manufactura activa</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <ManufacturingTable />
-            </Suspense>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Entregas pendientes</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <PendingDeliveriesTable />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Manufactura activa</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <ManufacturingTable />
+          </Suspense>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -199,9 +228,24 @@ async function WeeklyChartSection() {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Late deliveries
+// Deliveries (unified: state + late + date range)
 // ──────────────────────────────────────────────────────────────────────────
-const lateColumns: DataTableColumn<LateDeliveryRow>[] = [
+const deliveryStateLabel: Record<string, string> = {
+  draft: "Borrador",
+  waiting: "Esperando",
+  confirmed: "Confirmada",
+  assigned: "Asignada",
+  done: "Completada",
+  cancel: "Cancelada",
+};
+
+const pickingTypeLabel: Record<string, string> = {
+  outgoing: "Salida",
+  incoming: "Entrada",
+  internal: "Interno",
+};
+
+const deliveryColumns: DataTableColumn<DeliveryRow>[] = [
   {
     key: "name",
     header: "Movimiento",
@@ -210,12 +254,7 @@ const lateColumns: DataTableColumn<LateDeliveryRow>[] = [
   {
     key: "type",
     header: "Tipo",
-    cell: (r) =>
-      r.picking_type_code === "outgoing"
-        ? "Salida"
-        : r.picking_type_code === "incoming"
-          ? "Entrada"
-          : "—",
+    cell: (r) => pickingTypeLabel[r.picking_type_code ?? ""] ?? "—",
     hideOnMobile: true,
   },
   {
@@ -244,65 +283,101 @@ const lateColumns: DataTableColumn<LateDeliveryRow>[] = [
   {
     key: "state",
     header: "Estado",
-    cell: () => <StatusBadge status="overdue" />,
+    cell: (r) =>
+      r.is_late && r.state && r.state !== "done" && r.state !== "cancel" ? (
+        <StatusBadge status="overdue" />
+      ) : (
+        <Badge variant="secondary">
+          {deliveryStateLabel[r.state ?? ""] ?? r.state ?? "—"}
+        </Badge>
+      ),
   },
 ];
 
-async function LateDeliveriesTable() {
-  const rows = await getLateDeliveries(30);
+async function DeliveriesTable({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "dl_",
+    facetKeys: ["state", "picking_type", "late"],
+    defaultSize: 25,
+    defaultSort: "scheduled",
+  });
+  const { rows, total } = await getDeliveriesPage({
+    ...params,
+    state: params.facets.state,
+    picking_type: params.facets.picking_type,
+    onlyLate: (params.facets.late ?? []).includes("1"),
+  });
   if (rows.length === 0) {
     return (
       <EmptyState
         icon={CheckCircle2}
-        title="Sin entregas tarde"
-        description="Todas las entregas están a tiempo."
+        title="Sin entregas"
+        description="Ajusta los filtros o el rango de fechas."
         compact
       />
     );
   }
   return (
-    <DataTable
-      data={rows}
-      columns={lateColumns}
-      rowKey={(r) => String(r.id)}
-      mobileCard={(r) => (
-        <MobileCard
-          title={
-            r.company_id ? (
-              <CompanyLink
-                companyId={r.company_id}
-                name={r.company_name}
-                truncate
-              />
-            ) : (
-              (r.company_name ?? r.name ?? "—")
-            )
-          }
-          subtitle={r.name ?? undefined}
-          badge={<StatusBadge status="overdue" />}
-          fields={[
-            {
-              label: "Tipo",
-              value:
-                r.picking_type_code === "outgoing"
-                  ? "Salida"
-                  : r.picking_type_code === "incoming"
-                    ? "Entrada"
-                    : "—",
-            },
-            {
-              label: "Programada",
-              value: <DateDisplay date={r.scheduled_date} relative />,
-            },
-            {
-              label: "Origen",
-              value: r.origin ?? "—",
-              className: "col-span-2",
-            },
-          ]}
-        />
-      )}
-    />
+    <div className="space-y-3">
+      <DataTable
+        data={rows}
+        columns={deliveryColumns}
+        rowKey={(r) => String(r.id)}
+        mobileCard={(r) => (
+          <MobileCard
+            title={
+              r.company_id ? (
+                <CompanyLink
+                  companyId={r.company_id}
+                  name={r.company_name}
+                  truncate
+                />
+              ) : (
+                (r.company_name ?? r.name ?? "—")
+              )
+            }
+            subtitle={r.name ?? undefined}
+            badge={
+              r.is_late &&
+              r.state !== "done" &&
+              r.state !== "cancel" ? (
+                <StatusBadge status="overdue" />
+              ) : (
+                <Badge variant="secondary">
+                  {deliveryStateLabel[r.state ?? ""] ?? r.state ?? "—"}
+                </Badge>
+              )
+            }
+            fields={[
+              {
+                label: "Tipo",
+                value: pickingTypeLabel[r.picking_type_code ?? ""] ?? "—",
+              },
+              {
+                label: "Programada",
+                value: <DateDisplay date={r.scheduled_date} relative />,
+              },
+              {
+                label: "Origen",
+                value: r.origin ?? "—",
+                className: "col-span-2",
+              },
+            ]}
+          />
+        )}
+      />
+      <DataTablePagination
+        paramPrefix="dl_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="entregas"
+      />
+    </div>
   );
 }
 
@@ -422,96 +497,3 @@ async function ManufacturingTable() {
   );
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// Pending deliveries
-// ──────────────────────────────────────────────────────────────────────────
-const pendingStateLabel: Record<string, string> = {
-  assigned: "Asignada",
-  confirmed: "Confirmada",
-  waiting: "Esperando",
-};
-
-const pendingColumns: DataTableColumn<PendingDeliveryRow>[] = [
-  {
-    key: "name",
-    header: "Movimiento",
-    cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
-  },
-  {
-    key: "company",
-    header: "Empresa",
-    cell: (r) =>
-      r.company_id ? (
-        <CompanyLink companyId={r.company_id} name={r.company_name} truncate />
-      ) : (
-        <span className="text-muted-foreground">—</span>
-      ),
-    hideOnMobile: true,
-  },
-  {
-    key: "scheduled",
-    header: "Programada",
-    cell: (r) => <DateDisplay date={r.scheduled_date} relative />,
-  },
-  {
-    key: "state",
-    header: "Estado",
-    cell: (r) => (
-      <Badge variant={r.is_late ? "critical" : "info"}>
-        {pendingStateLabel[r.state ?? ""] ?? r.state ?? "—"}
-      </Badge>
-    ),
-  },
-];
-
-async function PendingDeliveriesTable() {
-  const rows = await getPendingDeliveries(20);
-  return (
-    <DataTable
-      data={rows}
-      columns={pendingColumns}
-      rowKey={(r) => String(r.id)}
-      mobileCard={(r) => (
-        <MobileCard
-          title={
-            r.company_id ? (
-              <CompanyLink
-                companyId={r.company_id}
-                name={r.company_name}
-                truncate
-              />
-            ) : (
-              (r.company_name ?? r.name ?? "—")
-            )
-          }
-          subtitle={r.name ?? undefined}
-          badge={
-            <Badge variant={r.is_late ? "critical" : "info"}>
-              {pendingStateLabel[r.state ?? ""] ?? r.state ?? "—"}
-            </Badge>
-          }
-          fields={[
-            {
-              label: "Tipo",
-              value:
-                r.picking_type_code === "outgoing"
-                  ? "Salida"
-                  : r.picking_type_code === "incoming"
-                    ? "Entrada"
-                    : "—",
-            },
-            {
-              label: "Programada",
-              value: <DateDisplay date={r.scheduled_date} relative />,
-            },
-          ]}
-        />
-      )}
-      emptyState={{
-        icon: Package,
-        title: "Sin entregas pendientes",
-        description: "Todas las entregas están completadas.",
-      }}
-    />
-  );
-}

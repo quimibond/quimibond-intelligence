@@ -14,6 +14,8 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
   MobileCard,
   CompanyLink,
   Currency,
@@ -30,18 +32,27 @@ import {
   getPurchasesKpis,
   getSingleSourceRisk,
   getPriceAnomalies,
-  getRecentPurchaseOrders,
+  getPurchaseOrdersPage,
+  getPurchaseBuyerOptions,
   getTopSuppliers,
   type SingleSourceRow,
   type PriceAnomalyRow,
   type RecentPurchaseOrder,
   type TopSupplierRow,
 } from "@/lib/queries/purchases";
+import { parseTableParams } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Compras" };
 
-export default function ComprasPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function ComprasPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -127,33 +138,37 @@ export default function ComprasPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Top proveedores</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <TopSuppliersTable />
-            </Suspense>
-          </CardContent>
-        </Card>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Top proveedores (12m)</CardTitle>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <TopSuppliersTable />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Compras recientes</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <RecentPurchasesTable />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">Órdenes de compra</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Busca por número o filtra por comprador, estado y fecha.
+          </p>
+        </CardHeader>
+        <CardContent className="space-y-3 pb-4">
+          <Suspense fallback={null}>
+            <PurchaseOrdersToolbar />
+          </Suspense>
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <RecentPurchasesTable searchParams={sp} />
+          </Suspense>
+        </CardContent>
+      </Card>
     </div>
   );
 }
@@ -554,42 +569,103 @@ const orderColumns: DataTableColumn<RecentPurchaseOrder>[] = [
   },
 ];
 
-async function RecentPurchasesTable() {
-  const rows = await getRecentPurchaseOrders(20);
+async function PurchaseOrdersToolbar() {
+  const buyers = await getPurchaseBuyerOptions();
   return (
-    <DataTable
-      data={rows}
-      columns={orderColumns}
-      rowKey={(r) => String(r.id)}
-      mobileCard={(r) => (
-        <MobileCard
-          title={
-            r.company_id ? (
-              <CompanyLink
-                companyId={r.company_id}
-                name={r.company_name}
-                truncate
-              />
-            ) : (
-              (r.company_name ?? "—")
-            )
-          }
-          subtitle={r.name ?? undefined}
-          badge={<StatusBadge status={(r.state ?? "draft") as "draft"} />}
-          fields={[
-            { label: "Monto", value: <Currency amount={r.amount_total_mxn} /> },
-            {
-              label: "Fecha",
-              value: <DateDisplay date={r.date_order} relative />,
-            },
-          ]}
-        />
-      )}
-      emptyState={{
-        icon: ShoppingBag,
-        title: "Sin órdenes recientes",
-        description: "No hay compras registradas.",
-      }}
+    <DataTableToolbar
+      paramPrefix="po_"
+      searchPlaceholder="Buscar OC…"
+      dateRange={{ label: "Fecha OC" }}
+      facets={[
+        {
+          key: "state",
+          label: "Estado",
+          options: [
+            { value: "draft", label: "Borrador" },
+            { value: "sent", label: "Solicitado" },
+            { value: "to approve", label: "Por aprobar" },
+            { value: "purchase", label: "Confirmada" },
+            { value: "done", label: "Completada" },
+            { value: "cancel", label: "Cancelada" },
+          ],
+        },
+        {
+          key: "buyer",
+          label: "Comprador",
+          options: buyers.map((b) => ({ value: b, label: b })),
+        },
+      ]}
     />
+  );
+}
+
+async function RecentPurchasesTable({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "po_",
+    facetKeys: ["state", "buyer"],
+    defaultSize: 25,
+    defaultSort: "-date",
+  });
+  const { rows, total } = await getPurchaseOrdersPage({
+    ...params,
+    state: params.facets.state,
+    buyer: params.facets.buyer,
+  });
+  return (
+    <div className="space-y-3">
+      <DataTable
+        data={rows}
+        columns={orderColumns}
+        rowKey={(r) => String(r.id)}
+        mobileCard={(r) => (
+          <MobileCard
+            title={
+              r.company_id ? (
+                <CompanyLink
+                  companyId={r.company_id}
+                  name={r.company_name}
+                  truncate
+                />
+              ) : (
+                (r.company_name ?? "—")
+              )
+            }
+            subtitle={r.name ?? undefined}
+            badge={<StatusBadge status={(r.state ?? "draft") as "draft"} />}
+            fields={[
+              {
+                label: "Monto",
+                value: <Currency amount={r.amount_total_mxn} />,
+              },
+              {
+                label: "Fecha",
+                value: <DateDisplay date={r.date_order} relative />,
+              },
+              {
+                label: "Comprador",
+                value: r.buyer_name ?? "—",
+                className: "col-span-2",
+              },
+            ]}
+          />
+        )}
+        emptyState={{
+          icon: ShoppingBag,
+          title: "Sin órdenes",
+          description: "Ajusta los filtros o el rango de fechas.",
+        }}
+      />
+      <DataTablePagination
+        paramPrefix="po_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="órdenes"
+      />
+    </div>
   );
 }

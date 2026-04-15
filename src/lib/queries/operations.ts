@@ -1,6 +1,11 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { joinedCompanyName } from "./_helpers";
+import {
+  endOfDay,
+  paginationRange,
+  type TableParams,
+} from "./table-params";
 
 /**
  * Operations queries v2 — usa views canónicas:
@@ -200,6 +205,93 @@ export async function getPendingDeliveries(
     state: r.state,
     is_late: r.is_late,
   }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Deliveries unified page (filterable by state, date range, late flag)
+// ──────────────────────────────────────────────────────────────────────────
+export interface DeliveryRow {
+  id: number;
+  name: string | null;
+  picking_type_code: string | null;
+  company_id: number | null;
+  company_name: string | null;
+  scheduled_date: string | null;
+  date_done: string | null;
+  state: string | null;
+  origin: string | null;
+  is_late: boolean | null;
+}
+
+export interface DeliveryPage {
+  rows: DeliveryRow[];
+  total: number;
+}
+
+const DELIVERY_SORT_MAP: Record<string, string> = {
+  scheduled: "scheduled_date",
+  done: "date_done",
+  name: "name",
+  state: "state",
+};
+
+export async function getDeliveriesPage(
+  params: TableParams & {
+    state?: string[];
+    picking_type?: string[];
+    onlyLate?: boolean;
+  }
+): Promise<DeliveryPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+
+  const sortCol =
+    (params.sort && DELIVERY_SORT_MAP[params.sort]) ?? "scheduled_date";
+  const ascending = params.sortDir === "asc" || !params.sort;
+
+  let query = sb
+    .from("odoo_deliveries")
+    .select(
+      "id, name, picking_type_code, company_id, scheduled_date, date_done, state, origin, is_late, companies:company_id(name)",
+      { count: "exact" }
+    );
+
+  if (params.onlyLate) query = query.eq("is_late", true);
+
+  if (params.state && params.state.length > 0) {
+    query = query.in("state", params.state);
+  }
+  if (params.picking_type && params.picking_type.length > 0) {
+    query = query.in("picking_type_code", params.picking_type);
+  }
+  if (params.from) query = query.gte("scheduled_date", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("scheduled_date", next);
+  }
+  if (params.q) {
+    query = query.or(`name.ilike.%${params.q}%,origin.ilike.%${params.q}%`);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  type Raw = Omit<DeliveryRow, "company_name"> & { companies: unknown };
+  const rows = ((data ?? []) as unknown as Raw[]).map((r) => ({
+    id: r.id,
+    name: r.name,
+    picking_type_code: r.picking_type_code,
+    company_id: r.company_id,
+    company_name: joinedCompanyName(r.companies),
+    scheduled_date: r.scheduled_date,
+    date_done: r.date_done,
+    state: r.state,
+    origin: r.origin,
+    is_late: r.is_late,
+  }));
+
+  return { rows, total: count ?? rows.length };
 }
 
 // ──────────────────────────────────────────────────────────────────────────

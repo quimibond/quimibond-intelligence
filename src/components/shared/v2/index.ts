@@ -13,6 +13,17 @@ export { MetricRow } from "./metric-row";
 export { EmptyState } from "./empty-state";
 export { MiniChart } from "./mini-chart";
 export { FilterBar, type FilterOption } from "./filter-bar";
+export {
+  DataTableToolbar,
+  type DataTableToolbarProps,
+  type FacetFilter,
+  type FacetOption,
+  type DateRangeFilter,
+} from "./data-table-toolbar";
+export {
+  DataTablePagination,
+  type DataTablePaginationProps,
+} from "./data-table-pagination";
 export { BottomSheet } from "./bottom-sheet";
 export { MobileCard } from "./mobile-card";
 export { PageHeader } from "./page-header";

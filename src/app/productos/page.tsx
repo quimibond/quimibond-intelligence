@@ -14,6 +14,8 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
   MobileCard,
   Currency,
   DateDisplay,
@@ -26,7 +28,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   getProductsKpis,
-  getReorderNeeded,
+  getInventoryPage,
+  getProductCategoryOptions,
   getTopMovers,
   getDeadStock,
   getTopMarginProducts,
@@ -35,12 +38,20 @@ import {
   type DeadStockRow,
   type TopMarginProductRow,
 } from "@/lib/queries/products";
+import { parseTableParams } from "@/lib/queries/table-params";
 import { formatNumber } from "@/lib/formatters";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Productos" };
 
-export default function ProductosPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function ProductosPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -60,14 +71,19 @@ export default function ProductosPage() {
         <ProductsHeroKpis />
       </Suspense>
 
-      {/* Reorder needed — la sección crítica para operaciones */}
+      {/* Inventario — tabla con filtros completos */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">
-            Reorden urgente — productos que se acaban
-          </CardTitle>
+          <CardTitle className="text-base">Inventario</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Busca por referencia o nombre y filtra por estado de reorden o
+            categoría. Por defecto muestra stockout, urgente 14d y reorder 30d.
+          </p>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <Suspense fallback={null}>
+            <InventoryToolbar />
+          </Suspense>
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -77,7 +93,7 @@ export default function ProductosPage() {
               </div>
             }
           >
-            <ReorderTable />
+            <ReorderTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -246,19 +262,63 @@ const reorderColumns: DataTableColumn<ReorderRow>[] = [
   },
 ];
 
-async function ReorderTable() {
-  const rows = await getReorderNeeded(40);
+async function InventoryToolbar() {
+  const categories = await getProductCategoryOptions();
+  return (
+    <DataTableToolbar
+      paramPrefix="inv_"
+      searchPlaceholder="Ref o nombre…"
+      facets={[
+        {
+          key: "status",
+          label: "Estado",
+          options: [
+            { value: "stockout", label: "Stockout" },
+            { value: "urgent_14d", label: "Urgente (14d)" },
+            { value: "reorder_30d", label: "Reorden (30d)" },
+            { value: "healthy", label: "Saludable" },
+            { value: "excess", label: "Exceso" },
+            { value: "no_movement", label: "Sin movimiento" },
+          ],
+        },
+        {
+          key: "category",
+          label: "Categoría",
+          options: categories.map((c) => ({ value: c, label: c })),
+        },
+      ]}
+    />
+  );
+}
+
+async function ReorderTable({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "inv_",
+    facetKeys: ["status", "category"],
+    defaultSize: 25,
+    defaultSort: "-run_rate",
+  });
+  const { rows, total } = await getInventoryPage({
+    ...params,
+    status: params.facets.status,
+    category: params.facets.category,
+  });
   if (rows.length === 0) {
     return (
       <EmptyState
         icon={PackageCheck}
-        title="Sin reorden urgente"
-        description="Todos los productos tienen stock suficiente."
+        title="Sin productos"
+        description="Ajusta los filtros para ver el inventario."
         compact
       />
     );
   }
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={reorderColumns}
@@ -301,6 +361,14 @@ async function ReorderTable() {
         />
       )}
     />
+    <DataTablePagination
+      paramPrefix="inv_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="productos"
+    />
+    </div>
   );
 }
 

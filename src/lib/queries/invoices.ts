@@ -1,6 +1,11 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, joinedCompanyName, pgInList } from "./_helpers";
+import {
+  endOfDay,
+  paginationRange,
+  type TableParams,
+} from "./table-params";
 
 /**
  * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.
@@ -159,6 +164,181 @@ export async function getOverdueInvoices(
     payment_state: row.payment_state,
     salesperson_name: row.salesperson_name,
   }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Facturas vencidas — versión paginada + filtrable (para DataTableToolbar)
+// ──────────────────────────────────────────────────────────────────────────
+export interface OverdueInvoicePage {
+  rows: OverdueInvoice[];
+  total: number;
+}
+
+const OVERDUE_SORT_MAP: Record<string, string> = {
+  amount: "amount_residual_mxn",
+  days: "days_overdue",
+  due: "due_date",
+  invoice: "invoice_date",
+  name: "name",
+};
+
+export async function getOverdueInvoicesPage(
+  params: TableParams & {
+    bucket?: string[]; // "1-30" | "31-60" | "61-90" | "91-120" | "120+"
+    salesperson?: string[];
+  }
+): Promise<OverdueInvoicePage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+
+  const sortCol =
+    (params.sort && OVERDUE_SORT_MAP[params.sort]) ?? "amount_residual_mxn";
+  const ascending = params.sortDir === "asc";
+
+  const [start, end] = paginationRange(params.page, params.size);
+
+  let query = sb
+    .from("odoo_invoices")
+    .select(
+      "id, name, company_id, amount_total_mxn, amount_residual_mxn, currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, companies:company_id(name)",
+      { count: "exact" }
+    )
+    .eq("move_type", "out_invoice")
+    .in("payment_state", ["not_paid", "partial"])
+    .gt("days_overdue", 0)
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.from) query = query.gte("invoice_date", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("invoice_date", next);
+  }
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.salesperson && params.salesperson.length > 0) {
+    query = query.in("salesperson_name", params.salesperson);
+  }
+
+  // Bucket filter: sumamos OR de rangos de days_overdue
+  if (params.bucket && params.bucket.length > 0) {
+    const orParts: string[] = [];
+    for (const b of params.bucket) {
+      if (b === "1-30") orParts.push("and(days_overdue.gte.1,days_overdue.lte.30)");
+      else if (b === "31-60")
+        orParts.push("and(days_overdue.gte.31,days_overdue.lte.60)");
+      else if (b === "61-90")
+        orParts.push("and(days_overdue.gte.61,days_overdue.lte.90)");
+      else if (b === "91-120")
+        orParts.push("and(days_overdue.gte.91,days_overdue.lte.120)");
+      else if (b === "120+") orParts.push("days_overdue.gte.121");
+    }
+    if (orParts.length > 0) query = query.or(orParts.join(","));
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  type Raw = Omit<OverdueInvoice, "company_name"> & { companies: unknown };
+  const rows = ((data ?? []) as unknown as Raw[]).map((row) => ({
+    id: row.id,
+    name: row.name,
+    company_id: row.company_id,
+    company_name: joinedCompanyName(row.companies),
+    amount_total_mxn: Number(row.amount_total_mxn) || 0,
+    amount_residual_mxn: Number(row.amount_residual_mxn) || 0,
+    currency: row.currency,
+    days_overdue: row.days_overdue,
+    due_date: row.due_date,
+    invoice_date: row.invoice_date,
+    payment_state: row.payment_state,
+    salesperson_name: row.salesperson_name,
+  }));
+
+  return { rows, total: count ?? rows.length };
+}
+
+/**
+ * Opciones distinct para el facet "Vendedor" en cobranza.
+ * Lightweight: solo nombres únicos entre las facturas vencidas.
+ */
+export async function getOverdueSalespeopleOptions(): Promise<string[]> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const { data } = await sb
+    .from("odoo_invoices")
+    .select("salesperson_name")
+    .eq("move_type", "out_invoice")
+    .in("payment_state", ["not_paid", "partial"])
+    .gt("days_overdue", 0)
+    .not("company_id", "in", pgInList(selfIds))
+    .not("salesperson_name", "is", null)
+    .limit(2000);
+  const set = new Set<string>();
+  for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
+    if (r.salesperson_name) set.add(r.salesperson_name);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Company aging — versión paginada + filtrable
+// ──────────────────────────────────────────────────────────────────────────
+export interface CompanyAgingPage {
+  rows: CompanyAgingRow[];
+  total: number;
+}
+
+export async function getCompanyAgingPage(
+  params: TableParams & { tier?: string[] }
+): Promise<CompanyAgingPage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const [start, end] = paginationRange(params.page, params.size);
+
+  const sortMap: Record<string, string> = {
+    total: "total_receivable",
+    revenue: "total_revenue",
+    "1_30": "overdue_1_30",
+    "31_60": "overdue_31_60",
+    "61_90": "overdue_61_90",
+    "90plus": "overdue_90plus",
+    company: "company_name",
+  };
+  const sortCol = (params.sort && sortMap[params.sort]) ?? "total_receivable";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("cash_flow_aging")
+    .select(
+      "company_id, company_name, tier, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, total_revenue",
+      { count: "exact" }
+    )
+    .gt("total_receivable", 0)
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.q) query = query.ilike("company_name", `%${params.q}%`);
+  if (params.tier && params.tier.length > 0) {
+    query = query.in("tier", params.tier);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<CompanyAgingRow>>).map((r) => ({
+    company_id: Number(r.company_id) || 0,
+    company_name: r.company_name ?? null,
+    tier: r.tier ?? null,
+    current_amount: Number(r.current_amount) || 0,
+    overdue_1_30: Number(r.overdue_1_30) || 0,
+    overdue_31_60: Number(r.overdue_31_60) || 0,
+    overdue_61_90: Number(r.overdue_61_90) || 0,
+    overdue_90plus: Number(r.overdue_90plus) || 0,
+    total_receivable: Number(r.total_receivable) || 0,
+    total_revenue: Number(r.total_revenue) || 0,
+  }));
+
+  return { rows, total: count ?? rows.length };
 }
 
 // ──────────────────────────────────────────────────────────────────────────

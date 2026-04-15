@@ -13,6 +13,8 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
   MobileCard,
   CompanyLink,
   Currency,
@@ -25,8 +27,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getArAging,
-  getCompanyAging,
-  getOverdueInvoices,
+  getCompanyAgingPage,
+  getOverdueInvoicesPage,
+  getOverdueSalespeopleOptions,
   getPaymentPredictions,
   getPaymentRiskKpis,
   type CompanyAgingRow,
@@ -39,11 +42,19 @@ import {
   type CeiHealth,
   type CeiRow,
 } from "@/lib/queries/analytics";
+import { parseTableParams } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cobranza" };
 
-export default function CobranzaPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function CobranzaPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -138,8 +149,26 @@ export default function CobranzaPage() {
           <CardTitle className="text-base">
             Clientes con cartera vencida
           </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Buckets de aging por empresa. Busca por nombre o filtra por tier.
+          </p>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="age_"
+            searchPlaceholder="Buscar cliente…"
+            facets={[
+              {
+                key: "tier",
+                label: "Tier",
+                options: [
+                  { value: "A", label: "Tier A" },
+                  { value: "B", label: "Tier B" },
+                  { value: "C", label: "Tier C" },
+                ],
+              },
+            ]}
+          />
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -149,7 +178,7 @@ export default function CobranzaPage() {
               </div>
             }
           >
-            <CompanyAgingTable />
+            <CompanyAgingTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -158,8 +187,15 @@ export default function CobranzaPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Facturas vencidas</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Busca por número, filtra por vendedor, bucket de aging o rango de
+            fecha de emisión.
+          </p>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <Suspense fallback={null}>
+            <OverdueTableToolbar />
+          </Suspense>
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -169,7 +205,7 @@ export default function CobranzaPage() {
               </div>
             }
           >
-            <OverdueTable />
+            <OverdueTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -612,19 +648,25 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   },
 ];
 
-async function CompanyAgingTable() {
-  const rows = await getCompanyAging(50);
-  const overdueOnly = rows.filter(
-    (r) =>
-      r.overdue_1_30 +
-        r.overdue_31_60 +
-        r.overdue_61_90 +
-        r.overdue_90plus >
-      0
-  );
+async function CompanyAgingTable({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "age_",
+    facetKeys: ["tier"],
+    defaultSize: 25,
+    defaultSort: "-total",
+  });
+  const { rows, total } = await getCompanyAgingPage({
+    ...params,
+    tier: params.facets.tier,
+  });
   return (
+    <div className="space-y-3">
     <DataTable
-      data={overdueOnly}
+      data={rows}
       columns={companyColumns}
       rowKey={(r) => String(r.company_id)}
       mobileCard={(r) => (
@@ -669,6 +711,14 @@ async function CompanyAgingTable() {
         description: "Todos los clientes están al corriente.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="age_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="clientes"
+    />
+    </div>
   );
 }
 
@@ -735,9 +785,53 @@ function bucketFromDays(days: number | null): string {
   return "120+";
 }
 
-async function OverdueTable() {
-  const rows = await getOverdueInvoices(50);
+async function OverdueTableToolbar() {
+  const salespeople = await getOverdueSalespeopleOptions();
   return (
+    <DataTableToolbar
+      paramPrefix="inv_"
+      searchPlaceholder="Buscar factura…"
+      dateRange={{ label: "Fecha factura" }}
+      facets={[
+        {
+          key: "bucket",
+          label: "Aging",
+          options: [
+            { value: "1-30", label: "1–30 días" },
+            { value: "31-60", label: "31–60 días" },
+            { value: "61-90", label: "61–90 días" },
+            { value: "91-120", label: "91–120 días" },
+            { value: "120+", label: "120+ días" },
+          ],
+        },
+        {
+          key: "salesperson",
+          label: "Vendedor",
+          options: salespeople.map((s) => ({ value: s, label: s })),
+        },
+      ]}
+    />
+  );
+}
+
+async function OverdueTable({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "inv_",
+    facetKeys: ["bucket", "salesperson"],
+    defaultSize: 25,
+    defaultSort: "-amount",
+  });
+  const { rows, total } = await getOverdueInvoicesPage({
+    ...params,
+    bucket: params.facets.bucket,
+    salesperson: params.facets.salesperson,
+  });
+  return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={invoiceColumns}
@@ -785,5 +879,13 @@ async function OverdueTable() {
         description: "Todas las facturas están al corriente.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="inv_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="facturas"
+    />
+    </div>
   );
 }

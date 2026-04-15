@@ -14,6 +14,8 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
   MobileCard,
   CompanyLink,
   Currency,
@@ -33,12 +35,14 @@ import {
   getReorderRisk,
   getTopCustomers,
   getTopSalespeople,
-  getRecentSaleOrders,
+  getSaleOrdersPage,
+  getSaleOrderSalespeopleOptions,
   type ReorderRiskRow,
   type TopCustomerRow,
   type SalespersonRow,
   type RecentSaleOrder,
 } from "@/lib/queries/sales";
+import { parseTableParams } from "@/lib/queries/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
@@ -47,7 +51,14 @@ export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const metadata = { title: "Ventas" };
 
-export default function VentasPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function VentasPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -136,9 +147,16 @@ export default function VentasPage() {
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Pedidos recientes</CardTitle>
+          <CardTitle className="text-base">Pedidos</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Busca por número o filtra por vendedor, estado y fecha. Datos en
+            vivo de Odoo.
+          </p>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <Suspense fallback={null}>
+            <SaleOrdersToolbar />
+          </Suspense>
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -148,7 +166,7 @@ export default function VentasPage() {
               </div>
             }
           >
-            <RecentOrdersTable />
+            <RecentOrdersTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -564,9 +582,53 @@ const orderColumns: DataTableColumn<RecentSaleOrder>[] = [
   },
 ];
 
-async function RecentOrdersTable() {
-  const rows = await getRecentSaleOrders(25);
+async function SaleOrdersToolbar() {
+  const salespeople = await getSaleOrderSalespeopleOptions();
   return (
+    <DataTableToolbar
+      paramPrefix="so_"
+      searchPlaceholder="Buscar pedido…"
+      dateRange={{ label: "Fecha pedido" }}
+      facets={[
+        {
+          key: "state",
+          label: "Estado",
+          options: [
+            { value: "draft", label: "Borrador" },
+            { value: "sent", label: "Enviado" },
+            { value: "sale", label: "Confirmado" },
+            { value: "done", label: "Hecho" },
+            { value: "cancel", label: "Cancelado" },
+          ],
+        },
+        {
+          key: "salesperson",
+          label: "Vendedor",
+          options: salespeople.map((s) => ({ value: s, label: s })),
+        },
+      ]}
+    />
+  );
+}
+
+async function RecentOrdersTable({
+  searchParams,
+}: {
+  searchParams: Record<string, string | string[] | undefined>;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "so_",
+    facetKeys: ["state", "salesperson"],
+    defaultSize: 25,
+    defaultSort: "-date",
+  });
+  const { rows, total } = await getSaleOrdersPage({
+    ...params,
+    state: params.facets.state,
+    salesperson: params.facets.salesperson,
+  });
+  return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={orderColumns}
@@ -602,9 +664,17 @@ async function RecentOrdersTable() {
       )}
       emptyState={{
         icon: ShoppingCart,
-        title: "Sin pedidos recientes",
-        description: "No hay sale orders registradas.",
+        title: "Sin pedidos",
+        description: "Ajusta los filtros o el rango de fechas.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="so_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="pedidos"
+    />
+    </div>
   );
 }

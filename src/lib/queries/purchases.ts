@@ -1,6 +1,11 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { resolveCompanyNames } from "./_helpers";
+import {
+  endOfDay,
+  paginationRange,
+  type TableParams,
+} from "./table-params";
 
 /**
  * Purchases queries v2 — usa views canónicas:
@@ -202,6 +207,86 @@ export interface RecentPurchaseOrder {
   buyer_name: string | null;
   date_order: string | null;
   state: string | null;
+}
+
+export interface RecentPurchaseOrderPage {
+  rows: RecentPurchaseOrder[];
+  total: number;
+}
+
+const PO_SORT_MAP: Record<string, string> = {
+  date: "date_order",
+  amount: "amount_total_mxn",
+  name: "name",
+  state: "state",
+};
+
+export async function getPurchaseOrdersPage(
+  params: TableParams & { state?: string[]; buyer?: string[] }
+): Promise<RecentPurchaseOrderPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+
+  const sortCol = (params.sort && PO_SORT_MAP[params.sort]) ?? "date_order";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("odoo_purchase_orders")
+    .select(
+      "id, name, company_id, amount_total_mxn, buyer_name, date_order, state",
+      { count: "exact" }
+    );
+
+  if (params.from) query = query.gte("date_order", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("date_order", next);
+  }
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.state && params.state.length > 0) {
+    query = query.in("state", params.state);
+  }
+  if (params.buyer && params.buyer.length > 0) {
+    query = query.in("buyer_name", params.buyer);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = (data ?? []) as Array<Omit<RecentPurchaseOrder, "company_name">>;
+  const nameMap = await resolveCompanyNames(
+    sb,
+    rows.map((r) => r.company_id)
+  );
+
+  return {
+    total: count ?? rows.length,
+    rows: rows.map((row) => ({
+      ...row,
+      company_name:
+        row.company_id != null
+          ? (nameMap.get(Number(row.company_id)) ?? null)
+          : null,
+    })),
+  };
+}
+
+export async function getPurchaseBuyerOptions(): Promise<string[]> {
+  const sb = getServiceClient();
+  const since = new Date();
+  since.setMonth(since.getMonth() - 6);
+  const { data } = await sb
+    .from("odoo_purchase_orders")
+    .select("buyer_name")
+    .gte("date_order", since.toISOString().slice(0, 10))
+    .not("buyer_name", "is", null)
+    .limit(3000);
+  const set = new Set<string>();
+  for (const r of (data ?? []) as Array<{ buyer_name: string | null }>) {
+    if (r.buyer_name) set.add(r.buyer_name);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
 }
 
 export async function getRecentPurchaseOrders(

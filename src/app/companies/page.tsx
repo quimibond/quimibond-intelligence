@@ -4,6 +4,8 @@ import { Building2 } from "lucide-react";
 import {
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
   MobileCard,
   CompanyLink,
   Currency,
@@ -16,12 +18,15 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
-  getCompaniesList,
+  getCompaniesPage,
   type CompanyListRow,
 } from "@/lib/queries/companies";
+import { parseTableParams } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Empresas" };
+
+type SearchParams = Record<string, string | string[] | undefined>;
 
 const statusVariant: Record<
   string,
@@ -40,7 +45,12 @@ const statusLabel: Record<string, string> = {
   churned: "Perdido",
 };
 
-export default function CompaniesPage() {
+export default async function CompaniesPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-4 pb-24 md:pb-6">
       <PageHeader
@@ -57,6 +67,31 @@ export default function CompaniesPage() {
         </a>
       </div>
 
+      <DataTableToolbar
+        searchPlaceholder="Buscar empresa…"
+        facets={[
+          {
+            key: "tier",
+            label: "Tier",
+            options: [
+              { value: "A", label: "Tier A" },
+              { value: "B", label: "Tier B" },
+              { value: "C", label: "Tier C" },
+            ],
+          },
+          {
+            key: "risk",
+            label: "Riesgo",
+            options: [
+              { value: "low", label: "Bajo" },
+              { value: "medium", label: "Medio" },
+              { value: "high", label: "Alto" },
+              { value: "critical", label: "Crítico" },
+            ],
+          },
+        ]}
+      />
+
       <Suspense
         fallback={
           <div className="space-y-2">
@@ -66,7 +101,7 @@ export default function CompaniesPage() {
           </div>
         }
       >
-        <CompaniesTable />
+        <CompaniesTable searchParams={sp} />
       </Suspense>
     </div>
   );
@@ -147,15 +182,28 @@ const columns: DataTableColumn<CompanyListRow>[] = [
   },
 ];
 
-async function CompaniesTable() {
-  const rows = await getCompaniesList(150);
+async function CompaniesTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    facetKeys: ["tier", "risk"],
+    defaultSize: 25,
+    defaultSort: "-revenue",
+  });
+  const { rows, total } = await getCompaniesPage({
+    ...params,
+    tier: params.facets.tier,
+    risk: params.facets.risk,
+  });
 
   if (rows.length === 0) {
     return (
       <EmptyState
         icon={Building2}
         title="Sin empresas"
-        description="No hay empresas con revenue registrado."
+        description="Ajusta tus filtros — no hay resultados."
       />
     );
   }
@@ -166,13 +214,15 @@ async function CompaniesTable() {
         <CardContent className="grid grid-cols-3 gap-3 py-3 text-center sm:grid-cols-4">
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Total empresas
+              Empresas (filtradas)
             </div>
-            <div className="text-lg font-bold tabular-nums">{rows.length}</div>
+            <div className="text-lg font-bold tabular-nums">
+              {total.toLocaleString("es-MX")}
+            </div>
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Pareto A
+              Pareto A (página)
             </div>
             <div className="text-lg font-bold tabular-nums text-success">
               {rows.filter((r) => r.pareto_class === "A").length}
@@ -180,7 +230,7 @@ async function CompaniesTable() {
           </div>
           <div>
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              En riesgo
+              En riesgo (página)
             </div>
             <div className="text-lg font-bold tabular-nums text-danger">
               {rows.filter((r) => r.customer_status === "at_risk").length}
@@ -188,7 +238,7 @@ async function CompaniesTable() {
           </div>
           <div className="hidden sm:block">
             <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-              Con vencido
+              Con vencido (página)
             </div>
             <div className="text-lg font-bold tabular-nums text-warning">
               {rows.filter((r) => r.overdue_amount > 0).length}
@@ -248,6 +298,12 @@ async function CompaniesTable() {
             ]}
           />
         )}
+      />
+      <DataTablePagination
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="empresas"
       />
     </>
   );

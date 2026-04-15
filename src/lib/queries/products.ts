@@ -1,5 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
+import { paginationRange, type TableParams } from "./table-params";
 
 /**
  * Products queries v2 — usa views canónicas:
@@ -127,6 +128,107 @@ export async function getReorderNeeded(
     customers_12m: Number(r.customers_12m) || 0,
     last_sale_date: r.last_sale_date ?? null,
   }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Inventario paginado + filtros (status, category, búsqueda por ref/nombre)
+// ──────────────────────────────────────────────────────────────────────────
+export interface InventoryPage {
+  rows: ReorderRow[];
+  total: number;
+}
+
+const INVENTORY_STATUSES = [
+  "stockout",
+  "urgent_14d",
+  "reorder_30d",
+  "healthy",
+  "excess",
+  "no_movement",
+] as const;
+
+const INVENTORY_SORT_MAP: Record<string, string> = {
+  run_rate: "daily_run_rate",
+  days_of_stock: "days_of_stock",
+  stock: "stock_qty",
+  qty_sold: "qty_sold_90d",
+  customers: "customers_12m",
+  ref: "product_ref",
+  name: "product_name",
+};
+
+export async function getInventoryPage(
+  params: TableParams & {
+    status?: string[];
+    category?: string[];
+  }
+): Promise<InventoryPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+
+  const sortCol =
+    (params.sort && INVENTORY_SORT_MAP[params.sort]) ?? "daily_run_rate";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("inventory_velocity")
+    .select(
+      "product_ref, product_name, category, reorder_status, stock_qty, available_qty, daily_run_rate, days_of_stock, qty_sold_90d, reorder_min, customers_12m, last_sale_date",
+      { count: "exact" }
+    );
+
+  const statuses =
+    params.status && params.status.length > 0
+      ? params.status
+      : ["stockout", "urgent_14d", "reorder_30d"];
+  query = query.in("reorder_status", statuses);
+
+  if (params.category && params.category.length > 0) {
+    query = query.in("category", params.category);
+  }
+  if (params.q) {
+    query = query.or(
+      `product_ref.ilike.%${params.q}%,product_name.ilike.%${params.q}%`
+    );
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<ReorderRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    category: r.category ?? null,
+    reorder_status: r.reorder_status ?? "—",
+    stock_qty: Number(r.stock_qty) || 0,
+    available_qty: Number(r.available_qty) || 0,
+    daily_run_rate:
+      r.daily_run_rate != null ? Number(r.daily_run_rate) : null,
+    days_of_stock: r.days_of_stock != null ? Number(r.days_of_stock) : null,
+    qty_sold_90d: Number(r.qty_sold_90d) || 0,
+    reorder_min: r.reorder_min != null ? Number(r.reorder_min) : null,
+    customers_12m: Number(r.customers_12m) || 0,
+    last_sale_date: r.last_sale_date ?? null,
+  }));
+
+  return { rows, total: count ?? rows.length };
+}
+
+export const INVENTORY_STATUS_OPTIONS = INVENTORY_STATUSES;
+
+export async function getProductCategoryOptions(): Promise<string[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("inventory_velocity")
+    .select("category")
+    .not("category", "is", null)
+    .limit(5000);
+  const set = new Set<string>();
+  for (const r of (data ?? []) as Array<{ category: string | null }>) {
+    if (r.category) set.add(r.category);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
 }
 
 // ──────────────────────────────────────────────────────────────────────────
