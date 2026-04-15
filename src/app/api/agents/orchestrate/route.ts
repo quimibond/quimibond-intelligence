@@ -1359,17 +1359,28 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
       return buildFinancieroContextOperativo(sb, profileSection);
     }
     case "operaciones_dir": {
-      const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries] = await Promise.all([
+      const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries, mfgPending, mfgRecent] = await Promise.all([
         sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').gte("scheduled_date", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("scheduled_date", { ascending: true }).limit(15),
         sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast, warehouse_name").order("qty_on_hand", { ascending: true }).limit(20),
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, available_qty, reorder_min, standard_price").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(15),
-        // NEW: Pending purchase orders (material on the way)
+        // Pending purchase orders (material on the way)
         sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, date_order, buyer_name").eq("state", "purchase").order("date_order", { ascending: false }).limit(10),
-        // NEW: All pending outgoing deliveries (not just late)
+        // All pending outgoing deliveries (not just late)
         sb.from("odoo_deliveries").select("company_id, name, state, scheduled_date, origin").not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(15),
+        // NEW (audit 2026-04-15): MRP orders in progress or confirmed — production pipeline
+        sb.from("odoo_manufacturing").select("name, product_name, qty_planned, qty_produced, state, date_start, date_finished, assigned_user, origin").in("state", ["draft", "confirmed", "progress", "to_close"]).order("date_start", { ascending: true, nullsFirst: false }).limit(15),
+        // NEW: completed MRP orders last 30d that under-produced (qty_produced < qty_planned)
+        // These are quality/capacity issues the CEO needs to know about
+        sb.from("odoo_manufacturing").select("name, product_name, qty_planned, qty_produced, date_finished, assigned_user, origin").eq("state", "done").gte("date_finished", new Date(Date.now() - 30 * 86400_000).toISOString()).order("date_finished", { ascending: false }).limit(50),
       ]);
-      return `${profileSection}## ENTREGAS ATRASADAS (${(deliveries.data ?? []).length})\n${safeJSON(deliveries.data)}\n## TODAS las entregas pendientes\n${safeJSON(pendingDeliveries.data)}\n## COMPRAS PENDIENTES (material en camino)\n${safeJSON(pendingPOs.data)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
+      // Filter under-produced orders in JS (qty_produced < qty_planned with non-zero planned)
+      const underProduced = ((mfgRecent.data ?? []) as Array<Record<string, unknown>>).filter(m => {
+        const planned = Number(m.qty_planned ?? 0);
+        const produced = Number(m.qty_produced ?? 0);
+        return planned > 0 && produced < planned * 0.98; // allow 2% tolerance
+      }).slice(0, 10);
+      return `${profileSection}## ENTREGAS ATRASADAS (${(deliveries.data ?? []).length})\n${safeJSON(deliveries.data)}\n## TODAS las entregas pendientes\n${safeJSON(pendingDeliveries.data)}\n## COMPRAS PENDIENTES (material en camino)\n${safeJSON(pendingPOs.data)}\n## PRODUCCION EN CURSO (MRP orders planeadas/activas)\n${safeJSON(mfgPending.data)}\n## PRODUCCION CON SUBPRODUCCION (ultimo mes: qty_produced < qty_planned)\n${safeJSON(underProduced)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
     }
     case "compras": {
       const [singleSource, supplierDep, recentPOs, priceChanges, priceAnomalies, weOweSuppliers, supplierThreads] = await Promise.all([
