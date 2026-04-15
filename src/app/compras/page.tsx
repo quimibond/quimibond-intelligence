@@ -18,6 +18,7 @@ import {
   DataTablePagination,
   TableViewOptions,
   TableExportButton,
+  SectionNav,
   MobileCard,
   CompanyLink,
   Currency,
@@ -61,30 +62,41 @@ export default async function ComprasPage({
       <PageHeader
         title="Compras"
         subtitle="Pedidos, riesgo de proveedor único y anomalías de precio"
+        actions={
+          <div className="flex flex-wrap gap-2">
+            <a
+              href="/compras/price-variance"
+              className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Variancia de precios →
+            </a>
+            <a
+              href="/compras/stockouts"
+              className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Cola de stockouts →
+            </a>
+            <a
+              href="/compras/costos-bom"
+              className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Costos de BOM →
+            </a>
+          </div>
+        }
       />
 
-      {/* Sub-nav a páginas especializadas */}
-      <div className="flex flex-wrap gap-2 text-xs">
-        <a
-          href="/compras/price-variance"
-          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
-        >
-          Variancia de precios
-        </a>
-        <a
-          href="/compras/stockouts"
-          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
-        >
-          Cola de stockouts
-        </a>
-        <a
-          href="/compras/costos-bom"
-          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
-        >
-          Costos de BOM
-        </a>
-      </div>
+      <SectionNav
+        items={[
+          { id: "kpis", label: "Resumen" },
+          { id: "single-source", label: "Proveedor único" },
+          { id: "price-anomalies", label: "Anomalías de precio" },
+          { id: "top-suppliers", label: "Top proveedores" },
+          { id: "orders", label: "Órdenes" },
+        ]}
+      />
 
+      <section id="kpis" className="scroll-mt-24">
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -96,8 +108,10 @@ export default async function ComprasPage({
       >
         <PurchasesKpisSection />
       </Suspense>
+      </section>
 
       {/* Single source risk — la sección crítica */}
+      <section id="single-source" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -145,8 +159,10 @@ export default async function ComprasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
       {/* Price anomalies */}
+      <section id="price-anomalies" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -192,7 +208,9 @@ export default async function ComprasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="top-suppliers" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -221,7 +239,9 @@ export default async function ComprasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="orders" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -249,6 +269,7 @@ export default async function ComprasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

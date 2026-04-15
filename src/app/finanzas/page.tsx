@@ -17,6 +17,7 @@ import {
   PageHeader,
   DataTable,
   TableExportButton,
+  SectionNav,
   MobileCard,
   Currency,
   MetricRow,
@@ -61,11 +62,25 @@ export default function FinanzasPage() {
         subtitle="Posición ejecutiva, runway y cashflow"
       />
 
+      <SectionNav
+        items={[
+          { id: "runway", label: "Runway" },
+          { id: "kpis", label: "KPIs CFO" },
+          { id: "flow", label: "Flujo 30d" },
+          { id: "cycle", label: "Ciclo CxT" },
+          { id: "pl", label: "P&L 12m" },
+          { id: "cash", label: "Posición de caja" },
+        ]}
+      />
+
+      <section id="runway" className="scroll-mt-24">
       {/* Runway alert — lo más crítico para el CEO */}
       <Suspense fallback={<Skeleton className="h-24 rounded-xl" />}>
         <RunwaySection />
       </Suspense>
+      </section>
 
+      <section id="kpis" className="scroll-mt-24">
       {/* KPIs del CFO dashboard */}
       <Suspense
         fallback={
@@ -78,7 +93,9 @@ export default function FinanzasPage() {
       >
         <CfoKpisSection />
       </Suspense>
+      </section>
 
+      <section id="flow" className="scroll-mt-24">
       {/* Flujo 30 días + working capital */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card>
@@ -102,7 +119,9 @@ export default function FinanzasPage() {
           </CardContent>
         </Card>
       </div>
+      </section>
 
+      <section id="cycle" className="scroll-mt-24">
       {/* Working Capital Cycle — DSO/DPO/DIO/CCC con COGS real */}
       <Card>
         <CardHeader>
@@ -128,7 +147,9 @@ export default function FinanzasPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="pl" className="scroll-mt-24">
       {/* P&L chart */}
       <Card>
         <CardHeader>
@@ -142,7 +163,9 @@ export default function FinanzasPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="cash" className="scroll-mt-24">
       {/* Cuentas bancarias */}
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -155,6 +178,7 @@ export default function FinanzasPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

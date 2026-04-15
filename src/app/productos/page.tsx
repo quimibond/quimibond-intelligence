@@ -18,6 +18,7 @@ import {
   DataTablePagination,
   TableViewOptions,
   TableExportButton,
+  SectionNav,
   MobileCard,
   Currency,
   DateDisplay,
@@ -62,6 +63,17 @@ export default async function ProductosPage({
         subtitle="Inventario, reorden urgente, dead stock y márgenes"
       />
 
+      <SectionNav
+        items={[
+          { id: "kpis", label: "Resumen" },
+          { id: "inventory", label: "Inventario" },
+          { id: "top-movers", label: "Top movers" },
+          { id: "top-margin", label: "Top margen" },
+          { id: "dead-stock", label: "Dead stock" },
+        ]}
+      />
+
+      <section id="kpis" className="scroll-mt-24">
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -73,8 +85,10 @@ export default async function ProductosPage({
       >
         <ProductsHeroKpis />
       </Suspense>
+      </section>
 
       {/* Inventario — tabla con filtros completos */}
+      <section id="inventory" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -110,7 +124,9 @@ export default async function ProductosPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="top-movers" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -137,7 +153,9 @@ export default async function ProductosPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="top-margin" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -155,7 +173,9 @@ export default async function ProductosPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="dead-stock" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -185,6 +205,7 @@ export default async function ProductosPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

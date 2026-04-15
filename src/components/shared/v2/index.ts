@@ -35,6 +35,7 @@ export { BottomSheet } from "./bottom-sheet";
 export { MobileCard } from "./mobile-card";
 export { PageHeader, type BreadcrumbItem } from "./page-header";
 export { ConfirmDialog } from "./confirm-dialog";
+export { SectionNav, type SectionNavItem } from "./section-nav";
 export { EvidencePackView } from "./evidence-pack";
 export { PullToRefresh } from "./pull-to-refresh";
 export {

@@ -18,6 +18,7 @@ import {
   DataTablePagination,
   TableViewOptions,
   TableExportButton,
+  SectionNav,
   MobileCard,
   CompanyLink,
   Currency,
@@ -67,17 +68,28 @@ export default async function VentasPage({
       <PageHeader
         title="Ventas"
         subtitle="Ingresos del mes, reorder risk y pipeline"
+        actions={
+          <a
+            href="/ventas/cohorts"
+            className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            Retención por cohorte →
+          </a>
+        }
       />
 
-      <div className="flex flex-wrap gap-2 text-xs">
-        <a
-          href="/ventas/cohorts"
-          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
-        >
-          Retención por cohorte
-        </a>
-      </div>
+      <SectionNav
+        items={[
+          { id: "kpis", label: "Resumen" },
+          { id: "trend", label: "Tendencia 12m" },
+          { id: "reorder", label: "Reorder risk" },
+          { id: "top-customers", label: "Top clientes" },
+          { id: "salespeople", label: "Vendedores" },
+          { id: "orders", label: "Pedidos" },
+        ]}
+      />
 
+      <section id="kpis" className="scroll-mt-24">
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -89,7 +101,9 @@ export default async function VentasPage({
       >
         <SalesKpisSection />
       </Suspense>
+      </section>
 
+      <section id="trend" className="scroll-mt-24">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
@@ -102,7 +116,9 @@ export default async function VentasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="reorder" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -154,7 +170,9 @@ export default async function VentasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="top-customers" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -185,7 +203,9 @@ export default async function VentasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="salespeople" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -201,7 +221,9 @@ export default async function VentasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="orders" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -236,6 +258,7 @@ export default async function VentasPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

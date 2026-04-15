@@ -13,6 +13,7 @@ import {
   PageHeader,
   DataTable,
   TableExportButton,
+  SectionNav,
   MobileCard,
   EmptyState,
   type DataTableColumn,
@@ -45,6 +46,17 @@ export default function EquipoPage() {
         subtitle="Backlog de actividades por persona, departamentos e insights"
       />
 
+      <SectionNav
+        items={[
+          { id: "kpis", label: "Resumen" },
+          { id: "backlog", label: "Backlog" },
+          { id: "insights-dept", label: "Insights por depto" },
+          { id: "departments", label: "Departamentos" },
+          { id: "employees", label: "Plantilla" },
+        ]}
+      />
+
+      <section id="kpis" className="scroll-mt-24">
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -56,8 +68,10 @@ export default function EquipoPage() {
       >
         <TeamHeroKpis />
       </Suspense>
+      </section>
 
       {/* Backlog crítico */}
+      <section id="backlog" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">
@@ -79,7 +93,9 @@ export default function EquipoPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="insights-dept" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">
@@ -95,7 +111,9 @@ export default function EquipoPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="departments" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">
@@ -111,7 +129,9 @@ export default function EquipoPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="employees" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">Plantilla activa</CardTitle>
@@ -123,6 +143,7 @@ export default function EquipoPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

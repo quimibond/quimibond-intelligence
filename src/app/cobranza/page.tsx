@@ -17,6 +17,7 @@ import {
   DataTablePagination,
   TableViewOptions,
   TableExportButton,
+  SectionNav,
   MobileCard,
   CompanyLink,
   Currency,
@@ -65,7 +66,19 @@ export default async function CobranzaPage({
         subtitle="Cartera vencida, riesgo de pago y aging"
       />
 
+      <SectionNav
+        items={[
+          { id: "kpis", label: "Resumen" },
+          { id: "cei", label: "CEI" },
+          { id: "buckets", label: "Aging buckets" },
+          { id: "payment-risk", label: "Riesgo de pago" },
+          { id: "company-aging", label: "Cartera por cliente" },
+          { id: "overdue", label: "Facturas vencidas" },
+        ]}
+      />
+
       {/* Hero KPIs */}
+      <section id="kpis" className="scroll-mt-24 space-y-4">
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -77,8 +90,10 @@ export default async function CobranzaPage({
       >
         <CobranzaHeroKpis />
       </Suspense>
+      </section>
 
       {/* Collection Effectiveness Index */}
+      <section id="cei" className="scroll-mt-24">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -103,8 +118,10 @@ export default async function CobranzaPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
       {/* Aging buckets */}
+      <section id="buckets" className="scroll-mt-24">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">Aging buckets</CardTitle>
@@ -123,8 +140,10 @@ export default async function CobranzaPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
       {/* Payment risk */}
+      <section id="payment-risk" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -182,8 +201,10 @@ export default async function CobranzaPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
       {/* Companies with aging */}
+      <section id="company-aging" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -231,8 +252,10 @@ export default async function CobranzaPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
       {/* Overdue invoices */}
+      <section id="overdue" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -267,6 +290,7 @@ export default async function CobranzaPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

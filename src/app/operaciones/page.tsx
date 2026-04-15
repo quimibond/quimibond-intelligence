@@ -17,6 +17,7 @@ import {
   DataTablePagination,
   TableViewOptions,
   TableExportButton,
+  SectionNav,
   MobileCard,
   CompanyLink,
   DateDisplay,
@@ -61,6 +62,16 @@ export default async function OperacionesPage({
         subtitle="OTD semanal, entregas tarde, manufactura activa"
       />
 
+      <SectionNav
+        items={[
+          { id: "kpis", label: "Resumen" },
+          { id: "otd", label: "OTD semanal" },
+          { id: "deliveries", label: "Entregas" },
+          { id: "manufacturing", label: "Manufactura" },
+        ]}
+      />
+
+      <section id="kpis" className="scroll-mt-24">
       <Suspense
         fallback={
           <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -72,7 +83,9 @@ export default async function OperacionesPage({
       >
         <OpsHeroKpis />
       </Suspense>
+      </section>
 
+      <section id="otd" className="scroll-mt-24">
       <Card>
         <CardHeader>
           <CardTitle className="text-base">
@@ -87,7 +100,9 @@ export default async function OperacionesPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="deliveries" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -153,7 +168,9 @@ export default async function OperacionesPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="manufacturing" className="scroll-mt-24">
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
@@ -182,6 +199,7 @@ export default async function OperacionesPage({
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }

@@ -17,6 +17,7 @@ import {
   KpiCard,
   DataTable,
   TableExportButton,
+  SectionNav,
   MobileCard,
   Currency,
   EmptyState,
@@ -273,6 +274,20 @@ export default function CostosBomPage() {
         subtitle="real_unit_cost derivado de BOMs activos — materia prima sumada por ingrediente"
       />
 
+      <SectionNav
+        items={[
+          { id: "intro", label: "Introducción" },
+          { id: "kpis", label: "Resumen" },
+          { id: "suspicious", label: "Sospechosos" },
+          { id: "missing", label: "Sin costear" },
+          { id: "top-revenue", label: "Top revenue" },
+          { id: "uom-mismatch", label: "UoM mismatch" },
+          { id: "duplicates", label: "Duplicados" },
+          { id: "multi-versions", label: "Múltiples versiones" },
+        ]}
+      />
+
+      <section id="intro" className="scroll-mt-24">
       {/* Disclaimer importante */}
       <Card className="border-info/40 bg-info/5">
         <CardContent className="flex items-start gap-3 pt-4">
@@ -307,7 +322,9 @@ export default function CostosBomPage() {
           </div>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="kpis" className="scroll-mt-24">
       {/* KPIs */}
       <Suspense
         fallback={
@@ -320,7 +337,9 @@ export default function CostosBomPage() {
       >
         <BomKpis />
       </Suspense>
+      </section>
 
+      <section id="suspicious" className="scroll-mt-24">
       {/* BOMs sospechosos */}
       <Card className="border-danger/40" data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -352,7 +371,9 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="missing" className="scroll-mt-24">
       {/* Componentes faltantes */}
       <Card className="border-warning/40" data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -384,7 +405,9 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="top-revenue" className="scroll-mt-24">
       {/* Top revenue con BOM */}
       <Card data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -415,7 +438,9 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="uom-mismatch" className="scroll-mt-24">
       {/* UoM mismatch en líneas de venta */}
       <Card className="border-warning/40" data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -450,7 +475,9 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="duplicates" className="scroll-mt-24">
       {/* Componentes duplicados dentro de BOMs */}
       <Card className="border-warning/40" data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -486,7 +513,9 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
 
+      <section id="multi-versions" className="scroll-mt-24">
       {/* BOMs con múltiples versiones */}
       <Card className="border-info/40" data-table-export-root>
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
@@ -519,6 +548,7 @@ export default function CostosBomPage() {
           </Suspense>
         </CardContent>
       </Card>
+      </section>
     </div>
   );
 }
