@@ -1,10 +1,24 @@
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableFooter,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import type { ProjectedCashFlowWeek } from "@/lib/queries/finance";
 
 interface Props {
   weeks: ProjectedCashFlowWeek[];
-  /** Si true, muestra columnas gross adicionales en tooltip. */
-  showGross?: boolean;
 }
 
 const monthShort = [
@@ -18,43 +32,76 @@ function fmtWeek(w: ProjectedCashFlowWeek) {
   return `Sem ${w.weekIndex + 1} · ${d} ${monthShort[m - 1] ?? m}`;
 }
 
-function cell(
-  value: number,
-  opts?: { muted?: boolean; signed?: boolean; title?: string },
-) {
-  if (value === 0) {
-    return <span className="text-muted-foreground">—</span>;
-  }
-  const cls = opts?.signed
-    ? value > 0
-      ? "text-success tabular-nums"
-      : "text-danger tabular-nums"
-    : opts?.muted
-      ? "text-muted-foreground tabular-nums"
-      : "tabular-nums";
-  return (
-    <span className={cls} title={opts?.title}>
-      {formatCurrencyMXN(value, { compact: true })}
-    </span>
-  );
+function formatAmount(value: number): string {
+  if (value === 0) return "—";
+  return formatCurrencyMXN(value, { compact: true });
 }
 
-function balanceCell(value: number) {
-  const cls =
-    value < 0
-      ? "text-danger font-semibold tabular-nums"
-      : value < 100000
-        ? "text-warning font-semibold tabular-nums"
-        : "text-success font-semibold tabular-nums";
-  return <span className={cls}>{formatCurrencyMXN(value, { compact: true })}</span>;
+function amountClass(
+  value: number,
+  opts?: { signed?: boolean; muted?: boolean },
+): string {
+  if (value === 0) return "text-muted-foreground";
+  if (opts?.muted) return "text-muted-foreground tabular-nums";
+  if (opts?.signed) {
+    return value > 0 ? "text-success tabular-nums" : "text-danger tabular-nums";
+  }
+  return "tabular-nums";
+}
+
+function balanceClass(value: number): string {
+  if (value < 0) return "text-danger font-semibold tabular-nums";
+  if (value < 100000) return "text-warning font-semibold tabular-nums";
+  return "text-success font-semibold tabular-nums";
+}
+
+interface AmountCellProps {
+  gross: number;
+  weighted: number;
+  overdueGross?: number;
+  muted?: boolean;
+}
+
+function AmountCell({
+  gross,
+  weighted,
+  overdueGross,
+  muted = false,
+}: AmountCellProps) {
+  if (weighted === 0 && gross === 0) {
+    return <span className="text-muted-foreground">—</span>;
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className={amountClass(weighted, { muted })}>
+          {formatAmount(weighted)}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="text-xs">
+        <div className="space-y-0.5">
+          <p>
+            Gross:{" "}
+            <span className="font-semibold">{formatCurrencyMXN(gross)}</span>
+          </p>
+          {overdueGross != null && overdueGross > 0 && (
+            <p>
+              Vencido:{" "}
+              <span className="font-semibold">
+                {formatCurrencyMXN(overdueGross)}
+              </span>
+            </p>
+          )}
+        </div>
+      </TooltipContent>
+    </Tooltip>
+  );
 }
 
 export function ProjectedCashFlowTable({ weeks }: Props) {
   if (weeks.length === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No hay datos de proyeccion.
-      </p>
+      <p className="text-sm text-muted-foreground">No hay datos de proyección.</p>
     );
   }
 
@@ -95,103 +142,146 @@ export function ProjectedCashFlowTable({ weeks }: Props) {
   );
 
   return (
-    <div className="overflow-x-auto">
-      <table className="w-full min-w-[1200px] text-xs">
-        <thead>
-          <tr className="border-b text-left text-[10px] uppercase tracking-wide text-muted-foreground">
-            <th className="sticky left-0 z-10 bg-card px-2 py-2 font-medium">Semana</th>
-            <th className="px-2 py-2 text-right font-medium">CxC cobro</th>
-            <th className="px-2 py-2 text-right font-medium">SO backlog</th>
-            <th className="px-2 py-2 text-right font-medium">Entradas</th>
-            <th className="px-2 py-2 text-right font-medium">CxP pago</th>
-            <th className="px-2 py-2 text-right font-medium">PO backlog</th>
-            <th className="px-2 py-2 text-right font-medium">Nómina</th>
-            <th className="px-2 py-2 text-right font-medium">OpEx</th>
-            <th className="px-2 py-2 text-right font-medium">IVA</th>
-            <th className="px-2 py-2 text-right font-medium">Salidas</th>
-            <th className="px-2 py-2 text-right font-medium">Neto</th>
-            <th className="px-2 py-2 text-right font-medium">Saldo final</th>
-          </tr>
-        </thead>
-        <tbody>
+    <TooltipProvider delayDuration={150}>
+      <Table className="min-w-[1100px] text-xs">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="sticky left-0 z-10 bg-card">Semana</TableHead>
+            <TableHead className="text-right">CxC cobro</TableHead>
+            <TableHead className="text-right">SO backlog</TableHead>
+            <TableHead className="text-right">Entradas</TableHead>
+            <TableHead className="text-right">CxP pago</TableHead>
+            <TableHead className="text-right">PO backlog</TableHead>
+            <TableHead className="text-right">Nómina</TableHead>
+            <TableHead className="text-right">OpEx</TableHead>
+            <TableHead className="text-right">IVA</TableHead>
+            <TableHead className="text-right">Salidas</TableHead>
+            <TableHead className="text-right">Neto</TableHead>
+            <TableHead className="text-right">Saldo final</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {weeks.map((w) => (
-            <tr key={w.weekIndex} className="border-b last:border-0">
-              <td className="sticky left-0 z-10 bg-card px-2 py-2 font-medium whitespace-nowrap">
+            <TableRow key={w.weekIndex}>
+              <TableCell className="sticky left-0 z-10 whitespace-nowrap bg-card font-medium">
                 {fmtWeek(w)}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {cell(w.arWeighted, {
-                  title: `Gross: ${formatCurrencyMXN(w.arGross)}${
-                    w.arOverdueGross > 0
-                      ? ` · Vencido: ${formatCurrencyMXN(w.arOverdueGross)}`
-                      : ""
-                  }`,
-                })}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {cell(w.soWeighted, {
-                  muted: true,
-                  title: `Gross: ${formatCurrencyMXN(w.soGross)}`,
-                })}
-              </td>
-              <td className="px-2 py-2 text-right font-medium text-success">
-                {cell(w.inflowsWeighted)}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {cell(w.apWeighted, {
-                  title: `Gross: ${formatCurrencyMXN(w.apGross)}${
-                    w.apOverdueGross > 0
-                      ? ` · Vencido: ${formatCurrencyMXN(w.apOverdueGross)}`
-                      : ""
-                  }`,
-                })}
-              </td>
-              <td className="px-2 py-2 text-right">
-                {cell(w.poWeighted, {
-                  muted: true,
-                  title: `Gross: ${formatCurrencyMXN(w.poGross)}`,
-                })}
-              </td>
-              <td className="px-2 py-2 text-right">{cell(w.payrollEstimated)}</td>
-              <td className="px-2 py-2 text-right">{cell(w.opexRecurring)}</td>
-              <td className="px-2 py-2 text-right">{cell(w.taxEstimated)}</td>
-              <td className="px-2 py-2 text-right font-medium text-danger">
-                {cell(w.outflowsWeighted)}
-              </td>
-              <td className="px-2 py-2 text-right">{cell(w.netFlow, { signed: true })}</td>
-              <td className="px-2 py-2 text-right">{balanceCell(w.closingBalance)}</td>
-            </tr>
+              </TableCell>
+              <TableCell className="text-right">
+                <AmountCell
+                  gross={w.arGross}
+                  weighted={w.arWeighted}
+                  overdueGross={w.arOverdueGross}
+                />
+              </TableCell>
+              <TableCell className="text-right">
+                <AmountCell gross={w.soGross} weighted={w.soWeighted} muted />
+              </TableCell>
+              <TableCell className="text-right font-medium text-success tabular-nums">
+                {formatAmount(w.inflowsWeighted)}
+              </TableCell>
+              <TableCell className="text-right">
+                <AmountCell
+                  gross={w.apGross}
+                  weighted={w.apWeighted}
+                  overdueGross={w.apOverdueGross}
+                />
+              </TableCell>
+              <TableCell className="text-right">
+                <AmountCell gross={w.poGross} weighted={w.poWeighted} muted />
+              </TableCell>
+              <TableCell className={cn("text-right", amountClass(w.payrollEstimated))}>
+                {formatAmount(w.payrollEstimated)}
+              </TableCell>
+              <TableCell className={cn("text-right", amountClass(w.opexRecurring))}>
+                {formatAmount(w.opexRecurring)}
+              </TableCell>
+              <TableCell className={cn("text-right", amountClass(w.taxEstimated))}>
+                {formatAmount(w.taxEstimated)}
+              </TableCell>
+              <TableCell className="text-right font-medium text-danger tabular-nums">
+                {formatAmount(w.outflowsWeighted)}
+              </TableCell>
+              <TableCell
+                className={cn("text-right", amountClass(w.netFlow, { signed: true }))}
+              >
+                {formatAmount(w.netFlow)}
+              </TableCell>
+              <TableCell className={cn("text-right", balanceClass(w.closingBalance))}>
+                {formatCurrencyMXN(w.closingBalance, { compact: true })}
+              </TableCell>
+            </TableRow>
           ))}
-          <tr className="border-t bg-muted/40 font-semibold">
-            <td className="sticky left-0 z-10 bg-muted/40 px-2 py-2">Totales 13s</td>
-            <td className="px-2 py-2 text-right">{cell(totals.arWeighted)}</td>
-            <td className="px-2 py-2 text-right">{cell(totals.soWeighted, { muted: true })}</td>
-            <td className="px-2 py-2 text-right text-success">
-              {cell(totals.inflowsWeighted)}
-            </td>
-            <td className="px-2 py-2 text-right">{cell(totals.apWeighted)}</td>
-            <td className="px-2 py-2 text-right">{cell(totals.poWeighted, { muted: true })}</td>
-            <td className="px-2 py-2 text-right">{cell(totals.payroll)}</td>
-            <td className="px-2 py-2 text-right">{cell(totals.opex)}</td>
-            <td className="px-2 py-2 text-right">{cell(totals.tax)}</td>
-            <td className="px-2 py-2 text-right text-danger">
-              {cell(totals.outflowsWeighted)}
-            </td>
-            <td className="px-2 py-2 text-right">{cell(totals.net, { signed: true })}</td>
-            <td className="px-2 py-2 text-right">
-              {balanceCell(weeks[weeks.length - 1]?.closingBalance ?? 0)}
-            </td>
-          </tr>
-        </tbody>
-      </table>
+        </TableBody>
+        <TableFooter>
+          <TableRow>
+            <TableCell className="sticky left-0 z-10 bg-muted font-semibold">
+              Totales 13s
+            </TableCell>
+            <TableCell
+              className={cn("text-right font-semibold", amountClass(totals.arWeighted))}
+            >
+              {formatAmount(totals.arWeighted)}
+            </TableCell>
+            <TableCell className="text-right font-semibold text-muted-foreground tabular-nums">
+              {formatAmount(totals.soWeighted)}
+            </TableCell>
+            <TableCell className="text-right font-semibold text-success tabular-nums">
+              {formatAmount(totals.inflowsWeighted)}
+            </TableCell>
+            <TableCell
+              className={cn("text-right font-semibold", amountClass(totals.apWeighted))}
+            >
+              {formatAmount(totals.apWeighted)}
+            </TableCell>
+            <TableCell className="text-right font-semibold text-muted-foreground tabular-nums">
+              {formatAmount(totals.poWeighted)}
+            </TableCell>
+            <TableCell
+              className={cn("text-right font-semibold", amountClass(totals.payroll))}
+            >
+              {formatAmount(totals.payroll)}
+            </TableCell>
+            <TableCell
+              className={cn("text-right font-semibold", amountClass(totals.opex))}
+            >
+              {formatAmount(totals.opex)}
+            </TableCell>
+            <TableCell
+              className={cn("text-right font-semibold", amountClass(totals.tax))}
+            >
+              {formatAmount(totals.tax)}
+            </TableCell>
+            <TableCell className="text-right font-semibold text-danger tabular-nums">
+              {formatAmount(totals.outflowsWeighted)}
+            </TableCell>
+            <TableCell
+              className={cn(
+                "text-right font-semibold",
+                amountClass(totals.net, { signed: true }),
+              )}
+            >
+              {formatAmount(totals.net)}
+            </TableCell>
+            <TableCell
+              className={cn(
+                "text-right",
+                balanceClass(weeks[weeks.length - 1]?.closingBalance ?? 0),
+              )}
+            >
+              {formatCurrencyMXN(
+                weeks[weeks.length - 1]?.closingBalance ?? 0,
+                { compact: true },
+              )}
+            </TableCell>
+          </TableRow>
+        </TableFooter>
+      </Table>
       <p className="mt-3 text-[10px] text-muted-foreground">
-        Montos ponderados por <strong>confidence</strong> (gross en tooltip). CxC cobro =
-        facturas cliente × probabilidad de pago según behavior real del cliente (vencidas
-        cargadas en semana 1, ajustadas por pagos ya conciliados). SO backlog = órdenes
-        confirmadas no facturadas, fecha de cobro estimada por cliente. IVA = promedio 3m
-        del IVA neto (solo cuando es positivo). Nómina estimada = promedio 3m cuentas
-        sueldo/salario/IMSS/infonavit, quincenal. OpEx = promedio 3m sin COGS ni nómina.
+        Montos ponderados por confidence (hover para ver gross). CxC cobro =
+        facturas cliente × probabilidad de pago según behavior real. SO/PO
+        backlog = órdenes confirmadas no facturadas. IVA = promedio 3m del IVA
+        neto. Nómina = avg 3m cuentas sueldo/salario, pagada quincenal.
       </p>
-    </div>
+    </TooltipProvider>
   );
 }

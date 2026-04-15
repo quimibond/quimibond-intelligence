@@ -25,8 +25,10 @@ import {
   EmptyState,
   type DataTableColumn,
 } from "@/components/shared/v2";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 import {
   getCfoSnapshot,
@@ -722,10 +724,10 @@ async function ProjectedCashFlowSection() {
   const minClose = summary.totals13w.minClosingBalance ?? 0;
   const minToneClass =
     minClose < 0
-      ? "border-danger bg-danger/10"
+      ? "border-l-danger bg-danger/5"
       : minClose < 100000
-        ? "border-warning bg-warning/10"
-        : "border-success bg-success/10";
+        ? "border-l-warning bg-warning/5"
+        : "border-l-success bg-success/5";
 
   const effectiveCash = summary.cash.effectiveMxn;
   const apOverdue = summary.openPositions.apOverdueMxn;
@@ -735,13 +737,13 @@ async function ProjectedCashFlowSection() {
     summary.unreconciled.unmatchedOutboundMxn > 0;
 
   return (
-    <div className="space-y-4">
-      {/* Alert band si hay semana con cierre negativo */}
+    <div className="space-y-6">
+      {/* Alert crítico — semana con cierre negativo */}
       {summary.firstNegativeWeek && (
-        <Card className={`gap-2 border-l-4 ${minToneClass}`}>
-          <div className="flex items-start gap-3 px-4 py-3">
-            <AlertTriangle className="h-5 w-5 shrink-0 text-danger" aria-hidden />
-            <div className="flex-1 min-w-0 text-sm">
+        <Card className={cn("gap-0 border-l-4 py-0", minToneClass)}>
+          <CardContent className="flex items-start gap-3 px-4 py-3">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden />
+            <div className="min-w-0 flex-1 text-sm">
               <p className="font-semibold text-danger">
                 Saldo negativo proyectado en semana {summary.firstNegativeWeek.weekIndex + 1}
               </p>
@@ -756,53 +758,44 @@ async function ProjectedCashFlowSection() {
                 cobranza y posponer pagos no críticos.
               </p>
             </div>
-          </div>
+          </CardContent>
         </Card>
       )}
 
       {/* Desglose del cash actual */}
-      <div className="rounded-lg border bg-muted/20 px-4 py-3">
-        <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2 text-xs">
-          <div>
-            <p className="text-muted-foreground">Cash operativo</p>
-            <Currency amount={summary.cash.operativeMxn} compact />
-          </div>
+      <Card className="gap-0 py-0">
+        <CardContent className="flex flex-wrap items-baseline gap-x-8 gap-y-3 px-4 py-3 text-xs">
+          <CashChip label="Cash operativo" amount={summary.cash.operativeMxn} />
           {summary.cash.inTransitMxn !== 0 && (
-            <div>
-              <p className="text-muted-foreground">
-                En tránsito ({summary.cash.inTransitAccounts})
-              </p>
-              <Currency amount={summary.cash.inTransitMxn} compact colorBySign />
-            </div>
+            <CashChip
+              label={`En tránsito (${summary.cash.inTransitAccounts})`}
+              amount={summary.cash.inTransitMxn}
+              signed
+            />
           )}
           {summary.cash.ccDebtMxn !== 0 && (
-            <div>
-              <p className="text-muted-foreground">Deuda TC</p>
-              <Currency amount={summary.cash.ccDebtMxn} compact colorBySign />
-            </div>
+            <CashChip label="Deuda TC" amount={summary.cash.ccDebtMxn} signed />
           )}
           {summary.cash.restrictedMxn !== 0 && (
-            <div>
-              <p className="text-muted-foreground">Restringido</p>
-              <Currency amount={summary.cash.restrictedMxn} compact />
-            </div>
+            <CashChip label="Restringido" amount={summary.cash.restrictedMxn} muted />
           )}
-          <div className="ml-auto">
-            <p className="text-muted-foreground">Efectivo efectivo</p>
-            <span className="font-semibold">
-              <Currency amount={effectiveCash} compact />
-            </span>
+          <div className="ml-auto flex items-baseline gap-6">
+            <div className="text-right">
+              <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                Efectivo efectivo
+              </p>
+              <p className="text-lg font-bold tabular-nums">
+                <Currency amount={effectiveCash} compact />
+              </p>
+            </div>
+            {summary.cash.usdRate && (
+              <Badge variant="outline" className="font-mono">
+                USD {summary.cash.usdRate.toFixed(2)}
+              </Badge>
+            )}
           </div>
-          {summary.cash.usdRate && (
-            <div>
-              <p className="text-muted-foreground">USD/MXN</p>
-              <span className="font-mono tabular-nums">
-                {summary.cash.usdRate.toFixed(2)}
-              </span>
-            </div>
-          )}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
 
       {/* KPIs del horizonte */}
       <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -857,87 +850,170 @@ async function ProjectedCashFlowSection() {
       {/* Chart */}
       <ProjectedCashFlowChart data={chartData} />
 
-      {/* Open positions + recurring sources */}
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <MetricRow
-          label="CxC abierta"
-          value={<Currency amount={summary.openPositions.arTotalMxn} compact />}
-          hint={`${compactMxn(arOverdue)} vencido`}
-        />
-        <MetricRow
-          label="CxP abierta"
-          value={<Currency amount={summary.openPositions.apTotalMxn} compact />}
-          hint={`${compactMxn(apOverdue)} vencido`}
-          alert={apOverdue > effectiveCash}
-        />
-        <MetricRow
-          label="SO backlog"
-          value={<Currency amount={summary.openPositions.soBacklogMxn} compact />}
-          hint="pendiente facturar"
-        />
-        <MetricRow
-          label="PO backlog"
-          value={<Currency amount={summary.openPositions.poBacklogMxn} compact />}
-          hint="pendiente recibir"
-        />
-      </div>
+      {/* Posiciones abiertas + fuentes recurrentes */}
+      <Card className="gap-0 py-0">
+        <CardHeader className="px-4 pb-2 pt-4">
+          <CardTitle className="text-sm">Posiciones abiertas</CardTitle>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <PositionStat
+              label="CxC abierta"
+              amount={summary.openPositions.arTotalMxn}
+              hint={`${compactMxn(arOverdue)} vencido`}
+            />
+            <PositionStat
+              label="CxP abierta"
+              amount={summary.openPositions.apTotalMxn}
+              hint={`${compactMxn(apOverdue)} vencido`}
+              alert={apOverdue > effectiveCash}
+            />
+            <PositionStat
+              label="SO backlog"
+              amount={summary.openPositions.soBacklogMxn}
+              hint="pendiente facturar"
+            />
+            <PositionStat
+              label="PO backlog"
+              amount={summary.openPositions.poBacklogMxn}
+              hint="pendiente recibir"
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-      <div className="grid gap-3 sm:grid-cols-3">
-        <MetricRow
-          label={`Nómina mensual (${summary.recurringSources.payroll.monthsUsed}m avg)`}
-          value={
-            <Currency
+      <Card className="gap-0 py-0">
+        <CardHeader className="px-4 pb-2 pt-4">
+          <CardTitle className="text-sm">Fuentes recurrentes</CardTitle>
+          <CardDescription className="text-xs">
+            Promedio de los últimos 3 meses cerrados
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="px-4 pb-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <PositionStat
+              label="Nómina mensual"
               amount={summary.recurringSources.payroll.monthlyMxn}
-              compact
+              hint={summary.recurringSources.payroll.periods ?? undefined}
+              badge={`${summary.recurringSources.payroll.monthsUsed}m avg`}
             />
-          }
-          hint={summary.recurringSources.payroll.periods ?? undefined}
-        />
-        <MetricRow
-          label={`OpEx mensual (${summary.recurringSources.opex.monthsUsed}m avg)`}
-          value={
-            <Currency
+            <PositionStat
+              label="OpEx mensual"
               amount={summary.recurringSources.opex.monthlyMxn}
-              compact
+              hint={summary.recurringSources.opex.periods ?? undefined}
+              badge={`${summary.recurringSources.opex.monthsUsed}m avg`}
             />
-          }
-          hint={summary.recurringSources.opex.periods ?? undefined}
-        />
-        <MetricRow
-          label="IVA neto mensual"
-          value={
-            <Currency
+            <PositionStat
+              label="IVA neto mensual"
               amount={summary.recurringSources.tax.monthlyMxn}
-              compact
+              hint={
+                summary.recurringSources.tax.monthlyMxn === 0
+                  ? "a favor / sin pago"
+                  : "pagado día 17"
+              }
             />
-          }
-          hint={
-            summary.recurringSources.tax.monthlyMxn === 0
-              ? "a favor / sin pago"
-              : "pagado día 17"
-          }
-        />
-      </div>
+          </div>
+        </CardContent>
+      </Card>
 
-      {/* Unreconciled warning — pagos con doble-conteo evitado */}
+      {/* Unreconciled warning */}
       {unrecHasData && (
-        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
-          <p className="font-medium text-warning">
-            Ajuste por pagos no conciliados activo
-          </p>
-          <p className="mt-1 text-muted-foreground">
-            {summary.unreconciled.nUnmatchedInbound} pagos inbound por{" "}
-            <Currency amount={summary.unreconciled.unmatchedInboundMxn} compact />{" "}
-            y {summary.unreconciled.nUnmatchedOutbound} outbound por{" "}
-            <Currency amount={summary.unreconciled.unmatchedOutboundMxn} compact />
-            {" "}ya golpearon el banco pero sus facturas siguen abiertas. Se restan
-            de CxC/CxP en la semana 1 para evitar doble conteo.
-          </p>
-        </div>
+        <Card className="gap-0 border-l-4 border-l-warning bg-warning/5 py-0">
+          <CardContent className="px-4 py-3 text-xs">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden />
+              <div>
+                <p className="font-medium text-warning">
+                  Ajuste por pagos no conciliados activo
+                </p>
+                <p className="mt-1 text-muted-foreground">
+                  {summary.unreconciled.nUnmatchedInbound} pagos inbound por{" "}
+                  <Currency
+                    amount={summary.unreconciled.unmatchedInboundMxn}
+                    compact
+                  />{" "}
+                  y {summary.unreconciled.nUnmatchedOutbound} outbound por{" "}
+                  <Currency
+                    amount={summary.unreconciled.unmatchedOutboundMxn}
+                    compact
+                  />{" "}
+                  ya golpearon el banco pero sus facturas siguen abiertas. Se
+                  restan de CxC/CxP en la semana 1 para evitar doble conteo.
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Tabla detallada */}
       <ProjectedCashFlowTable weeks={weeks} />
+    </div>
+  );
+}
+
+function CashChip({
+  label,
+  amount,
+  signed = false,
+  muted = false,
+}: {
+  label: string;
+  amount: number;
+  signed?: boolean;
+  muted?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+        {label}
+      </p>
+      <p
+        className={cn(
+          "text-sm font-semibold tabular-nums",
+          muted && "text-muted-foreground",
+        )}
+      >
+        <Currency amount={amount} compact colorBySign={signed} />
+      </p>
+    </div>
+  );
+}
+
+function PositionStat({
+  label,
+  amount,
+  hint,
+  alert = false,
+  badge,
+}: {
+  label: string;
+  amount: number;
+  hint?: string;
+  alert?: boolean;
+  badge?: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        {badge && (
+          <Badge variant="secondary" className="h-4 text-[9px]">
+            {badge}
+          </Badge>
+        )}
+      </div>
+      <p
+        className={cn(
+          "mt-0.5 text-lg font-bold tabular-nums",
+          alert && "text-destructive",
+        )}
+      >
+        <Currency amount={amount} compact />
+      </p>
+      {hint && <p className="text-[10px] text-muted-foreground">{hint}</p>}
     </div>
   );
 }
