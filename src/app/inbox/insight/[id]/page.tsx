@@ -67,13 +67,26 @@ export default async function InsightDetailPage({
 
   return (
     <div className="space-y-5 pb-24 md:pb-6">
-      <Link
-        href="/inbox"
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+      {/* Breadcrumbs */}
+      <nav
+        aria-label="Breadcrumb"
+        className="flex items-center gap-1 text-xs text-muted-foreground"
       >
-        <ArrowLeft className="h-3 w-3" />
-        Todos los insights
-      </Link>
+        <Link href="/" className="hover:text-foreground transition-colors">
+          Dashboard
+        </Link>
+        <ArrowLeft className="size-3 rotate-180 opacity-60" aria-hidden="true" />
+        <Link
+          href="/inbox"
+          className="hover:text-foreground transition-colors"
+        >
+          Inbox
+        </Link>
+        <ArrowLeft className="size-3 rotate-180 opacity-60" aria-hidden="true" />
+        <span className="font-medium text-foreground truncate">
+          Insight
+        </span>
+      </nav>
 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2">

@@ -172,6 +172,11 @@ export default function StockoutQueuePage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Compras", href: "/compras" },
+          { label: "Cola de reposición" },
+        ]}
         title="Cola de reposición"
         subtitle="Productos en riesgo de faltante con orden sugerida y proveedor"
       />

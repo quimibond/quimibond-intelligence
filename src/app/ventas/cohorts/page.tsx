@@ -48,6 +48,11 @@ export default function CohortsPage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Ventas", href: "/ventas" },
+          { label: "Retención por cohorte" },
+        ]}
         title="Retención por cohorte"
         subtitle="% de clientes de cada cohort trimestral que siguen activos N trimestres después de su primera compra"
       />

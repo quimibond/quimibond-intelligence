@@ -22,7 +22,6 @@ import {
   Currency,
   DateDisplay,
   SeverityBadge,
-  PullToRefresh,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,70 +52,68 @@ function greet() {
 
 export default function CeoDashboardPage() {
   return (
-    <PullToRefresh>
-      <div className="space-y-5 pb-24 md:pb-6">
-        <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
+    <div className="space-y-5 pb-24 md:pb-6">
+      <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
 
-        {/* Runway alert — la señal más crítica */}
-        <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
-          <RunwayBanner />
-        </Suspense>
+      {/* Runway alert — la señal más crítica */}
+      <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
+        <RunwayBanner />
+      </Suspense>
 
-        {/* Concentration tripwires — clientes top con caída brusca */}
-        <Suspense fallback={null}>
-          <ConcentrationTripwires />
-        </Suspense>
+      {/* Concentration tripwires — clientes top con caída brusca */}
+      <Suspense fallback={null}>
+        <ConcentrationTripwires />
+      </Suspense>
 
-        <Suspense fallback={<KpisSkeleton />}>
-          <Kpis />
-        </Suspense>
+      <Suspense fallback={<KpisSkeleton />}>
+        <Kpis />
+      </Suspense>
 
-        {/* Insights urgentes — spec: "lista de insights urgentes abajo" */}
-        <section className="space-y-2">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-              Insights urgentes
-            </h2>
-            <Link
-              href="/inbox"
-              className="flex items-center gap-1 text-xs font-medium text-primary"
-            >
-              Ver todos
-              <ChevronRight className="h-3 w-3" />
-            </Link>
-          </div>
-          <Suspense fallback={<InsightsSkeleton />}>
-            <UrgentInsights />
-          </Suspense>
-        </section>
-
-        <div className="grid gap-4 lg:grid-cols-3">
-          <Card className="lg:col-span-2">
-            <CardHeader>
-              <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Suspense
-                fallback={<Skeleton className="h-[220px] w-full rounded-md" />}
-              >
-                <RevenueChartSection />
-              </Suspense>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Clientes en riesgo</CardTitle>
-            </CardHeader>
-            <CardContent className="pb-4">
-              <Suspense fallback={<InsightsSkeleton rows={5} />}>
-                <AtRiskClientsPanel />
-              </Suspense>
-            </CardContent>
-          </Card>
+      {/* Insights urgentes — spec: "lista de insights urgentes abajo" */}
+      <section className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+            Insights urgentes
+          </h2>
+          <Link
+            href="/inbox"
+            className="flex items-center gap-1 text-xs font-medium text-primary"
+          >
+            Ver todos
+            <ChevronRight className="h-3 w-3" />
+          </Link>
         </div>
+        <Suspense fallback={<InsightsSkeleton />}>
+          <UrgentInsights />
+        </Suspense>
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Suspense
+              fallback={<Skeleton className="h-[220px] w-full rounded-md" />}
+            >
+              <RevenueChartSection />
+            </Suspense>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Clientes en riesgo</CardTitle>
+          </CardHeader>
+          <CardContent className="pb-4">
+            <Suspense fallback={<InsightsSkeleton rows={5} />}>
+              <AtRiskClientsPanel />
+            </Suspense>
+          </CardContent>
+        </Card>
       </div>
-    </PullToRefresh>
+    </div>
   );
 }
 

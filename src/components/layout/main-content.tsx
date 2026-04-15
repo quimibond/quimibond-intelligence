@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
+import { PullToRefresh } from "@/components/shared/v2/pull-to-refresh";
 
 export function MainContent({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();
@@ -21,7 +22,10 @@ export function MainContent({ children }: { children: React.ReactNode }) {
         collapsed ? "md:pl-16" : "md:pl-64"
       )}
     >
-      <div className="min-h-screen p-4 pb-20 md:p-6 md:pb-6">{children}</div>
+      {/* PullToRefresh is a mobile-only affordance (desktop is a no-op wrapper) */}
+      <PullToRefresh className="min-h-screen p-4 pb-20 md:p-6 md:pb-6">
+        {children}
+      </PullToRefresh>
     </main>
   );
 }

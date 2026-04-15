@@ -33,7 +33,8 @@ export {
 } from "./data-table-pagination";
 export { BottomSheet } from "./bottom-sheet";
 export { MobileCard } from "./mobile-card";
-export { PageHeader } from "./page-header";
+export { PageHeader, type BreadcrumbItem } from "./page-header";
+export { ConfirmDialog } from "./confirm-dialog";
 export { EvidencePackView } from "./evidence-pack";
 export { PullToRefresh } from "./pull-to-refresh";
 export {

@@ -15,7 +15,6 @@ import {
   EmptyState,
   StatGrid,
   KpiCard,
-  PullToRefresh,
   EvidenceChip,
 } from "@/components/shared/v2";
 import { Card } from "@/components/ui/card";
@@ -62,12 +61,11 @@ export default async function InboxPage({
   const severity = params.severity;
 
   return (
-    <PullToRefresh>
-      <div className="space-y-4 pb-24 md:pb-6">
-        <PageHeader
-          title="Insights"
-          subtitle="Alertas accionables de los agentes"
-        />
+    <div className="space-y-4 pb-24 md:pb-6">
+      <PageHeader
+        title="Insights"
+        subtitle="Alertas accionables de los agentes"
+      />
 
       <Suspense
         fallback={
@@ -95,8 +93,7 @@ export default async function InboxPage({
       >
         <InsightsList stateFilter={stateFilter} severity={severity} />
       </Suspense>
-      </div>
-    </PullToRefresh>
+    </div>
   );
 }
 

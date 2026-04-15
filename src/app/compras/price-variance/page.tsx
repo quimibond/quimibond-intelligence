@@ -219,6 +219,11 @@ export default function PriceVariancePage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Compras", href: "/compras" },
+          { label: "Variancia de precios" },
+        ]}
         title="Variancia de precios de compra"
         subtitle="Proveedores con precios ≠ al benchmark del mercado (mismo producto, mismo mes)"
       />

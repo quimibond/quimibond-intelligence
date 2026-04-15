@@ -2,7 +2,6 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   Bot,
   Clock,
   Inbox,
@@ -65,15 +64,12 @@ export default async function AgentDetailPage({
 
   return (
     <div className="space-y-5 pb-24 md:pb-6">
-      <Link
-        href="/agents"
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Todos los directores
-      </Link>
-
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Directores", href: "/agents" },
+          { label: agent.name },
+        ]}
         title={agent.name}
         subtitle={agent.description ?? agent.domain ?? undefined}
         actions={

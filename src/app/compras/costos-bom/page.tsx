@@ -264,6 +264,11 @@ export default function CostosBomPage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Compras", href: "/compras" },
+          { label: "Costos de BOM" },
+        ]}
         title="Costos reales de BOM"
         subtitle="real_unit_cost derivado de BOMs activos — materia prima sumada por ingrediente"
       />

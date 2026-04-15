@@ -1,9 +1,7 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import {
   AlertTriangle,
-  ArrowLeft,
   Building2,
   Calendar,
   FileText,
@@ -89,17 +87,13 @@ export default async function CompanyDetailPage({
 
   return (
     <div className="space-y-5 pb-24 md:pb-6">
-      {/* Back link */}
-      <Link
-        href="/companies"
-        className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground hover:text-foreground"
-      >
-        <ArrowLeft className="h-3 w-3" />
-        Todas las empresas
-      </Link>
-
-      {/* Header */}
+      {/* Header con breadcrumbs */}
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Empresas", href: "/companies" },
+          { label: company.name },
+        ]}
         title={company.name}
         subtitle={
           [company.industry, company.city, company.rfc]
@@ -212,7 +206,7 @@ export default async function CompanyDetailPage({
               </div>
             </CardHeader>
             <CardContent className="pb-4">
-              <Suspense fallback={<Skeleton className="h-[300px]" />}>
+              <Suspense fallback={<TabTableSkeleton rows={8} />}>
                 <InvoicesSection companyId={id} searchParams={sp} />
               </Suspense>
             </CardContent>
@@ -232,7 +226,7 @@ export default async function CompanyDetailPage({
               </div>
             </CardHeader>
             <CardContent className="pb-4">
-              <Suspense fallback={<Skeleton className="h-[300px]" />}>
+              <Suspense fallback={<TabTableSkeleton rows={8} />}>
                 <OrdersSection companyId={id} searchParams={sp} />
               </Suspense>
             </CardContent>
@@ -251,7 +245,7 @@ export default async function CompanyDetailPage({
               </div>
             </CardHeader>
             <CardContent className="pb-4">
-              <Suspense fallback={<Skeleton className="h-[240px]" />}>
+              <Suspense fallback={<TabTableSkeleton rows={6} />}>
                 <DeliveriesSection companyId={id} searchParams={sp} />
               </Suspense>
             </CardContent>
@@ -264,7 +258,7 @@ export default async function CompanyDetailPage({
               <CardTitle className="text-base">Top productos comprados</CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
-              <Suspense fallback={<Skeleton className="h-[300px]" />}>
+              <Suspense fallback={<TabTableSkeleton rows={8} />}>
                 <ProductsSection companyId={id} />
               </Suspense>
             </CardContent>
@@ -279,7 +273,7 @@ export default async function CompanyDetailPage({
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
-              <Suspense fallback={<Skeleton className="h-[240px]" />}>
+              <Suspense fallback={<TabTableSkeleton rows={6} />}>
                 <ActivitiesSection companyId={id} />
               </Suspense>
             </CardContent>
@@ -293,6 +287,16 @@ export default async function CompanyDetailPage({
 // ──────────────────────────────────────────────────────────────────────────
 // Overview tab — evidence pack cruzado
 // ──────────────────────────────────────────────────────────────────────────
+function TabTableSkeleton({ rows = 8 }: { rows?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-14 rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
 function OverviewSkeleton() {
   return (
     <div className="space-y-3">

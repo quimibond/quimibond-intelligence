@@ -62,6 +62,11 @@ export default async function DirectorBriefingPage({
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Briefings", href: "/briefings" },
+          { label: DIRECTOR_LABELS[director] },
+        ]}
         title="Briefing del día"
         subtitle={`Director ${DIRECTOR_LABELS[director]} · top ${maxCompanies} empresas con evidencia cruzada`}
       />

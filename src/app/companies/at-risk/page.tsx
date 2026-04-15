@@ -131,6 +131,11 @@ export default function AtRiskCustomersPage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Empresas", href: "/companies" },
+          { label: "En riesgo" },
+        ]}
         title="Clientes en riesgo"
         subtitle="Reactivación dirigida — clientes con historial alto que llevan tiempo sin comprar"
       />
