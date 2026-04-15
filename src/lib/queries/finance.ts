@@ -143,26 +143,39 @@ export async function getWorkingCapital(): Promise<WorkingCapital | null> {
   };
 }
 
-/** Saldo bancario (view: cash_position) */
+/** Saldo bancario (view: cash_position).
+ *  - saldo: en la moneda nativa del journal (post qb19 fix: USD/EUR/MXN reales)
+ *  - saldoMxn: siempre MXN (valor del ledger company currency)
+ *  Frontend muestra saldoMxn por default; saldo nativo como info adicional. */
 export interface BankBalance {
   banco: string | null;
   tipo: string | null;
   moneda: string | null;
   cuenta: string | null;
   saldo: number;
+  saldoMxn: number;
 }
 
 export async function getCashPosition(): Promise<BankBalance[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("cash_position")
-    .select("banco, tipo, moneda, cuenta, saldo")
-    .order("saldo", { ascending: false });
-  return ((data ?? []) as Array<
-    Omit<BankBalance, "saldo"> & { saldo: number | null }
-  >).map((r) => ({
-    ...r,
+    .select("banco, tipo, moneda, cuenta, saldo, saldo_mxn")
+    .order("saldo_mxn", { ascending: false });
+  return ((data ?? []) as Array<{
+    banco: string | null;
+    tipo: string | null;
+    moneda: string | null;
+    cuenta: string | null;
+    saldo: number | null;
+    saldo_mxn: number | null;
+  }>).map((r) => ({
+    banco: r.banco,
+    tipo: r.tipo,
+    moneda: r.moneda,
+    cuenta: r.cuenta,
     saldo: Number(r.saldo) || 0,
+    saldoMxn: Number(r.saldo_mxn) || 0,
   }));
 }
 

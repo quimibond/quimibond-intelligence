@@ -328,7 +328,7 @@ async function CfoKpisSection() {
         format="currency"
         compact
         icon={Wallet}
-        subtitle={`MXN + USD (${cfo.efectivoUsd.toLocaleString("es-MX")} USD)`}
+        subtitle={`MXN $${(cfo.efectivoMxn / 1000).toFixed(0)}K · USD ${cfo.efectivoUsd.toLocaleString("es-MX", { maximumFractionDigits: 0 })}`}
         tone={cfo.efectivoTotalMxn >= 0 ? "success" : "danger"}
       />
       <KpiCard
@@ -492,8 +492,21 @@ const bankColumns: DataTableColumn<BankBalance>[] = [
   },
   {
     key: "saldo",
-    header: "Saldo",
-    cell: (r) => <Currency amount={r.saldo} colorBySign />,
+    header: "Saldo nativo",
+    cell: (r) => (
+      <span className="tabular-nums text-xs text-muted-foreground">
+        {r.moneda && r.moneda !== "MXN"
+          ? `${r.moneda} ${r.saldo.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+          : "—"}
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "saldoMxn",
+    header: "Saldo MXN",
+    cell: (r) => <Currency amount={r.saldoMxn} colorBySign />,
     align: "right",
   },
 ];
@@ -525,9 +538,19 @@ async function BanksSection() {
           }
           fields={[
             { label: "Moneda", value: r.moneda ?? "—" },
+            ...(r.moneda && r.moneda !== "MXN"
+              ? [{
+                  label: `Saldo ${r.moneda}`,
+                  value: (
+                    <span className="tabular-nums">
+                      {r.saldo.toLocaleString("es-MX", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  ),
+                }]
+              : []),
             {
-              label: "Saldo",
-              value: <Currency amount={r.saldo} colorBySign />,
+              label: "Saldo MXN",
+              value: <Currency amount={r.saldoMxn} colorBySign />,
             },
           ]}
         />
