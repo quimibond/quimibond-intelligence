@@ -1332,21 +1332,25 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     // NEW: 7 DIRECTORS
     // ═══════════════════════════════════════════════════════════════
     case "comercial": {
-      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue, atRiskContacts] = await Promise.all([
+      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue, atRiskContacts, ltvChurning, rfmAtRisk] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier, overdue_amount, max_days_overdue").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
         sb.from("odoo_sale_orders").select("company_id, name, amount_total_mxn, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
         sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10),
-        // Threads from clients waiting for Quimibond response
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").eq("last_sender_type", "external").gt("hours_without_response", 24).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
-        // Top clients with overdue invoices (cross financial data)
         sb.from("company_profile").select("name, total_revenue, overdue_amount, max_days_overdue, tier").gt("overdue_amount", 50000).order("overdue_amount", { ascending: false }).limit(10),
-        // NEW: health scores de contactos — churn risk temprano (engagement + sentiment + payment compliance)
         sb.from("health_scores").select("contact_email, company_id, overall_score, previous_score, trend, sentiment_score, responsiveness_score, payment_compliance_score, risk_signals").gte("score_date", new Date(Date.now() - 14 * 86400_000).toISOString().split("T")[0]).lt("overall_score", 60).order("overall_score", { ascending: true }).limit(10),
+        // NEW (audit 2026-04-15 sprint 2): LTV + churn risk by customer.
+        // Filters to strategic/important tier customers with high churn risk
+        // or negative trend — the ones whose retention actually moves revenue.
+        sb.from("customer_ltv_health").select("company_name, tier, ltv_mxn, revenue_12m, revenue_3m, trend_pct_vs_prior_quarters, churn_risk_score, overdue_risk_score, overdue_mxn, last_purchase").in("tier", ["strategic", "important"]).gt("churn_risk_score", 50).order("ltv_mxn", { ascending: false }).limit(15),
+        // NEW: RFM segmentation — lost/at_risk/need_attention segments with high monetary
+        // Gives comercial a list of clients to prioritize outreach based on pareto value.
+        sb.from("rfm_segments").select("company_name, tier, segment, recency_days, frequency, monetary_12m, avg_ticket, last_purchase, contact_priority_score").in("segment", ["cant_lose", "at_risk", "hibernating", "need_attention"]).gt("monetary_12m", 200000).order("contact_priority_score", { ascending: false }).limit(15),
       ]);
-      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (riesgo de relacion)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## LTV & CHURN RISK (clientes estrategicos/important con riesgo alto)\n${safeJSON(ltvChurning.data)}\n## RFM SEGMENTACION: clientes cant_lose/at_risk/hibernating/need_attention\n${safeJSON(rfmAtRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (riesgo de relacion)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
       const modes = directorConfig?.mode_rotation?.length
@@ -1359,79 +1363,87 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
       return buildFinancieroContextOperativo(sb, profileSection);
     }
     case "operaciones_dir": {
-      const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries, mfgPending, mfgRecent] = await Promise.all([
+      const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries, productionDelays, otdHistory, slowMoving] = await Promise.all([
         sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').gte("scheduled_date", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("scheduled_date", { ascending: true }).limit(15),
         sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast, warehouse_name").order("qty_on_hand", { ascending: true }).limit(20),
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, available_qty, reorder_min, standard_price").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(15),
-        // Pending purchase orders (material on the way)
         sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, date_order, buyer_name").eq("state", "purchase").order("date_order", { ascending: false }).limit(10),
-        // All pending outgoing deliveries (not just late)
         sb.from("odoo_deliveries").select("company_id, name, state, scheduled_date, origin").not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(15),
-        // NEW (audit 2026-04-15): MRP orders in progress or confirmed — production pipeline
-        sb.from("odoo_manufacturing").select("name, product_name, qty_planned, qty_produced, state, date_start, date_finished, assigned_user, origin").in("state", ["draft", "confirmed", "progress", "to_close"]).order("date_start", { ascending: true, nullsFirst: false }).limit(15),
-        // NEW: completed MRP orders last 30d that under-produced (qty_produced < qty_planned)
-        // These are quality/capacity issues the CEO needs to know about
-        sb.from("odoo_manufacturing").select("name, product_name, qty_planned, qty_produced, date_finished, assigned_user, origin").eq("state", "done").gte("date_finished", new Date(Date.now() - 30 * 86400_000).toISOString()).order("date_finished", { ascending: false }).limit(50),
+        // NEW (audit 2026-04-15 sprint 2): production with customer context.
+        // Replaces raw odoo_manufacturing reads with production_delays view
+        // which joins MO → SO → customer (so the director knows which client
+        // is affected by each late/underproduced MRP order).
+        sb.from("production_delays").select("mo_name, product_name, qty_planned, qty_produced, state, date_start, assigned_user, customer_name, salesperson_name, so_amount_mxn, so_commitment_date, is_overdue, is_underproduced, days_late").or("is_overdue.eq.true,is_underproduced.eq.true").order("days_late", { ascending: false, nullsFirst: false }).limit(20),
+        // NEW: On-Time Delivery trend by week (last 8 weeks) — pattern detection
+        sb.from("ops_delivery_health_weekly").select("week_start, total_completed, on_time, late, otd_pct, avg_lead_days").order("week_start", { ascending: false }).limit(8),
+        // NEW: Slow-moving inventory — high stock value but low/no velocity.
+        // Complements dead_stock_analysis which focuses on zero-velocity only.
+        sb.from("inventory_velocity").select("product_ref, product_name, stock_qty, stock_value, qty_sold_90d, customers_12m, days_of_stock, reorder_status").gt("stock_value", 50000).in("reorder_status", ["slow", "overstock", "dead"]).order("stock_value", { ascending: false }).limit(15),
       ]);
-      // Filter under-produced orders in JS (qty_produced < qty_planned with non-zero planned)
-      const underProduced = ((mfgRecent.data ?? []) as Array<Record<string, unknown>>).filter(m => {
-        const planned = Number(m.qty_planned ?? 0);
-        const produced = Number(m.qty_produced ?? 0);
-        return planned > 0 && produced < planned * 0.98; // allow 2% tolerance
-      }).slice(0, 10);
-      return `${profileSection}## ENTREGAS ATRASADAS (${(deliveries.data ?? []).length})\n${safeJSON(deliveries.data)}\n## TODAS las entregas pendientes\n${safeJSON(pendingDeliveries.data)}\n## COMPRAS PENDIENTES (material en camino)\n${safeJSON(pendingPOs.data)}\n## PRODUCCION EN CURSO (MRP orders planeadas/activas)\n${safeJSON(mfgPending.data)}\n## PRODUCCION CON SUBPRODUCCION (ultimo mes: qty_produced < qty_planned)\n${safeJSON(underProduced)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
+      return `${profileSection}## ENTREGAS ATRASADAS (${(deliveries.data ?? []).length})\n${safeJSON(deliveries.data)}\n## TODAS las entregas pendientes\n${safeJSON(pendingDeliveries.data)}\n## COMPRAS PENDIENTES (material en camino)\n${safeJSON(pendingPOs.data)}\n## PRODUCCION CON PROBLEMA (atrasadas o subproducidas, con cliente afectado)\n${safeJSON(productionDelays.data)}\n## TENDENCIA OTD SEMANAL (ultimas 8 semanas)\n${safeJSON(otdHistory.data)}\n## INVENTARIO LENTO/SOBRESTOCK (stock value >$50K, velocidad baja)\n${safeJSON(slowMoving.data)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
     }
     case "compras": {
-      const [singleSource, supplierDep, recentPOs, priceChanges, priceAnomalies, weOweSuppliers, supplierThreads] = await Promise.all([
+      const [singleSource, supplierDep, recentPOs, priceChanges, priceAnomalies, weOweSuppliers, supplierThreads, supplierOverpaid] = await Promise.all([
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(15),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
         sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15),
         sb.from("odoo_order_lines").select("company_id, product_ref, product_name, price_unit, subtotal_mxn, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20),
         sb.from("purchase_price_intelligence").select("product_ref, product_name, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, price_change_pct, qty_vs_avg_pct, avg_qty, last_qty, total_purchases, total_spent, price_flag, qty_flag, last_order_name").in("price_flag", ["price_above_avg", "price_below_avg"]).order("total_spent", { ascending: false }).limit(25),
-        // NEW: Supplier invoices we need to pay (what we owe)
         sb.from("odoo_invoices").select("company_id, name, amount_total_mxn, amount_residual_mxn, days_overdue, due_date").eq("move_type", "in_invoice").in("payment_state", ["not_paid", "partial"]).order("amount_residual_mxn", { ascending: false }).limit(15),
-        // NEW: Emails from/to suppliers without response
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
+        // NEW (audit 2026-04-15 sprint 2): supplier price index — per-month deltas
+        // vs market benchmark. Surfaces suppliers we overpaid in the last 90 days
+        // with concrete MXN impact (overpaid_mxn). Unlike purchase_price_intelligence
+        // which compares against our own historical avg, this compares against
+        // the market (benchmark_price across all suppliers in the same month).
+        sb.from("supplier_price_index").select("product_ref, product_name, supplier_name, month, supplier_avg_price, benchmark_price, price_index, overpaid_mxn, supplier_spend, last_po_name, last_po_date, price_flag").eq("price_flag", "overpaid").gte("month", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("overpaid_mxn", { ascending: false }).limit(15),
       ]);
       const aboveAvg = ((priceAnomalies.data ?? []) as Record<string, unknown>[]).filter(r => r.price_flag === "price_above_avg");
       const belowAvg = ((priceAnomalies.data ?? []) as Record<string, unknown>[]).filter(r => r.price_flag === "price_below_avg");
-      return `${profileSection}## ALERTA PRECIOS: comprando MAS CARO que el promedio historico\n${safeJSON(aboveAvg.slice(0, 15))}\n## Comprando MAS BARATO que el promedio (posibles ahorros logrados)\n${safeJSON(belowAvg.slice(0, 10))}\n## FACTURAS PROVEEDOR PENDIENTES (lo que debemos)\n${safeJSON(weOweSuppliers.data)}\n## EMAILS CON PROVEEDORES SIN RESPUESTA >48h\n${safeJSON(supplierThreads.data)}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
+      return `${profileSection}## SOBREPAGO vs BENCHMARK DE MERCADO (ultimos 90d, con MXN perdidos)\n${safeJSON(supplierOverpaid.data)}\n## ALERTA PRECIOS: comprando MAS CARO que el promedio historico\n${safeJSON(aboveAvg.slice(0, 15))}\n## Comprando MAS BARATO que el promedio (posibles ahorros logrados)\n${safeJSON(belowAvg.slice(0, 10))}\n## FACTURAS PROVEEDOR PENDIENTES (lo que debemos)\n${safeJSON(weOweSuppliers.data)}\n## EMAILS CON PROVEEDORES SIN RESPUESTA >48h\n${safeJSON(supplierThreads.data)}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
     }
     case "riesgo_dir": {
-      const [narrativesRisk, payRisk, singleSource, churning, trends, unanswered, topClients, supplierWeOwe] = await Promise.all([
+      const [narrativesRisk, payRisk, singleSource, churning, trends, unanswered, topClients, supplierWeOwe, supplierConcentration] = await Promise.all([
         sb.from("company_narrative").select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople").not("risk_signal", "is", null).order("total_revenue", { ascending: false }).limit(15),
         sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"]).order("total_pending", { ascending: false }).limit(10),
         sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
         sb.from("company_profile").select("name, total_revenue, revenue_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
         sb.from("weekly_trends").select("company_name, tier, overdue_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(10),
         sb.from("threads").select("subject, last_sender, hours_without_response, account").eq("last_sender_type", "external").gt("hours_without_response", 72).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
-        // NEW: Revenue concentration — top clients as % of total
         sb.from("company_profile").select("name, total_revenue, revenue_share_pct, tier, overdue_amount").order("total_revenue", { ascending: false }).limit(10),
-        // NEW: Suppliers we owe money to (relationship risk)
         sb.from("accounting_anomalies").select("anomaly_type, severity, description, company_name, amount").eq("anomaly_type", "supplier_overdue").order("amount", { ascending: false }).limit(10),
+        // NEW (audit 2026-04-15 sprint 2): supplier concentration index (Herfindahl).
+        // Products where 1 supplier holds >60% share and total spend is material.
+        // Catches strategic supply-chain risks before they become crises.
+        sb.from("supplier_concentration_herfindahl").select("product_ref, product_name, supplier_count, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level").in("concentration_level", ["critico", "alto"]).gt("total_spent_12m", 100000).order("total_spent_12m", { ascending: false }).limit(15),
       ]);
       // Calculate concentration
       const topRevenue = (topClients.data ?? []) as Record<string, unknown>[];
       const totalRevenue = topRevenue.reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
       const top5Revenue = topRevenue.slice(0, 5).reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
       const concentrationPct = totalRevenue > 0 ? Math.round(top5Revenue / totalRevenue * 100) : 0;
-      return `${profileSection}## CONCENTRACION DE REVENUE: top 5 clientes = ${concentrationPct}% del total\n${safeJSON(topRevenue.slice(0, 5))}\n## EMPRESAS CON SEÑALES DE ALERTA\n${safeJSON(narrativesRisk.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## PROVEEDORES A QUIENES DEBEMOS (riesgo de relacion)\n${safeJSON(supplierWeOwe.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Clientes cayendo >30%\n${safeJSON(churning.data)}\n## Proveedor unico\n${safeJSON(singleSource.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA >72h\n${safeJSON(unanswered.data)}`;
+      return `${profileSection}## CONCENTRACION DE REVENUE: top 5 clientes = ${concentrationPct}% del total\n${safeJSON(topRevenue.slice(0, 5))}\n## EMPRESAS CON SEÑALES DE ALERTA\n${safeJSON(narrativesRisk.data)}\n## RIESGO DE CADENA DE SUMINISTRO (concentracion Herfindahl en proveedores, critico/alto)\n${safeJSON(supplierConcentration.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## PROVEEDORES A QUIENES DEBEMOS (riesgo de relacion)\n${safeJSON(supplierWeOwe.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Clientes cayendo >30%\n${safeJSON(churning.data)}\n## Proveedor unico\n${safeJSON(singleSource.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA >72h\n${safeJSON(unanswered.data)}`;
     }
     case "costos": {
-      const [margins, deadStock, priceErosion, topProducts, purchasePrices, productCosts, belowCostLines] = await Promise.all([
+      const [margins, deadStock, priceErosion, topProducts, purchasePrices, productCosts, belowCostLines, bomCostCreep, customerMargins] = await Promise.all([
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, effective_cost, cost_source, bom_real_cost, cached_standard_price, gross_margin_pct, total_order_value").not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(20),
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers, standard_price, list_price").order("inventory_value", { ascending: false }).limit(15),
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, effective_cost, cost_source, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
         sb.from("odoo_products").select("internal_ref, name, stock_qty, standard_price, list_price").gt("stock_qty", 0).order("stock_qty", { ascending: false }).limit(15),
-        // NEW: Purchase prices vs historical average (are we buying expensive?)
         sb.from("purchase_price_intelligence").select("product_ref, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, total_spent").eq("price_flag", "price_above_avg").order("total_spent", { ascending: false }).limit(15),
-        // NEW: Products with avg_cost for real margin calculation
         sb.from("odoo_products").select("internal_ref, name, standard_price, avg_cost, list_price, stock_qty").not("avg_cost", "is", null).gt("avg_cost", 0).order("stock_qty", { ascending: false }).limit(20),
-        // NEW: lineas de factura con venta bajo costo o margen <15% (eventos puntuales, no agregados)
         sb.from("invoice_line_margins").select("move_name, invoice_date, company_name, product_ref, quantity, price_unit, unit_cost, gross_margin_pct, below_cost, margin_total, discount").order("margin_total", { ascending: true }).limit(15),
+        // NEW (audit 2026-04-15 sprint 2): BOM divergence signal.
+        // product_real_cost explodes BOMs recursively. Filter to the tractable
+        // range (20% to 200% above cached) — outside this band is usually a
+        // data bug, not a business signal. Also exclude products with missing
+        // component costs (false alarms).
+        sb.from("product_real_cost").select("product_ref, product_name, material_cost_total, cached_standard_price, delta_vs_cached_pct, raw_components_count, has_multiple_boms").eq("has_missing_costs", false).gte("delta_vs_cached_pct", 20).lte("delta_vs_cached_pct", 200).order("delta_vs_cached_pct", { ascending: false }).limit(15),
+        // NEW: Customer-level margin aggregate — who's making us money, who's not
+        sb.from("customer_margin_analysis").select("company_name, distinct_products, total_revenue, total_margin, margin_pct, revenue_12m, margin_pct_12m, lines_without_cost").gt("revenue_12m", 500000).order("margin_pct_12m", { ascending: true, nullsFirst: false }).limit(20),
       ]);
-      return `${profileSection}## VENTAS BAJO COSTO / MARGEN <15% (eventos puntuales, ultimos 90d)\n${safeJSON(belowCostLines.data)}\n## Margenes por producto+cliente (precio venta vs costo)\n${safeJSON(margins.data)}\n## ALERTA: productos con margen <15%\n${safeJSON(priceErosion.data)}\n## COMPRANDO MAS CARO que promedio (impacto en costos)\n${safeJSON(purchasePrices.data)}\n## Productos con costo promedio real (avg_cost de Odoo)\n${safeJSON(productCosts.data)}\n## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}\n## Productos con mas stock\n${safeJSON(topProducts.data)}`;
+      return `${profileSection}## VENTAS BAJO COSTO / MARGEN <15% (eventos puntuales, ultimos 90d)\n${safeJSON(belowCostLines.data)}\n## BOM COST CREEP (costo real > cached 20-200%: productos con costo desactualizado)\n${safeJSON(bomCostCreep.data)}\n## MARGEN POR CLIENTE (12m, ordenado por margen bajo)\n${safeJSON(customerMargins.data)}\n## Margenes por producto+cliente (precio venta vs costo)\n${safeJSON(margins.data)}\n## ALERTA: productos con margen <15%\n${safeJSON(priceErosion.data)}\n## COMPRANDO MAS CARO que promedio (impacto en costos)\n${safeJSON(purchasePrices.data)}\n## Productos con costo promedio real (avg_cost de Odoo)\n${safeJSON(productCosts.data)}\n## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}\n## Productos con mas stock\n${safeJSON(topProducts.data)}`;
     }
     case "equipo_dir": {
       const [reorderByVendor, activities, employees, stalledThreads, salesByPerson, overdueByPerson] = await Promise.all([
