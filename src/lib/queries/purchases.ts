@@ -119,6 +119,69 @@ export interface SingleSourceRow {
   top_supplier_share_pct: number;
 }
 
+export interface SingleSourcePage {
+  rows: SingleSourceRow[];
+  total: number;
+}
+
+const SINGLE_SOURCE_SORT_MAP: Record<string, string> = {
+  spent: "total_spent_12m",
+  herfindahl: "herfindahl_idx",
+  share: "top_supplier_share_pct",
+  ref: "product_ref",
+  name: "product_name",
+};
+
+export async function getSingleSourceRiskPage(
+  params: TableParams & { level?: string[] }
+): Promise<SingleSourcePage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && SINGLE_SOURCE_SORT_MAP[params.sort]) ?? "total_spent_12m";
+  const ascending = params.sortDir === "asc";
+
+  const levels =
+    params.level && params.level.length > 0
+      ? params.level
+      : ["single_source", "very_high", "high"];
+
+  let query = sb
+    .from("supplier_concentration_herfindahl")
+    .select(
+      "odoo_product_id, product_ref, product_name, top_supplier_name, top_supplier_company_id, total_spent_12m, concentration_level, herfindahl_idx, top_supplier_share_pct",
+      { count: "exact" }
+    )
+    .in("concentration_level", levels);
+
+  if (params.q) {
+    query = query.or(
+      `product_ref.ilike.%${params.q}%,product_name.ilike.%${params.q}%,top_supplier_name.ilike.%${params.q}%`
+    );
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<SingleSourceRow>>).map((r) => ({
+    odoo_product_id: Number(r.odoo_product_id) || 0,
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    top_supplier_name: r.top_supplier_name ?? null,
+    top_supplier_company_id:
+      r.top_supplier_company_id != null
+        ? Number(r.top_supplier_company_id)
+        : null,
+    total_spent_12m: Number(r.total_spent_12m) || 0,
+    concentration_level: r.concentration_level ?? "—",
+    herfindahl_idx: Number(r.herfindahl_idx) || 0,
+    top_supplier_share_pct: Number(r.top_supplier_share_pct) || 0,
+  }));
+
+  return { rows, total: count ?? rows.length };
+}
+
 export async function getSingleSourceRisk(
   limit = 20
 ): Promise<SingleSourceRow[]> {
@@ -163,6 +226,73 @@ export interface PriceAnomalyRow {
   price_flag: string;
   total_spent: number;
   last_purchase_date: string | null;
+}
+
+export interface PriceAnomaliesPage {
+  rows: PriceAnomalyRow[];
+  total: number;
+}
+
+const PRICE_ANOMALY_SORT_MAP: Record<string, string> = {
+  spent: "total_spent",
+  change: "price_change_pct",
+  vs_avg: "price_vs_avg_pct",
+  last_price: "last_price",
+  date: "last_purchase_date",
+};
+
+export async function getPriceAnomaliesPage(
+  params: TableParams & { flag?: string[] }
+): Promise<PriceAnomaliesPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && PRICE_ANOMALY_SORT_MAP[params.sort]) ?? "total_spent";
+  const ascending = params.sortDir === "asc";
+
+  const flags =
+    params.flag && params.flag.length > 0
+      ? params.flag
+      : ["price_above_avg", "price_below_avg"];
+
+  let query = sb
+    .from("purchase_price_intelligence")
+    .select(
+      "product_ref, product_name, currency, last_supplier, last_price, prev_price, avg_price, price_change_pct, price_vs_avg_pct, price_flag, total_spent, last_purchase_date",
+      { count: "exact" }
+    )
+    .in("price_flag", flags);
+
+  if (params.q) {
+    query = query.or(
+      `product_ref.ilike.%${params.q}%,product_name.ilike.%${params.q}%,last_supplier.ilike.%${params.q}%`
+    );
+  }
+  if (params.from) query = query.gte("last_purchase_date", params.from);
+  if (params.to) query = query.lte("last_purchase_date", params.to);
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<PriceAnomalyRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    currency: r.currency ?? null,
+    last_supplier: r.last_supplier ?? null,
+    last_price: r.last_price != null ? Number(r.last_price) : null,
+    prev_price: r.prev_price != null ? Number(r.prev_price) : null,
+    avg_price: r.avg_price != null ? Number(r.avg_price) : null,
+    price_change_pct:
+      r.price_change_pct != null ? Number(r.price_change_pct) : null,
+    price_vs_avg_pct:
+      r.price_vs_avg_pct != null ? Number(r.price_vs_avg_pct) : null,
+    price_flag: r.price_flag ?? "—",
+    total_spent: Number(r.total_spent) || 0,
+    last_purchase_date: r.last_purchase_date ?? null,
+  }));
+
+  return { rows, total: count ?? rows.length };
 }
 
 export async function getPriceAnomalies(
@@ -324,6 +454,85 @@ export interface TopSupplierRow {
   total_spent: number;
   product_count: number;
   order_count: number;
+}
+
+export interface TopSuppliersPage {
+  rows: TopSupplierRow[];
+  total: number;
+}
+
+/**
+ * Top proveedores paginados + búsqueda. Se agrega en memoria porque la
+ * view `supplier_product_matrix` es por supplier×product, no por supplier.
+ */
+export async function getTopSuppliersPage(
+  params: TableParams
+): Promise<TopSuppliersPage> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("supplier_product_matrix")
+    .select("supplier_name, purchase_value, purchase_orders, odoo_product_id")
+    .gt("purchase_value", 0);
+
+  const rows = (data ?? []) as Array<{
+    supplier_name: string | null;
+    purchase_value: number | null;
+    purchase_orders: number | null;
+    odoo_product_id: number | null;
+  }>;
+  const buckets = new Map<
+    string,
+    { spent: number; products: Set<number>; orders: number }
+  >();
+  for (const r of rows) {
+    if (!r.supplier_name) continue;
+    const b = buckets.get(r.supplier_name) ?? {
+      spent: 0,
+      products: new Set<number>(),
+      orders: 0,
+    };
+    b.spent += Number(r.purchase_value) || 0;
+    if (r.odoo_product_id) b.products.add(r.odoo_product_id);
+    b.orders += Number(r.purchase_orders) || 0;
+    buckets.set(r.supplier_name, b);
+  }
+
+  let all: TopSupplierRow[] = [...buckets.entries()].map(
+    ([supplier_name, v]) => ({
+      supplier_name,
+      total_spent: v.spent,
+      product_count: v.products.size,
+      order_count: v.orders,
+    })
+  );
+
+  if (params.q) {
+    const needle = params.q.toLowerCase();
+    all = all.filter((r) => r.supplier_name.toLowerCase().includes(needle));
+  }
+
+  const sortMap: Record<string, keyof TopSupplierRow> = {
+    spent: "total_spent",
+    products: "product_count",
+    orders: "order_count",
+    name: "supplier_name",
+  };
+  const sortCol: keyof TopSupplierRow =
+    params.sort && sortMap[params.sort] ? sortMap[params.sort] : "total_spent";
+  const asc = params.sortDir === "asc";
+  all.sort((a, b) => {
+    const va = a[sortCol];
+    const vb = b[sortCol];
+    if (typeof va === "number" && typeof vb === "number")
+      return asc ? va - vb : vb - va;
+    return asc
+      ? String(va).localeCompare(String(vb), "es")
+      : String(vb).localeCompare(String(va), "es");
+  });
+
+  const total = all.length;
+  const [start, end] = paginationRange(params.page, params.size);
+  return { rows: all.slice(start, end + 1), total };
 }
 
 export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {

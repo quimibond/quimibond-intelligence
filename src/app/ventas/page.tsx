@@ -16,6 +16,8 @@ import {
   DataTable,
   DataTableToolbar,
   DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   CompanyLink,
   Currency,
@@ -23,6 +25,7 @@ import {
   StatusBadge,
   TrendIndicator,
   EmptyState,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -32,8 +35,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   getSalesKpis,
   getSalesRevenueTrend,
-  getReorderRisk,
-  getTopCustomers,
+  getReorderRiskPage,
+  getTopCustomersPage,
   getTopSalespeople,
   getSaleOrdersPage,
   getSaleOrderSalespeopleOptions,
@@ -42,7 +45,7 @@ import {
   type SalespersonRow,
   type RecentSaleOrder,
 } from "@/lib/queries/sales";
-import { parseTableParams } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
@@ -100,43 +103,97 @@ export default async function VentasPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
             <CardTitle className="text-base">
               Reorder risk — clientes que deberían haber comprado
             </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <ReorderRiskTable />
-            </Suspense>
-          </CardContent>
-        </Card>
+            <p className="text-xs text-muted-foreground">
+              Filtra por estado de reorden y tier para priorizar a quién
+              llamar.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="rr_"
+              columns={reorderRiskViewColumns}
+            />
+            <TableExportButton filename="reorder-risk" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="rr_"
+            searchPlaceholder="Buscar cliente…"
+            facets={[
+              {
+                key: "status",
+                label: "Estado",
+                options: [
+                  { value: "critical", label: "Crítico" },
+                  { value: "overdue", label: "Vencido" },
+                  { value: "at_risk", label: "En riesgo" },
+                ],
+              },
+              {
+                key: "tier",
+                label: "Tier",
+                options: [
+                  { value: "A", label: "Tier A" },
+                  { value: "B", label: "Tier B" },
+                  { value: "C", label: "Tier C" },
+                ],
+              },
+            ]}
+          />
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <ReorderRiskTable searchParams={sp} />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
             <CardTitle className="text-base">
               Top clientes (revenue 90d)
             </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <TopCustomersTable />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+            <p className="text-xs text-muted-foreground">
+              Ordena por revenue, margen o lifetime. Busca por nombre.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="tc_"
+              columns={topCustomerViewColumns}
+            />
+            <TableExportButton filename="top-customers" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="tc_"
+            searchPlaceholder="Buscar cliente…"
+          />
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <TopCustomersTable searchParams={sp} />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Ranking de vendedores este mes
-          </CardTitle>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Ranking de vendedores este mes
+            </CardTitle>
+          </div>
+          <TableExportButton filename="salespeople" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense fallback={<Skeleton className="h-[200px] rounded-xl" />}>
@@ -145,13 +202,22 @@ export default async function VentasPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Pedidos</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Busca por número o filtra por vendedor, estado y fecha. Datos en
-            vivo de Odoo.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Pedidos</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Busca por número o filtra por vendedor, estado y fecha. Datos en
+              vivo de Odoo.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="so_"
+              columns={saleOrderViewColumns}
+            />
+            <TableExportButton filename="sale-orders" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <Suspense fallback={null}>
@@ -251,10 +317,23 @@ const reorderStatusLabel: Record<string, string> = {
   critical: "Crítico",
 };
 
+const reorderRiskViewColumns = [
+  { key: "company", label: "Cliente", alwaysVisible: true },
+  { key: "status", label: "Estado" },
+  { key: "days_overdue", label: "Días vencido" },
+  { key: "avg_cycle", label: "Ciclo promedio", defaultHidden: true },
+  { key: "days_since", label: "Días desde última", defaultHidden: true },
+  { key: "total_revenue", label: "Revenue total" },
+  { key: "avg_order", label: "Ticket promedio", defaultHidden: true },
+  { key: "top_product", label: "Top producto", defaultHidden: true },
+  { key: "salesperson", label: "Vendedor" },
+];
+
 const reorderColumns: DataTableColumn<ReorderRiskRow>[] = [
   {
     key: "company",
     header: "Cliente",
+    alwaysVisible: true,
     cell: (r) => (
       <CompanyLink
         companyId={r.company_id}
@@ -274,8 +353,9 @@ const reorderColumns: DataTableColumn<ReorderRiskRow>[] = [
     ),
   },
   {
-    key: "days",
+    key: "days_overdue",
     header: "Días vencido",
+    sortable: true,
     cell: (r) => (
       <span className="font-semibold tabular-nums text-warning-foreground">
         {r.days_overdue_reorder ? Math.round(r.days_overdue_reorder) : "—"}
@@ -285,10 +365,52 @@ const reorderColumns: DataTableColumn<ReorderRiskRow>[] = [
     hideOnMobile: true,
   },
   {
+    key: "avg_cycle",
+    header: "Ciclo prom.",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.avg_cycle_days ? `${Math.round(r.avg_cycle_days)}d` : "—"}
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "days_since",
+    header: "Días desde",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.days_since_last ? `${Math.round(r.days_since_last)}d` : "—"}
+      </span>
+    ),
+    align: "right",
+  },
+  {
     key: "total_revenue",
     header: "Revenue total",
+    sortable: true,
     cell: (r) => <Currency amount={r.total_revenue} compact />,
     align: "right",
+  },
+  {
+    key: "avg_order",
+    header: "Ticket prom.",
+    defaultHidden: true,
+    cell: (r) => <Currency amount={r.avg_order_value} compact />,
+    align: "right",
+  },
+  {
+    key: "top_product",
+    header: "Top producto",
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="font-mono text-[11px]">
+        {r.top_product_ref ?? "—"}
+      </span>
+    ),
   },
   {
     key: "salesperson",
@@ -298,13 +420,38 @@ const reorderColumns: DataTableColumn<ReorderRiskRow>[] = [
   },
 ];
 
-async function ReorderRiskTable() {
-  const rows = await getReorderRisk(20);
+async function ReorderRiskTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "rr_",
+    facetKeys: ["status", "tier"],
+    defaultSize: 25,
+    defaultSort: "-total_revenue",
+  });
+  const { rows, total } = await getReorderRiskPage({
+    ...params,
+    status: params.facets.status,
+    tier: params.facets.tier,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "rr_");
+  const sortHref = makeSortHref({
+    pathname: "/ventas",
+    searchParams,
+    paramPrefix: "rr_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={reorderColumns}
       rowKey={(r) => String(r.company_id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={
@@ -351,16 +498,33 @@ async function ReorderRiskTable() {
         description: "Todos los clientes están comprando a tiempo.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="rr_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="clientes"
+    />
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Top customers
 // ──────────────────────────────────────────────────────────────────────────
+const topCustomerViewColumns = [
+  { key: "company", label: "Cliente", alwaysVisible: true },
+  { key: "revenue_90d", label: "Revenue 90d" },
+  { key: "revenue_total", label: "Revenue lifetime", defaultHidden: true },
+  { key: "margin_12m", label: "Margen 12m" },
+  { key: "margin_pct", label: "% Margen" },
+];
+
 const customerColumns: DataTableColumn<TopCustomerRow>[] = [
   {
     key: "company",
     header: "Cliente",
+    alwaysVisible: true,
     cell: (r) => (
       <CompanyLink companyId={r.company_id} name={r.company_name} truncate />
     ),
@@ -368,7 +532,16 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
   {
     key: "revenue_90d",
     header: "Revenue 90d",
+    sortable: true,
     cell: (r) => <Currency amount={r.revenue_90d} compact />,
+    align: "right",
+  },
+  {
+    key: "revenue_total",
+    header: "Revenue lifetime",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => <Currency amount={r.total_revenue_lifetime} compact />,
     align: "right",
   },
   {
@@ -385,13 +558,13 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
     cell: (r) =>
       r.margin_pct_12m != null ? (
         <span
-          className={
+          className={`tabular-nums ${
             r.margin_pct_12m >= 25
               ? "text-success"
               : r.margin_pct_12m >= 15
                 ? "text-warning"
                 : "text-danger"
-          }
+          }`}
         >
           {r.margin_pct_12m.toFixed(1)}%
         </span>
@@ -402,13 +575,33 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
   },
 ];
 
-async function TopCustomersTable() {
-  const rows = await getTopCustomers(15);
+async function TopCustomersTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "tc_",
+    defaultSize: 25,
+    defaultSort: "-revenue_90d",
+  });
+  const { rows, total } = await getTopCustomersPage(params);
+  const visibleKeys = parseVisibleKeys(searchParams, "tc_");
+  const sortHref = makeSortHref({
+    pathname: "/ventas",
+    searchParams,
+    paramPrefix: "tc_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={customerColumns}
       rowKey={(r) => String(r.company_id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={
@@ -449,6 +642,14 @@ async function TopCustomersTable() {
         description: "No hay revenue en últimos 90d.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="tc_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="clientes"
+    />
+    </div>
   );
 }
 
@@ -463,19 +664,35 @@ const salespersonColumns: DataTableColumn<SalespersonRanked>[] = [
   {
     key: "rank",
     header: "#",
-    cell: (r) => <span className="text-muted-foreground">#{r.rank}</span>,
+    alwaysVisible: true,
+    cell: (r) => (
+      <span className="text-muted-foreground tabular-nums">#{r.rank}</span>
+    ),
   },
   {
     key: "name",
     header: "Vendedor",
+    alwaysVisible: true,
     cell: (r) => <span className="font-semibold">{r.name}</span>,
   },
   {
     key: "orders",
     header: "Pedidos",
-    cell: (r) => r.order_count,
+    cell: (r) => <span className="tabular-nums">{r.order_count}</span>,
     align: "right",
     hideOnMobile: true,
+  },
+  {
+    key: "avg_ticket",
+    header: "Ticket promedio",
+    defaultHidden: true,
+    cell: (r) => (
+      <Currency
+        amount={r.order_count > 0 ? r.total_amount / r.order_count : 0}
+        compact
+      />
+    ),
+    align: "right",
   },
   {
     key: "total",
@@ -541,6 +758,8 @@ const orderColumns: DataTableColumn<RecentSaleOrder>[] = [
   {
     key: "name",
     header: "Pedido",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
@@ -566,20 +785,36 @@ const orderColumns: DataTableColumn<RecentSaleOrder>[] = [
   {
     key: "amount",
     header: "Monto",
-    cell: (r) => <Currency amount={r.amount_total_mxn} />,
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        <Currency amount={r.amount_total_mxn} />
+      </span>
+    ),
     align: "right",
   },
   {
     key: "date",
     header: "Fecha",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.date_order} relative />,
     hideOnMobile: true,
   },
   {
     key: "state",
     header: "Estado",
+    sortable: true,
     cell: (r) => <StatusBadge status={(r.state ?? "draft") as "draft"} />,
   },
+];
+
+const saleOrderViewColumns = [
+  { key: "name", label: "Pedido", alwaysVisible: true },
+  { key: "company", label: "Cliente" },
+  { key: "salesperson", label: "Vendedor" },
+  { key: "amount", label: "Monto" },
+  { key: "date", label: "Fecha" },
+  { key: "state", label: "Estado" },
 ];
 
 async function SaleOrdersToolbar() {
@@ -614,7 +849,7 @@ async function SaleOrdersToolbar() {
 async function RecentOrdersTable({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: SearchParams;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "so_",
@@ -627,12 +862,22 @@ async function RecentOrdersTable({
     state: params.facets.state,
     salesperson: params.facets.salesperson,
   });
+  const visibleKeys = parseVisibleKeys(searchParams, "so_");
+  const sortHref = makeSortHref({
+    pathname: "/ventas",
+    searchParams,
+    paramPrefix: "so_",
+  });
   return (
     <div className="space-y-3">
     <DataTable
       data={rows}
       columns={orderColumns}
       rowKey={(r) => String(r.id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={

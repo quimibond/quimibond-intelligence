@@ -411,6 +411,53 @@ export interface CompanyOrderRow {
   salesperson_name: string | null;
 }
 
+export interface CompanyOrdersPage {
+  rows: CompanyOrderRow[];
+  total: number;
+}
+
+export async function getCompanyOrdersPage(
+  companyId: number,
+  params: import("./table-params").TableParams & { state?: string[] }
+): Promise<CompanyOrdersPage> {
+  const { paginationRange, endOfDay } = await import("./table-params");
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortMap: Record<string, string> = {
+    date: "date_order",
+    amount: "amount_total_mxn",
+    name: "name",
+  };
+  const sortCol = (params.sort && sortMap[params.sort]) ?? "date_order";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("odoo_sale_orders")
+    .select(
+      "id, name, date_order, amount_total_mxn, state, salesperson_name",
+      { count: "exact" }
+    )
+    .eq("company_id", companyId);
+
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.state && params.state.length > 0) {
+    query = query.in("state", params.state);
+  }
+  if (params.from) query = query.gte("date_order", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("date_order", next);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+  return {
+    rows: (data ?? []) as CompanyOrderRow[],
+    total: count ?? 0,
+  };
+}
+
 export async function getCompanyOrders(
   companyId: number,
   limit = 15
@@ -435,6 +482,57 @@ export interface CompanyInvoiceRow {
   currency: string | null;
   payment_state: string | null;
   days_overdue: number | null;
+}
+
+export interface CompanyInvoicesPage {
+  rows: CompanyInvoiceRow[];
+  total: number;
+}
+
+export async function getCompanyInvoicesPage(
+  companyId: number,
+  params: import("./table-params").TableParams & { payment_state?: string[] }
+): Promise<CompanyInvoicesPage> {
+  const { paginationRange, endOfDay } = await import("./table-params");
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortMap: Record<string, string> = {
+    date: "invoice_date",
+    due: "due_date",
+    amount: "amount_total_mxn",
+    residual: "amount_residual_mxn",
+    days: "days_overdue",
+    name: "name",
+  };
+  const sortCol = (params.sort && sortMap[params.sort]) ?? "invoice_date";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("odoo_invoices")
+    .select(
+      "id, name, invoice_date, due_date, amount_total_mxn, amount_residual_mxn, currency, payment_state, days_overdue",
+      { count: "exact" }
+    )
+    .eq("company_id", companyId)
+    .eq("move_type", "out_invoice");
+
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.payment_state && params.payment_state.length > 0) {
+    query = query.in("payment_state", params.payment_state);
+  }
+  if (params.from) query = query.gte("invoice_date", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("invoice_date", next);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+  return {
+    rows: (data ?? []) as CompanyInvoiceRow[],
+    total: count ?? 0,
+  };
 }
 
 export async function getCompanyInvoices(
@@ -462,6 +560,53 @@ export interface CompanyDeliveryRow {
   date_done: string | null;
   state: string | null;
   is_late: boolean | null;
+}
+
+export interface CompanyDeliveriesPage {
+  rows: CompanyDeliveryRow[];
+  total: number;
+}
+
+export async function getCompanyDeliveriesPage(
+  companyId: number,
+  params: import("./table-params").TableParams & { state?: string[] }
+): Promise<CompanyDeliveriesPage> {
+  const { paginationRange, endOfDay } = await import("./table-params");
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortMap: Record<string, string> = {
+    scheduled: "scheduled_date",
+    done: "date_done",
+    name: "name",
+  };
+  const sortCol = (params.sort && sortMap[params.sort]) ?? "scheduled_date";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("odoo_deliveries")
+    .select(
+      "id, name, picking_type_code, scheduled_date, date_done, state, is_late",
+      { count: "exact" }
+    )
+    .eq("company_id", companyId);
+
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.state && params.state.length > 0) {
+    query = query.in("state", params.state);
+  }
+  if (params.from) query = query.gte("scheduled_date", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("scheduled_date", next);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+  return {
+    rows: (data ?? []) as CompanyDeliveryRow[],
+    total: count ?? 0,
+  };
 }
 
 export async function getCompanyDeliveries(

@@ -310,6 +310,88 @@ export interface ManufacturingRow {
   origin: string | null;
 }
 
+export interface ManufacturingPage {
+  rows: ManufacturingRow[];
+  total: number;
+}
+
+const MFG_SORT_MAP: Record<string, string> = {
+  start: "date_start",
+  finish: "date_finished",
+  name: "name",
+  qty_planned: "qty_planned",
+  qty_produced: "qty_produced",
+};
+
+export async function getManufacturingPage(
+  params: TableParams & { state?: string[]; assigned?: string[] }
+): Promise<ManufacturingPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol = (params.sort && MFG_SORT_MAP[params.sort]) ?? "date_start";
+  const ascending = params.sortDir === "asc" || !params.sort;
+
+  const states =
+    params.state && params.state.length > 0
+      ? params.state
+      : ["confirmed", "progress", "to_close"];
+
+  let query = sb
+    .from("odoo_manufacturing")
+    .select(
+      "id, name, product_name, qty_planned, qty_produced, state, date_start, date_finished, assigned_user, origin",
+      { count: "exact" }
+    )
+    .in("state", states);
+
+  if (params.q) {
+    query = query.or(
+      `name.ilike.%${params.q}%,product_name.ilike.%${params.q}%,origin.ilike.%${params.q}%`
+    );
+  }
+  if (params.from) query = query.gte("date_start", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("date_start", next);
+  }
+  if (params.assigned && params.assigned.length > 0) {
+    query = query.in("assigned_user", params.assigned);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<ManufacturingRow>>).map((r) => ({
+    id: Number(r.id) || 0,
+    name: r.name ?? null,
+    product_name: r.product_name ?? null,
+    qty_planned: Number(r.qty_planned) || 0,
+    qty_produced: Number(r.qty_produced) || 0,
+    state: r.state ?? null,
+    date_start: r.date_start ?? null,
+    date_finished: r.date_finished ?? null,
+    assigned_user: r.assigned_user ?? null,
+    origin: r.origin ?? null,
+  }));
+
+  return { rows, total: count ?? rows.length };
+}
+
+export async function getManufacturingAssigneeOptions(): Promise<string[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("odoo_manufacturing")
+    .select("assigned_user")
+    .not("assigned_user", "is", null)
+    .limit(2000);
+  const set = new Set<string>();
+  for (const r of (data ?? []) as Array<{ assigned_user: string | null }>) {
+    if (r.assigned_user) set.add(r.assigned_user);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+}
+
 export async function getActiveManufacturing(
   limit = 30
 ): Promise<ManufacturingRow[]> {

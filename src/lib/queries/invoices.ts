@@ -358,6 +358,75 @@ export interface PaymentPredictionRow {
   predicted_payment_date: string | null;
 }
 
+export interface PaymentPredictionsPage {
+  rows: PaymentPredictionRow[];
+  total: number;
+}
+
+const PAYMENT_PREDICTION_SORT_MAP: Record<string, string> = {
+  pending: "total_pending",
+  max_overdue: "max_days_overdue",
+  avg_days: "avg_days_to_pay",
+  company: "company_name",
+};
+
+export async function getPaymentPredictionsPage(
+  params: TableParams & { risk?: string[]; trend?: string[] }
+): Promise<PaymentPredictionsPage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && PAYMENT_PREDICTION_SORT_MAP[params.sort]) ??
+    "total_pending";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("payment_predictions")
+    .select(
+      "company_id, company_name, tier, payment_risk, payment_trend, avg_days_to_pay, median_days_to_pay, max_days_overdue, total_pending, pending_count, predicted_payment_date",
+      { count: "exact" }
+    )
+    .gt("total_pending", 0)
+    .not("payment_risk", "ilike", "NORMAL%")
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.q) query = query.ilike("company_name", `%${params.q}%`);
+  if (params.risk && params.risk.length > 0) {
+    // Match "CRITICO%" / "ALTO%" / "MEDIO%" prefixes
+    const orParts = params.risk.map((r) => `payment_risk.ilike.${r}%`);
+    query = query.or(orParts.join(","));
+  }
+  if (params.trend && params.trend.length > 0) {
+    query = query.in("payment_trend", params.trend);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map(
+    (r) => ({
+      company_id: Number(r.company_id) || 0,
+      company_name: r.company_name ?? null,
+      tier: r.tier ?? null,
+      payment_risk: r.payment_risk ?? "—",
+      payment_trend: r.payment_trend ?? null,
+      avg_days_to_pay:
+        r.avg_days_to_pay != null ? Number(r.avg_days_to_pay) : null,
+      median_days_to_pay:
+        r.median_days_to_pay != null ? Number(r.median_days_to_pay) : null,
+      max_days_overdue:
+        r.max_days_overdue != null ? Number(r.max_days_overdue) : null,
+      total_pending: Number(r.total_pending) || 0,
+      pending_count: Number(r.pending_count) || 0,
+      predicted_payment_date: r.predicted_payment_date ?? null,
+    })
+  );
+
+  return { rows, total: count ?? rows.length };
+}
+
 export async function getPaymentPredictions(
   limit = 30
 ): Promise<PaymentPredictionRow[]> {

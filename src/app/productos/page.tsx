@@ -16,10 +16,13 @@ import {
   DataTable,
   DataTableToolbar,
   DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   Currency,
   DateDisplay,
   EmptyState,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,15 +33,15 @@ import {
   getProductsKpis,
   getInventoryPage,
   getProductCategoryOptions,
-  getTopMovers,
-  getDeadStock,
+  getTopMoversPage,
+  getDeadStockPage,
   getTopMarginProducts,
   type ReorderRow,
   type TopMoverRow,
   type DeadStockRow,
   type TopMarginProductRow,
 } from "@/lib/queries/products";
-import { parseTableParams } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 import { formatNumber } from "@/lib/formatters";
 
 export const dynamic = "force-dynamic";
@@ -72,13 +75,23 @@ export default async function ProductosPage({
       </Suspense>
 
       {/* Inventario — tabla con filtros completos */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Inventario</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Busca por referencia o nombre y filtra por estado de reorden o
-            categoría. Por defecto muestra stockout, urgente 14d y reorder 30d.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Inventario</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Busca por referencia o nombre y filtra por estado de reorden o
+              categoría. Por defecto muestra stockout, urgente 14d y reorder
+              30d.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="inv_"
+              columns={inventoryViewColumns}
+            />
+            <TableExportButton filename="inventory" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <Suspense fallback={null}>
@@ -98,47 +111,77 @@ export default async function ProductosPage({
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Top movers (90 días)
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <TopMoversTable />
-            </Suspense>
-          </CardContent>
-        </Card>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Top movers (90 días)</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos con mayor volumen vendido.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="tm_"
+              columns={topMoverViewColumns}
+            />
+            <TableExportButton filename="top-movers" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="tm_"
+            searchPlaceholder="Ref o nombre…"
+          />
+          <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
+            <TopMoversTable searchParams={sp} />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
             <CardTitle className="text-base">
               Top margen (revenue ponderado)
             </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <TopMarginTable />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Stock muerto (sin movimiento)
-          </CardTitle>
+          </div>
+          <TableExportButton filename="top-margin" />
         </CardHeader>
         <CardContent className="pb-4">
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <TopMarginTable />
+          </Suspense>
+        </CardContent>
+      </Card>
+
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Stock muerto (sin movimiento)
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos sin venta por largo tiempo. Ordena por valor, días o
+              revenue lifetime.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="ds_"
+              columns={deadStockViewColumns}
+            />
+            <TableExportButton filename="dead-stock" />
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="ds_"
+            searchPlaceholder="Ref o nombre…"
+          />
           <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
-            <DeadStockTable />
+            <DeadStockTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -202,10 +245,26 @@ const reorderLabel: Record<string, string> = {
   reorder_30d: "≤ 30 días",
 };
 
+const inventoryViewColumns = [
+  { key: "ref", label: "Ref", alwaysVisible: true },
+  { key: "name", label: "Producto" },
+  { key: "category", label: "Categoría", defaultHidden: true },
+  { key: "status", label: "Estado" },
+  { key: "available", label: "Disponible" },
+  { key: "stock", label: "Stock físico", defaultHidden: true },
+  { key: "qty_sold", label: "Vendido 90d" },
+  { key: "run_rate", label: "Daily run rate" },
+  { key: "days_of_stock", label: "Días stock", defaultHidden: true },
+  { key: "customers", label: "# clientes", defaultHidden: true },
+  { key: "last_sale", label: "Última venta", defaultHidden: true },
+];
+
 const reorderColumns: DataTableColumn<ReorderRow>[] = [
   {
     key: "ref",
     header: "Ref",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => (
       <span className="font-mono text-xs">{r.product_ref ?? "—"}</span>
     ),
@@ -213,7 +272,18 @@ const reorderColumns: DataTableColumn<ReorderRow>[] = [
   {
     key: "name",
     header: "Producto",
+    sortable: true,
     cell: (r) => <span className="truncate">{r.product_name ?? "—"}</span>,
+  },
+  {
+    key: "category",
+    header: "Categoría",
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="truncate text-xs text-muted-foreground">
+        {r.category ?? "—"}
+      </span>
+    ),
   },
   {
     key: "status",
@@ -227,23 +297,48 @@ const reorderColumns: DataTableColumn<ReorderRow>[] = [
   {
     key: "available",
     header: "Disponible",
-    cell: (r) => <span className="tabular-nums">{Math.round(r.available_qty)}</span>,
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.available_qty)}</span>
+    ),
     align: "right",
     hideOnMobile: true,
   },
   {
-    key: "days_stock",
+    key: "stock",
+    header: "Stock físico",
+    defaultHidden: true,
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.stock_qty)}</span>
+    ),
+    align: "right",
+  },
+  {
+    key: "qty_sold",
+    header: "Vendido 90d",
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.qty_sold_90d)}</span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "days_of_stock",
     header: "Días stock",
+    sortable: true,
+    defaultHidden: true,
     cell: (r) =>
       r.days_of_stock != null ? (
         <span
-          className={
+          className={`tabular-nums ${
             r.days_of_stock <= 14
               ? "font-bold text-danger"
               : r.days_of_stock <= 30
                 ? "text-warning"
                 : ""
-          }
+          }`}
         >
           {Math.round(r.days_of_stock)}
         </span>
@@ -253,12 +348,30 @@ const reorderColumns: DataTableColumn<ReorderRow>[] = [
     align: "right",
   },
   {
-    key: "rate",
+    key: "run_rate",
     header: "Daily rate",
-    cell: (r) =>
-      r.daily_run_rate != null ? r.daily_run_rate.toFixed(1) : "—",
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.daily_run_rate != null ? r.daily_run_rate.toFixed(1) : "—"}
+      </span>
+    ),
     align: "right",
     hideOnMobile: true,
+  },
+  {
+    key: "customers",
+    header: "# clientes",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => <span className="tabular-nums">{r.customers_12m}</span>,
+    align: "right",
+  },
+  {
+    key: "last_sale",
+    header: "Última venta",
+    defaultHidden: true,
+    cell: (r) => <DateDisplay date={r.last_sale_date} />,
   },
 ];
 
@@ -294,7 +407,7 @@ async function InventoryToolbar() {
 async function ReorderTable({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: SearchParams;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "inv_",
@@ -306,6 +419,12 @@ async function ReorderTable({
     ...params,
     status: params.facets.status,
     category: params.facets.category,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "inv_");
+  const sortHref = makeSortHref({
+    pathname: "/productos",
+    searchParams,
+    paramPrefix: "inv_",
   });
   if (rows.length === 0) {
     return (
@@ -323,6 +442,10 @@ async function ReorderTable({
       data={rows}
       columns={reorderColumns}
       rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.product_name ?? r.product_ref ?? "—"}
@@ -375,10 +498,25 @@ async function ReorderTable({
 // ──────────────────────────────────────────────────────────────────────────
 // Top movers
 // ──────────────────────────────────────────────────────────────────────────
+const topMoverViewColumns = [
+  { key: "ref", label: "Ref", alwaysVisible: true },
+  { key: "name", label: "Producto" },
+  { key: "qty_90d", label: "Vendido 90d" },
+  { key: "qty_180d", label: "Vendido 180d", defaultHidden: true },
+  { key: "qty_365d", label: "Vendido 365d", defaultHidden: true },
+  { key: "customers", label: "# clientes" },
+  { key: "run_rate", label: "Daily run rate", defaultHidden: true },
+  { key: "days_stock", label: "Días stock" },
+  { key: "stock_value", label: "Valor inventario", defaultHidden: true },
+  { key: "turnover", label: "Rotación anual", defaultHidden: true },
+];
+
 const topMoverColumns: DataTableColumn<TopMoverRow>[] = [
   {
     key: "ref",
     header: "Ref",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => (
       <span className="font-mono text-xs">{r.product_ref ?? "—"}</span>
     ),
@@ -392,6 +530,7 @@ const topMoverColumns: DataTableColumn<TopMoverRow>[] = [
   {
     key: "qty_90d",
     header: "Vendido 90d",
+    sortable: true,
     cell: (r) => (
       <span className="font-semibold tabular-nums">
         {formatNumber(Math.round(r.qty_sold_90d))}
@@ -400,28 +539,109 @@ const topMoverColumns: DataTableColumn<TopMoverRow>[] = [
     align: "right",
   },
   {
+    key: "qty_180d",
+    header: "180d",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {formatNumber(Math.round(r.qty_sold_180d))}
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "qty_365d",
+    header: "365d",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {formatNumber(Math.round(r.qty_sold_365d))}
+      </span>
+    ),
+    align: "right",
+  },
+  {
     key: "customers",
     header: "Clientes",
-    cell: (r) => r.customers_12m,
+    sortable: true,
+    cell: (r) => <span className="tabular-nums">{r.customers_12m}</span>,
     align: "right",
     hideOnMobile: true,
   },
   {
+    key: "run_rate",
+    header: "Run rate",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.daily_run_rate != null ? r.daily_run_rate.toFixed(1) : "—"}
+      </span>
+    ),
+    align: "right",
+  },
+  {
     key: "days_stock",
     header: "Días stock",
-    cell: (r) =>
-      r.days_of_stock != null ? Math.round(r.days_of_stock) : "—",
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.days_of_stock != null ? Math.round(r.days_of_stock) : "—"}
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "stock_value",
+    header: "Inventario",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => <Currency amount={r.stock_value} compact />,
+    align: "right",
+  },
+  {
+    key: "turnover",
+    header: "Rotación",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {r.annual_turnover != null ? r.annual_turnover.toFixed(1) : "—"}
+      </span>
+    ),
     align: "right",
   },
 ];
 
-async function TopMoversTable() {
-  const rows = await getTopMovers(15);
+async function TopMoversTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "tm_",
+    defaultSize: 25,
+    defaultSort: "-qty_90d",
+  });
+  const { rows, total } = await getTopMoversPage(params);
+  const visibleKeys = parseVisibleKeys(searchParams, "tm_");
+  const sortHref = makeSortHref({
+    pathname: "/productos",
+    searchParams,
+    paramPrefix: "tm_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={topMoverColumns}
       rowKey={(r, i) => `${r.product_ref ?? "tm"}-${i}`}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.product_name ?? r.product_ref ?? "—"}
@@ -447,6 +667,14 @@ async function TopMoversTable() {
         description: "No hay productos con ventas recientes.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="tm_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="productos"
+    />
+    </div>
   );
 }
 
@@ -545,10 +773,23 @@ async function TopMarginTable() {
 // ──────────────────────────────────────────────────────────────────────────
 // Dead stock
 // ──────────────────────────────────────────────────────────────────────────
+const deadStockViewColumns = [
+  { key: "ref", label: "Ref", alwaysVisible: true },
+  { key: "name", label: "Producto" },
+  { key: "days", label: "Días sin venta" },
+  { key: "stock", label: "Stock", defaultHidden: true },
+  { key: "value", label: "Valor" },
+  { key: "last_sale", label: "Última venta", defaultHidden: true },
+  { key: "customers", label: "# clientes históricos", defaultHidden: true },
+  { key: "lifetime", label: "Revenue histórico" },
+];
+
 const deadStockColumns: DataTableColumn<DeadStockRow>[] = [
   {
     key: "ref",
     header: "Ref",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => (
       <span className="font-mono text-xs">{r.product_ref ?? "—"}</span>
     ),
@@ -561,6 +802,7 @@ const deadStockColumns: DataTableColumn<DeadStockRow>[] = [
   {
     key: "days",
     header: "Días sin venta",
+    sortable: true,
     cell: (r) => (
       <span className="font-semibold tabular-nums text-warning-foreground">
         {r.days_since_last_sale}
@@ -570,27 +812,75 @@ const deadStockColumns: DataTableColumn<DeadStockRow>[] = [
     hideOnMobile: true,
   },
   {
+    key: "stock",
+    header: "Stock",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.stock_qty)}</span>
+    ),
+    align: "right",
+  },
+  {
     key: "value",
     header: "Valor",
+    sortable: true,
     cell: (r) => <Currency amount={r.inventory_value} compact />,
+    align: "right",
+  },
+  {
+    key: "last_sale",
+    header: "Última venta",
+    defaultHidden: true,
+    cell: (r) => <DateDisplay date={r.last_sale_date} />,
+  },
+  {
+    key: "customers",
+    header: "# clientes",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">{r.historical_customers}</span>
+    ),
     align: "right",
   },
   {
     key: "lifetime",
     header: "Revenue histórico",
+    sortable: true,
     cell: (r) => <Currency amount={r.lifetime_revenue} compact />,
     align: "right",
     hideOnMobile: true,
   },
 ];
 
-async function DeadStockTable() {
-  const rows = await getDeadStock(20);
+async function DeadStockTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "ds_",
+    defaultSize: 25,
+    defaultSort: "-value",
+  });
+  const { rows, total } = await getDeadStockPage(params);
+  const visibleKeys = parseVisibleKeys(searchParams, "ds_");
+  const sortHref = makeSortHref({
+    pathname: "/productos",
+    searchParams,
+    paramPrefix: "ds_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={deadStockColumns}
       rowKey={(r, i) => `${r.product_ref ?? "d"}-${i}`}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.product_name ?? r.product_ref ?? "—"}
@@ -623,5 +913,13 @@ async function DeadStockTable() {
         description: "Todos los productos tienen movimiento reciente.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="ds_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="productos"
+    />
+    </div>
   );
 }

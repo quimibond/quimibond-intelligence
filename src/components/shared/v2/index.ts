@@ -2,7 +2,14 @@
 // Usar SIEMPRE estos building blocks en las nuevas páginas mobile-first.
 export { KpiCard } from "./kpi-card";
 export { StatGrid } from "./stat-grid";
-export { DataTable, type DataTableColumn } from "./data-table";
+export {
+  DataTable,
+  type DataTableColumn,
+  type DataTableSort,
+} from "./data-table";
+export { TableViewOptions, type ViewColumn } from "./table-view-options";
+export { TableExportButton } from "./table-export-button";
+export { makeSortHref } from "./table-sort-href";
 export { CompanyLink } from "./company-link";
 export { Currency } from "./currency";
 export { DateDisplay } from "./date-display";

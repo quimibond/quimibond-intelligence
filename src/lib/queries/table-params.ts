@@ -102,6 +102,20 @@ export function paginationRange(page: number, size: number): [number, number] {
   return [from, to];
 }
 
+/**
+ * Lee el param `cols` (o `${prefix}cols`) y lo convierte a lista de keys.
+ * Si no existe, retorna `undefined` para que el <DataTable> use el default.
+ */
+export function parseVisibleKeys(
+  sp: SearchParamInput,
+  prefix = ""
+): string[] | undefined {
+  const raw = sp?.[`${prefix}cols`];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  if (!value) return undefined;
+  return value.split(",").filter(Boolean);
+}
+
 /** Normaliza un rango de fechas, agregando 1 día al `to` para queries `lt` exclusive. */
 export function endOfDay(iso: string | undefined): string | undefined {
   if (!iso) return undefined;

@@ -15,11 +15,14 @@ import {
   DataTable,
   DataTableToolbar,
   DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   CompanyLink,
   DateDisplay,
   StatusBadge,
   EmptyState,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -31,11 +34,12 @@ import {
   getOperationsKpis,
   getWeeklyTrend,
   getDeliveriesPage,
-  getActiveManufacturing,
+  getManufacturingPage,
+  getManufacturingAssigneeOptions,
   type DeliveryRow,
   type ManufacturingRow,
 } from "@/lib/queries/operations";
-import { parseTableParams } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 import { OtdWeeklyChart } from "./_components/otd-weekly-chart";
 
@@ -84,13 +88,22 @@ export default async function OperacionesPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Entregas</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Busca por número u origen. Filtra por estado, tipo de picking,
-            fecha programada o solo tarde.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Entregas</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Busca por número u origen. Filtra por estado, tipo de picking,
+              fecha programada o solo tarde.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="dl_"
+              columns={deliveryViewColumns}
+            />
+            <TableExportButton filename="deliveries" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <DataTableToolbar
@@ -141,15 +154,31 @@ export default async function OperacionesPage({
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Manufactura activa</CardTitle>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Manufactura</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Filtra por estado, responsable o fecha. Busca por número de
+              orden, producto u origen.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="mfg_"
+              columns={manufacturingViewColumns}
+            />
+            <TableExportButton filename="manufacturing" />
+          </div>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <Suspense fallback={null}>
+            <ManufacturingToolbar />
+          </Suspense>
           <Suspense
             fallback={<Skeleton className="h-[300px] rounded-xl" />}
           >
-            <ManufacturingTable />
+            <ManufacturingTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -245,10 +274,22 @@ const pickingTypeLabel: Record<string, string> = {
   internal: "Interno",
 };
 
+const deliveryViewColumns = [
+  { key: "name", label: "Movimiento", alwaysVisible: true },
+  { key: "type", label: "Tipo" },
+  { key: "company", label: "Empresa" },
+  { key: "origin", label: "Origen" },
+  { key: "scheduled", label: "Programada" },
+  { key: "done", label: "Completada", defaultHidden: true },
+  { key: "state", label: "Estado" },
+];
+
 const deliveryColumns: DataTableColumn<DeliveryRow>[] = [
   {
     key: "name",
     header: "Movimiento",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
@@ -278,11 +319,20 @@ const deliveryColumns: DataTableColumn<DeliveryRow>[] = [
   {
     key: "scheduled",
     header: "Programada",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.scheduled_date} relative />,
+  },
+  {
+    key: "done",
+    header: "Completada",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => <DateDisplay date={r.date_done} />,
   },
   {
     key: "state",
     header: "Estado",
+    sortable: true,
     cell: (r) =>
       r.is_late && r.state && r.state !== "done" && r.state !== "cancel" ? (
         <StatusBadge status="overdue" />
@@ -297,7 +347,7 @@ const deliveryColumns: DataTableColumn<DeliveryRow>[] = [
 async function DeliveriesTable({
   searchParams,
 }: {
-  searchParams: Record<string, string | string[] | undefined>;
+  searchParams: SearchParams;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "dl_",
@@ -310,6 +360,12 @@ async function DeliveriesTable({
     state: params.facets.state,
     picking_type: params.facets.picking_type,
     onlyLate: (params.facets.late ?? []).includes("1"),
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "dl_");
+  const sortHref = makeSortHref({
+    pathname: "/operaciones",
+    searchParams,
+    paramPrefix: "dl_",
   });
   if (rows.length === 0) {
     return (
@@ -327,6 +383,10 @@ async function DeliveriesTable({
         data={rows}
         columns={deliveryColumns}
         rowKey={(r) => String(r.id)}
+        sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+        sortHref={sortHref}
+        visibleKeys={visibleKeys}
+        stickyHeader
         mobileCard={(r) => (
           <MobileCard
             title={
@@ -397,10 +457,25 @@ const mfgStateLabel: Record<string, string> = {
   draft: "Borrador",
 };
 
+const manufacturingViewColumns = [
+  { key: "name", label: "Orden", alwaysVisible: true },
+  { key: "product", label: "Producto" },
+  { key: "origin", label: "Origen", defaultHidden: true },
+  { key: "progress", label: "Progreso" },
+  { key: "planned", label: "Planeado", defaultHidden: true },
+  { key: "produced", label: "Producido", defaultHidden: true },
+  { key: "start", label: "Inicio", defaultHidden: true },
+  { key: "finish", label: "Fin planeado", defaultHidden: true },
+  { key: "assigned", label: "Responsable" },
+  { key: "state", label: "Estado" },
+];
+
 const mfgColumns: DataTableColumn<ManufacturingRow>[] = [
   {
     key: "name",
     header: "Orden",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
@@ -408,6 +483,12 @@ const mfgColumns: DataTableColumn<ManufacturingRow>[] = [
     header: "Producto",
     cell: (r) => <span className="truncate">{r.product_name ?? "—"}</span>,
     hideOnMobile: true,
+  },
+  {
+    key: "origin",
+    header: "Origen",
+    defaultHidden: true,
+    cell: (r) => <span className="font-mono text-[10px]">{r.origin ?? "—"}</span>,
   },
   {
     key: "progress",
@@ -426,8 +507,49 @@ const mfgColumns: DataTableColumn<ManufacturingRow>[] = [
     },
   },
   {
+    key: "planned",
+    header: "Planeado",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.qty_planned)}</span>
+    ),
+    align: "right",
+  },
+  {
+    key: "produced",
+    header: "Producido",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => (
+      <span className="tabular-nums">{Math.round(r.qty_produced)}</span>
+    ),
+    align: "right",
+  },
+  {
+    key: "start",
+    header: "Inicio",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => <DateDisplay date={r.date_start} relative />,
+  },
+  {
+    key: "finish",
+    header: "Fin plan.",
+    sortable: true,
+    defaultHidden: true,
+    cell: (r) => <DateDisplay date={r.date_finished} />,
+  },
+  {
+    key: "assigned",
+    header: "Responsable",
+    cell: (r) => r.assigned_user ?? "—",
+    hideOnMobile: true,
+  },
+  {
     key: "state",
     header: "Estado",
+    sortable: true,
     cell: (r) => (
       <Badge variant={mfgStateVariant[r.state ?? ""] ?? "secondary"}>
         {mfgStateLabel[r.state ?? ""] ?? r.state ?? "—"}
@@ -436,13 +558,68 @@ const mfgColumns: DataTableColumn<ManufacturingRow>[] = [
   },
 ];
 
-async function ManufacturingTable() {
-  const rows = await getActiveManufacturing(20);
+async function ManufacturingToolbar() {
+  const assignees = await getManufacturingAssigneeOptions();
   return (
+    <DataTableToolbar
+      paramPrefix="mfg_"
+      searchPlaceholder="Orden, producto u origen…"
+      dateRange={{ label: "Fecha inicio" }}
+      facets={[
+        {
+          key: "state",
+          label: "Estado",
+          options: [
+            { value: "draft", label: "Borrador" },
+            { value: "confirmed", label: "Confirmada" },
+            { value: "progress", label: "En curso" },
+            { value: "to_close", label: "Por cerrar" },
+            { value: "done", label: "Hecha" },
+            { value: "cancel", label: "Cancelada" },
+          ],
+        },
+        {
+          key: "assigned",
+          label: "Responsable",
+          options: assignees.map((a) => ({ value: a, label: a })),
+        },
+      ]}
+    />
+  );
+}
+
+async function ManufacturingTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "mfg_",
+    facetKeys: ["state", "assigned"],
+    defaultSize: 25,
+    defaultSort: "start",
+  });
+  const { rows, total } = await getManufacturingPage({
+    ...params,
+    state: params.facets.state,
+    assigned: params.facets.assigned,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "mfg_");
+  const sortHref = makeSortHref({
+    pathname: "/operaciones",
+    searchParams,
+    paramPrefix: "mfg_",
+  });
+  return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={mfgColumns}
       rowKey={(r) => String(r.id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => {
         const pct =
           r.qty_planned > 0
@@ -490,10 +667,18 @@ async function ManufacturingTable() {
       }}
       emptyState={{
         icon: Factory,
-        title: "Sin manufactura activa",
-        description: "No hay órdenes de producción en curso.",
+        title: "Sin manufactura",
+        description: "Ajusta los filtros o el rango de fechas.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="mfg_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="órdenes"
+    />
+    </div>
   );
 }
 

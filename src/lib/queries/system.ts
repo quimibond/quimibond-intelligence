@@ -434,3 +434,58 @@ export async function getPipelineLogs(
     .limit(limit);
   return (data ?? []) as PipelineLogRow[];
 }
+
+export interface PipelineLogsPage {
+  rows: PipelineLogRow[];
+  total: number;
+}
+
+export async function getPipelineLogsPage(
+  params: import("./table-params").TableParams & {
+    level?: string[];
+    phase?: string[];
+  }
+): Promise<PipelineLogsPage> {
+  const { paginationRange, endOfDay } = await import("./table-params");
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("pipeline_logs")
+    .select("id, level, phase, message, created_at", { count: "exact" });
+
+  if (params.q) query = query.ilike("message", `%${params.q}%`);
+  if (params.level && params.level.length > 0) {
+    query = query.in("level", params.level);
+  }
+  if (params.phase && params.phase.length > 0) {
+    query = query.in("phase", params.phase);
+  }
+  if (params.from) query = query.gte("created_at", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("created_at", next);
+  }
+
+  const { data, count } = await query
+    .order("created_at", { ascending, nullsFirst: false })
+    .range(start, end);
+
+  return { rows: (data ?? []) as PipelineLogRow[], total: count ?? 0 };
+}
+
+export async function getPipelineLogPhaseOptions(): Promise<string[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("pipeline_logs")
+    .select("phase")
+    .not("phase", "is", null)
+    .order("created_at", { ascending: false })
+    .limit(2000);
+  const set = new Set<string>();
+  for (const r of (data ?? []) as Array<{ phase: string | null }>) {
+    if (r.phase) set.add(r.phase);
+  }
+  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
+}

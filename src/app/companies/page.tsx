@@ -6,12 +6,15 @@ import {
   DataTable,
   DataTableToolbar,
   DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   CompanyLink,
   Currency,
   DateDisplay,
   TrendIndicator,
   EmptyState,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +24,7 @@ import {
   getCompaniesPage,
   type CompanyListRow,
 } from "@/lib/queries/companies";
-import { parseTableParams } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Empresas" };
@@ -58,15 +61,22 @@ export default async function CompaniesPage({
         subtitle="Portfolio de clientes con riesgo, revenue y tendencia"
       />
 
-      <div className="flex flex-wrap gap-2 text-xs">
-        <a
-          href="/companies/at-risk"
-          className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
-        >
-          Clientes en riesgo (reactivación)
-        </a>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap gap-2 text-xs">
+          <a
+            href="/companies/at-risk"
+            className="rounded-full border border-border bg-muted/40 px-3 py-1.5 font-medium hover:bg-muted"
+          >
+            Clientes en riesgo (reactivación)
+          </a>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <TableViewOptions columns={companyViewColumns} />
+          <TableExportButton filename="companies" />
+        </div>
       </div>
 
+      <div data-table-export-root>
       <DataTableToolbar
         searchPlaceholder="Buscar empresa…"
         facets={[
@@ -103,14 +113,30 @@ export default async function CompaniesPage({
       >
         <CompaniesTable searchParams={sp} />
       </Suspense>
+      </div>
     </div>
   );
 }
+
+const companyViewColumns = [
+  { key: "company", label: "Empresa", alwaysVisible: true },
+  { key: "status", label: "Estado" },
+  { key: "revenue", label: "Revenue total" },
+  { key: "revenue_90d", label: "Revenue 90d" },
+  { key: "trend", label: "Tendencia" },
+  { key: "overdue", label: "Vencido" },
+  { key: "max_days", label: "Máx días vencido", defaultHidden: true },
+  { key: "otd", label: "OTD %", defaultHidden: true },
+  { key: "last_order", label: "Último pedido" },
+  { key: "churn_risk", label: "Churn risk", defaultHidden: true },
+];
 
 const columns: DataTableColumn<CompanyListRow>[] = [
   {
     key: "company",
     header: "Empresa",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => (
       <CompanyLink
         companyId={r.company_id}
@@ -139,12 +165,14 @@ const columns: DataTableColumn<CompanyListRow>[] = [
   {
     key: "revenue",
     header: "Revenue total",
+    sortable: true,
     cell: (r) => <Currency amount={r.total_revenue} compact />,
     align: "right",
   },
   {
     key: "revenue_90d",
     header: "Revenue 90d",
+    sortable: true,
     cell: (r) => <Currency amount={r.revenue_90d} compact />,
     align: "right",
     hideOnMobile: true,
@@ -152,6 +180,7 @@ const columns: DataTableColumn<CompanyListRow>[] = [
   {
     key: "trend",
     header: "Tendencia",
+    sortable: true,
     cell: (r) =>
       r.trend_pct !== 0 ? (
         <TrendIndicator value={r.trend_pct} good="up" />
@@ -163,9 +192,10 @@ const columns: DataTableColumn<CompanyListRow>[] = [
   {
     key: "overdue",
     header: "Vencido",
+    sortable: true,
     cell: (r) =>
       r.overdue_amount > 0 ? (
-        <span className="text-danger">
+        <span className="text-danger tabular-nums">
           <Currency amount={r.overdue_amount} compact />
         </span>
       ) : (
@@ -175,10 +205,59 @@ const columns: DataTableColumn<CompanyListRow>[] = [
     hideOnMobile: true,
   },
   {
+    key: "max_days",
+    header: "Máx días",
+    defaultHidden: true,
+    cell: (r) =>
+      r.max_days_overdue != null ? (
+        <span className="font-semibold tabular-nums text-danger">
+          {r.max_days_overdue}d
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+  {
+    key: "otd",
+    header: "OTD %",
+    defaultHidden: true,
+    cell: (r) =>
+      r.otd_rate != null ? (
+        <span className="tabular-nums">{Math.round(r.otd_rate)}%</span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+  {
     key: "last_order",
     header: "Último pedido",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.last_order_date} relative />,
     hideOnMobile: true,
+  },
+  {
+    key: "churn_risk",
+    header: "Churn risk",
+    defaultHidden: true,
+    cell: (r) =>
+      r.churn_risk_score != null ? (
+        <span
+          className={`tabular-nums ${
+            r.churn_risk_score >= 70
+              ? "text-danger font-semibold"
+              : r.churn_risk_score >= 40
+                ? "text-warning"
+                : ""
+          }`}
+        >
+          {Math.round(r.churn_risk_score)}
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
   },
 ];
 
@@ -196,6 +275,11 @@ async function CompaniesTable({
     ...params,
     tier: params.facets.tier,
     risk: params.facets.risk,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams);
+  const sortHref = makeSortHref({
+    pathname: "/companies",
+    searchParams,
   });
 
   if (rows.length === 0) {
@@ -251,6 +335,11 @@ async function CompaniesTable({
         data={rows}
         columns={columns}
         rowKey={(r) => String(r.company_id)}
+        sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+        sortHref={sortHref}
+        visibleKeys={visibleKeys}
+        stickyHeader
+        rowHref={(r) => `/companies/${r.company_id}`}
         mobileCard={(r) => (
           <MobileCard
             title={

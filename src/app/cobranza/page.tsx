@@ -15,11 +15,14 @@ import {
   DataTable,
   DataTableToolbar,
   DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   CompanyLink,
   Currency,
   DateDisplay,
   EmptyState,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,7 +33,7 @@ import {
   getCompanyAgingPage,
   getOverdueInvoicesPage,
   getOverdueSalespeopleOptions,
-  getPaymentPredictions,
+  getPaymentPredictionsPage,
   getPaymentRiskKpis,
   type CompanyAgingRow,
   type OverdueInvoice,
@@ -42,7 +45,7 @@ import {
   type CeiHealth,
   type CeiRow,
 } from "@/lib/queries/analytics";
-import { parseTableParams } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Cobranza" };
@@ -122,13 +125,50 @@ export default async function CobranzaPage({
       </Card>
 
       {/* Payment risk */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Clientes con patrón anormal de pago
-          </CardTitle>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Clientes con patrón anormal de pago
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Detectado por `payment_predictions`. Filtra por riesgo o
+              tendencia.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="pr_"
+              columns={paymentRiskViewColumns}
+            />
+            <TableExportButton filename="payment-risk" />
+          </div>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="pr_"
+            searchPlaceholder="Buscar cliente…"
+            facets={[
+              {
+                key: "risk",
+                label: "Riesgo",
+                options: [
+                  { value: "CRITICO", label: "Crítico" },
+                  { value: "ALTO", label: "Alto" },
+                  { value: "MEDIO", label: "Medio" },
+                ],
+              },
+              {
+                key: "trend",
+                label: "Tendencia",
+                options: [
+                  { value: "empeorando", label: "Empeorando" },
+                  { value: "estable", label: "Estable" },
+                  { value: "mejorando", label: "Mejorando" },
+                ],
+              },
+            ]}
+          />
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -138,20 +178,29 @@ export default async function CobranzaPage({
               </div>
             }
           >
-            <PaymentRiskTable />
+            <PaymentRiskTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
 
       {/* Companies with aging */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Clientes con cartera vencida
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Buckets de aging por empresa. Busca por nombre o filtra por tier.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Clientes con cartera vencida
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Buckets de aging por empresa. Busca por nombre o filtra por tier.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="age_"
+              columns={companyAgingViewColumns}
+            />
+            <TableExportButton filename="company-aging" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <DataTableToolbar
@@ -184,13 +233,22 @@ export default async function CobranzaPage({
       </Card>
 
       {/* Overdue invoices */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Facturas vencidas</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Busca por número, filtra por vendedor, bucket de aging o rango de
-            fecha de emisión.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Facturas vencidas</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Busca por número, filtra por vendedor, bucket de aging o rango de
+              fecha de emisión.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="inv_"
+              columns={overdueInvoicesViewColumns}
+            />
+            <TableExportButton filename="overdue-invoices" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <Suspense fallback={null}>
@@ -456,10 +514,22 @@ function trendLabel(raw: string | null): string {
   return map[raw] ?? raw;
 }
 
+const paymentRiskViewColumns = [
+  { key: "company", label: "Cliente", alwaysVisible: true },
+  { key: "risk", label: "Riesgo" },
+  { key: "trend", label: "Tendencia" },
+  { key: "avg_days", label: "Días promedio" },
+  { key: "median_days", label: "Días mediana", defaultHidden: true },
+  { key: "max_overdue", label: "Máx vencido" },
+  { key: "pending_count", label: "# facturas", defaultHidden: true },
+  { key: "pending", label: "Pendiente" },
+];
+
 const paymentColumns: DataTableColumn<PaymentPredictionRow>[] = [
   {
     key: "company",
     header: "Cliente",
+    alwaysVisible: true,
     cell: (r) => (
       <CompanyLink
         companyId={r.company_id}
@@ -487,15 +557,33 @@ const paymentColumns: DataTableColumn<PaymentPredictionRow>[] = [
   },
   {
     key: "avg_days",
-    header: "Días promedio",
+    header: "Días prom",
+    sortable: true,
     cell: (r) =>
-      r.avg_days_to_pay != null ? Math.round(r.avg_days_to_pay) : "—",
+      r.avg_days_to_pay != null ? (
+        <span className="tabular-nums">{Math.round(r.avg_days_to_pay)}</span>
+      ) : (
+        "—"
+      ),
     align: "right",
     hideOnMobile: true,
   },
   {
+    key: "median_days",
+    header: "Mediana",
+    defaultHidden: true,
+    cell: (r) =>
+      r.median_days_to_pay != null ? (
+        <span className="tabular-nums">{Math.round(r.median_days_to_pay)}</span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+  {
     key: "max_overdue",
     header: "Máx vencido",
+    sortable: true,
     cell: (r) =>
       r.max_days_overdue != null ? (
         <span className="font-semibold tabular-nums text-danger">
@@ -507,10 +595,18 @@ const paymentColumns: DataTableColumn<PaymentPredictionRow>[] = [
     align: "right",
   },
   {
+    key: "pending_count",
+    header: "# facturas",
+    defaultHidden: true,
+    cell: (r) => <span className="tabular-nums">{r.pending_count}</span>,
+    align: "right",
+  },
+  {
     key: "pending",
     header: "Pendiente",
+    sortable: true,
     cell: (r) => (
-      <span className="font-bold">
+      <span className="font-bold tabular-nums">
         <Currency amount={r.total_pending} compact />
       </span>
     ),
@@ -526,8 +622,28 @@ function capitalize(s: string): string {
     .join(" ");
 }
 
-async function PaymentRiskTable() {
-  const rows = await getPaymentPredictions(20);
+async function PaymentRiskTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "pr_",
+    facetKeys: ["risk", "trend"],
+    defaultSize: 25,
+    defaultSort: "-pending",
+  });
+  const { rows, total } = await getPaymentPredictionsPage({
+    ...params,
+    risk: params.facets.risk,
+    trend: params.facets.trend,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "pr_");
+  const sortHref = makeSortHref({
+    pathname: "/cobranza",
+    searchParams,
+    paramPrefix: "pr_",
+  });
   if (rows.length === 0) {
     return (
       <EmptyState
@@ -539,10 +655,15 @@ async function PaymentRiskTable() {
     );
   }
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={paymentColumns}
       rowKey={(r) => String(r.company_id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={
@@ -586,16 +707,36 @@ async function PaymentRiskTable() {
         />
       )}
     />
+    <DataTablePagination
+      paramPrefix="pr_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="clientes"
+    />
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Company aging
 // ──────────────────────────────────────────────────────────────────────────
+const companyAgingViewColumns = [
+  { key: "company", label: "Cliente", alwaysVisible: true },
+  { key: "current", label: "Al corriente", defaultHidden: true },
+  { key: "1_30", label: "1–30 días" },
+  { key: "31_60", label: "31–60 días" },
+  { key: "61_90", label: "61–90 días" },
+  { key: "90plus", label: "90+ días" },
+  { key: "total", label: "Total" },
+  { key: "revenue", label: "Revenue 12m", defaultHidden: true },
+];
+
 const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   {
     key: "company",
     header: "Cliente",
+    alwaysVisible: true,
     cell: (r) => (
       <CompanyLink
         companyId={r.company_id}
@@ -606,8 +747,16 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
     ),
   },
   {
+    key: "current",
+    header: "Al día",
+    defaultHidden: true,
+    cell: (r) => <Currency amount={r.current_amount} compact />,
+    align: "right",
+  },
+  {
     key: "1_30",
     header: "1-30",
+    sortable: true,
     cell: (r) => <Currency amount={r.overdue_1_30} compact />,
     align: "right",
     hideOnMobile: true,
@@ -615,6 +764,7 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   {
     key: "31_60",
     header: "31-60",
+    sortable: true,
     cell: (r) => <Currency amount={r.overdue_31_60} compact />,
     align: "right",
     hideOnMobile: true,
@@ -622,6 +772,7 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   {
     key: "61_90",
     header: "61-90",
+    sortable: true,
     cell: (r) => <Currency amount={r.overdue_61_90} compact />,
     align: "right",
     hideOnMobile: true,
@@ -629,6 +780,7 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   {
     key: "90plus",
     header: "90+",
+    sortable: true,
     cell: (r) => (
       <span className="font-semibold text-danger tabular-nums">
         <Currency amount={r.overdue_90plus} compact />
@@ -639,11 +791,20 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
   {
     key: "total",
     header: "Total",
+    sortable: true,
     cell: (r) => (
       <span className="font-bold tabular-nums">
         <Currency amount={r.total_receivable} compact />
       </span>
     ),
+    align: "right",
+  },
+  {
+    key: "revenue",
+    header: "Revenue 12m",
+    defaultHidden: true,
+    sortable: true,
+    cell: (r) => <Currency amount={r.total_revenue} compact />,
     align: "right",
   },
 ];
@@ -663,12 +824,22 @@ async function CompanyAgingTable({
     ...params,
     tier: params.facets.tier,
   });
+  const visibleKeys = parseVisibleKeys(searchParams, "age_");
+  const sortHref = makeSortHref({
+    pathname: "/cobranza",
+    searchParams,
+    paramPrefix: "age_",
+  });
   return (
     <div className="space-y-3">
     <DataTable
       data={rows}
       columns={companyColumns}
       rowKey={(r) => String(r.company_id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={
@@ -729,6 +900,8 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
   {
     key: "name",
     header: "Factura",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
@@ -748,12 +921,25 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
   {
     key: "residual",
     header: "Saldo",
-    cell: (r) => <Currency amount={r.amount_residual_mxn} />,
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums font-semibold">
+        <Currency amount={r.amount_residual_mxn} />
+      </span>
+    ),
+    align: "right",
+  },
+  {
+    key: "total",
+    header: "Total factura",
+    defaultHidden: true,
+    cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
   },
   {
     key: "days",
     header: "Días",
+    sortable: true,
     cell: (r) => (
       <span className="font-semibold text-danger tabular-nums">
         {r.days_overdue ?? 0}
@@ -768,11 +954,30 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
     hideOnMobile: true,
   },
   {
+    key: "invoice",
+    header: "Emisión",
+    defaultHidden: true,
+    sortable: true,
+    cell: (r) => <DateDisplay date={r.invoice_date} />,
+  },
+  {
     key: "due",
     header: "Vence",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.due_date} />,
     hideOnMobile: true,
   },
+];
+
+const overdueInvoicesViewColumns = [
+  { key: "name", label: "Factura", alwaysVisible: true },
+  { key: "company", label: "Cliente" },
+  { key: "residual", label: "Saldo" },
+  { key: "total", label: "Total factura", defaultHidden: true },
+  { key: "days", label: "Días vencido" },
+  { key: "salesperson", label: "Vendedor" },
+  { key: "invoice", label: "Emisión", defaultHidden: true },
+  { key: "due", label: "Vencimiento" },
 ];
 
 function bucketFromDays(days: number | null): string {
@@ -825,6 +1030,12 @@ async function OverdueTable({
     defaultSize: 25,
     defaultSort: "-amount",
   });
+  const visibleKeys = parseVisibleKeys(searchParams, "inv_");
+  const sortHref = makeSortHref({
+    pathname: "/cobranza",
+    searchParams,
+    paramPrefix: "inv_",
+  });
   const { rows, total } = await getOverdueInvoicesPage({
     ...params,
     bucket: params.facets.bucket,
@@ -835,6 +1046,10 @@ async function OverdueTable({
     <DataTable
       data={rows}
       columns={invoiceColumns}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       rowKey={(r) => String(r.id)}
       mobileCard={(r) => (
         <MobileCard

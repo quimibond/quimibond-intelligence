@@ -20,12 +20,16 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   Currency,
   DateDisplay,
   StatusBadge,
   EmptyState,
   EvidencePackView,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import {
@@ -40,9 +44,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   getCompanyDetail,
-  getCompanyOrders,
-  getCompanyInvoices,
-  getCompanyDeliveries,
+  getCompanyOrdersPage,
+  getCompanyInvoicesPage,
+  getCompanyDeliveriesPage,
   getCompanyTopProducts,
   getCompanyActivities,
   type CompanyOrderRow,
@@ -52,6 +56,7 @@ import {
   type CompanyActivityRow,
 } from "@/lib/queries/companies";
 import { getCompanyEvidencePack } from "@/lib/queries/evidence";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 
@@ -65,12 +70,17 @@ export async function generateMetadata({
   return { title: company?.name ?? "Empresa" };
 }
 
+type SearchParams = Record<string, string | string[] | undefined>;
+
 export default async function CompanyDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<SearchParams>;
 }) {
   const { id: idParam } = await params;
+  const sp = await searchParams;
   const id = Number(idParam);
   if (!Number.isFinite(id)) notFound();
 
@@ -188,36 +198,61 @@ export default async function CompanyDetailPage({
         </TabsContent>
 
         <TabsContent value="finance" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Facturas recientes</CardTitle>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <CardTitle className="text-base">Facturas</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <TableViewOptions
+                  paramPrefix="ci_"
+                  columns={companyInvoicesViewColumns}
+                />
+                <TableExportButton
+                  filename={`${company.name}-invoices`}
+                />
+              </div>
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[300px]" />}>
-                <InvoicesSection companyId={id} />
+                <InvoicesSection companyId={id} searchParams={sp} />
               </Suspense>
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="orders" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Pedidos recientes</CardTitle>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <CardTitle className="text-base">Pedidos</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <TableViewOptions
+                  paramPrefix="co_"
+                  columns={companyOrdersViewColumns}
+                />
+                <TableExportButton filename={`${company.name}-orders`} />
+              </div>
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[300px]" />}>
-                <OrdersSection companyId={id} />
+                <OrdersSection companyId={id} searchParams={sp} />
               </Suspense>
             </CardContent>
           </Card>
-          <Card>
-            <CardHeader>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">Entregas</CardTitle>
+              <div className="flex flex-wrap items-center gap-2">
+                <TableViewOptions
+                  paramPrefix="cd_"
+                  columns={companyDeliveriesViewColumns}
+                />
+                <TableExportButton
+                  filename={`${company.name}-deliveries`}
+                />
+              </div>
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[240px]" />}>
-                <DeliveriesSection companyId={id} />
+                <DeliveriesSection companyId={id} searchParams={sp} />
               </Suspense>
             </CardContent>
           </Card>
@@ -298,28 +333,34 @@ const invoiceColumns: DataTableColumn<CompanyInvoiceRow>[] = [
   {
     key: "name",
     header: "Factura",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
     key: "date",
     header: "Fecha",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.invoice_date} />,
     hideOnMobile: true,
   },
   {
     key: "due",
     header: "Vence",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.due_date} />,
   },
   {
     key: "total",
     header: "Total",
+    sortable: true,
     cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
   },
   {
     key: "residual",
     header: "Saldo",
+    sortable: true,
     cell: (r) =>
       r.amount_residual_mxn && r.amount_residual_mxn > 0 ? (
         <Currency amount={r.amount_residual_mxn} />
@@ -330,6 +371,21 @@ const invoiceColumns: DataTableColumn<CompanyInvoiceRow>[] = [
     hideOnMobile: true,
   },
   {
+    key: "days",
+    header: "Días",
+    defaultHidden: true,
+    sortable: true,
+    cell: (r) =>
+      r.days_overdue && r.days_overdue > 0 ? (
+        <span className="font-semibold text-danger tabular-nums">
+          {r.days_overdue}
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+  {
     key: "state",
     header: "Estado",
     cell: (r) => (
@@ -338,13 +394,45 @@ const invoiceColumns: DataTableColumn<CompanyInvoiceRow>[] = [
   },
 ];
 
-async function InvoicesSection({ companyId }: { companyId: number }) {
-  const rows = await getCompanyInvoices(companyId, 30);
+const companyInvoicesViewColumns = [
+  { key: "name", label: "Factura", alwaysVisible: true },
+  { key: "date", label: "Fecha" },
+  { key: "due", label: "Vence" },
+  { key: "total", label: "Total" },
+  { key: "residual", label: "Saldo" },
+  { key: "days", label: "Días vencido", defaultHidden: true },
+  { key: "state", label: "Estado" },
+];
+
+async function InvoicesSection({
+  companyId,
+  searchParams,
+}: {
+  companyId: number;
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "ci_",
+    defaultSize: 25,
+    defaultSort: "-date",
+  });
+  const { rows, total } = await getCompanyInvoicesPage(companyId, params);
+  const visibleKeys = parseVisibleKeys(searchParams, "ci_");
+  const sortHref = makeSortHref({
+    pathname: `/companies/${companyId}`,
+    searchParams,
+    paramPrefix: "ci_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={invoiceColumns}
       rowKey={(r) => String(r.id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.name ?? "—"}
@@ -376,26 +464,46 @@ async function InvoicesSection({ companyId }: { companyId: number }) {
         description: "No hay facturas registradas para esta empresa.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="ci_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="facturas"
+    />
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Orders tab
 // ──────────────────────────────────────────────────────────────────────────
+const companyOrdersViewColumns = [
+  { key: "name", label: "Pedido", alwaysVisible: true },
+  { key: "date", label: "Fecha" },
+  { key: "amount", label: "Monto" },
+  { key: "salesperson", label: "Vendedor" },
+  { key: "state", label: "Estado" },
+];
+
 const orderColumns: DataTableColumn<CompanyOrderRow>[] = [
   {
     key: "name",
     header: "Pedido",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
     key: "date",
     header: "Fecha",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.date_order} />,
   },
   {
     key: "amount",
     header: "Monto",
+    sortable: true,
     cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
   },
@@ -408,17 +516,40 @@ const orderColumns: DataTableColumn<CompanyOrderRow>[] = [
   {
     key: "state",
     header: "Estado",
+    sortable: true,
     cell: (r) => <StatusBadge status={(r.state ?? "draft") as "draft"} />,
   },
 ];
 
-async function OrdersSection({ companyId }: { companyId: number }) {
-  const rows = await getCompanyOrders(companyId, 30);
+async function OrdersSection({
+  companyId,
+  searchParams,
+}: {
+  companyId: number;
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "co_",
+    defaultSize: 25,
+    defaultSort: "-date",
+  });
+  const { rows, total } = await getCompanyOrdersPage(companyId, params);
+  const visibleKeys = parseVisibleKeys(searchParams, "co_");
+  const sortHref = makeSortHref({
+    pathname: `/companies/${companyId}`,
+    searchParams,
+    paramPrefix: "co_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={orderColumns}
       rowKey={(r) => String(r.id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.name ?? "—"}
@@ -439,16 +570,34 @@ async function OrdersSection({ companyId }: { companyId: number }) {
         description: "No hay pedidos registrados.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="co_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="pedidos"
+    />
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Deliveries
 // ──────────────────────────────────────────────────────────────────────────
+const companyDeliveriesViewColumns = [
+  { key: "name", label: "Movimiento", alwaysVisible: true },
+  { key: "type", label: "Tipo" },
+  { key: "scheduled", label: "Programada" },
+  { key: "done", label: "Completada", defaultHidden: true },
+  { key: "state", label: "Estado" },
+];
+
 const deliveryColumns: DataTableColumn<CompanyDeliveryRow>[] = [
   {
     key: "name",
     header: "Movimiento",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
@@ -465,11 +614,20 @@ const deliveryColumns: DataTableColumn<CompanyDeliveryRow>[] = [
   {
     key: "scheduled",
     header: "Programada",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.scheduled_date} />,
+  },
+  {
+    key: "done",
+    header: "Completada",
+    defaultHidden: true,
+    sortable: true,
+    cell: (r) => <DateDisplay date={r.date_done} />,
   },
   {
     key: "state",
     header: "Estado",
+    sortable: true,
     cell: (r) =>
       r.is_late ? (
         <StatusBadge status="overdue" />
@@ -481,13 +639,35 @@ const deliveryColumns: DataTableColumn<CompanyDeliveryRow>[] = [
   },
 ];
 
-async function DeliveriesSection({ companyId }: { companyId: number }) {
-  const rows = await getCompanyDeliveries(companyId, 20);
+async function DeliveriesSection({
+  companyId,
+  searchParams,
+}: {
+  companyId: number;
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "cd_",
+    defaultSize: 25,
+    defaultSort: "-scheduled",
+  });
+  const { rows, total } = await getCompanyDeliveriesPage(companyId, params);
+  const visibleKeys = parseVisibleKeys(searchParams, "cd_");
+  const sortHref = makeSortHref({
+    pathname: `/companies/${companyId}`,
+    searchParams,
+    paramPrefix: "cd_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={deliveryColumns}
       rowKey={(r) => String(r.id)}
+      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.name ?? "—"}
@@ -521,6 +701,14 @@ async function DeliveriesSection({ companyId }: { companyId: number }) {
         description: "No hay movimientos de inventario.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="cd_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="entregas"
+    />
+    </div>
   );
 }
 

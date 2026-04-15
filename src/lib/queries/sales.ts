@@ -216,6 +216,84 @@ export interface ReorderRiskRow {
   predicted_next_order: string | null;
 }
 
+export interface ReorderRiskPage {
+  rows: ReorderRiskRow[];
+  total: number;
+}
+
+const REORDER_SORT_MAP: Record<string, string> = {
+  revenue: "total_revenue",
+  days_overdue: "days_overdue_reorder",
+  avg_cycle: "avg_cycle_days",
+  days_since: "days_since_last",
+  avg_order: "avg_order_value",
+  company: "company_name",
+};
+
+export async function getReorderRiskPage(
+  params: TableParams & { status?: string[]; tier?: string[] }
+): Promise<ReorderRiskPage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && REORDER_SORT_MAP[params.sort]) ?? "total_revenue";
+  const ascending = params.sortDir === "asc";
+
+  const statuses =
+    params.status && params.status.length > 0
+      ? params.status
+      : ["overdue", "at_risk", "critical"];
+
+  let query = sb
+    .from("client_reorder_predictions")
+    .select(
+      "company_id, company_name, tier, reorder_status, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, total_revenue, salesperson_name, top_product_ref, predicted_next_order",
+      { count: "exact" }
+    )
+    .in("reorder_status", statuses)
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.q) query = query.ilike("company_name", `%${params.q}%`);
+  if (params.tier && params.tier.length > 0) {
+    query = query.in("tier", params.tier);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<{
+    company_id: number;
+    company_name: string | null;
+    tier: string | null;
+    reorder_status: string;
+    avg_cycle_days: number | null;
+    days_since_last: number | null;
+    days_overdue_reorder: number | null;
+    avg_order_value: number | null;
+    total_revenue: number | null;
+    salesperson_name: string | null;
+    top_product_ref: string | null;
+    predicted_next_order: string | null;
+  }>).map((r) => ({
+    company_id: r.company_id,
+    company_name: r.company_name,
+    tier: r.tier,
+    status: r.reorder_status,
+    avg_cycle_days: r.avg_cycle_days,
+    days_since_last: r.days_since_last,
+    days_overdue_reorder: r.days_overdue_reorder,
+    avg_order_value: r.avg_order_value,
+    total_revenue: r.total_revenue,
+    salesperson_name: r.salesperson_name,
+    top_product_ref: r.top_product_ref,
+    predicted_next_order: r.predicted_next_order,
+  }));
+
+  return { rows, total: count ?? rows.length };
+}
+
 export async function getReorderRisk(
   limit = 30
 ): Promise<ReorderRiskRow[]> {
@@ -269,6 +347,84 @@ export interface TopCustomerRow {
   margin_12m: number | null;
   margin_pct_12m: number | null;
   total_revenue_lifetime: number;
+}
+
+export interface TopCustomersPage {
+  rows: TopCustomerRow[];
+  total: number;
+}
+
+const TOP_CUSTOMER_SORT_MAP: Record<string, string> = {
+  revenue_90d: "revenue_90d",
+  revenue_total: "total_revenue",
+  name: "name",
+};
+
+export async function getTopCustomersPage(
+  params: TableParams
+): Promise<TopCustomersPage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && TOP_CUSTOMER_SORT_MAP[params.sort]) ?? "revenue_90d";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("company_profile")
+    .select("company_id, name, revenue_90d, total_revenue", {
+      count: "exact",
+    })
+    .gt("revenue_90d", 0)
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const baseRows = (data ?? []) as Array<{
+    company_id: number;
+    name: string;
+    revenue_90d: number | null;
+    total_revenue: number | null;
+  }>;
+
+  if (baseRows.length === 0) {
+    return { rows: [], total: count ?? 0 };
+  }
+
+  const ids = baseRows.map((r) => r.company_id);
+  const { data: marginData } = await sb
+    .from("customer_margin_analysis")
+    .select("company_id, margin_12m, margin_pct_12m")
+    .in("company_id", ids);
+  const marginMap = new Map<
+    number,
+    { margin_12m: number | null; margin_pct_12m: number | null }
+  >();
+  for (const m of (marginData ?? []) as Array<{
+    company_id: number;
+    margin_12m: number | null;
+    margin_pct_12m: number | null;
+  }>) {
+    marginMap.set(m.company_id, {
+      margin_12m: m.margin_12m,
+      margin_pct_12m: m.margin_pct_12m,
+    });
+  }
+
+  const rows: TopCustomerRow[] = baseRows.map((r) => ({
+    company_id: r.company_id,
+    company_name: r.name,
+    revenue_90d: Number(r.revenue_90d) || 0,
+    total_revenue_lifetime: Number(r.total_revenue) || 0,
+    margin_12m: marginMap.get(r.company_id)?.margin_12m ?? null,
+    margin_pct_12m: marginMap.get(r.company_id)?.margin_pct_12m ?? null,
+  }));
+
+  return { rows, total: count ?? rows.length };
 }
 
 export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {

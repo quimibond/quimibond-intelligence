@@ -247,6 +247,67 @@ export interface TopMoverRow {
   annual_turnover: number | null;
 }
 
+export interface TopMoversPage {
+  rows: TopMoverRow[];
+  total: number;
+}
+
+const TOP_MOVER_SORT_MAP: Record<string, string> = {
+  qty_90d: "qty_sold_90d",
+  qty_180d: "qty_sold_180d",
+  qty_365d: "qty_sold_365d",
+  customers: "customers_12m",
+  run_rate: "daily_run_rate",
+  days_of_stock: "days_of_stock",
+  stock_value: "stock_value",
+  turnover: "annual_turnover",
+};
+
+export async function getTopMoversPage(
+  params: TableParams
+): Promise<TopMoversPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && TOP_MOVER_SORT_MAP[params.sort]) ?? "qty_sold_90d";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("inventory_velocity")
+    .select(
+      "product_ref, product_name, qty_sold_90d, qty_sold_180d, qty_sold_365d, customers_12m, daily_run_rate, days_of_stock, stock_value, annual_turnover",
+      { count: "exact" }
+    )
+    .gt("qty_sold_90d", 0);
+
+  if (params.q) {
+    query = query.or(
+      `product_ref.ilike.%${params.q}%,product_name.ilike.%${params.q}%`
+    );
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<TopMoverRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    qty_sold_90d: Number(r.qty_sold_90d) || 0,
+    qty_sold_180d: Number(r.qty_sold_180d) || 0,
+    qty_sold_365d: Number(r.qty_sold_365d) || 0,
+    customers_12m: Number(r.customers_12m) || 0,
+    daily_run_rate:
+      r.daily_run_rate != null ? Number(r.daily_run_rate) : null,
+    days_of_stock: r.days_of_stock != null ? Number(r.days_of_stock) : null,
+    stock_value: Number(r.stock_value) || 0,
+    annual_turnover:
+      r.annual_turnover != null ? Number(r.annual_turnover) : null,
+  }));
+
+  return { rows, total: count ?? rows.length };
+}
+
 export async function getTopMovers(limit = 15): Promise<TopMoverRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
@@ -286,6 +347,59 @@ export interface DeadStockRow {
   last_sale_date: string | null;
   historical_customers: number;
   lifetime_revenue: number;
+}
+
+export interface DeadStockPage {
+  rows: DeadStockRow[];
+  total: number;
+}
+
+const DEAD_STOCK_SORT_MAP: Record<string, string> = {
+  value: "inventory_value",
+  days: "days_since_last_sale",
+  stock: "stock_qty",
+  customers: "historical_customers",
+  revenue: "lifetime_revenue",
+};
+
+export async function getDeadStockPage(
+  params: TableParams
+): Promise<DeadStockPage> {
+  const sb = getServiceClient();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && DEAD_STOCK_SORT_MAP[params.sort]) ?? "inventory_value";
+  const ascending = params.sortDir === "asc";
+
+  let query = sb
+    .from("dead_stock_analysis")
+    .select(
+      "product_ref, product_name, inventory_value, days_since_last_sale, stock_qty, last_sale_date, historical_customers, lifetime_revenue",
+      { count: "exact" }
+    );
+
+  if (params.q) {
+    query = query.or(
+      `product_ref.ilike.%${params.q}%,product_name.ilike.%${params.q}%`
+    );
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<DeadStockRow>>).map((r) => ({
+    product_ref: r.product_ref ?? null,
+    product_name: r.product_name ?? null,
+    inventory_value: Number(r.inventory_value) || 0,
+    days_since_last_sale: Number(r.days_since_last_sale) || 0,
+    stock_qty: Number(r.stock_qty) || 0,
+    last_sale_date: r.last_sale_date ?? null,
+    historical_customers: Number(r.historical_customers) || 0,
+    lifetime_revenue: Number(r.lifetime_revenue) || 0,
+  }));
+
+  return { rows, total: count ?? rows.length };
 }
 
 export async function getDeadStock(limit = 20): Promise<DeadStockRow[]> {

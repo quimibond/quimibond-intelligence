@@ -16,12 +16,15 @@ import {
   DataTable,
   DataTableToolbar,
   DataTablePagination,
+  TableViewOptions,
+  TableExportButton,
   MobileCard,
   CompanyLink,
   Currency,
   DateDisplay,
   StatusBadge,
   EmptyState,
+  makeSortHref,
   type DataTableColumn,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -30,17 +33,17 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   getPurchasesKpis,
-  getSingleSourceRisk,
-  getPriceAnomalies,
+  getSingleSourceRiskPage,
+  getPriceAnomaliesPage,
   getPurchaseOrdersPage,
   getPurchaseBuyerOptions,
-  getTopSuppliers,
+  getTopSuppliersPage,
   type SingleSourceRow,
   type PriceAnomalyRow,
   type RecentPurchaseOrder,
   type TopSupplierRow,
 } from "@/lib/queries/purchases";
-import { parseTableParams } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Compras" };
@@ -95,13 +98,40 @@ export default async function ComprasPage({
       </Suspense>
 
       {/* Single source risk — la sección crítica */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Riesgo de proveedor único
-          </CardTitle>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">
+              Riesgo de proveedor único
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos con concentración alta/crítica de un solo proveedor.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="ss_"
+              columns={singleSourceViewColumns}
+            />
+            <TableExportButton filename="single-source" />
+          </div>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="ss_"
+            searchPlaceholder="Ref, producto o proveedor…"
+            facets={[
+              {
+                key: "level",
+                label: "Nivel",
+                options: [
+                  { value: "single_source", label: "Single source" },
+                  { value: "very_high", label: "Muy alto" },
+                  { value: "high", label: "Alto" },
+                ],
+              },
+            ]}
+          />
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -111,19 +141,44 @@ export default async function ComprasPage({
               </div>
             }
           >
-            <SingleSourceTable />
+            <SingleSourceTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
 
       {/* Price anomalies */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Anomalías de precio
-          </CardTitle>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Anomalías de precio</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos comprados por arriba o debajo del promedio histórico.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="pa_"
+              columns={priceAnomalyViewColumns}
+            />
+            <TableExportButton filename="price-anomalies" />
+          </div>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="pa_"
+            searchPlaceholder="Ref o proveedor…"
+            dateRange={{ label: "Última compra" }}
+            facets={[
+              {
+                key: "flag",
+                label: "Tendencia",
+                options: [
+                  { value: "price_above_avg", label: "Precio sobre promedio" },
+                  { value: "price_below_avg", label: "Precio bajo promedio" },
+                ],
+              },
+            ]}
+          />
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -133,30 +188,55 @@ export default async function ComprasPage({
               </div>
             }
           >
-            <PriceAnomaliesTable />
+            <PriceAnomaliesTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Top proveedores (12m)</CardTitle>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Top proveedores (12m)</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Ranking por gasto total. Ordena por cualquier columna.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="sup_"
+              columns={topSupplierViewColumns}
+            />
+            <TableExportButton filename="top-suppliers" />
+          </div>
         </CardHeader>
-        <CardContent className="pb-4">
+        <CardContent className="space-y-3 pb-4">
+          <DataTableToolbar
+            paramPrefix="sup_"
+            searchPlaceholder="Buscar proveedor…"
+          />
           <Suspense
             fallback={<Skeleton className="h-[300px] rounded-xl" />}
           >
-            <TopSuppliersTable />
+            <TopSuppliersTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Órdenes de compra</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Busca por número o filtra por comprador, estado y fecha.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-base">Órdenes de compra</CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Busca por número o filtra por comprador, estado y fecha.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <TableViewOptions
+              paramPrefix="po_"
+              columns={purchaseOrderViewColumns}
+            />
+            <TableExportButton filename="purchase-orders" />
+          </div>
         </CardHeader>
         <CardContent className="space-y-3 pb-4">
           <Suspense fallback={null}>
@@ -231,10 +311,20 @@ const concentrationLabel: Record<string, string> = {
   very_high: "MUY ALTO",
 };
 
-const singleSourceColumns: DataTableColumn<SingleSourceRow>[] = [
+const singleSourceViewColumns = [
+  { key: "ref", label: "Ref", alwaysVisible: true },
+  { key: "name", label: "Producto" },
+  { key: "supplier", label: "Proveedor único" },
+  { key: "level", label: "Concentración" },
+  { key: "share", label: "Share %" },
+  { key: "spent", label: "Spent 12m" },
+];
+
+const singleSourceColumnsBase: DataTableColumn<SingleSourceRow>[] = [
   {
     key: "ref",
     header: "Ref",
+    alwaysVisible: true,
     cell: (r) => (
       <span className="font-mono text-xs">{r.product_ref ?? "—"}</span>
     ),
@@ -270,15 +360,47 @@ const singleSourceColumns: DataTableColumn<SingleSourceRow>[] = [
     hideOnMobile: true,
   },
   {
+    key: "share",
+    header: "Share",
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">
+        {Math.round(r.top_supplier_share_pct)}%
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
     key: "spent",
     header: "Spent 12m",
+    sortable: true,
     cell: (r) => <Currency amount={r.total_spent_12m} compact />,
     align: "right",
   },
 ];
 
-async function SingleSourceTable() {
-  const rows = await getSingleSourceRisk(30);
+async function SingleSourceTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "ss_",
+    facetKeys: ["level"],
+    defaultSize: 25,
+    defaultSort: "-spent",
+  });
+  const { rows, total } = await getSingleSourceRiskPage({
+    ...params,
+    level: params.facets.level,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "ss_");
+  const sortHref = makeSortHref({
+    pathname: "/compras",
+    searchParams,
+    paramPrefix: "ss_",
+  });
   if (rows.length === 0) {
     return (
       <EmptyState
@@ -290,51 +412,68 @@ async function SingleSourceTable() {
     );
   }
   return (
-    <DataTable
-      data={rows}
-      columns={singleSourceColumns}
-      rowKey={(r) => String(r.odoo_product_id)}
-      mobileCard={(r) => (
-        <MobileCard
-          title={r.product_name ?? r.product_ref ?? "—"}
-          subtitle={r.product_ref ?? undefined}
-          badge={
-            <Badge
-              variant={
-                concentrationVariant[r.concentration_level] ?? "warning"
-              }
-            >
-              {concentrationLabel[r.concentration_level] ??
-                r.concentration_level}
-            </Badge>
-          }
-          fields={[
-            {
-              label: "Proveedor",
-              value:
-                r.top_supplier_company_id && r.top_supplier_name ? (
-                  <CompanyLink
-                    companyId={r.top_supplier_company_id}
-                    name={r.top_supplier_name}
-                    truncate
-                  />
-                ) : (
-                  (r.top_supplier_name ?? "—")
-                ),
-              className: "col-span-2",
-            },
-            {
-              label: "Spent 12m",
-              value: <Currency amount={r.total_spent_12m} compact />,
-            },
-            {
-              label: "Share",
-              value: `${Math.round(r.top_supplier_share_pct)}%`,
-            },
-          ]}
-        />
-      )}
-    />
+    <div className="space-y-3">
+      <DataTable
+        data={rows}
+        columns={singleSourceColumnsBase}
+        rowKey={(r) => String(r.odoo_product_id)}
+        sort={
+          params.sort
+            ? { key: params.sort, dir: params.sortDir }
+            : null
+        }
+        sortHref={sortHref}
+        visibleKeys={visibleKeys}
+        stickyHeader
+        mobileCard={(r) => (
+          <MobileCard
+            title={r.product_name ?? r.product_ref ?? "—"}
+            subtitle={r.product_ref ?? undefined}
+            badge={
+              <Badge
+                variant={
+                  concentrationVariant[r.concentration_level] ?? "warning"
+                }
+              >
+                {concentrationLabel[r.concentration_level] ??
+                  r.concentration_level}
+              </Badge>
+            }
+            fields={[
+              {
+                label: "Proveedor",
+                value:
+                  r.top_supplier_company_id && r.top_supplier_name ? (
+                    <CompanyLink
+                      companyId={r.top_supplier_company_id}
+                      name={r.top_supplier_name}
+                      truncate
+                    />
+                  ) : (
+                    (r.top_supplier_name ?? "—")
+                  ),
+                className: "col-span-2",
+              },
+              {
+                label: "Spent 12m",
+                value: <Currency amount={r.total_spent_12m} compact />,
+              },
+              {
+                label: "Share",
+                value: `${Math.round(r.top_supplier_share_pct)}%`,
+              },
+            ]}
+          />
+        )}
+      />
+      <DataTablePagination
+        paramPrefix="ss_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="productos"
+      />
+    </div>
   );
 }
 
@@ -350,13 +489,34 @@ const priceLabel: Record<string, string> = {
   price_below_avg: "Bajo",
 };
 
+const priceAnomalyViewColumns = [
+  { key: "ref", label: "Ref", alwaysVisible: true },
+  { key: "name", label: "Producto", defaultHidden: true },
+  { key: "supplier", label: "Proveedor" },
+  { key: "flag", label: "Flag" },
+  { key: "vs_avg", label: "vs promedio" },
+  { key: "change", label: "Cambio %" },
+  { key: "last_price", label: "Último precio" },
+  { key: "avg_price", label: "Precio promedio", defaultHidden: true },
+  { key: "spent", label: "Total gastado" },
+  { key: "date", label: "Última compra" },
+];
+
 const priceColumns: DataTableColumn<PriceAnomalyRow>[] = [
   {
     key: "ref",
     header: "Ref",
+    alwaysVisible: true,
     cell: (r) => (
       <span className="font-mono text-xs">{r.product_ref ?? "—"}</span>
     ),
+  },
+  {
+    key: "name",
+    header: "Producto",
+    defaultHidden: true,
+    cell: (r) => <span className="truncate">{r.product_name ?? "—"}</span>,
+    hideOnMobile: true,
   },
   {
     key: "supplier",
@@ -378,12 +538,15 @@ const priceColumns: DataTableColumn<PriceAnomalyRow>[] = [
   {
     key: "vs_avg",
     header: "vs prom",
+    sortable: true,
     cell: (r) =>
       r.price_vs_avg_pct != null ? (
         <span
-          className={
-            r.price_vs_avg_pct > 0 ? "text-danger font-semibold" : "text-info"
-          }
+          className={`tabular-nums ${
+            r.price_vs_avg_pct > 0
+              ? "text-danger font-semibold"
+              : "text-info"
+          }`}
         >
           {r.price_vs_avg_pct > 0 ? "+" : ""}
           {r.price_vs_avg_pct.toFixed(1)}%
@@ -394,8 +557,25 @@ const priceColumns: DataTableColumn<PriceAnomalyRow>[] = [
     align: "right",
   },
   {
+    key: "change",
+    header: "Cambio",
+    sortable: true,
+    cell: (r) =>
+      r.price_change_pct != null ? (
+        <span className="tabular-nums">
+          {r.price_change_pct > 0 ? "+" : ""}
+          {r.price_change_pct.toFixed(1)}%
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
     key: "last_price",
     header: "Último",
+    sortable: true,
     cell: (r) =>
       r.last_price != null ? (
         <span className="tabular-nums">
@@ -411,15 +591,56 @@ const priceColumns: DataTableColumn<PriceAnomalyRow>[] = [
     hideOnMobile: true,
   },
   {
+    key: "avg_price",
+    header: "Promedio",
+    defaultHidden: true,
+    cell: (r) =>
+      r.avg_price != null ? (
+        <span className="tabular-nums">
+          {r.avg_price.toLocaleString("es-MX", { maximumFractionDigits: 2 })}
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+  },
+  {
     key: "spent",
     header: "Total",
+    sortable: true,
     cell: (r) => <Currency amount={r.total_spent} compact />,
     align: "right",
   },
+  {
+    key: "date",
+    header: "Última",
+    sortable: true,
+    cell: (r) => <DateDisplay date={r.last_purchase_date} relative />,
+    hideOnMobile: true,
+  },
 ];
 
-async function PriceAnomaliesTable() {
-  const rows = await getPriceAnomalies(30);
+async function PriceAnomaliesTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "pa_",
+    facetKeys: ["flag"],
+    defaultSize: 25,
+    defaultSort: "-spent",
+  });
+  const { rows, total } = await getPriceAnomaliesPage({
+    ...params,
+    flag: params.facets.flag,
+  });
+  const visibleKeys = parseVisibleKeys(searchParams, "pa_");
+  const sortHref = makeSortHref({
+    pathname: "/compras",
+    searchParams,
+    paramPrefix: "pa_",
+  });
   if (rows.length === 0) {
     return (
       <EmptyState
@@ -431,84 +652,146 @@ async function PriceAnomaliesTable() {
     );
   }
   return (
-    <DataTable
-      data={rows}
-      columns={priceColumns}
-      rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
-      mobileCard={(r) => (
-        <MobileCard
-          title={r.product_name ?? r.product_ref ?? "—"}
-          subtitle={r.last_supplier ?? undefined}
-          badge={
-            <Badge variant={priceVariant[r.price_flag] ?? "info"}>
-              {priceLabel[r.price_flag] ?? r.price_flag}
-            </Badge>
-          }
-          fields={[
-            {
-              label: "vs prom",
-              value:
-                r.price_vs_avg_pct != null
-                  ? `${r.price_vs_avg_pct > 0 ? "+" : ""}${r.price_vs_avg_pct.toFixed(1)}%`
-                  : "—",
-              className:
-                r.price_vs_avg_pct != null && r.price_vs_avg_pct > 0
-                  ? "text-danger font-semibold"
-                  : "text-info",
-            },
-            {
-              label: "Total",
-              value: <Currency amount={r.total_spent} compact />,
-            },
-            {
-              label: "Último precio",
-              value:
-                r.last_price != null
-                  ? `${r.last_price.toLocaleString("es-MX")} ${r.currency ?? ""}`
-                  : "—",
-            },
-            {
-              label: "Última compra",
-              value: <DateDisplay date={r.last_purchase_date} relative />,
-            },
-          ]}
-        />
-      )}
-    />
+    <div className="space-y-3">
+      <DataTable
+        data={rows}
+        columns={priceColumns}
+        rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
+        sort={
+          params.sort ? { key: params.sort, dir: params.sortDir } : null
+        }
+        sortHref={sortHref}
+        visibleKeys={visibleKeys}
+        stickyHeader
+        mobileCard={(r) => (
+          <MobileCard
+            title={r.product_name ?? r.product_ref ?? "—"}
+            subtitle={r.last_supplier ?? undefined}
+            badge={
+              <Badge variant={priceVariant[r.price_flag] ?? "info"}>
+                {priceLabel[r.price_flag] ?? r.price_flag}
+              </Badge>
+            }
+            fields={[
+              {
+                label: "vs prom",
+                value:
+                  r.price_vs_avg_pct != null
+                    ? `${r.price_vs_avg_pct > 0 ? "+" : ""}${r.price_vs_avg_pct.toFixed(1)}%`
+                    : "—",
+                className:
+                  r.price_vs_avg_pct != null && r.price_vs_avg_pct > 0
+                    ? "text-danger font-semibold"
+                    : "text-info",
+              },
+              {
+                label: "Total",
+                value: <Currency amount={r.total_spent} compact />,
+              },
+              {
+                label: "Último precio",
+                value:
+                  r.last_price != null
+                    ? `${r.last_price.toLocaleString("es-MX")} ${r.currency ?? ""}`
+                    : "—",
+              },
+              {
+                label: "Última compra",
+                value: <DateDisplay date={r.last_purchase_date} relative />,
+              },
+            ]}
+          />
+        )}
+      />
+      <DataTablePagination
+        paramPrefix="pa_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="productos"
+      />
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Top suppliers
 // ──────────────────────────────────────────────────────────────────────────
+const topSupplierViewColumns = [
+  { key: "name", label: "Proveedor", alwaysVisible: true },
+  { key: "spent", label: "Total gastado" },
+  { key: "products", label: "# productos" },
+  { key: "orders", label: "# órdenes" },
+];
+
 const supplierColumns: DataTableColumn<TopSupplierRow>[] = [
   {
     key: "name",
     header: "Proveedor",
-    cell: (r) => <span className="font-semibold truncate">{r.supplier_name}</span>,
+    alwaysVisible: true,
+    sortable: true,
+    cell: (r) => (
+      <span className="font-semibold truncate">{r.supplier_name}</span>
+    ),
   },
   {
     key: "spent",
     header: "Total",
+    sortable: true,
     cell: (r) => <Currency amount={r.total_spent} compact />,
     align: "right",
   },
   {
     key: "products",
     header: "Productos",
-    cell: (r) => r.product_count,
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">{r.product_count}</span>
+    ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "orders",
+    header: "Órdenes",
+    sortable: true,
+    cell: (r) => (
+      <span className="tabular-nums">{r.order_count}</span>
+    ),
     align: "right",
     hideOnMobile: true,
   },
 ];
 
-async function TopSuppliersTable() {
-  const rows = await getTopSuppliers(15);
+async function TopSuppliersTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  const params = parseTableParams(searchParams, {
+    prefix: "sup_",
+    defaultSize: 25,
+    defaultSort: "-spent",
+  });
+  const { rows, total } = await getTopSuppliersPage(params);
+  const visibleKeys = parseVisibleKeys(searchParams, "sup_");
+  const sortHref = makeSortHref({
+    pathname: "/compras",
+    searchParams,
+    paramPrefix: "sup_",
+  });
   return (
+    <div className="space-y-3">
     <DataTable
       data={rows}
       columns={supplierColumns}
       rowKey={(r) => r.supplier_name}
+      sort={
+        params.sort ? { key: params.sort, dir: params.sortDir } : null
+      }
+      sortHref={sortHref}
+      visibleKeys={visibleKeys}
+      stickyHeader
       mobileCard={(r) => (
         <MobileCard
           title={r.supplier_name}
@@ -528,16 +811,35 @@ async function TopSuppliersTable() {
         description: "No hay datos en supplier_product_matrix.",
       }}
     />
+    <DataTablePagination
+      paramPrefix="sup_"
+      total={total}
+      page={params.page}
+      pageSize={params.size}
+      unit="proveedores"
+    />
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
 // Recent purchases (kept)
 // ──────────────────────────────────────────────────────────────────────────
+const purchaseOrderViewColumns = [
+  { key: "name", label: "Orden", alwaysVisible: true },
+  { key: "company", label: "Proveedor" },
+  { key: "buyer", label: "Comprador" },
+  { key: "amount", label: "Monto" },
+  { key: "date", label: "Fecha" },
+  { key: "state", label: "Estado" },
+];
+
 const orderColumns: DataTableColumn<RecentPurchaseOrder>[] = [
   {
     key: "name",
     header: "Orden",
+    alwaysVisible: true,
+    sortable: true,
     cell: (r) => <span className="font-mono text-xs">{r.name ?? "—"}</span>,
   },
   {
@@ -551,20 +853,29 @@ const orderColumns: DataTableColumn<RecentPurchaseOrder>[] = [
       ),
   },
   {
+    key: "buyer",
+    header: "Comprador",
+    cell: (r) => r.buyer_name ?? "—",
+    hideOnMobile: true,
+  },
+  {
     key: "amount",
     header: "Monto",
+    sortable: true,
     cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
   },
   {
     key: "date",
     header: "Fecha",
+    sortable: true,
     cell: (r) => <DateDisplay date={r.date_order} relative />,
     hideOnMobile: true,
   },
   {
     key: "state",
     header: "Estado",
+    sortable: true,
     cell: (r) => <StatusBadge status={(r.state ?? "draft") as "draft"} />,
   },
 ];
@@ -615,12 +926,24 @@ async function RecentPurchasesTable({
     state: params.facets.state,
     buyer: params.facets.buyer,
   });
+  const visibleKeys = parseVisibleKeys(searchParams, "po_");
+  const sortHref = makeSortHref({
+    pathname: "/compras",
+    searchParams,
+    paramPrefix: "po_",
+  });
   return (
     <div className="space-y-3">
       <DataTable
         data={rows}
         columns={orderColumns}
         rowKey={(r) => String(r.id)}
+        sort={
+          params.sort ? { key: params.sort, dir: params.sortDir } : null
+        }
+        sortHref={sortHref}
+        visibleKeys={visibleKeys}
+        stickyHeader
         mobileCard={(r) => (
           <MobileCard
             title={

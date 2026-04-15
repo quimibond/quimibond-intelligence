@@ -16,6 +16,9 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataTableToolbar,
+  DataTablePagination,
+  TableExportButton,
   MobileCard,
   DateDisplay,
   EmptyState,
@@ -39,7 +42,8 @@ import {
   getAgentEffectiveness,
   getDataQuality,
   getNotifications,
-  getPipelineLogs,
+  getPipelineLogsPage,
+  getPipelineLogPhaseOptions,
   type SyncFreshnessRow,
   type CostRow,
   type AgentEffectivenessRow,
@@ -47,10 +51,13 @@ import {
   type NotificationRow,
   type PipelineLogRow,
 } from "@/lib/queries/system";
+import { parseTableParams } from "@/lib/queries/table-params";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const metadata = { title: "Sistema" };
+
+type SearchParams = Record<string, string | string[] | undefined>;
 
 const formatUsd = (value: number) =>
   new Intl.NumberFormat("en-US", {
@@ -59,7 +66,12 @@ const formatUsd = (value: number) =>
     maximumFractionDigits: 2,
   }).format(value);
 
-export default function SystemPage() {
+export default async function SystemPage({
+  searchParams,
+}: {
+  searchParams: Promise<SearchParams>;
+}) {
+  const sp = await searchParams;
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -90,11 +102,12 @@ export default function SystemPage() {
         </TabsList>
 
         <TabsContent value="sync" className="mt-4">
-          <Card>
-            <CardHeader>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">
                 Frescura del sync Odoo → Supabase
               </CardTitle>
+              <TableExportButton filename="sync-freshness" />
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[400px]" />}>
@@ -105,11 +118,12 @@ export default function SystemPage() {
         </TabsContent>
 
         <TabsContent value="costs" className="mt-4">
-          <Card>
-            <CardHeader>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">
                 Costos de Claude API por endpoint
               </CardTitle>
+              <TableExportButton filename="api-costs" />
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[400px]" />}>
@@ -120,11 +134,12 @@ export default function SystemPage() {
         </TabsContent>
 
         <TabsContent value="agents" className="mt-4">
-          <Card>
-            <CardHeader>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">
                 Efectividad de los agentes
               </CardTitle>
+              <TableExportButton filename="agent-effectiveness" />
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[400px]" />}>
@@ -135,11 +150,12 @@ export default function SystemPage() {
         </TabsContent>
 
         <TabsContent value="quality" className="mt-4">
-          <Card>
-            <CardHeader>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">
                 Scorecard de calidad de datos
               </CardTitle>
+              <TableExportButton filename="data-quality" />
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[300px]" />}>
@@ -150,11 +166,12 @@ export default function SystemPage() {
         </TabsContent>
 
         <TabsContent value="notifications" className="mt-4">
-          <Card>
-            <CardHeader>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">
                 Cola de notificaciones
               </CardTitle>
+              <TableExportButton filename="notifications" />
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[300px]" />}>
@@ -165,15 +182,23 @@ export default function SystemPage() {
         </TabsContent>
 
         <TabsContent value="logs" className="mt-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                Pipeline logs (50 más recientes)
-              </CardTitle>
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div>
+                <CardTitle className="text-base">Pipeline logs</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Busca en el mensaje, filtra por nivel, fase o rango de
+                  fecha.
+                </p>
+              </div>
+              <TableExportButton filename="pipeline-logs" />
             </CardHeader>
-            <CardContent className="pb-4">
+            <CardContent className="space-y-3 pb-4">
+              <Suspense fallback={null}>
+                <LogsToolbar />
+              </Suspense>
               <Suspense fallback={<Skeleton className="h-[400px]" />}>
-                <LogsList />
+                <LogsTable searchParams={sp} />
               </Suspense>
             </CardContent>
           </Card>
@@ -704,23 +729,93 @@ async function NotificationsTable() {
 // ──────────────────────────────────────────────────────────────────────────
 // Pipeline logs
 // ──────────────────────────────────────────────────────────────────────────
-async function LogsList() {
-  const rows = await getPipelineLogs(50);
+async function LogsToolbar() {
+  const phases = await getPipelineLogPhaseOptions();
+  return (
+    <DataTableToolbar
+      paramPrefix="lg_"
+      searchPlaceholder="Buscar en mensaje…"
+      dateRange={{ label: "Fecha" }}
+      facets={[
+        {
+          key: "level",
+          label: "Nivel",
+          options: [
+            { value: "error", label: "Error" },
+            { value: "warning", label: "Warning" },
+            { value: "info", label: "Info" },
+            { value: "debug", label: "Debug" },
+          ],
+        },
+        {
+          key: "phase",
+          label: "Fase",
+          options: phases.map((p) => ({ value: p, label: p })),
+        },
+      ]}
+    />
+  );
+}
+
+async function LogsTable({ searchParams }: { searchParams: SearchParams }) {
+  const params = parseTableParams(searchParams, {
+    prefix: "lg_",
+    facetKeys: ["level", "phase"],
+    defaultSize: 50,
+  });
+  const { rows, total } = await getPipelineLogsPage({
+    ...params,
+    level: params.facets.level,
+    phase: params.facets.phase,
+  });
   if (rows.length === 0) {
     return (
       <EmptyState
         icon={Activity}
         title="Sin logs"
-        description="pipeline_logs está vacío."
+        description="Ajusta los filtros o el rango de fechas."
         compact
       />
     );
   }
   return (
-    <div className="space-y-1.5">
-      {rows.map((log) => (
-        <LogLine key={log.id} log={log} />
-      ))}
+    <div className="space-y-3">
+      {/* Ocultamos el table HTML para el export pero renderizamos */}
+      <div className="hidden">
+        <table>
+          <thead>
+            <tr>
+              <th>Nivel</th>
+              <th>Fase</th>
+              <th>Mensaje</th>
+              <th>Creado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((l) => (
+              <tr key={l.id}>
+                <td>{l.level}</td>
+                <td>{l.phase}</td>
+                <td>{l.message}</td>
+                <td>{l.created_at}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((log) => (
+          <LogLine key={log.id} log={log} />
+        ))}
+      </div>
+      <DataTablePagination
+        paramPrefix="lg_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        pageSizeOptions={[25, 50, 100, 200]}
+        unit="logs"
+      />
     </div>
   );
 }
