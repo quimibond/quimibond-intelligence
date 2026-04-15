@@ -4,22 +4,23 @@ import * as React from "react";
 import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import {
+  AlertTriangle,
   Banknote,
   Bot,
   Building2,
+  Factory,
   FileText,
   Grid3x3,
   Home,
   Inbox,
   MessageSquare,
   Package,
-  Receipt,
-  ShoppingCart,
+  Settings,
+  ShoppingBag,
   Sparkles,
-  Truck,
+  TrendingUp,
   UserCircle,
   Users,
-  Wrench,
   type LucideIcon,
 } from "lucide-react";
 
@@ -40,6 +41,11 @@ interface TabDef {
 }
 
 // 4 primary tabs + 1 "Más" → sheet con el resto.
+//
+// Alineados con sidebar desktop. Los 4 primary son los atajos del día que
+// el CEO revisa al abrir la app. El resto vive en el sheet "Más" con la
+// misma taxonomía del sidebar (Clientes / Financiero / Operación / Equipo /
+// Admin).
 const primaryTabs: TabDef[] = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/inbox", label: "Insights", icon: Inbox },
@@ -47,37 +53,45 @@ const primaryTabs: TabDef[] = [
   { href: "/finanzas", label: "Finanzas", icon: Banknote },
 ];
 
-// Secciones secundarias en el sheet "Más".
+// Secciones secundarias en el sheet "Más" — mismo taxonomy que sidebar.
 const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
+  {
+    label: "Atajos",
+    tabs: [{ href: "/briefings", label: "Briefings", icon: FileText }],
+  },
   {
     label: "Clientes",
     tabs: [
       { href: "/companies", label: "Empresas", icon: Building2 },
       { href: "/contacts", label: "Contactos", icon: MessageSquare },
-      { href: "/briefings", label: "Briefings", icon: FileText },
     ],
   },
   {
-    label: "Comercial",
+    label: "Financiero",
     tabs: [
-      { href: "/ventas", label: "Ventas", icon: ShoppingCart },
-      { href: "/cobranza", label: "Cobranza", icon: Receipt },
-      { href: "/productos", label: "Productos", icon: Package },
+      { href: "/ventas", label: "Ventas", icon: TrendingUp },
+      { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
     ],
   },
   {
     label: "Operación",
     tabs: [
-      { href: "/compras", label: "Compras", icon: ShoppingCart },
-      { href: "/operaciones", label: "Operaciones", icon: Truck },
-      { href: "/equipo", label: "Equipo", icon: Users },
+      { href: "/compras", label: "Compras", icon: ShoppingBag },
+      { href: "/productos", label: "Productos", icon: Package },
+      { href: "/operaciones", label: "Operaciones", icon: Factory },
     ],
   },
   {
-    label: "Sistema",
+    label: "Equipo",
     tabs: [
+      { href: "/equipo", label: "Mi equipo", icon: Users },
       { href: "/agents", label: "Directores IA", icon: Bot },
-      { href: "/system", label: "Sistema", icon: Wrench },
+    ],
+  },
+  {
+    label: "Admin",
+    tabs: [
+      { href: "/system", label: "Sistema", icon: Settings },
       { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },
