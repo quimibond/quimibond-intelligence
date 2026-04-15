@@ -230,7 +230,7 @@ export default async function ContactsPage({
     <div className="space-y-4 pb-24 md:pb-6">
       <PageHeader
         title="Contactos"
-        subtitle="Personas con health score, sentiment y riesgo detectado por los agentes"
+        subtitle="¿Con qué personas trato, cómo está cada relación y quién está en riesgo?"
       />
 
       <Suspense

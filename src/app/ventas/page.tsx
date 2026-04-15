@@ -71,7 +71,7 @@ export default async function VentasPage({
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Ventas"
-        subtitle="Ingresos del mes, reorder risk y pipeline"
+        subtitle="¿Cómo van las ventas, quién compra y quién dejó de comprar?"
         actions={
           <a
             href="/ventas/cohorts"

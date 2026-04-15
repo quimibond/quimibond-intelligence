@@ -63,8 +63,8 @@ export default async function InboxPage({
   return (
     <div className="space-y-4 pb-24 md:pb-6">
       <PageHeader
-        title="Insights"
-        subtitle="Alertas accionables de los agentes"
+        title="Inbox"
+        subtitle="Alertas accionables priorizadas por los directores IA"
       />
 
       <Suspense

@@ -59,7 +59,7 @@ export default async function OperacionesPage({
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Operaciones"
-        subtitle="OTD semanal, entregas tarde, manufactura activa"
+        subtitle="¿Estoy entregando a tiempo y qué está en producción?"
       />
 
       <SectionNav

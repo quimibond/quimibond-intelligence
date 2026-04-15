@@ -69,7 +69,7 @@ export default async function ComprasPage({
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Compras"
-        subtitle="Pedidos, riesgo de proveedor único y anomalías de precio"
+        subtitle="¿Qué compré, a quién, a qué precio y qué falta por ordenar?"
         actions={
           <div className="flex flex-wrap gap-2">
             <a

@@ -59,7 +59,7 @@ export default function FinanzasPage() {
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Finanzas"
-        subtitle="Posición ejecutiva, runway y cashflow"
+        subtitle="¿Cuánto cash tengo, cuánto me dura, y cómo se está moviendo?"
       />
 
       <SectionNav

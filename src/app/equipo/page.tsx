@@ -43,7 +43,7 @@ export default function EquipoPage() {
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Equipo"
-        subtitle="Backlog de actividades por persona, departamentos e insights"
+        subtitle="¿Quién tiene backlog, qué insights tiene pendientes y cómo está distribuido?"
       />
 
       <SectionNav

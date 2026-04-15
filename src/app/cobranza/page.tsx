@@ -63,7 +63,7 @@ export default async function CobranzaPage({
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Cobranza"
-        subtitle="Cartera vencida, riesgo de pago y aging"
+        subtitle="¿Quién me debe, cuánto, y quién va a pagar mal?"
       />
 
       <SectionNav

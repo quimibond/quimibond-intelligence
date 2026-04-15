@@ -75,7 +75,7 @@ export default async function CompaniesPage({
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Empresas"
-        subtitle="Portfolio de clientes: revenue, tendencia y reactivación dirigida"
+        subtitle="¿Con quién hago negocio, quién está en riesgo y cómo anda el portfolio?"
       />
 
       <SectionNav

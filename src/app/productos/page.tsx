@@ -60,7 +60,7 @@ export default async function ProductosPage({
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
         title="Productos"
-        subtitle="Inventario, reorden urgente, dead stock y márgenes"
+        subtitle="¿Qué tengo en inventario, qué rota bien y qué está muerto?"
       />
 
       <SectionNav
