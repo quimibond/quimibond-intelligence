@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
-import Link from "next/link";
-import { ArrowLeft, Bot, Calendar, Database } from "lucide-react";
+import { Bot, Calendar, Database } from "lucide-react";
 
 import {
   PageHeader,
@@ -67,50 +66,30 @@ export default async function InsightDetailPage({
 
   return (
     <div className="space-y-5 pb-24 md:pb-6">
-      {/* Breadcrumbs */}
-      <nav
-        aria-label="Breadcrumb"
-        className="flex items-center gap-1 text-xs text-muted-foreground"
-      >
-        <Link href="/" className="hover:text-foreground transition-colors">
-          Dashboard
-        </Link>
-        <ArrowLeft className="size-3 rotate-180 opacity-60" aria-hidden="true" />
-        <Link
-          href="/inbox"
-          className="hover:text-foreground transition-colors"
-        >
-          Inbox
-        </Link>
-        <ArrowLeft className="size-3 rotate-180 opacity-60" aria-hidden="true" />
-        <span className="font-medium text-foreground truncate">
-          Insight
-        </span>
-      </nav>
-
-      <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <SeverityBadge level={insight.severity ?? "medium"} />
-          {insight.category && (
-            <Badge variant="secondary" className="uppercase text-[10px]">
-              {insight.category}
-            </Badge>
-          )}
-          {insight.state && insight.state !== "new" && (
-            <Badge variant="outline" className="text-[10px] uppercase">
-              {insight.state}
-            </Badge>
-          )}
-        </div>
-        <h1 className="text-xl font-bold sm:text-2xl lg:text-3xl">
-          {insight.title}
-        </h1>
-        {insight.description && (
-          <p className="whitespace-pre-wrap text-sm text-muted-foreground sm:text-base">
-            {insight.description}
-          </p>
-        )}
-      </div>
+      <PageHeader
+        breadcrumbs={[
+          { label: "Dashboard", href: "/" },
+          { label: "Inbox", href: "/inbox" },
+          { label: "Insight" },
+        ]}
+        title={insight.title ?? "Insight"}
+        subtitle={insight.description ?? undefined}
+        actions={
+          <div className="flex flex-wrap gap-1.5">
+            <SeverityBadge level={insight.severity ?? "medium"} />
+            {insight.category && (
+              <Badge variant="secondary" className="uppercase text-[10px]">
+                {insight.category}
+              </Badge>
+            )}
+            {insight.state && insight.state !== "new" && (
+              <Badge variant="outline" className="text-[10px] uppercase">
+                {insight.state}
+              </Badge>
+            )}
+          </div>
+        }
+      />
 
       {/* Evidence refs clickeables parseadas del texto del insight */}
       {refs.length > 0 && (

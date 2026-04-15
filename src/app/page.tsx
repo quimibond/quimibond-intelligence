@@ -53,7 +53,10 @@ function greet() {
 export default function CeoDashboardPage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
-      <PageHeader title={greet()} subtitle="Panorama ejecutivo al minuto" />
+      <PageHeader
+        title={greet()}
+        subtitle="Lo que necesitas saber del negocio en 30 segundos"
+      />
 
       {/* Runway alert — la señal más crítica */}
       <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>

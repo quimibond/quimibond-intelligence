@@ -67,8 +67,8 @@ export default async function DirectorBriefingPage({
           { label: "Briefings", href: "/briefings" },
           { label: DIRECTOR_LABELS[director] },
         ]}
-        title="Briefing del día"
-        subtitle={`Director ${DIRECTOR_LABELS[director]} · top ${maxCompanies} empresas con evidencia cruzada`}
+        title={`Briefing — ${DIRECTOR_LABELS[director]}`}
+        subtitle={`¿Qué empresas necesitan atención hoy desde ${DIRECTOR_LABELS[director].toLowerCase()}? Top ${maxCompanies} con evidencia cruzada.`}
       />
 
       <DirectorTabs active={director} />

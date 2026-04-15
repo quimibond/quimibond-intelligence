@@ -1,9 +1,11 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import {
+  Activity,
   AlertTriangle,
   Building2,
   Calendar,
+  Eye,
   FileText,
   Mail,
   Package,
@@ -175,14 +177,29 @@ export default async function CompanyDetailPage({
         />
       </StatGrid>
 
-      {/* Tabs */}
+      {/* Tabs — cada una contesta una pregunta específica sobre esta empresa */}
       <Tabs defaultValue="overview" className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
-          <TabsTrigger value="overview">Overview</TabsTrigger>
-          <TabsTrigger value="finance">Finanzas</TabsTrigger>
-          <TabsTrigger value="orders">Pedidos</TabsTrigger>
-          <TabsTrigger value="products">Productos</TabsTrigger>
-          <TabsTrigger value="activity">Actividad</TabsTrigger>
+          <TabsTrigger value="overview" className="gap-1.5">
+            <Eye className="size-3.5" />
+            Overview
+          </TabsTrigger>
+          <TabsTrigger value="finance" className="gap-1.5">
+            <FileText className="size-3.5" />
+            Finanzas
+          </TabsTrigger>
+          <TabsTrigger value="orders" className="gap-1.5">
+            <ShoppingCart className="size-3.5" />
+            Pedidos
+          </TabsTrigger>
+          <TabsTrigger value="products" className="gap-1.5">
+            <Package className="size-3.5" />
+            Productos
+          </TabsTrigger>
+          <TabsTrigger value="activity" className="gap-1.5">
+            <Activity className="size-3.5" />
+            Actividad
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -194,7 +211,12 @@ export default async function CompanyDetailPage({
         <TabsContent value="finance" className="mt-4 space-y-4">
           <Card data-table-export-root>
             <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-              <CardTitle className="text-base">Facturas</CardTitle>
+              <div>
+                <CardTitle className="text-base">Facturas</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  ¿Qué me debe este cliente y cuánto lleva vencido?
+                </p>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <TableViewOptions
                   paramPrefix="ci_"
@@ -216,7 +238,12 @@ export default async function CompanyDetailPage({
         <TabsContent value="orders" className="mt-4 space-y-4">
           <Card data-table-export-root>
             <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-              <CardTitle className="text-base">Pedidos</CardTitle>
+              <div>
+                <CardTitle className="text-base">Pedidos</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  ¿Qué me ha comprado y cómo van las órdenes abiertas?
+                </p>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <TableViewOptions
                   paramPrefix="co_"
@@ -233,7 +260,12 @@ export default async function CompanyDetailPage({
           </Card>
           <Card data-table-export-root>
             <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-              <CardTitle className="text-base">Entregas</CardTitle>
+              <div>
+                <CardTitle className="text-base">Entregas</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  ¿Estamos entregando a tiempo? ¿Qué quedó pendiente?
+                </p>
+              </div>
               <div className="flex flex-wrap items-center gap-2">
                 <TableViewOptions
                   paramPrefix="cd_"
@@ -255,7 +287,13 @@ export default async function CompanyDetailPage({
         <TabsContent value="products" className="mt-4 space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Top productos comprados</CardTitle>
+              <CardTitle className="text-base">
+                Top productos comprados
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                ¿Qué productos le importan a este cliente? Ordenados por
+                revenue en los últimos 12 meses.
+              </p>
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<TabTableSkeleton rows={8} />}>
@@ -271,6 +309,10 @@ export default async function CompanyDetailPage({
               <CardTitle className="text-base">
                 Actividades pendientes
               </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Tareas asignadas a alguien del equipo con deadline pendiente
+                relacionadas con este cliente.
+              </p>
             </CardHeader>
             <CardContent className="pb-4">
               <Suspense fallback={<TabTableSkeleton rows={6} />}>

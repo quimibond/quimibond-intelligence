@@ -35,8 +35,8 @@ export default function AgentsPage() {
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
-        title="Directores AI"
-        subtitle="Agentes que generan insights cada 15 minutos"
+        title="Directores IA"
+        subtitle="¿Qué agentes están trabajando y qué tan efectivos son?"
       />
 
       <Suspense fallback={<KpisSkeleton />}>
