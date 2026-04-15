@@ -95,7 +95,38 @@ export async function POST(request: NextRequest) {
 
     // Run 1 agent at a time for quality over quantity (was 3, caused flooding)
     const MAX_PARALLEL = 1;
-    const sortedAgents = [...agents].sort((a, b) => {
+
+    // Respect `analysis_schedule`: daily agents need >=20h since last run,
+    // weekly agents need >=7 days. Without this filter, every agent was running
+    // ~5-7 times/day regardless of its declared cadence (see audit 2026-04-15).
+    const now = Date.now();
+    const MIN_INTERVAL_MS: Record<string, number> = {
+      daily:   20 * 3600_000,       // ~once a day, leaves slack for missed crons
+      weekly:  6 * 86400_000,       // ~once a week, slack for missed crons
+      hourly:  50 * 60_000,
+    };
+    const eligibleAgents = agents.filter(a => {
+      const schedule = String(a.analysis_schedule ?? "daily").toLowerCase();
+      const minInterval = MIN_INTERVAL_MS[schedule] ?? 0;
+      if (minInterval === 0) return true; // unknown schedule → let it run
+      const last = lastRunMap.get(a.id);
+      if (!last) return true; // never run → always eligible
+      return now - new Date(last).getTime() >= minInterval;
+    });
+
+    if (!eligibleAgents.length) {
+      return NextResponse.json({
+        success: true,
+        message: "No agents due per analysis_schedule",
+        agents_ran: 0,
+        insights_generated: 0,
+        insights_archived: 0,
+        duplicates_skipped: 0,
+        elapsed_s: 0,
+      });
+    }
+
+    const sortedAgents = [...eligibleAgents].sort((a, b) => {
       const aRun = lastRunMap.get(a.id);
       const bRun = lastRunMap.get(b.id);
       if (!aRun && !bRun) return 0;
