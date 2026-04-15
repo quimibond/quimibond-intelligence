@@ -261,12 +261,25 @@ async function processBatch(
 - **product**: SKUs, materias primas, productos terminados, formulaciones
 
 ## Tipos de facts
+Solo hay 5 tipos validos. Si un hecho no encaja en uno de estos, NO lo extraigas — ignoralo.
+
 - **commitment**: promesas (entregar, pagar, llamar, cotizar en X fecha)
 - **complaint**: quejas, problemas, defectos, retrasos reportados
 - **request**: solicitudes explicitas de info, cotizacion, muestra, reunion
 - **price**: precios, descuentos, cotizaciones mencionadas
-- **information**: datos factuales relevantes (capacidad, lead time, certificacion)
 - **change**: cambios anunciados (precio, proveedor, persona de contacto, politica)
+
+## Que NO extraer como fact (ruido que ya tenemos en otras tablas)
+- NO extraigas confirmaciones de entrega, guias de envio, numeros de tracking — ya estan en odoo_deliveries.
+- NO extraigas notificaciones de pagos/transferencias recibidas — ya estan en odoo_payments.
+- NO extraigas envio/recepcion de facturas, CFDIs, ordenes de compra como documentos — ya estan en odoo_invoices/cfdi_documents.
+- NO extraigas puestos, departamentos ni organigramas — ya estan en odoo_employees.
+- NO extraigas metadata de stock, inventario en transito, material disponible — ya esta en odoo_products.
+- NO extraigas textos de procedimientos, plantillas de correo, instrucciones genericas.
+- NO extraigas pedidos personales (Amazon, Mercado Libre) ni entregas no relacionadas al negocio textil.
+- NO extraigas "se envio", "se recibio", "se firmo" como facts — son ruido de audit trail.
+
+Si despues de filtrar no queda nada util en el email, devuelve facts: [].
 
 ## Tipos de relaciones
 - **works_at**: persona trabaja en empresa
@@ -288,11 +301,11 @@ async function processBatch(
 - **low**: informativo, sin deadline
 
 ## Adjuntos
-Cuando veas ADJUNTOS listados en un email, incluye facts sobre documentos importantes:
-- Facturas (PDF/XML): fact tipo "information" con texto tipo "Se envio factura INV-X-2026-001"
-- CFDIs (XML): fact tipo "information" con texto "Se recibio CFDI de proveedor X"
-- Ordenes de compra (PDF): fact tipo "commitment" si es confirmacion
-- Fichas tecnicas: fact tipo "information" sobre especs del producto
+Cuando veas ADJUNTOS listados en un email, ignora los documentos rutinarios (facturas, CFDIs, guias, recibos) — ya se procesan por su propio pipeline. Solo extrae facts de adjuntos si contienen informacion comercialmente relevante que no este en Odoo:
+- Ordenes de compra con fechas/cantidades nuevas: fact tipo "commitment"
+- Listas de precios o cotizaciones: fact tipo "price"
+- Quejas o reclamos formales: fact tipo "complaint"
+- Cambios anunciados en terminos, proveedores o personas: fact tipo "change"
 
 ## Formato de salida
 Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
@@ -301,7 +314,7 @@ Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
     {"name": "string", "type": "person|company|product", "email": "string o null"}
   ],
   "facts": [
-    {"entity_name": "string", "type": "commitment|complaint|request|price|information|change", "text": "string conciso", "date": "YYYY-MM-DD o null", "confidence": 0.0-1.0}
+    {"entity_name": "string", "type": "commitment|complaint|request|price|change", "text": "string conciso", "date": "YYYY-MM-DD o null", "confidence": 0.0-1.0}
   ],
   "relationships": [
     {"entity_a": "string", "entity_b": "string", "type": "works_at|buys_from|sells_to|supplies|mentioned_with", "context": "string corto"}
@@ -348,11 +361,21 @@ Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
     if (data?.[0]?.id) { entityMap[String(ent.name)] = data[0].id; entitiesSaved++; }
   }
 
-  // Save facts
+  // Save facts — only the 5 types actually consumed by directors.
+  // `information` was removed (audit 2026-04-15): 59% of fact volume, 0% read
+  // by any director. See src/app/api/agents/orchestrate/route.ts where facts
+  // are queried with fact_type IN (complaint, commitment, request, price, change).
+  const ALLOWED_FACT_TYPES = new Set(["commitment", "complaint", "request", "price", "change"]);
   let factsSaved = 0;
+  let factsFiltered = 0;
   const facts: Record<string, unknown>[] = [];
   for (const f of (result.facts ?? [])) {
     if (!f.entity_name || !f.text) continue;
+    const factType = String(f.type ?? "").toLowerCase();
+    if (!ALLOWED_FACT_TYPES.has(factType)) {
+      factsFiltered++;
+      continue;
+    }
     let entityId = entityMap[String(f.entity_name)];
     if (!entityId) {
       const { data } = await supabase.from("entities").select("id")
@@ -362,13 +385,16 @@ Responde ESTRICTAMENTE con JSON valido siguiendo este schema:
     if (!entityId) continue;
     facts.push({
       entity_id: entityId,
-      fact_type: f.type ?? "information",
+      fact_type: factType,
       fact_text: f.text,
-      fact_hash: createHash("md5").update(`${entityId}|${f.type ?? "information"}|${f.text}`).digest("hex"),
+      fact_hash: createHash("md5").update(`${entityId}|${factType}|${f.text}`).digest("hex"),
       confidence: f.confidence ?? 0.8,
       source_type: "email",
       source_account: emails[0]?.account ?? "unknown",
     });
+  }
+  if (factsFiltered > 0) {
+    console.log(`[analyze-batch] filtered ${factsFiltered} non-consumed facts (information/other)`);
   }
   if (facts.length) {
     const { error } = await supabase.from("facts").upsert(facts, { onConflict: "fact_hash", ignoreDuplicates: true });
