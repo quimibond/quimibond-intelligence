@@ -16,6 +16,7 @@ import {
   StatGrid,
   KpiCard,
   DataTable,
+  TableExportButton,
   MobileCard,
   Currency,
   EmptyState,
@@ -316,18 +317,21 @@ export default function CostosBomPage() {
       </Suspense>
 
       {/* BOMs sospechosos */}
-      <Card className="border-danger/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <ShieldAlert className="h-4 w-4 text-danger" />
-            BOMs sospechosos (para revisar con Producción)
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Productos donde el costo sólo-materia-prima ya excede al standard
-            histórico por más de 50%. Con MO/energéticos removidos, esto NO
-            debería pasar — casi siempre es captura errónea (cantidades, UoM, o
-            componente equivocado).
-          </p>
+      <Card className="border-danger/40" data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="h-4 w-4 text-danger" />
+              BOMs sospechosos (para revisar con Producción)
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos donde el costo sólo-materia-prima ya excede al standard
+              histórico por más de 50%. Con MO/energéticos removidos, esto NO
+              debería pasar — casi siempre es captura errónea (cantidades, UoM,
+              o componente equivocado).
+            </p>
+          </div>
+          <TableExportButton filename="bom-suspicious" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense
@@ -345,18 +349,21 @@ export default function CostosBomPage() {
       </Card>
 
       {/* Componentes faltantes */}
-      <Card className="border-warning/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            BOMs con componentes sin costear
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Productos donde al menos un componente del BOM no tiene{" "}
-            <code>standard_price</code> en Odoo. Hasta que alguien les asigne
-            costo, el <code>real_unit_cost</code> está subestimado. Ordenado
-            por revenue 12m descendente.
-          </p>
+      <Card className="border-warning/40" data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              BOMs con componentes sin costear
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos donde al menos un componente del BOM no tiene{" "}
+              <code>standard_price</code> en Odoo. Hasta que alguien les asigne
+              costo, el <code>real_unit_cost</code> está subestimado. Ordenado
+              por revenue 12m descendente.
+            </p>
+          </div>
+          <TableExportButton filename="bom-missing-components" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense
@@ -374,17 +381,20 @@ export default function CostosBomPage() {
       </Card>
 
       {/* Top revenue con BOM */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Layers className="h-4 w-4" />
-            Top productos vendidos con BOM
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Los 30 productos con mayor revenue que tienen BOM activo. Son los
-            primeros candidatos para revisar cuando los centros de trabajo
-            estén configurados — cualquier imprecisión aquí mueve P&L.
-          </p>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Layers className="h-4 w-4" />
+              Top productos vendidos con BOM
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Los 30 productos con mayor revenue que tienen BOM activo. Son los
+              primeros candidatos para revisar cuando los centros de trabajo
+              estén configurados — cualquier imprecisión aquí mueve P&L.
+            </p>
+          </div>
+          <TableExportButton filename="bom-top-revenue" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense
@@ -402,21 +412,24 @@ export default function CostosBomPage() {
       </Card>
 
       {/* UoM mismatch en líneas de venta */}
-      <Card className="border-warning/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Scale className="h-4 w-4 text-warning" />
-            Productos con UoM inconsistente en ventas
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Productos donde alguna línea de venta o factura usa una unidad de
-            medida <strong>diferente</strong> a la unidad canónica del producto
-            (ej. tela marcada en metros pero vendida por kilos). Mi PMA
-            excluye esas líneas del cálculo de qty/precio promedio para no
-            mezclar metros con kilos. <strong>Acción</strong>: Producción debe
-            decidir si vender por m o kg y consolidar el UoM del producto en
-            Odoo.
-          </p>
+      <Card className="border-warning/40" data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Scale className="h-4 w-4 text-warning" />
+              Productos con UoM inconsistente en ventas
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos donde alguna línea de venta o factura usa una unidad de
+              medida <strong>diferente</strong> a la unidad canónica del
+              producto (ej. tela marcada en metros pero vendida por kilos).
+              Mi PMA excluye esas líneas del cálculo de qty/precio promedio
+              para no mezclar metros con kilos. <strong>Acción</strong>:
+              Producción debe decidir si vender por m o kg y consolidar el UoM
+              del producto en Odoo.
+            </p>
+          </div>
+          <TableExportButton filename="bom-uom-mismatch" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense
@@ -434,21 +447,25 @@ export default function CostosBomPage() {
       </Card>
 
       {/* Componentes duplicados dentro de BOMs */}
-      <Card className="border-warning/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <AlertTriangle className="h-4 w-4 text-warning" />
-            Componentes duplicados dentro del BOM
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Detecta dos casos: (A) un mismo componente listado más de una vez en
-            el mismo BOM, (B) dos componentes con el mismo <strong>nombre</strong>
-            {" "}pero <code>odoo_product_id</code> diferente (ej. dos SKUs de
-            "HILO POLIESTER ALGODON 22/1" creados para distintos batches o
-            proveedores). Mi rolldown los suma a ambos → el costo BOM está
-            sobrecontado por la diferencia. Producción debería consolidar uno
-            solo. Detecta duplicados en cualquier nivel del árbol.
-          </p>
+      <Card className="border-warning/40" data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <AlertTriangle className="h-4 w-4 text-warning" />
+              Componentes duplicados dentro del BOM
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Detecta dos casos: (A) un mismo componente listado más de una
+              vez en el mismo BOM, (B) dos componentes con el mismo{" "}
+              <strong>nombre</strong> pero <code>odoo_product_id</code>{" "}
+              diferente (ej. dos SKUs de "HILO POLIESTER ALGODON 22/1" creados
+              para distintos batches o proveedores). Mi rolldown los suma a
+              ambos → el costo BOM está sobrecontado por la diferencia.
+              Producción debería consolidar uno solo. Detecta duplicados en
+              cualquier nivel del árbol.
+            </p>
+          </div>
+          <TableExportButton filename="bom-duplicates" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense
@@ -466,18 +483,22 @@ export default function CostosBomPage() {
       </Card>
 
       {/* BOMs con múltiples versiones */}
-      <Card className="border-info/40">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base">
-            <Copy className="h-4 w-4 text-info" />
-            BOMs con múltiples versiones activas
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Productos con más de un BOM activo. El cálculo usa el más reciente
-            (<code>MAX(odoo_bom_id)</code>) como fuente de verdad — pero los
-            BOMs viejos siguen existiendo y pueden ser usados accidentalmente
-            por Producción. Sugerido: desactivar los obsoletos en Odoo.
-          </p>
+      <Card className="border-info/40" data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Copy className="h-4 w-4 text-info" />
+              BOMs con múltiples versiones activas
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Productos con más de un BOM activo. El cálculo usa el más
+              reciente (<code>MAX(odoo_bom_id)</code>) como fuente de verdad —
+              pero los BOMs viejos siguen existiendo y pueden ser usados
+              accidentalmente por Producción. Sugerido: desactivar los
+              obsoletos en Odoo.
+            </p>
+          </div>
+          <TableExportButton filename="bom-multi-versions" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense

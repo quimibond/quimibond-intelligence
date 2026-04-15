@@ -12,6 +12,7 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  TableExportButton,
   MobileCard,
   EmptyState,
   type DataTableColumn,
@@ -57,11 +58,12 @@ export default function EquipoPage() {
       </Suspense>
 
       {/* Backlog crítico */}
-      <Card>
-        <CardHeader>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">
             Backlog de actividades por persona
           </CardTitle>
+          <TableExportButton filename="team-backlog" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense
@@ -78,41 +80,42 @@ export default function EquipoPage() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Insights activos por departamento
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <InsightsByDeptTable />
-            </Suspense>
-          </CardContent>
-        </Card>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <CardTitle className="text-base">
+            Insights activos por departamento
+          </CardTitle>
+          <TableExportButton filename="insights-by-department" />
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <InsightsByDeptTable />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Departamentos y responsables
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense
-              fallback={<Skeleton className="h-[300px] rounded-xl" />}
-            >
-              <DepartmentsList />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <CardTitle className="text-base">
+            Departamentos y responsables
+          </CardTitle>
+          <TableExportButton filename="departments" />
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={<Skeleton className="h-[300px] rounded-xl" />}
+          >
+            <DepartmentsList />
+          </Suspense>
+        </CardContent>
+      </Card>
 
-      <Card>
-        <CardHeader>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">Plantilla activa</CardTitle>
+          <TableExportButton filename="employees" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>

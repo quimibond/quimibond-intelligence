@@ -16,6 +16,7 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  TableExportButton,
   MobileCard,
   Currency,
   MetricRow,
@@ -143,9 +144,10 @@ export default function FinanzasPage() {
       </Card>
 
       {/* Cuentas bancarias */}
-      <Card>
-        <CardHeader>
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <CardTitle className="text-base">Posición de caja</CardTitle>
+          <TableExportButton filename="cash-position" />
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
