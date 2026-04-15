@@ -20,18 +20,21 @@ import {
   FileText,
   Home,
   Inbox,
+  MessageSquare,
   Package,
   Search,
   Settings,
   ShoppingBag,
-  ShoppingCart,
+  Sparkles,
   TrendingUp,
+  UserCircle,
   Users,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/inbox", label: "Insights", icon: Inbox },
+  { href: "/chat", label: "Chat IA", icon: Sparkles },
   { href: "/briefings", label: "Briefings", icon: FileText },
   {
     href: "/companies",
@@ -41,6 +44,7 @@ const navItems = [
       { href: "/companies/at-risk", label: "Clientes en riesgo" },
     ],
   },
+  { href: "/contacts", label: "Contactos", icon: MessageSquare },
   {
     href: "/ventas",
     label: "Ventas",
@@ -68,6 +72,7 @@ const navItems = [
 ];
 
 const bottomItems = [
+  { href: "/profile", label: "Perfil", icon: UserCircle },
   { href: "/system", label: "Sistema", icon: Settings },
 ];
 

@@ -11,11 +11,13 @@ import {
   Grid3x3,
   Home,
   Inbox,
+  MessageSquare,
   Package,
   Receipt,
   ShoppingCart,
   Sparkles,
   Truck,
+  UserCircle,
   Users,
   Wrench,
   type LucideIcon,
@@ -41,18 +43,26 @@ interface TabDef {
 const primaryTabs: TabDef[] = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/inbox", label: "Insights", icon: Inbox },
-  { href: "/companies", label: "Empresas", icon: Building2 },
+  { href: "/chat", label: "Chat IA", icon: Sparkles },
   { href: "/finanzas", label: "Finanzas", icon: Banknote },
 ];
 
 // Secciones secundarias en el sheet "Más".
 const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
   {
+    label: "Clientes",
+    tabs: [
+      { href: "/companies", label: "Empresas", icon: Building2 },
+      { href: "/contacts", label: "Contactos", icon: MessageSquare },
+      { href: "/briefings", label: "Briefings", icon: FileText },
+    ],
+  },
+  {
     label: "Comercial",
     tabs: [
       { href: "/ventas", label: "Ventas", icon: ShoppingCart },
       { href: "/cobranza", label: "Cobranza", icon: Receipt },
-      { href: "/briefings", label: "Briefings", icon: FileText },
+      { href: "/productos", label: "Productos", icon: Package },
     ],
   },
   {
@@ -60,15 +70,15 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
     tabs: [
       { href: "/compras", label: "Compras", icon: ShoppingCart },
       { href: "/operaciones", label: "Operaciones", icon: Truck },
-      { href: "/productos", label: "Productos", icon: Package },
+      { href: "/equipo", label: "Equipo", icon: Users },
     ],
   },
   {
-    label: "Organización",
+    label: "Sistema",
     tabs: [
-      { href: "/equipo", label: "Equipo", icon: Users },
       { href: "/agents", label: "Directores IA", icon: Bot },
       { href: "/system", label: "Sistema", icon: Wrench },
+      { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },
 ];
