@@ -584,3 +584,101 @@ export async function getProjectedCashFlow(): Promise<ProjectedCashFlow> {
   return { summary, weeks };
 }
 
+
+/* ============================================================================
+ * Cashflow Recommendations Engine
+ *   RPC: get_cashflow_recommendations()
+ *   Returns prioritized actions based on the liquidity situation.
+ * ========================================================================== */
+
+export type RecommendationSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'WARNING';
+
+export interface CashflowRecommendationAction {
+  priority: number;
+  severity: RecommendationSeverity;
+  category: string;
+  title: string;
+  rationale: string;
+  action: string;
+  impactMxn: number;
+}
+
+export interface CashflowTopCompany {
+  companyId: number | null;
+  companyName: string | null;
+  totalOverdueMxn: number;
+  nInvoices: number;
+  maxDaysOverdue: number;
+  avgDaysOverdue: number;
+  collectionProbability14d?: number;
+  expectedCollection14dMxn?: number;
+}
+
+export interface CashflowRecommendations {
+  computedAt: string | null;
+  metrics: {
+    effectiveCashMxn: number;
+    apOverdueMxn: number;
+    arOverdueMxn: number;
+    liquidityGapMxn: number;
+    apOverdueCoverageRatio: number | null;
+    runwayWeeksRecurring: number | null;
+    burnRateWeeklyMxn: number;
+    payrollQuincenalMxn: number;
+    opexWeeklyMxn: number;
+    taxWeeklyMxn: number;
+  };
+  topArToCollect: CashflowTopCompany[];
+  topApToNegotiate: CashflowTopCompany[];
+  actions: CashflowRecommendationAction[];
+}
+
+export async function getCashflowRecommendations(): Promise<CashflowRecommendations | null> {
+  const sb = getServiceClient();
+  const { data } = await sb.rpc('get_cashflow_recommendations');
+  if (!data) return null;
+  const r = data as {
+    computed_at: string | null;
+    metrics: Record<string, number | null>;
+    top_ar_to_collect: Array<Record<string, unknown>>;
+    top_ap_to_negotiate: Array<Record<string, unknown>>;
+    actions: Array<Record<string, unknown>>;
+  };
+  const num = (x: unknown) => (x == null ? 0 : Number(x));
+  const mapCompany = (c: Record<string, unknown>): CashflowTopCompany => ({
+    companyId: (c.company_id as number | null) ?? null,
+    companyName: (c.company_name as string | null) ?? null,
+    totalOverdueMxn: num(c.total_overdue_mxn),
+    nInvoices: num(c.n_invoices),
+    maxDaysOverdue: num(c.max_days_overdue),
+    avgDaysOverdue: num(c.avg_days_overdue),
+    collectionProbability14d: c.collection_probability_14d != null ? num(c.collection_probability_14d) : undefined,
+    expectedCollection14dMxn: c.expected_collection_14d_mxn != null ? num(c.expected_collection_14d_mxn) : undefined,
+  });
+  return {
+    computedAt: r.computed_at,
+    metrics: {
+      effectiveCashMxn: num(r.metrics.effective_cash_mxn),
+      apOverdueMxn: num(r.metrics.ap_overdue_mxn),
+      arOverdueMxn: num(r.metrics.ar_overdue_mxn),
+      liquidityGapMxn: num(r.metrics.liquidity_gap_mxn),
+      apOverdueCoverageRatio: r.metrics.ap_overdue_coverage_ratio != null ? num(r.metrics.ap_overdue_coverage_ratio) : null,
+      runwayWeeksRecurring: r.metrics.runway_weeks_recurring != null ? num(r.metrics.runway_weeks_recurring) : null,
+      burnRateWeeklyMxn: num(r.metrics.burn_rate_weekly_mxn),
+      payrollQuincenalMxn: num(r.metrics.payroll_quincenal_mxn),
+      opexWeeklyMxn: num(r.metrics.opex_weekly_mxn),
+      taxWeeklyMxn: num(r.metrics.tax_weekly_mxn),
+    },
+    topArToCollect: (r.top_ar_to_collect || []).map(mapCompany),
+    topApToNegotiate: (r.top_ap_to_negotiate || []).map(mapCompany),
+    actions: (r.actions || []).map((a) => ({
+      priority: num(a.priority),
+      severity: (a.severity as RecommendationSeverity) || 'MEDIUM',
+      category: (a.category as string) || '',
+      title: (a.title as string) || '',
+      rationale: (a.rationale as string) || '',
+      action: (a.action as string) || '',
+      impactMxn: num(a.impact_mxn),
+    })),
+  };
+}

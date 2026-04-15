@@ -34,6 +34,7 @@ import {
   getWorkingCapital,
   getCashPosition,
   getPlHistory,
+  getCashflowRecommendations,
   getProjectedCashFlow,
   getWorkingCapitalCycle,
   type BankBalance,
@@ -44,6 +45,7 @@ import { formatRelative } from "@/lib/formatters";
 import { PlHistoryChart } from "./_components/pl-history-chart";
 import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
 import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table";
+import { CashflowRecommendations } from "./_components/cashflow-recommendations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -71,6 +73,7 @@ export default function FinanzasPage() {
           { id: "runway", label: "Runway" },
           { id: "kpis", label: "KPIs CFO" },
           { id: "flow", label: "Flujo 30d" },
+          { id: "recommendations", label: "Recomendaciones" },
           { id: "projection", label: "Proyección 13s" },
           { id: "cycle", label: "Ciclo CxT" },
           { id: "pl", label: "P&L 12m" },
@@ -124,6 +127,34 @@ export default function FinanzasPage() {
           </CardContent>
         </Card>
       </div>
+      </section>
+
+      <section id="recommendations" className="scroll-mt-24">
+      {/* Recomendaciones ejecutivas basadas en la situación de liquidez */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">
+            Recomendaciones del director financiero
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Análisis automático de liquidez, acciones priorizadas por impacto,
+            top clientes a cobrar y top proveedores a negociar.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense
+            fallback={
+              <div className="space-y-3">
+                <Skeleton className="h-[80px] rounded-xl" />
+                <Skeleton className="h-[120px] rounded-xl" />
+                <Skeleton className="h-[200px] rounded-xl" />
+              </div>
+            }
+          >
+            <RecommendationsSection />
+          </Suspense>
+        </CardContent>
+      </Card>
       </section>
 
       <section id="projection" className="scroll-mt-24">
@@ -908,4 +939,21 @@ function formatSign(n: number): string {
     maximumFractionDigits: 1,
   }).format(abs);
   return `${sign}${compact}`;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Recommendations Section
+// ──────────────────────────────────────────────────────────────────────────
+async function RecommendationsSection() {
+  const data = await getCashflowRecommendations();
+  if (!data) {
+    return (
+      <EmptyState
+        icon={AlertTriangle}
+        title="Sin recomendaciones"
+        description="La RPC get_cashflow_recommendations no devolvió resultados."
+      />
+    );
+  }
+  return <CashflowRecommendations data={data} />;
 }
