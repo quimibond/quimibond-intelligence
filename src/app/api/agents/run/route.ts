@@ -187,87 +187,17 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ── Context builder (same as orchestrator) ─────────────────────────────
+// ── Context builder ────────────────────────────────────────────────────
+// NOTE (audit 2026-04-15): the legacy sales/finance/operations/relationships/
+// risk/growth/data_quality/odoo/meta switch cases were removed. Those domains
+// belonged to agents that were deactivated on 2026-04-05. The active 7 directors
+// (comercial, financiero, operaciones_dir, compras, costos, riesgo_dir,
+// equipo_dir) route through /api/agents/orchestrate which has the full rich
+// context (director briefings, memories, feedback loops, email intel, etc).
+//
+// This endpoint is kept as a thin shim for any legacy webhook / external caller.
+// Manual UI triggers should hit /api/agents/orchestrate directly.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function buildContext(supabase: any, domain: string): Promise<string> {
-  switch (domain) {
-    case "sales": {
-      const [orders, leads, topClients] = await Promise.all([
-        supabase.from("odoo_order_lines").select("company_id, product_name, subtotal_mxn, order_date").eq("order_type", "sale").order("order_date", { ascending: false }).limit(30),
-        supabase.from("odoo_crm_leads").select("*").eq("active", true),
-        supabase.from("companies").select("id, name, lifetime_value, trend_pct").eq("is_customer", true).not("lifetime_value", "is", null).order("lifetime_value", { ascending: false }).limit(15),
-      ]);
-      return `## Ventas\n${JSON.stringify(orders.data?.slice(0, 20))}\n\n## CRM\n${JSON.stringify(leads.data)}\n\n## Top clientes\n${JSON.stringify(topClients.data)}`;
-    }
-    case "finance": {
-      const [invoices, overdue] = await Promise.all([
-        supabase.from("odoo_invoices").select("company_id, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue").eq("move_type", "out_invoice").order("days_overdue", { ascending: false }).limit(30),
-        supabase.from("companies").select("id, name, total_pending, lifetime_value").not("total_pending", "is", null).gt("total_pending", 0).order("total_pending", { ascending: false }).limit(20),
-      ]);
-      return `## Facturas\n${JSON.stringify(invoices.data)}\n\n## Empresas con saldo\n${JSON.stringify(overdue.data)}`;
-    }
-    case "operations": {
-      const [deliveries, products] = await Promise.all([
-        supabase.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date").order("scheduled_date", { ascending: false }).limit(30),
-        supabase.from("odoo_products").select("name, stock_qty, available_qty, reorder_min").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(20),
-      ]);
-      return `## Entregas\n${JSON.stringify(deliveries.data)}\n\n## Inventario critico\n${JSON.stringify(products.data)}`;
-    }
-    case "relationships": {
-      const [contacts, threads] = await Promise.all([
-        supabase.from("contacts").select("id, name, email, risk_level, sentiment_score, current_health_score, last_activity").eq("contact_type", "external").order("current_health_score", { ascending: true, nullsFirst: false }).limit(20),
-        supabase.from("threads").select("subject, status, hours_without_response, company_id").in("status", ["needs_response", "stalled"]).limit(15),
-      ]);
-      return `## Contactos\n${JSON.stringify(contacts.data)}\n\n## Threads sin respuesta\n${JSON.stringify(threads.data)}`;
-    }
-    case "risk": {
-      const [overdueInv, atRisk] = await Promise.all([
-        supabase.from("odoo_invoices").select("company_id, amount_residual_mxn, days_overdue").gt("days_overdue", 30).eq("move_type", "out_invoice").order("amount_residual_mxn", { ascending: false }).limit(15),
-        supabase.from("contacts").select("id, name, risk_level, current_health_score").in("risk_level", ["high", "critical"]).limit(15),
-      ]);
-      return `## Facturas vencidas\n${JSON.stringify(overdueInv.data)}\n\n## Contactos en riesgo\n${JSON.stringify(atRisk.data)}`;
-    }
-    case "growth": {
-      const [topClients] = await Promise.all([
-        supabase.from("companies").select("id, name, lifetime_value, trend_pct").eq("is_customer", true).not("lifetime_value", "is", null).order("lifetime_value", { ascending: false }).limit(20),
-      ]);
-      return `## Top clientes\n${JSON.stringify(topClients.data)}`;
-    }
-    case "data_quality": {
-      const checks = await Promise.all([
-        supabase.from("emails").select("id", { count: "exact", head: true }).is("sender_contact_id", null),
-        supabase.from("emails").select("id", { count: "exact", head: true }).is("company_id", null),
-        supabase.from("emails").select("id", { count: "exact", head: true }).eq("kg_processed", false),
-        supabase.from("emails").select("id", { count: "exact", head: true }),
-        supabase.from("contacts").select("id", { count: "exact", head: true }).is("name", null),
-        supabase.from("contacts").select("id", { count: "exact", head: true }),
-        supabase.from("companies").select("id", { count: "exact", head: true }).is("entity_id", null),
-        supabase.from("companies").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null),
-        supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }).is("company_id", null),
-      ]);
-      return `## Data Quality\n- Emails sin contacto: ${checks[0].count}/${checks[3].count}\n- Emails sin empresa: ${checks[1].count}\n- Emails sin procesar: ${checks[2].count}\n- Contactos sin nombre: ${checks[4].count}/${checks[5].count}\n- Empresas sin entity: ${checks[6].count}/${checks[7].count}\n- Invoices sin company: ${checks[8].count}\n- Orders sin company: ${checks[9].count}`;
-    }
-    case "odoo": {
-      const [users, products, orders, invoices, deliveries, leads, activities] = await Promise.all([
-        supabase.from("odoo_users").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_products").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_invoices").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_deliveries").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_crm_leads").select("id", { count: "exact", head: true }),
-        supabase.from("odoo_activities").select("id", { count: "exact", head: true }),
-      ]);
-      return `## Odoo Sync Status\n- Users: ${users.count}\n- Products: ${products.count}\n- Orders: ${orders.count}\n- Invoices: ${invoices.count}\n- Deliveries: ${deliveries.count}\n- CRM: ${leads.count}\n- Activities: ${activities.count}\n\n## No sincronizado\nhr.employee, hr.department, account.payment.term, res.partner.category, mail.message, mrp.bom, sale.order headers, purchase.order headers`;
-    }
-    case "meta": {
-      const [runs, insights] = await Promise.all([
-        supabase.from("agent_runs").select("agent_id, status, insights_generated").order("started_at", { ascending: false }).limit(20),
-        supabase.from("agent_insights").select("agent_id, severity, state, confidence, was_useful").order("created_at", { ascending: false }).limit(30),
-      ]);
-      return `## Runs\n${JSON.stringify(runs.data)}\n\n## Insights\n${JSON.stringify(insights.data)}`;
-    }
-    default:
-      return "";
-  }
+async function buildContext(_supabase: any, _domain: string): Promise<string> {
+  return "";
 }
