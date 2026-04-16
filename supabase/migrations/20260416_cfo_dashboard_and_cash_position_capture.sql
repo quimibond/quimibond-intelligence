@@ -144,8 +144,8 @@ WITH
   ),
   ar AS (
     SELECT
-      COALESCE(SUM(amount_residual), 0)::numeric AS cuentas_por_cobrar,
-      COALESCE(SUM(amount_residual) FILTER (WHERE days_overdue > 0), 0)::numeric AS cartera_vencida,
+      COALESCE(SUM(COALESCE(amount_residual_mxn, amount_residual)), 0)::numeric AS cuentas_por_cobrar,
+      COALESCE(SUM(COALESCE(amount_residual_mxn, amount_residual)) FILTER (WHERE days_overdue > 0), 0)::numeric AS cartera_vencida,
       COUNT(DISTINCT odoo_partner_id) FILTER (WHERE days_overdue > 0)::int AS clientes_morosos
     FROM odoo_invoices
     WHERE move_type = 'out_invoice'
@@ -153,7 +153,7 @@ WITH
       AND amount_residual > 0
   ),
   ap AS (
-    SELECT COALESCE(SUM(amount_residual), 0)::numeric AS cuentas_por_pagar
+    SELECT COALESCE(SUM(COALESCE(amount_residual_mxn, amount_residual)), 0)::numeric AS cuentas_por_pagar
     FROM odoo_invoices
     WHERE move_type = 'in_invoice'
       AND payment_state IN ('not_paid', 'partial')
