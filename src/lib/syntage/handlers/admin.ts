@@ -13,9 +13,22 @@ export async function handleLinkEvent(_ctx: HandlerCtx, _event: SyntageEvent): P
   // Intentionally empty. Log-only event.
 }
 
-/** extraction.created / extraction.updated — upsert into syntage_extractions. */
+/**
+ * Handles extraction.created / extraction.updated events.
+ *
+ * Syntage's real Extraction schema per OpenAPI:
+ *   { id, taxpayer, extractor, options, status, startedAt, finishedAt,
+ *     rateLimitedAt, errorCode, createdDataPoints, updatedDataPoints,
+ *     createdAt, updatedAt }
+ *
+ * We need taxpayer_rfc + odoo_company_id non-null because syntage_extractions
+ * has NOT NULL constraints on those. ctx supplies them.
+ */
 export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
   const obj = event.data.object as Record<string, unknown>;
+
+  const createdDP = typeof obj.createdDataPoints === "number" ? obj.createdDataPoints : 0;
+  const updatedDP = typeof obj.updatedDataPoints === "number" ? obj.updatedDataPoints : 0;
 
   const row: Record<string, unknown> = {
     syntage_id:       obj.id ?? obj["@id"],
@@ -26,11 +39,15 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
     status:           obj.status ?? "pending",
     started_at:       obj.startedAt ?? null,
     finished_at:      obj.finishedAt ?? null,
-    rows_produced:    obj.rowsProduced ?? 0,
-    error:            obj.error ?? null,
+    rows_produced:    createdDP + updatedDP,
+    error:            obj.errorCode ?? null,
     raw_payload:      obj,
     updated_at:       new Date().toISOString(),
   };
+
+  if (!row.syntage_id) {
+    throw new Error("extraction event missing id");
+  }
 
   const { error } = await ctx.supabase
     .from("syntage_extractions")
@@ -38,7 +55,18 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
   if (error) throw error;
 }
 
-/** file.created — record metadata; binary download is enqueued separately (Phase future). */
+/**
+ * Handles file.created events. Stores metadata; binary download happens in a
+ * separate worker (Phase 3+).
+ *
+ * Syntage's real File schema per OpenAPI:
+ *   { id, type, resource, mimeType, extension, size, filename,
+ *     createdAt, updatedAt }
+ *
+ * Notably: no downloadUrl in the webhook — content is fetched via
+ * GET /files/{id}/download. The taxpayerId is not on File either; we populate
+ * from ctx (the webhook envelope's taxpayer).
+ */
 export async function handleFileCreatedEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
   const obj = event.data.object as Record<string, unknown>;
 
@@ -46,13 +74,18 @@ export async function handleFileCreatedEvent(ctx: HandlerCtx, event: SyntageEven
     syntage_id:                  obj.id ?? obj["@id"],
     taxpayer_rfc:                ctx.taxpayerRfc,
     odoo_company_id:             ctx.odooCompanyId,
-    file_type:                   obj.fileType ?? "unknown",
+    file_type:                   obj.type ?? "unknown",
     filename:                    obj.filename ?? null,
     mime_type:                   obj.mimeType ?? null,
-    size_bytes:                  obj.sizeBytes ?? null,
-    download_url_cached_until:   obj.downloadUrlCachedUntil ?? null,
+    size_bytes:                  obj.size ?? null,
+    storage_path:                null, // populated later by download worker
+    download_url_cached_until:   null, // not provided by Syntage webhook
     raw_payload:                 obj,
   };
+
+  if (!row.syntage_id) {
+    throw new Error("file.created event missing id");
+  }
 
   const { error } = await ctx.supabase
     .from("syntage_files")
