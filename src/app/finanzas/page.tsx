@@ -42,6 +42,7 @@ import {
   getPartnerPaymentProfiles,
   getJournalFlowProfiles,
   getAccountPaymentProfiles,
+  getArZombies,
   type BankBalance,
   type PlPoint,
 } from "@/lib/queries/finance";
@@ -287,10 +288,15 @@ async function RunwaySection() {
   const runway = await getFinancialRunway();
   if (!runway) return null;
 
+  // Usa el MÍNIMO entre runway neto (con AR esperada) y cash-only (peor caso).
+  // El banner tonea por el peor caso para no dar falsa sensación de liquidez —
+  // "23 días si cobro todo" vs "7 días si no cobro nada" es una diferencia
+  // que el CEO necesita ver antes de tomar decisiones.
+  const worstDays = Math.min(runway.runwayDaysNet, runway.runwayDaysCashOnly);
   const tone =
-    runway.runwayDaysNet <= 7
+    worstDays <= 7
       ? "danger"
-      : runway.runwayDaysNet <= 30
+      : worstDays <= 30
         ? "warning"
         : "success";
 
@@ -311,17 +317,32 @@ async function RunwaySection() {
       <div className="flex items-start gap-3 px-4 py-3">
         <Flame className={`h-5 w-5 shrink-0 ${iconColor}`} aria-hidden />
         <div className="flex-1 min-w-0">
-          <div className="flex items-baseline gap-2">
-            <span className={`text-2xl font-bold tabular-nums ${iconColor}`}>
-              {runway.runwayDaysNet}
-            </span>
-            <span className="text-sm font-medium">días de runway</span>
+          <div className="flex items-baseline flex-wrap gap-x-3 gap-y-1">
+            <div className="flex items-baseline gap-2">
+              <span className={`text-2xl font-bold tabular-nums ${iconColor}`}>
+                {runway.runwayDaysCashOnly}
+              </span>
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                días cash-only
+              </span>
+            </div>
+            <span className="text-muted-foreground">·</span>
+            <div className="flex items-baseline gap-2">
+              <span className="text-lg font-semibold tabular-nums">
+                {runway.runwayDaysNet}
+              </span>
+              <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                días con AR esperada
+              </span>
+            </div>
           </div>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Burn diario{" "}
             <Currency amount={runway.burnRateDaily} compact /> · Posición neta
             30d{" "}
-            <Currency amount={runway.netPosition30d} compact colorBySign />
+            <Currency amount={runway.netPosition30d} compact colorBySign /> ·
+            ver sección <a className="underline" href="#projection">Proyección 13s</a>
+            {" "}para flujo semanal.
           </p>
           {runway.computedAt && (
             <p className="text-[10px] text-muted-foreground">
@@ -338,7 +359,10 @@ async function RunwaySection() {
 // CFO KPI grid
 // ──────────────────────────────────────────────────────────────────────────
 async function CfoKpisSection() {
-  const cfo = await getCfoSnapshot();
+  const [cfo, zombies] = await Promise.all([
+    getCfoSnapshot(),
+    getArZombies(),
+  ]);
   if (!cfo) {
     return (
       <EmptyState
@@ -349,10 +373,17 @@ async function CfoKpisSection() {
     );
   }
 
+  // Separa cartera cobrable real de zombies (>1 año): da al CEO visibilidad
+  // sobre qué parte del total es viable vs qué debería write-off.
+  const carteraCobrable = Math.max(0, cfo.carteraVencida - zombies.totalMxn);
+  const zombieHint = zombies.count > 0
+    ? `${zombies.count} facturas >1 año · ${(zombies.totalMxn / 1000).toFixed(0)}K incobrable`
+    : undefined;
+
   return (
     <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
-        title="Efectivo disponible"
+        title="Efectivo operativo"
         value={cfo.efectivoTotalMxn}
         format="currency"
         compact
@@ -379,11 +410,15 @@ async function CfoKpisSection() {
       />
       <KpiCard
         title="Cartera vencida"
-        value={cfo.carteraVencida}
+        value={carteraCobrable}
         format="currency"
         compact
         icon={AlertTriangle}
-        subtitle={`${cfo.clientesMorosos} clientes morosos`}
+        subtitle={
+          zombieHint
+            ? `${cfo.clientesMorosos} morosos · ${zombieHint}`
+            : `${cfo.clientesMorosos} clientes morosos`
+        }
         tone="danger"
         href="/cobranza"
       />
@@ -453,10 +488,11 @@ async function WorkingCapitalSection() {
   return (
     <div className="space-y-1">
       <MetricRow
-        label="Capital de trabajo"
+        label="Capital de trabajo financiero"
         value={wc.capitalDeTrabajo}
         format="currency"
         compact
+        hint="efectivo + CxC − CxP"
       />
       <MetricRow
         label="Ratio de liquidez"
@@ -705,8 +741,9 @@ async function WorkingCapitalCycleSection() {
           }
         />
         <MetricRow
-          label="Capital atrapado"
+          label="Capital atrapado operativo"
           value={<Currency amount={wcc.workingCapitalMxn} compact />}
+          hint="AR + inventario − AP"
         />
       </div>
 

@@ -24,12 +24,23 @@
 -- Esta migración captura el estado real del DB para que el schema esté
 -- reproducible y para cerrar el drift.
 --
--- Formulas validadas contra datos reales (2026-04-16 19:00 UTC):
---   efectivo_mxn          = 1,049,991  (SUM current_balance_mxn WHERE currency='MXN' AND current_balance > 0)
---   efectivo_usd          = 179,031    (SUM current_balance      WHERE currency='USD' AND current_balance > 0)
---   efectivo_total_mxn    = 4,218,436  (SUM current_balance_mxn  WHERE current_balance_mxn > 0)
---   deuda_tarjetas        = 55,809     (ABS(SUM current_balance_mxn) WHERE current_balance_mxn < 0)
---   posicion_neta         = 4,162,627  (= efectivo_total_mxn − deuda_tarjetas)
+-- Formulas validadas contra datos reales (2026-04-16 19:00 UTC).
+--
+-- FX live (odoo_currency_rates más reciente) vs FX histórico de ledger:
+-- cfo_dashboard ahora usa SIEMPRE FX live (mark-to-market) para ser
+-- consistente con cashflow_current_cash (projection 13s). Antes mezclaba
+-- current_balance_mxn (histórico ponderado) con cash_operative_mxn (live)
+-- dando "efectivo disponible" de 4.22M arriba y 3.66M abajo.
+--
+-- Con FX live actual (USD=17.2688):
+--   efectivo_mxn          ≈ 1,049,991  (solo journals MXN con saldo>0)
+--   efectivo_usd          =   179,031  USD nativo
+--   efectivo_total_mxn    ≈ 4,141,408  (= efectivo_mxn + 179,031 × 17.2688)
+--   deuda_tarjetas        ≈    55,809  (TJA Jeeves, MXN)
+--   posicion_neta         ≈ 4,085,599  (= efectivo_total_mxn − deuda_tarjetas)
+--
+-- Nota: posicion_neta ahora coincide con working_capital.efectivo_neto
+-- (que también usa el valor native * live vía current_balance positivo).
 --
 -- También re-crea cash_position con saldo_mxn (que ya depende del sync
 -- push de qb19 sobre odoo_bank_balances.current_balance_mxn).
@@ -45,16 +56,45 @@ DROP VIEW IF EXISTS cash_position CASCADE;
 -- ═══════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE VIEW cash_position AS
+WITH
+  latest_usd AS (
+    SELECT COALESCE(
+      (SELECT rate FROM odoo_currency_rates WHERE currency = 'USD'
+         ORDER BY rate_date DESC NULLS LAST LIMIT 1),
+      17.30
+    ) AS rate
+  ),
+  latest_eur AS (
+    SELECT COALESCE(
+      (SELECT rate FROM odoo_currency_rates WHERE currency = 'EUR'
+         ORDER BY rate_date DESC NULLS LAST LIMIT 1),
+      20.00
+    ) AS rate
+  )
 SELECT
-  name                 AS banco,
-  journal_type         AS tipo,        -- 'bank' | 'cash' | 'credit' (qb19 >= Abr-2026)
-  currency             AS moneda,
-  bank_account         AS cuenta,
-  current_balance      AS saldo,       -- nativo de la moneda del journal
-  current_balance_mxn  AS saldo_mxn,   -- convertido a MXN (company currency)
-  updated_at           AS actualizado
-FROM odoo_bank_balances
-ORDER BY current_balance_mxn DESC NULLS LAST;
+  b.name            AS banco,
+  b.journal_type    AS tipo,          -- 'bank' | 'cash' | 'credit' (qb19 >= Abr-2026)
+  b.currency        AS moneda,
+  b.bank_account    AS cuenta,
+  b.current_balance AS saldo,         -- nativo de la moneda del journal
+  -- saldo_mxn: nativo × FX live. Asegura consistencia con cfo_dashboard
+  -- y cashflow_current_cash (projection). Anteriormente usaba
+  -- current_balance_mxn (FX histórico del ledger Odoo), que divergía ~2.5%
+  -- de la tasa spot y causaba drift entre KPI y proyección.
+  ROUND(
+    CASE UPPER(COALESCE(b.currency, 'MXN'))
+      WHEN 'USD' THEN b.current_balance * (SELECT rate FROM latest_usd)
+      WHEN 'EUR' THEN b.current_balance * (SELECT rate FROM latest_eur)
+      ELSE b.current_balance
+    END::numeric, 2) AS saldo_mxn,
+  b.updated_at      AS actualizado
+FROM odoo_bank_balances b
+ORDER BY
+  CASE UPPER(COALESCE(b.currency, 'MXN'))
+    WHEN 'USD' THEN b.current_balance * (SELECT rate FROM latest_usd)
+    WHEN 'EUR' THEN b.current_balance * (SELECT rate FROM latest_eur)
+    ELSE b.current_balance
+  END DESC NULLS LAST;
 
 COMMENT ON VIEW cash_position IS
   'Saldos bancarios en moneda nativa + MXN canónico. saldo_mxn es la fuente para aggregations de efectivo. Usado por /finanzas Posición de caja.';
@@ -67,13 +107,40 @@ COMMENT ON VIEW cash_position IS
 
 CREATE OR REPLACE VIEW cfo_dashboard AS
 WITH
+  latest_usd AS (
+    SELECT COALESCE(
+      (SELECT rate FROM odoo_currency_rates WHERE currency = 'USD'
+         ORDER BY rate_date DESC NULLS LAST LIMIT 1),
+      17.30  -- fallback conservador si no hay sync de FX
+    ) AS rate
+  ),
+  latest_eur AS (
+    SELECT COALESCE(
+      (SELECT rate FROM odoo_currency_rates WHERE currency = 'EUR'
+         ORDER BY rate_date DESC NULLS LAST LIMIT 1),
+      20.00
+    ) AS rate
+  ),
+  -- Marca-a-mercado cada journal: native × rate live. Coincide con
+  -- cashflow_current_cash de 20260415_projected_cash_flow_v2.
+  bank AS (
+    SELECT
+      b.currency,
+      b.current_balance AS native,
+      CASE UPPER(COALESCE(b.currency, 'MXN'))
+        WHEN 'USD' THEN b.current_balance * (SELECT rate FROM latest_usd)
+        WHEN 'EUR' THEN b.current_balance * (SELECT rate FROM latest_eur)
+        ELSE b.current_balance
+      END AS mxn_live
+    FROM odoo_bank_balances b
+  ),
   cash AS (
     SELECT
-      COALESCE(SUM(current_balance_mxn) FILTER (WHERE currency = 'MXN' AND current_balance > 0), 0)::numeric AS efectivo_mxn,
-      COALESCE(SUM(current_balance)     FILTER (WHERE currency = 'USD' AND current_balance > 0), 0)::numeric AS efectivo_usd,
-      COALESCE(SUM(current_balance_mxn) FILTER (WHERE current_balance_mxn > 0), 0)::numeric                  AS efectivo_total_mxn,
-      COALESCE(ABS(SUM(current_balance_mxn) FILTER (WHERE current_balance_mxn < 0)), 0)::numeric             AS deuda_tarjetas
-    FROM odoo_bank_balances
+      COALESCE(SUM(mxn_live) FILTER (WHERE currency = 'MXN' AND native > 0), 0)::numeric AS efectivo_mxn,
+      COALESCE(SUM(native)   FILTER (WHERE currency = 'USD' AND native > 0), 0)::numeric AS efectivo_usd,
+      COALESCE(SUM(mxn_live) FILTER (WHERE mxn_live > 0), 0)::numeric                    AS efectivo_total_mxn,
+      COALESCE(ABS(SUM(mxn_live) FILTER (WHERE mxn_live < 0)), 0)::numeric               AS deuda_tarjetas
+    FROM bank
   ),
   ar AS (
     SELECT

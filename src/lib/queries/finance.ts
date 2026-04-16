@@ -67,6 +67,35 @@ export async function getCfoSnapshot(): Promise<CfoSnapshot | null> {
   };
 }
 
+/** AR zombies: facturas out_invoice vencidas >1 año que siguen abiertas.
+ *  Se restan visualmente de "cartera vencida cobrable" para que el CEO
+ *  vea por separado cartera real vs incobrable/write-off pendiente. */
+export interface ArZombies {
+  count: number;
+  totalMxn: number;
+}
+
+export async function getArZombies(): Promise<ArZombies> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("odoo_invoices")
+    .select("amount_residual,amount_residual_mxn")
+    .eq("move_type", "out_invoice")
+    .eq("state", "posted")
+    .in("payment_state", ["not_paid", "partial"])
+    .gt("amount_residual", 0)
+    .gte("days_overdue", 365);
+  const rows = (data ?? []) as Array<{
+    amount_residual: number | null;
+    amount_residual_mxn: number | null;
+  }>;
+  const totalMxn = rows.reduce(
+    (s, r) => s + (Number(r.amount_residual_mxn ?? r.amount_residual) || 0),
+    0,
+  );
+  return { count: rows.length, totalMxn };
+}
+
 /** Runway + net position 30d (view: financial_runway) */
 export interface FinancialRunway {
   cashMxn: number;
