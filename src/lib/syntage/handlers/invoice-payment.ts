@@ -18,7 +18,7 @@ interface SyntageInvoicePaymentPayload {
 }
 
 export async function handleInvoicePaymentEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
-  const obj = event.data.object as SyntageInvoicePaymentPayload;
+  const obj = event.data.object as unknown as SyntageInvoicePaymentPayload;
   const isCancellation = event.type === "invoice_payment.deleted";
 
   const row: Record<string, unknown> = {

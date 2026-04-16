@@ -16,7 +16,7 @@ interface LineItemPayload {
 }
 
 export async function handleInvoiceLineItemEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
-  const obj = event.data.object as LineItemPayload;
+  const obj = event.data.object as unknown as LineItemPayload;
 
   const row: Record<string, unknown> = {
     syntage_id:       obj["@id"],

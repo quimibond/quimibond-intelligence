@@ -5,7 +5,7 @@ import type { HandlerCtx, SyntageEvent, SyntageInvoicePayload } from "@/lib/synt
  * Upserts to syntage_invoices with denormalized columns + raw_payload.
  */
 export async function handleInvoiceEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
-  const obj = event.data.object as SyntageInvoicePayload;
+  const obj = event.data.object as unknown as SyntageInvoicePayload;
 
   const isCancellation = event.type === "invoice.deleted";
 
