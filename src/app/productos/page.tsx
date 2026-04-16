@@ -986,6 +986,14 @@ const deadStockColumns: DataTableColumn<DeadStockRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.inventory_value} compact />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold text-warning">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.inventory_value ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "last_sale",

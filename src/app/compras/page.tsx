@@ -1344,6 +1344,12 @@ const stockoutColumns: DataTableColumn<StockoutRow>[] = [
     cell: (r) => <Currency amount={r.replenish_cost_mxn} compact />,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.replenish_cost_mxn ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "risk",
@@ -1355,6 +1361,17 @@ const stockoutColumns: DataTableColumn<StockoutRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold text-danger">
+        <Currency
+          amount={rows.reduce(
+            (s, r) => s + (r.revenue_at_risk_30d_mxn ?? 0),
+            0
+          )}
+          compact
+        />
+      </span>
+    ),
   },
 ];
 

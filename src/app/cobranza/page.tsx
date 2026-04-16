@@ -663,6 +663,14 @@ const paymentColumns: DataTableColumn<PaymentPredictionRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold text-danger">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_pending ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
 ];
 

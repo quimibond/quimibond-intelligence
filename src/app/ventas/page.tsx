@@ -656,6 +656,12 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.revenue_90d} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.revenue_90d ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "revenue_total",
@@ -664,6 +670,15 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
     defaultHidden: true,
     cell: (r) => <Currency amount={r.total_revenue_lifetime} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce(
+          (s, r) => s + (r.total_revenue_lifetime ?? 0),
+          0
+        )}
+        compact
+      />
+    ),
   },
   {
     key: "margin_12m",
@@ -672,6 +687,12 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
       r.margin_12m != null ? <Currency amount={r.margin_12m} compact /> : "—",
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.margin_12m ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "margin_pct",
