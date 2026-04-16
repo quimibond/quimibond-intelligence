@@ -397,7 +397,7 @@ async function CfoKpisSection() {
 async function FlowSection() {
   const cfo = await getCfoSnapshot();
   if (!cfo) return null;
-  const neto = cfo.ventas30d - cfo.pagosProv30d;
+  const neto = cfo.ventas30d + cfo.pagosProv30d;
   return (
     <div className="space-y-1">
       <MetricRow
