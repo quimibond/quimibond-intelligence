@@ -535,17 +535,26 @@ async function SingleSourceTable({
   }
   const view = parseViewParam(searchParams, "ss_view");
   const chart: DataViewChartSpec = {
-    type: "bar",
-    xKey: "product_ref",
-    topN: 15,
+    type: "scatter",
+    xKey: "total_spent_12m",
+    yKey: "top_supplier_share_pct",
     series: [
-      {
-        dataKey: "total_spent_12m",
-        label: "Gasto 12m",
-        color: "var(--warning)",
-      },
+      { dataKey: "total_spent_12m", label: "Gasto 12m" },
+      { dataKey: "top_supplier_share_pct", label: "% concentración" },
     ],
     valueFormat: "currency-compact",
+    secondaryValueFormat: "percent",
+    colorBy: "concentration_level",
+    colorMap: {
+      single_source: "var(--destructive)",
+      very_high: "var(--chart-4)",
+      high: "var(--chart-3)",
+    },
+    referenceLine: {
+      value: 90,
+      axis: "y",
+      label: "90% crítico",
+    },
   };
   return (
     <>
@@ -798,17 +807,35 @@ async function PriceAnomaliesTable({
   }
   const view = parseViewParam(searchParams, "pa_view");
   const chart: DataViewChartSpec = {
-    type: "bar",
+    type: "composed",
     xKey: "product_ref",
     topN: 15,
     series: [
       {
         dataKey: "price_vs_avg_pct",
         label: "% vs promedio",
-        color: "var(--danger)",
+        kind: "bar",
+        yAxisId: "left",
+      },
+      {
+        dataKey: "price_change_pct",
+        label: "Δ MoM %",
+        kind: "line",
+        yAxisId: "right",
+        color: "var(--chart-5)",
       },
     ],
     valueFormat: "percent",
+    secondaryValueFormat: "percent",
+    colorBy: "price_flag",
+    colorMap: {
+      price_above_avg: "var(--destructive)",
+      price_below_avg: "var(--chart-2)",
+    },
+    referenceLine: {
+      value: 0,
+      axis: "y",
+    },
   };
   return (
     <>
@@ -1352,17 +1379,29 @@ async function StockoutsSection({
   }
   const view = parseViewParam(searchParams, "so_view");
   const chart: DataViewChartSpec = {
-    type: "bar",
-    xKey: "product_ref",
-    topN: 15,
+    type: "scatter",
+    xKey: "days_of_stock",
+    yKey: "revenue_at_risk_30d_mxn",
+    sizeKey: "suggested_order_qty",
     series: [
-      {
-        dataKey: "revenue_at_risk_30d_mxn",
-        label: "Revenue en riesgo 30d",
-        color: "var(--danger)",
-      },
+      { dataKey: "days_of_stock", label: "Días de stock" },
+      { dataKey: "revenue_at_risk_30d_mxn", label: "Revenue en riesgo" },
     ],
-    valueFormat: "currency-compact",
+    valueFormat: "number",
+    secondaryValueFormat: "currency-compact",
+    colorBy: "urgency",
+    colorMap: {
+      STOCKOUT: "var(--destructive)",
+      CRITICAL: "var(--chart-4)",
+      URGENT: "var(--chart-3)",
+      ATTENTION: "var(--chart-2)",
+      OK: "var(--chart-1)",
+    },
+    referenceLine: {
+      value: 7,
+      axis: "x",
+      label: "7d crítico",
+    },
   };
   return (
     <DataView
@@ -1569,14 +1608,23 @@ async function VarianceMarketSection({
     type: "bar",
     xKey: "label",
     topN: 15,
+    layout: "horizontal",
     series: [
       {
         dataKey: "overpaid_mxn",
         label: "Sobreprecio MXN",
-        color: "var(--danger)",
       },
     ],
     valueFormat: "currency-compact",
+    colorBy: "price_flag",
+    colorMap: {
+      single_source: "var(--chart-5)",
+      overpriced: "var(--destructive)",
+      above_market: "var(--chart-4)",
+      aligned: "var(--chart-3)",
+      below_market: "var(--chart-2)",
+    },
+    height: 480,
   };
   return (
     <DataView

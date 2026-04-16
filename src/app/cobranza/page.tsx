@@ -705,23 +705,39 @@ async function PaymentRiskTable({
     );
   }
   const view = parseViewParam(searchParams, "pr_view");
-  // Rows pre-formatted with a chart-friendly label (capitalized name).
+  // Rows pre-formatted with chart-friendly label + risk tier for colorBy.
   const chartRows = rows.map((r) => ({
     ...r,
     company_label: r.company_name ? capitalize(r.company_name) : "—",
+    risk_tier: riskShortLabel(r.payment_risk),
   }));
   const chart: DataViewChartSpec = {
-    type: "bar",
+    type: "composed",
     xKey: "company_label",
     topN: 15,
     series: [
       {
         dataKey: "total_pending",
         label: "Pendiente",
-        color: "var(--danger)",
+        kind: "bar",
+        yAxisId: "left",
+      },
+      {
+        dataKey: "max_days_overdue",
+        label: "Máx días vencido",
+        kind: "line",
+        yAxisId: "right",
+        color: "var(--chart-4)",
       },
     ],
     valueFormat: "currency-compact",
+    secondaryValueFormat: "number",
+    colorBy: "risk_tier",
+    colorMap: {
+      "Crítico": "var(--destructive)",
+      "Alto": "var(--chart-4)",
+      "Medio": "var(--chart-3)",
+    },
   };
   return (
     <>
@@ -1160,17 +1176,26 @@ async function OverdueTable({
   });
   const view = parseViewParam(searchParams, "inv_view");
   const chart: DataViewChartSpec = {
-    type: "bar",
+    type: "composed",
     xKey: "name",
     topN: 15,
     series: [
       {
         dataKey: "amount_residual_mxn",
         label: "Saldo",
-        color: "var(--danger)",
+        kind: "bar",
+        yAxisId: "left",
+      },
+      {
+        dataKey: "days_overdue",
+        label: "Días vencido",
+        kind: "line",
+        yAxisId: "right",
+        color: "var(--chart-4)",
       },
     ],
     valueFormat: "currency-compact",
+    secondaryValueFormat: "number",
   };
   return (
     <>

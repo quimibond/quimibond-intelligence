@@ -636,6 +636,95 @@ export async function getSaleOrderSalespeopleOptions(): Promise<string[]> {
   return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
 }
 
+/** Serie temporal de sale orders para el chart stacked area. */
+export interface SaleOrdersTimelineBucket {
+  week: string;
+  draft: number;
+  sent: number;
+  sale: number;
+  done: number;
+  cancel: number;
+}
+
+function isoMondayKey(date: Date): string {
+  const day = date.getUTCDay();
+  const diffToMonday = day === 0 ? -6 : 1 - day;
+  const monday = new Date(
+    Date.UTC(
+      date.getUTCFullYear(),
+      date.getUTCMonth(),
+      date.getUTCDate() + diffToMonday
+    )
+  );
+  return monday.toISOString().slice(0, 10);
+}
+
+export async function getSaleOrdersTimeline(params: {
+  from?: string | null;
+  to?: string | null;
+  q?: string | null;
+  state?: string[];
+  salesperson?: string[];
+  maxRows?: number;
+}): Promise<SaleOrdersTimelineBucket[]> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+
+  let query = sb
+    .from("odoo_sale_orders")
+    .select("amount_total_mxn, date_order, state")
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.from) query = query.gte("date_order", params.from);
+  if (params.to) {
+    const next = endOfDay(params.to);
+    if (next) query = query.lt("date_order", next);
+  }
+  if (params.q) query = query.ilike("name", `%${params.q}%`);
+  if (params.state && params.state.length > 0) {
+    query = query.in("state", params.state);
+  }
+  if (params.salesperson && params.salesperson.length > 0) {
+    query = query.in("salesperson_name", params.salesperson);
+  }
+
+  const { data } = await query
+    .order("date_order", { ascending: true })
+    .limit(params.maxRows ?? 2000);
+
+  const buckets = new Map<string, SaleOrdersTimelineBucket>();
+  for (const r of (data ?? []) as Array<{
+    amount_total_mxn: number | null;
+    date_order: string | null;
+    state: string | null;
+  }>) {
+    if (!r.date_order) continue;
+    const d = new Date(r.date_order);
+    if (Number.isNaN(d.getTime())) continue;
+    const key = isoMondayKey(d);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = {
+        week: key,
+        draft: 0,
+        sent: 0,
+        sale: 0,
+        done: 0,
+        cancel: 0,
+      };
+      buckets.set(key, bucket);
+    }
+    const amt = Number(r.amount_total_mxn) || 0;
+    const s = (r.state ?? "draft") as keyof SaleOrdersTimelineBucket;
+    if (s !== "week" && s in bucket) {
+      bucket[s] = (bucket[s] as number) + amt;
+    }
+  }
+  return Array.from(buckets.values()).sort((a, b) =>
+    a.week.localeCompare(b.week)
+  );
+}
+
 export async function getRecentSaleOrders(
   limit = 25
 ): Promise<RecentSaleOrder[]> {

@@ -28,6 +28,11 @@ interface DataViewProps<T> {
    * Tabla y Gráfica vía URL searchParam `view`.
    */
   chart?: DataViewChartSpec;
+  /**
+   * Datos para la gráfica cuando difieren de `data` (ej. pre-agregación,
+   * bucketing temporal, enriquecimiento). Si se omite, usa `data`.
+   */
+  chartData?: Record<string, unknown>[];
   /** Vista actual desde la URL (ej. `searchParams.view`). Default "table". */
   view?: DataViewMode;
   /**
@@ -99,6 +104,7 @@ export function DataView<T>({
   data,
   columns,
   chart,
+  chartData,
   view = "table",
   viewHref,
   toolbar,
@@ -122,7 +128,9 @@ export function DataView<T>({
 
       {currentView === "chart" && chart ? (
         <DataViewChart
-          data={data as Record<string, unknown>[]}
+          data={
+            chartData ?? (data as unknown as Record<string, unknown>[])
+          }
           chart={chart}
         />
       ) : (

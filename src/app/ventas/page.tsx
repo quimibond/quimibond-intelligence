@@ -14,6 +14,7 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataView,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -28,6 +29,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +43,7 @@ import {
   getTopCustomersPage,
   getTopSalespeople,
   getSaleOrdersPage,
+  getSaleOrdersTimeline,
   getSaleOrderSalespeopleOptions,
   type ReorderRiskRow,
   type TopCustomerRow,
@@ -60,6 +64,30 @@ export const revalidate = 0;
 export const metadata = { title: "Ventas" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+function buildVentasHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/ventas?${s}` : "/ventas";
+}
+
+function parseViewParam(sp: SearchParams, key: string): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
 
 export default async function VentasPage({
   searchParams,
@@ -248,7 +276,7 @@ export default async function VentasPage({
         </CardHeader>
         <CardContent className="pb-4">
           <Suspense fallback={<Skeleton className="h-[200px] rounded-xl" />}>
-            <SalespeopleTable />
+            <SalespeopleTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -496,11 +524,42 @@ async function ReorderRiskTable({
     searchParams,
     paramPrefix: "rr_",
   });
+  const view = parseViewParam(searchParams, "rr_view");
+  const chart: DataViewChartSpec = {
+    type: "scatter",
+    xKey: "days_overdue_reorder",
+    yKey: "total_revenue",
+    sizeKey: "avg_order_value",
+    series: [
+      { dataKey: "days_overdue_reorder", label: "Días vencido" },
+      { dataKey: "total_revenue", label: "Revenue total" },
+    ],
+    valueFormat: "number",
+    secondaryValueFormat: "currency-compact",
+    colorBy: "status",
+    colorMap: {
+      critical: "var(--destructive)",
+      overdue: "var(--chart-4)",
+      at_risk: "var(--chart-3)",
+    },
+    referenceLine: {
+      value: 0,
+      axis: "x",
+      label: "A tiempo",
+    },
+  };
   return (
     <div className="space-y-3">
-    <DataTable
+    <DataView
       data={rows}
       columns={reorderColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildVentasHref(searchParams, {
+          rr_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.company_id)}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -646,11 +705,41 @@ async function TopCustomersTable({
     searchParams,
     paramPrefix: "tc_",
   });
+  const view = parseViewParam(searchParams, "tc_view");
+  const chart: DataViewChartSpec = {
+    type: "composed",
+    xKey: "company_name",
+    topN: 15,
+    series: [
+      {
+        dataKey: "revenue_90d",
+        label: "Revenue 90d",
+        kind: "bar",
+        yAxisId: "left",
+      },
+      {
+        dataKey: "margin_pct_12m",
+        label: "Margen % 12m",
+        kind: "line",
+        yAxisId: "right",
+        color: "var(--chart-4)",
+      },
+    ],
+    valueFormat: "currency-compact",
+    secondaryValueFormat: "percent",
+  };
   return (
     <div className="space-y-3">
-    <DataTable
+    <DataView
       data={rows}
       columns={customerColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildVentasHref(searchParams, {
+          tc_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.company_id)}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -756,7 +845,15 @@ const salespersonColumns: DataTableColumn<SalespersonRanked>[] = [
   },
 ];
 
-async function SalespeopleTable() {
+interface SalespersonChartRow extends SalespersonRanked {
+  rank_bucket: string;
+}
+
+async function SalespeopleTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const rows = await getTopSalespeople();
   if (rows.length === 0) {
     return (
@@ -768,14 +865,42 @@ async function SalespeopleTable() {
       />
     );
   }
-  const ranked: SalespersonRanked[] = rows.map((r, i) => ({
-    ...r,
-    rank: i + 1,
-  }));
+  const ranked: SalespersonChartRow[] = rows.map((r, i) => {
+    const rank = i + 1;
+    return {
+      ...r,
+      rank,
+      rank_bucket:
+        rank === 1 ? "#1" : rank <= 3 ? "Top 3" : rank <= 5 ? "Top 5" : "Resto",
+    };
+  });
+  const view = parseViewParam(searchParams, "sp_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "name",
+    layout: "horizontal",
+    series: [{ dataKey: "total_amount", label: "Total MXN" }],
+    valueFormat: "currency-compact",
+    colorBy: "rank_bucket",
+    colorMap: {
+      "#1": "var(--chart-4)",
+      "Top 3": "var(--chart-3)",
+      "Top 5": "var(--chart-2)",
+      Resto: "var(--chart-1)",
+    },
+    height: Math.max(260, ranked.length * 28 + 40),
+  };
   return (
-    <DataTable
+    <DataView
       data={ranked}
       columns={salespersonColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildVentasHref(searchParams, {
+          sp_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => r.name}
       mobileCard={(r) => (
         <MobileCard
@@ -911,22 +1036,61 @@ async function RecentOrdersTable({
     defaultSize: 25,
     defaultSort: "-date",
   });
-  const { rows, total } = await getSaleOrdersPage({
-    ...params,
-    state: params.facets.state,
-    salesperson: params.facets.salesperson,
-  });
+  const [{ rows, total }, timeline] = await Promise.all([
+    getSaleOrdersPage({
+      ...params,
+      state: params.facets.state,
+      salesperson: params.facets.salesperson,
+    }),
+    getSaleOrdersTimeline({
+      from: params.from,
+      to: params.to,
+      q: params.q,
+      state: params.facets.state,
+      salesperson: params.facets.salesperson,
+    }),
+  ]);
   const visibleKeys = parseVisibleKeys(searchParams, "so_");
   const sortHref = makeSortHref({
     pathname: "/ventas",
     searchParams,
     paramPrefix: "so_",
   });
+  const view = parseViewParam(searchParams, "so_view");
+  const chart: DataViewChartSpec = {
+    type: "area",
+    xKey: "week",
+    stacked: true,
+    series: [
+      { dataKey: "sale", label: "Confirmado", color: "var(--chart-2)" },
+      { dataKey: "done", label: "Hecho", color: "var(--chart-1)" },
+      { dataKey: "sent", label: "Enviado", color: "var(--chart-3)" },
+      {
+        dataKey: "draft",
+        label: "Borrador",
+        color: "var(--muted-foreground)",
+      },
+      {
+        dataKey: "cancel",
+        label: "Cancelado",
+        color: "var(--destructive)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
     <div className="space-y-3">
-    <DataTable
+    <DataView
       data={rows}
       columns={orderColumns}
+      chart={chart}
+      chartData={timeline as unknown as Record<string, unknown>[]}
+      view={view}
+      viewHref={(next) =>
+        buildVentasHref(searchParams, {
+          so_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.id)}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -996,15 +1160,30 @@ function retentionPct(
   return (cell.active_customers / base) * 100;
 }
 
-function cellBg(pct: number | null): string {
-  if (pct == null) return "bg-muted/20";
-  if (pct >= 90) return "bg-success/40";
-  if (pct >= 70) return "bg-success/25";
-  if (pct >= 50) return "bg-info/25";
-  if (pct >= 30) return "bg-warning/25";
-  if (pct >= 10) return "bg-warning/40";
-  return "bg-danger/30";
+/**
+ * Heatmap cell: gradient single-hue usando `color-mix` contra --chart-2.
+ * Opacidad mapea linealmente el % de retención (0% → 8%, 100% → 88%).
+ * Consistente con la paleta shadcn del resto de gráficas.
+ */
+function cellStyle(pct: number | null): React.CSSProperties {
+  if (pct == null) {
+    return { backgroundColor: "var(--muted)", opacity: 0.3 };
+  }
+  const clamped = Math.max(0, Math.min(100, pct));
+  // Non-linear: acentúa diferencias en el rango bajo (donde está el riesgo).
+  const weight = Math.round(8 + (clamped / 100) * 80);
+  return {
+    backgroundColor: `color-mix(in oklab, var(--chart-2) ${weight}%, transparent)`,
+  };
 }
+
+const COHORT_LEGEND: Array<{ label: string; pct: number }> = [
+  { label: "0%", pct: 0 },
+  { label: "25%", pct: 25 },
+  { label: "50%", pct: 50 },
+  { label: "75%", pct: 75 },
+  { label: "100%", pct: 100 },
+];
 
 async function CohortHeatmapSection() {
   const data = await getCustomerCohorts(36);
@@ -1024,58 +1203,75 @@ async function CohortHeatmapSection() {
 function RetentionTable({ data }: { data: CohortMatrix }) {
   const { cohorts, maxQuarters, matrix, baseSize } = data;
   return (
-    <table className="w-full min-w-[640px] border-collapse text-xs">
-      <thead>
-        <tr>
-          <th className="sticky left-0 z-10 border-b bg-background px-3 py-2 text-left font-semibold">
-            Cohort
-          </th>
-          <th className="border-b bg-background px-2 py-2 text-right font-semibold">
-            #
-          </th>
-          {Array.from({ length: maxQuarters + 1 }).map((_, q) => (
-            <th
-              key={q}
-              className="border-b bg-background px-2 py-2 text-center font-semibold"
-            >
-              Q+{q}
+    <div className="space-y-3">
+      <table className="w-full min-w-[640px] border-collapse text-xs">
+        <thead>
+          <tr>
+            <th className="sticky left-0 top-0 z-20 border-b bg-background px-3 py-2 text-left font-semibold">
+              Cohort
             </th>
-          ))}
-        </tr>
-      </thead>
-      <tbody>
-        {cohorts.map((cohort, i) => (
-          <tr key={cohort}>
-            <td className="sticky left-0 z-10 border-b bg-background px-3 py-2 font-mono">
-              {formatCohortLabel(cohort)}
-            </td>
-            <td className="border-b px-2 py-2 text-right tabular-nums text-muted-foreground">
-              {baseSize[i]}
-            </td>
-            {Array.from({ length: maxQuarters + 1 }).map((_, q) => {
-              const cell = matrix[i][q];
-              const pct = retentionPct(cell, baseSize[i]);
-              return (
-                <td
-                  key={q}
-                  className={`border-b px-2 py-2 text-center tabular-nums ${cellBg(pct)} ${
-                    pct != null
-                      ? "font-semibold text-foreground"
-                      : "text-muted-foreground"
-                  }`}
-                  title={
-                    cell
-                      ? `${cell.active_customers}/${baseSize[i]} clientes activos`
-                      : "Sin data"
-                  }
-                >
-                  {pct != null ? `${pct.toFixed(0)}%` : "—"}
-                </td>
-              );
-            })}
+            <th className="sticky top-0 z-10 border-b bg-background px-2 py-2 text-right font-semibold">
+              #
+            </th>
+            {Array.from({ length: maxQuarters + 1 }).map((_, q) => (
+              <th
+                key={q}
+                className="sticky top-0 z-10 border-b bg-background px-2 py-2 text-center font-semibold"
+              >
+                Q+{q}
+              </th>
+            ))}
           </tr>
-        ))}
-      </tbody>
-    </table>
+        </thead>
+        <tbody>
+          {cohorts.map((cohort, i) => (
+            <tr key={cohort}>
+              <td className="sticky left-0 z-10 border-b bg-background px-3 py-2 font-mono">
+                {formatCohortLabel(cohort)}
+              </td>
+              <td className="border-b px-2 py-2 text-right tabular-nums text-muted-foreground">
+                {baseSize[i]}
+              </td>
+              {Array.from({ length: maxQuarters + 1 }).map((_, q) => {
+                const cell = matrix[i][q];
+                const pct = retentionPct(cell, baseSize[i]);
+                return (
+                  <td
+                    key={q}
+                    className={`border-b px-2 py-2 text-center tabular-nums ${
+                      pct != null
+                        ? "font-semibold text-foreground"
+                        : "text-muted-foreground"
+                    }`}
+                    style={cellStyle(pct)}
+                    title={
+                      cell
+                        ? `${cell.active_customers}/${baseSize[i]} clientes activos`
+                        : "Sin data"
+                    }
+                  >
+                    {pct != null ? `${pct.toFixed(0)}%` : "—"}
+                  </td>
+                );
+              })}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <div className="flex items-center gap-2 pt-2 text-[11px] text-muted-foreground">
+        <span>Retención</span>
+        <div className="flex overflow-hidden rounded border border-border">
+          {COHORT_LEGEND.map((step) => (
+            <div
+              key={step.pct}
+              className="flex h-5 w-10 items-center justify-center text-foreground"
+              style={cellStyle(step.pct)}
+            >
+              {step.label}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

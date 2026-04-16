@@ -495,8 +495,19 @@ async function ReorderTable({
     type: "bar",
     xKey: "product_ref",
     topN: 15,
+    layout: "horizontal",
     series: [{ dataKey: "qty_sold_90d", label: "Vendido 90d" }],
     valueFormat: "number",
+    colorBy: "reorder_status",
+    colorMap: {
+      stockout: "var(--destructive)",
+      urgent_14d: "var(--chart-4)",
+      reorder_30d: "var(--chart-3)",
+      healthy: "var(--chart-2)",
+      excess: "var(--chart-5)",
+      no_movement: "var(--muted-foreground)",
+    },
+    height: 480,
   };
   return (
     <>
@@ -705,11 +716,26 @@ async function TopMoversTable({
   });
   const view = parseViewParam(searchParams, "tm_view");
   const chart: DataViewChartSpec = {
-    type: "bar",
+    type: "composed",
     xKey: "product_ref",
     topN: 15,
-    series: [{ dataKey: "qty_sold_90d", label: "Vendido 90d" }],
+    series: [
+      {
+        dataKey: "qty_sold_90d",
+        label: "Vendido 90d",
+        kind: "bar",
+        yAxisId: "left",
+      },
+      {
+        dataKey: "annual_turnover",
+        label: "Rotación anual",
+        kind: "line",
+        yAxisId: "right",
+        color: "var(--chart-4)",
+      },
+    ],
     valueFormat: "number",
+    secondaryValueFormat: "decimal-1",
   };
   return (
     <>
@@ -824,11 +850,26 @@ async function TopMarginTable({
   const rows = await getTopMarginProducts(15);
   const view = parseViewParam(searchParams, "tmg_view");
   const chart: DataViewChartSpec = {
-    type: "bar",
+    type: "composed",
     xKey: "product_ref",
     topN: 15,
-    series: [{ dataKey: "total_revenue", label: "Revenue" }],
+    series: [
+      {
+        dataKey: "total_revenue",
+        label: "Revenue",
+        kind: "bar",
+        yAxisId: "left",
+      },
+      {
+        dataKey: "weighted_margin_pct",
+        label: "Margen %",
+        kind: "line",
+        yAxisId: "right",
+        color: "var(--chart-4)",
+      },
+    ],
     valueFormat: "currency-compact",
+    secondaryValueFormat: "percent",
   };
   return (
     <DataView
@@ -979,17 +1020,37 @@ async function DeadStockTable({
     paramPrefix: "ds_",
   });
   const view = parseViewParam(searchParams, "ds_view");
+  const chartRows = rows.map((r) => ({
+    ...r,
+    revenue_bucket:
+      r.lifetime_revenue > 0 ? "Tuvo ventas" : "Sin historia",
+  }));
   const chart: DataViewChartSpec = {
-    type: "bar",
-    xKey: "product_ref",
-    topN: 15,
-    series: [{ dataKey: "inventory_value", label: "Valor inventario" }],
-    valueFormat: "currency-compact",
+    type: "scatter",
+    xKey: "days_since_last_sale",
+    yKey: "inventory_value",
+    sizeKey: "stock_qty",
+    series: [
+      { dataKey: "days_since_last_sale", label: "Días sin venta" },
+      { dataKey: "inventory_value", label: "Valor" },
+    ],
+    valueFormat: "number",
+    secondaryValueFormat: "currency-compact",
+    colorBy: "revenue_bucket",
+    colorMap: {
+      "Tuvo ventas": "var(--chart-2)",
+      "Sin historia": "var(--destructive)",
+    },
+    referenceLine: {
+      value: 180,
+      axis: "x",
+      label: "180d crítico",
+    },
   };
   return (
     <>
     <DataView
-      data={rows}
+      data={chartRows}
       columns={deadStockColumns}
       chart={chart}
       view={view}
