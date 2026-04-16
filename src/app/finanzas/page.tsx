@@ -741,12 +741,20 @@ async function ProjectedCashFlowSection() {
     );
   }
 
-  const chartData = weeks.map((w) => ({
-    label: shortWeekLabel(w.weekStart, w.weekIndex),
-    inflows: w.inflowsWeighted,
-    outflows: w.outflowsWeighted,
-    closingBalance: w.closingBalance,
-  }));
+  const chartData = [
+    {
+      label: "Hoy",
+      inflows: 0,
+      outflows: 0,
+      closingBalance: summary.cash.effectiveMxn,
+    },
+    ...weeks.map((w) => ({
+      label: shortWeekLabel(w.weekStart, w.weekIndex),
+      inflows: w.inflowsWeighted,
+      outflows: w.outflowsWeighted,
+      closingBalance: w.closingBalance,
+    })),
+  ];
 
   const minClose = summary.totals13w.minClosingBalance ?? 0;
   const minToneClass =
