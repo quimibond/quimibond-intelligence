@@ -636,7 +636,8 @@ const topCustomerViewColumns = [
   { key: "revenue_90d", label: "Revenue 90d" },
   { key: "revenue_total", label: "Revenue lifetime", defaultHidden: true },
   { key: "margin_12m", label: "Margen 12m" },
-  { key: "margin_pct", label: "% Margen" },
+  { key: "margin_pct", label: "Margen material %" },
+  { key: "adjusted_margin_pct", label: "Margen real %" },
 ];
 
 const customerColumns: DataTableColumn<TopCustomerRow>[] = [
@@ -673,27 +674,44 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
   },
   {
     key: "margin_pct",
-    header: "Margen %",
+    header: "Margen material %",
     cell: (r) =>
       r.margin_pct_12m != null ? (
         <span
+          className="tabular-nums text-muted-foreground"
+          title="Revenue menos costo material (BOM/standard_price). NO incluye overhead, labor, merma. Usar 'Margen real' para decisiones contables."
+        >
+          {r.margin_pct_12m.toFixed(1)}%
+        </span>
+      ) : (
+        "—"
+      ),
+    align: "right",
+    hideOnMobile: true,
+  },
+  {
+    key: "adjusted_margin_pct",
+    header: "Margen real %",
+    cell: (r) =>
+      r.adjusted_margin_pct_12m != null ? (
+        <span
           className={`tabular-nums font-semibold ${
-            r.margin_pct_12m < 0
+            r.adjusted_margin_pct_12m < 0
               ? "text-danger"
-              : r.margin_pct_12m >= 25
-                ? "text-success"
-                : r.margin_pct_12m >= 10
-                  ? "text-warning"
-                  : "text-muted-foreground"
+              : r.adjusted_margin_pct_12m < 5
+                ? "text-warning"
+                : r.adjusted_margin_pct_12m >= 25
+                  ? "text-success"
+                  : "text-foreground"
           }`}
           title={
-            r.margin_pct_12m < 0
-              ? "PÉRDIDA: este cliente se vende bajo costo. Revisar precios."
-              : "Margen = (revenue − costo material) / revenue. Costo desde BOM real o standard_price. Weighted 12m de Quimibond ≈ P&L real (18%)."
+            r.adjusted_margin_pct_12m < 0
+              ? `PÉRDIDA real estimada. Material ${r.margin_pct_12m?.toFixed(1)}% − overhead ${r.overhead_factor_pct.toFixed(1)}%.`
+              : `Estimado = material ${r.margin_pct_12m?.toFixed(1)}% − overhead ${r.overhead_factor_pct.toFixed(1)}%. Weighted ≈ P&L real.`
           }
         >
-          {r.margin_pct_12m < 0 && "⚠ "}
-          {r.margin_pct_12m.toFixed(1)}%
+          {r.adjusted_margin_pct_12m < 0 && "⚠ "}
+          {r.adjusted_margin_pct_12m.toFixed(1)}%
         </span>
       ) : (
         "—"

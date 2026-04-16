@@ -356,7 +356,9 @@ export interface TopCustomerRow {
   company_name: string;
   revenue_90d: number;
   margin_12m: number | null;
-  margin_pct_12m: number | null;
+  margin_pct_12m: number | null;         // Margen material (CMA)
+  overhead_factor_pct: number;           // Overhead % del revenue (global)
+  adjusted_margin_pct_12m: number | null; // material − overhead = margen real estimado
   total_revenue_lifetime: number;
 }
 
@@ -407,15 +409,18 @@ export async function getTopCustomersPage(
   }
 
   const ids = baseRows.map((r) => r.company_id);
-  const { data: marginData } = await sb
-    .from("customer_margin_analysis")
-    .select("company_id, margin_12m, margin_pct_12m")
-    .in("company_id", ids);
+  const [marginRes, overheadRes] = await Promise.all([
+    sb
+      .from("customer_margin_analysis")
+      .select("company_id, margin_12m, margin_pct_12m")
+      .in("company_id", ids),
+    sb.from("overhead_factor_12m").select("overhead_factor_pct").maybeSingle(),
+  ]);
   const marginMap = new Map<
     number,
     { margin_12m: number | null; margin_pct_12m: number | null }
   >();
-  for (const m of (marginData ?? []) as Array<{
+  for (const m of (marginRes.data ?? []) as Array<{
     company_id: number;
     margin_12m: number | null;
     margin_pct_12m: number | null;
@@ -425,15 +430,25 @@ export async function getTopCustomersPage(
       margin_pct_12m: m.margin_pct_12m,
     });
   }
+  const overheadFactor = Number(
+    (overheadRes.data as { overhead_factor_pct: number | null } | null)
+      ?.overhead_factor_pct ?? 0,
+  );
 
-  const rows: TopCustomerRow[] = baseRows.map((r) => ({
-    company_id: r.company_id,
-    company_name: r.name,
-    revenue_90d: Number(r.revenue_90d) || 0,
-    total_revenue_lifetime: Number(r.total_revenue) || 0,
-    margin_12m: marginMap.get(r.company_id)?.margin_12m ?? null,
-    margin_pct_12m: marginMap.get(r.company_id)?.margin_pct_12m ?? null,
-  }));
+  const rows: TopCustomerRow[] = baseRows.map((r) => {
+    const matPct = marginMap.get(r.company_id)?.margin_pct_12m ?? null;
+    return {
+      company_id: r.company_id,
+      company_name: r.name,
+      revenue_90d: Number(r.revenue_90d) || 0,
+      total_revenue_lifetime: Number(r.total_revenue) || 0,
+      margin_12m: marginMap.get(r.company_id)?.margin_12m ?? null,
+      margin_pct_12m: matPct,
+      overhead_factor_pct: overheadFactor,
+      adjusted_margin_pct_12m:
+        matPct != null ? Number((matPct - overheadFactor).toFixed(1)) : null,
+    };
+  });
 
   return { rows, total: count ?? rows.length };
 }
@@ -459,15 +474,18 @@ export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
   if (baseRows.length === 0) return [];
 
   const ids = baseRows.map((r) => r.company_id);
-  const { data: marginData } = await sb
-    .from("customer_margin_analysis")
-    .select("company_id, margin_12m, margin_pct_12m")
-    .in("company_id", ids);
+  const [marginRes, overheadRes] = await Promise.all([
+    sb
+      .from("customer_margin_analysis")
+      .select("company_id, margin_12m, margin_pct_12m")
+      .in("company_id", ids),
+    sb.from("overhead_factor_12m").select("overhead_factor_pct").maybeSingle(),
+  ]);
   const marginMap = new Map<
     number,
     { margin_12m: number | null; margin_pct_12m: number | null }
   >();
-  for (const m of (marginData ?? []) as Array<{
+  for (const m of (marginRes.data ?? []) as Array<{
     company_id: number;
     margin_12m: number | null;
     margin_pct_12m: number | null;
@@ -477,15 +495,25 @@ export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
       margin_pct_12m: m.margin_pct_12m,
     });
   }
+  const overheadFactor = Number(
+    (overheadRes.data as { overhead_factor_pct: number | null } | null)
+      ?.overhead_factor_pct ?? 0,
+  );
 
-  return baseRows.map((r) => ({
-    company_id: r.company_id,
-    company_name: r.name,
-    revenue_90d: Number(r.revenue_90d) || 0,
-    total_revenue_lifetime: Number(r.total_revenue) || 0,
-    margin_12m: marginMap.get(r.company_id)?.margin_12m ?? null,
-    margin_pct_12m: marginMap.get(r.company_id)?.margin_pct_12m ?? null,
-  }));
+  return baseRows.map((r) => {
+    const matPct = marginMap.get(r.company_id)?.margin_pct_12m ?? null;
+    return {
+      company_id: r.company_id,
+      company_name: r.name,
+      revenue_90d: Number(r.revenue_90d) || 0,
+      total_revenue_lifetime: Number(r.total_revenue) || 0,
+      margin_12m: marginMap.get(r.company_id)?.margin_12m ?? null,
+      margin_pct_12m: matPct,
+      overhead_factor_pct: overheadFactor,
+      adjusted_margin_pct_12m:
+        matPct != null ? Number((matPct - overheadFactor).toFixed(1)) : null,
+    };
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────
