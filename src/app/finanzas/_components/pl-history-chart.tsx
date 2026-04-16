@@ -2,6 +2,7 @@
 
 import {
   Bar,
+  Cell,
   ComposedChart,
   CartesianGrid,
   Legend,
@@ -33,7 +34,17 @@ function fmtPeriod(period: string) {
   return `${monthLabels[idx] ?? m} ${y?.slice(2) ?? ""}`;
 }
 
+// Identifica el periodo actual (mes en curso) para marcarlo como parcial
+// en el chart — evita que el CEO interprete una barra a medio mes como
+// caída real vs meses cerrados.
+function currentPeriod() {
+  const now = new Date();
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+}
+
 export function PlHistoryChart({ data }: Props) {
+  const nowPeriod = currentPeriod();
+  const partialIdx = data.findIndex((d) => d.period === nowPeriod);
   return (
     <div className="h-[260px] w-full">
       <ResponsiveContainer width="100%" height="100%">
@@ -70,7 +81,11 @@ export function PlHistoryChart({ data }: Props) {
               borderRadius: 8,
               fontSize: 12,
             }}
-            labelFormatter={(v) => fmtPeriod(String(v))}
+            labelFormatter={(v) => {
+              const period = String(v);
+              const label = fmtPeriod(period);
+              return period === nowPeriod ? `${label} · parcial (mes en curso)` : label;
+            }}
             formatter={(value, name) =>
               [formatCurrencyMXN(Number(value)), name] as [string, string]
             }
@@ -85,7 +100,17 @@ export function PlHistoryChart({ data }: Props) {
             fill="var(--primary)"
             radius={[4, 4, 0, 0]}
             maxBarSize={28}
-          />
+          >
+            {data.map((_, i) => (
+              <Cell
+                key={i}
+                fill="var(--primary)"
+                fillOpacity={i === partialIdx ? 0.35 : 1}
+                stroke={i === partialIdx ? "var(--primary)" : undefined}
+                strokeDasharray={i === partialIdx ? "3 3" : undefined}
+              />
+            ))}
+          </Bar>
           <Line
             type="monotone"
             dataKey="utilidadBruta"

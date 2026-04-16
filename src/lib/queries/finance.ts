@@ -169,14 +169,28 @@ export async function getCashPosition(): Promise<BankBalance[]> {
     cuenta: string | null;
     saldo: number | null;
     saldo_mxn: number | null;
-  }>).map((r) => ({
-    banco: r.banco,
-    tipo: r.tipo,
-    moneda: r.moneda,
-    cuenta: r.cuenta,
-    saldo: Number(r.saldo) || 0,
-    saldoMxn: Number(r.saldo_mxn) || 0,
-  }));
+  }>).map((r) => {
+    const saldoMxn = Number(r.saldo_mxn) || 0;
+    // Safety net: Odoo.sh todavía manda type='bank' para tarjetas de crédito
+    // hasta que `liability_credit_card` sea detectado por el addon qb19.
+    // Mientras tanto inferimos "credit" por saldo negativo o nombre (TJA/tarjeta/jeeves/amex).
+    let tipo = r.tipo;
+    const nameHint = (r.banco ?? "").toLowerCase();
+    const looksLikeCard =
+      saldoMxn < 0 ||
+      /\b(tja|tarjeta|jeeves|amex|credit)\b/.test(nameHint);
+    if (tipo !== "credit" && looksLikeCard) {
+      tipo = "credit";
+    }
+    return {
+      banco: r.banco,
+      tipo,
+      moneda: r.moneda,
+      cuenta: r.cuenta,
+      saldo: Number(r.saldo) || 0,
+      saldoMxn,
+    };
+  });
 }
 
 /** Punto P&L por mes (view: pl_estado_resultados) */
@@ -682,8 +696,15 @@ export async function getCashflowRecommendations(): Promise<CashflowRecommendati
       opexWeeklyMxn: num(r.metrics.opex_weekly_mxn),
       taxWeeklyMxn: num(r.metrics.tax_weekly_mxn),
     },
-    topArToCollect: (r.top_ar_to_collect || []).map(mapCompany),
-    topApToNegotiate: (r.top_ap_to_negotiate || []).map(mapCompany),
+    // Filtra write-offs viejos (>1 año) del ranking de cobranza: facturas con
+    // miles de días vencidos son incobrables, no prioridades — distorsionan
+    // el "top 10 a cobrar" aunque el RPC ya les asigne baja probabilidad.
+    topArToCollect: (r.top_ar_to_collect || [])
+      .map(mapCompany)
+      .filter((c) => c.maxDaysOverdue > 0 && c.maxDaysOverdue < 365),
+    topApToNegotiate: (r.top_ap_to_negotiate || [])
+      .map(mapCompany)
+      .filter((c) => c.maxDaysOverdue < 365),
     actions: (r.actions || []).map((a) => ({
       priority: num(a.priority),
       severity: (a.severity as RecommendationSeverity) || 'MEDIUM',
@@ -736,6 +757,12 @@ export async function getPartnerPaymentProfiles(
     .select(
       'odoo_partner_id, payment_type, payment_count_24m, months_active, total_paid_mxn, avg_payment_amount, typical_day_of_month, preferred_bank_journal, preferred_payment_method, invoice_count_24m, paid_invoice_count, avg_days_to_pay, median_days_to_pay, stddev_days_to_pay, total_invoiced_mxn, writeoff_risk_count, writeoff_risk_pct, confidence',
     )
+    // Partner id=1 es la cuenta interna de Odoo (propia empresa / administrador).
+    // Aparece con traspasos internos como si fueran pagos → contamina rankings.
+    .gt('odoo_partner_id', 1)
+    // Sin facturas reales en 24m no es un cliente/proveedor — puede ser ruido
+    // contable (ajustes, transferencias) aunque tenga payments.
+    .gt('invoice_count_24m', 0)
     .gte('confidence', minConfidence)
     .order('total_paid_mxn', { ascending: false })
     .limit(limit);

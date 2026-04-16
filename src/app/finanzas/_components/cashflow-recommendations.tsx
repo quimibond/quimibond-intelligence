@@ -129,8 +129,11 @@ function MetricsOverview({
   metrics: CashflowRecommendationsData["metrics"];
 }) {
   const gapIsNegative = metrics.liquidityGapMxn < 0;
-  const coverage = metrics.apOverdueCoverageRatio ?? 0;
-  const coveragePct = Math.min(coverage * 100, 100);
+  // RPC cashflow_liquidity_metrics.ap_overdue_coverage_ratio devuelve PORCENTAJE
+  // (0-100+), no ratio (0-1). Ver supabase/migrations/20260416_cashflow_liquidity_metrics_recreate.sql:36.
+  const coveragePctRaw = metrics.apOverdueCoverageRatio ?? 0;
+  const coveragePct = Math.min(coveragePctRaw, 100);
+  const coverage = coveragePctRaw / 100;
   const runway = metrics.runwayWeeksRecurring ?? 0;
 
   const runwayTone =
@@ -146,7 +149,7 @@ function MetricsOverview({
       <MetricCard
         label="AP vencido"
         value={formatCurrencyMXN(metrics.apOverdueMxn, { compact: true })}
-        hint={`${(coverage * 100).toFixed(0)}% cubierto por cash`}
+        hint={`${coveragePctRaw.toFixed(0)}% cubierto por cash`}
         tone={gapIsNegative ? "destructive" : "default"}
       >
         <Progress

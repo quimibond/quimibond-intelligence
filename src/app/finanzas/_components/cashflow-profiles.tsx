@@ -112,7 +112,12 @@ export function CashflowProfiles({
     outbound: journals.filter((j) => j.paymentType === "outbound"),
   };
 
-  const accountsByCategory = accounts.reduce<Record<string, AccountPaymentProfile[]>>((acc, a) => {
+  // Excluye cuentas `dormant` (sin actividad) del agrupado por categoría:
+  // infladas por saldos históricos (p.ej. ISR provisional de hace 18 meses)
+  // que ya no son flujo recurrente. Se siguen contando las otras frecuencias.
+  const activeAccounts = accounts.filter((a) => a.frequency !== "dormant");
+  const dormantCount = accounts.length - activeAccounts.length;
+  const accountsByCategory = activeAccounts.reduce<Record<string, AccountPaymentProfile[]>>((acc, a) => {
     (acc[a.detectedCategory] ??= []).push(a);
     return acc;
   }, {});
@@ -183,7 +188,10 @@ export function CashflowProfiles({
             <CardTitle className="text-base">Perfiles de cuentas contables</CardTitle>
           </div>
           <CardDescription>
-            {accounts.length} cuentas perfiladas · {categoryOrder.length} categorías detectadas automáticamente
+            {activeAccounts.length} cuentas activas · {categoryOrder.length} categorías detectadas automáticamente
+            {dormantCount > 0 && (
+              <> · {dormantCount} cuenta{dormantCount === 1 ? "" : "s"} inactiva{dormantCount === 1 ? "" : "s"} excluida{dormantCount === 1 ? "" : "s"}</>
+            )}
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col gap-4">

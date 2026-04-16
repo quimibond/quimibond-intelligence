@@ -397,7 +397,10 @@ async function CfoKpisSection() {
 async function FlowSection() {
   const cfo = await getCfoSnapshot();
   if (!cfo) return null;
-  const neto = cfo.ventas30d + cfo.pagosProv30d;
+  // Diferencia 30d debe ser CAJA vs CAJA (cobros reales vs pagos reales),
+  // no devengado (ventas facturadas) vs caja (pagos). `pagosProv30d` viene
+  // negativo de la vista, por eso se SUMA.
+  const flujoNeto = cfo.cobros30d + cfo.pagosProv30d;
   return (
     <div className="space-y-1">
       <MetricRow
@@ -405,18 +408,21 @@ async function FlowSection() {
         value={cfo.ventas30d}
         format="currency"
         compact
+        hint="facturado · no necesariamente cobrado"
       />
       <MetricRow
         label="Cobros 30d"
         value={cfo.cobros30d}
         format="currency"
         compact
+        hint="cash real recibido"
       />
       <MetricRow
         label="Pagos a proveedores 30d"
-        value={cfo.pagosProv30d}
+        value={Math.abs(cfo.pagosProv30d)}
         format="currency"
         compact
+        hint="cash real desembolsado"
       />
       <MetricRow
         label="Cuentas por cobrar"
@@ -431,8 +437,8 @@ async function FlowSection() {
         compact
       />
       <div className="mt-2 flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-sm font-semibold">
-        <span>Diferencia 30d</span>
-        <Currency amount={neto} compact colorBySign />
+        <span>Flujo neto 30d (caja)</span>
+        <Currency amount={flujoNeto} compact colorBySign />
       </div>
     </div>
   );
