@@ -12,7 +12,7 @@ import {
   KpiCard,
   StatGrid,
   PageHeader,
-  DataTable,
+  DataView,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -25,6 +25,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -52,6 +54,30 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Cobranza" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+function buildCobranzaHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/cobranza?${s}` : "/cobranza";
+}
+
+function parseViewParam(sp: SearchParams, key: string): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
 
 export default async function CobranzaPage({
   searchParams,
@@ -678,11 +704,37 @@ async function PaymentRiskTable({
       />
     );
   }
+  const view = parseViewParam(searchParams, "pr_view");
+  // Rows pre-formatted with a chart-friendly label (capitalized name).
+  const chartRows = rows.map((r) => ({
+    ...r,
+    company_label: r.company_name ? capitalize(r.company_name) : "—",
+  }));
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "company_label",
+    topN: 15,
+    series: [
+      {
+        dataKey: "total_pending",
+        label: "Pendiente",
+        color: "var(--danger)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
-      data={rows}
+    <>
+    <DataView
+      data={chartRows}
       columns={paymentColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildCobranzaHref(searchParams, {
+          pr_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.company_id)}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -731,14 +783,16 @@ async function PaymentRiskTable({
         />
       )}
     />
-    <DataTablePagination
-      paramPrefix="pr_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="clientes"
-    />
-    </div>
+    {view === "table" && (
+      <DataTablePagination
+        paramPrefix="pr_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="clientes"
+      />
+    )}
+    </>
   );
 }
 
@@ -854,11 +908,48 @@ async function CompanyAgingTable({
     searchParams,
     paramPrefix: "age_",
   });
+  const view = parseViewParam(searchParams, "age_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "company_name",
+    topN: 15,
+    stacked: true,
+    series: [
+      {
+        dataKey: "overdue_1_30",
+        label: "1–30 d",
+        color: "var(--warning)",
+      },
+      {
+        dataKey: "overdue_31_60",
+        label: "31–60 d",
+        color: "var(--chart-4)",
+      },
+      {
+        dataKey: "overdue_61_90",
+        label: "61–90 d",
+        color: "var(--chart-5)",
+      },
+      {
+        dataKey: "overdue_90plus",
+        label: "90+ d",
+        color: "var(--danger)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
+    <>
+    <DataView
       data={rows}
       columns={companyColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildCobranzaHref(searchParams, {
+          age_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.company_id)}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -906,14 +997,16 @@ async function CompanyAgingTable({
         description: "Todos los clientes están al corriente.",
       }}
     />
-    <DataTablePagination
-      paramPrefix="age_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="clientes"
-    />
-    </div>
+    {view === "table" && (
+      <DataTablePagination
+        paramPrefix="age_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="clientes"
+      />
+    )}
+    </>
   );
 }
 
@@ -1065,11 +1158,32 @@ async function OverdueTable({
     bucket: params.facets.bucket,
     salesperson: params.facets.salesperson,
   });
+  const view = parseViewParam(searchParams, "inv_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "name",
+    topN: 15,
+    series: [
+      {
+        dataKey: "amount_residual_mxn",
+        label: "Saldo",
+        color: "var(--danger)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
+    <>
+    <DataView
       data={rows}
       columns={invoiceColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildCobranzaHref(searchParams, {
+          inv_view: next === "chart" ? "chart" : null,
+        })
+      }
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
@@ -1118,13 +1232,15 @@ async function OverdueTable({
         description: "Todas las facturas están al corriente.",
       }}
     />
-    <DataTablePagination
-      paramPrefix="inv_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="facturas"
-    />
-    </div>
+    {view === "table" && (
+      <DataTablePagination
+        paramPrefix="inv_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="facturas"
+      />
+    )}
+    </>
   );
 }
