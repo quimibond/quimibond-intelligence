@@ -155,6 +155,14 @@ export function DataView<T>({
             chartData ?? (data as unknown as Record<string, unknown>[])
           }
           chart={chart}
+          // Click-through sólo cuando el chart usa los rows originales
+          // (chartData pre-agregado tiene shape distinto — rowHref no aplica).
+          rowHref={
+            !chartData && tableProps.rowHref
+              ? (row) =>
+                  tableProps.rowHref!(row as unknown as T) ?? null
+              : undefined
+          }
         />
       ) : (
         <DataTable
