@@ -44,7 +44,8 @@ export async function POST(request: NextRequest) {
   }
 
   const rawBody = await request.text();
-  const signature = request.headers.get("x-syntage-signature") ?? "";
+  // Syntage (sat.ws legacy) uses X-Satws-Signature with Stripe-style `t=...,s=...` format.
+  const signature = request.headers.get("x-satws-signature") ?? "";
 
   if (!verifySyntageSignature(rawBody, signature, secret)) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
