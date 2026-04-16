@@ -79,12 +79,17 @@ export async function getInvoiceByName(
   };
 
   // Fetch lines
+  // FIX 2026-04-17: usar `move_name = name` en vez de `odoo_move_id = id`.
+  // `odoo_invoices.id` es el Supabase auto-PK (rango 683920-2785141),
+  // NO el Odoo move ID. `odoo_invoice_lines.odoo_move_id` es el Odoo ID
+  // real. Antes, el 98% de invoices mostraban "0 lines" porque los
+  // rangos no coincidían. El join correcto es por `move_name = name`.
   const { data: linesData } = await sb
     .from("odoo_invoice_lines")
     .select(
       "product_ref, product_name, quantity, price_unit, discount, price_subtotal_mxn"
     )
-    .eq("odoo_move_id", base.id);
+    .eq("move_name", base.name);
 
   const lines = ((linesData ?? []) as Array<{
     product_ref: string | null;
