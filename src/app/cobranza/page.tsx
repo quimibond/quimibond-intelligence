@@ -740,6 +740,7 @@ async function PaymentRiskTable({
       "Alto": "var(--chart-4)",
       "Medio": "var(--chart-3)",
     },
+    rowHrefTemplate: "/companies/{company_id}",
   };
   // Mapa id → nombre legible, para que el client component de batch actions
   // pueda construir nombres a partir de los IDs seleccionados sin re-fetch.

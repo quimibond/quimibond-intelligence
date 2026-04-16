@@ -1,6 +1,7 @@
 "use client";
 
 import * as React from "react";
+import { useRouter } from "next/navigation";
 import {
   Area,
   AreaChart,
@@ -103,6 +104,15 @@ export interface DataViewChartSpec {
   colorMap?: Record<string, string>;
   /** Línea de referencia horizontal o vertical. */
   referenceLine?: DataViewReferenceLine;
+  /**
+   * Click-through serializable: template con placeholders `{key}` que se
+   * reemplazan con valores del row clickeado. Ej. `"/companies/{company_id}"`.
+   * Se navega vía Next router. Soportado en bar/scatter/composed.
+   *
+   * IMPORTANTE: es un string (no función) para cruzar el boundary server→client.
+   * Si algún placeholder no se puede resolver (valor null/undefined), no navega.
+   */
+  rowHrefTemplate?: string;
 }
 
 function resolveFormatter(format?: ValueFormat): (v: number) => string {
@@ -180,6 +190,26 @@ function colorForRow(
 }
 
 /**
+ * Resuelve un template `"/path/{field}/{other}"` contra un row. Si algún
+ * placeholder no se puede resolver (valor null/undefined/""), retorna null.
+ */
+function resolveRowHref(
+  template: string,
+  row: Record<string, unknown>
+): string | null {
+  let missing = false;
+  const resolved = template.replace(/\{(\w+)\}/g, (_, key) => {
+    const v = row[key];
+    if (v == null || v === "") {
+      missing = true;
+      return "";
+    }
+    return encodeURIComponent(String(v));
+  });
+  return missing ? null : resolved;
+}
+
+/**
  * DataViewChart — renderiza un recharts chart usando la config v2/shadcn.
  *
  * Tipos soportados:
@@ -197,10 +227,31 @@ export function DataViewChart({
   chart,
   className,
 }: DataViewChartProps) {
+  const router = useRouter();
   const data = React.useMemo(
     () => (chart.topN ? rawData.slice(0, chart.topN) : rawData),
     [rawData, chart.topN]
   );
+
+  // Click-through via template serializable (ver DataViewChartSpec.rowHrefTemplate).
+  // El template vive en el spec (string) para cruzar el boundary server→client sin
+  // riesgo de pasar funciones.
+  const handleElementClick = React.useMemo(() => {
+    const tpl = chart.rowHrefTemplate;
+    if (!tpl) return undefined;
+    return (e: unknown) => {
+      if (!e || typeof e !== "object") return;
+      const candidate = (e as { payload?: Record<string, unknown> })
+        .payload;
+      const row =
+        candidate && typeof candidate === "object"
+          ? candidate
+          : (e as Record<string, unknown>);
+      const href = resolveRowHref(tpl, row);
+      if (href) router.push(href);
+    };
+  }, [chart.rowHrefTemplate, router]);
+  const clickableCursor = chart.rowHrefTemplate ? "pointer" : undefined;
 
   // Click en la leyenda oculta/muestra la serie. Permite aislar métricas.
   const [hiddenSeries, setHiddenSeries] = React.useState<Set<string>>(
@@ -365,6 +416,8 @@ export function DataViewChart({
                 chart.layout === "horizontal" ? [0, 4, 4, 0] : [4, 4, 0, 0]
               }
               stackId={chart.stacked ? "stack" : undefined}
+              onClick={handleElementClick}
+              style={clickableCursor ? { cursor: clickableCursor } : undefined}
             >
               {chart.colorBy
                 ? data.map((row, i) => (
@@ -552,6 +605,8 @@ export function DataViewChart({
           <Scatter
             data={data}
             fill={chart.series[0]?.color ?? "var(--chart-1)"}
+            onClick={handleElementClick}
+            style={clickableCursor ? { cursor: clickableCursor } : undefined}
           >
             {chart.colorBy
               ? data.map((row, i) => (
@@ -627,6 +682,10 @@ export function DataViewChart({
                 fill={`var(--color-${s.dataKey})`}
                 radius={[4, 4, 0, 0]}
                 stackId={chart.stacked ? "stack" : undefined}
+                onClick={handleElementClick}
+                style={
+                  clickableCursor ? { cursor: clickableCursor } : undefined
+                }
               >
                 {chart.colorBy
                   ? data.map((row, i) => (

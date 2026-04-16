@@ -441,6 +441,7 @@ async function ReactivacionSection({
       axis: "x",
       label: "120d riesgo alto",
     },
+    rowHrefTemplate: "/companies/{company_id}",
   };
 
   return (
@@ -703,6 +704,7 @@ async function CompaniesTable({
       axis: "x",
       label: "90d inactivo",
     },
+    rowHrefTemplate: "/companies/{company_id}",
   };
 
   return (
