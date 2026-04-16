@@ -24,7 +24,8 @@ export interface HandlerCtx {
 
 /** Subset denormalizado de un CFDI Syntage. Todo lo demás vive en raw_payload. */
 export interface SyntageInvoicePayload {
-  "@id": string;
+  id?: string;
+  "@id"?: string;
   uuid: string;
   direction: "issued" | "received";
   tipoComprobante?: string;

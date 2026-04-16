@@ -5,7 +5,7 @@ export async function handleTaxReturnEvent(ctx: HandlerCtx, event: SyntageEvent)
   const obj = event.data.object as Record<string, unknown>;
 
   const row: Record<string, unknown> = {
-    syntage_id:          obj["@id"],
+    syntage_id:          obj.id ?? obj["@id"],
     taxpayer_rfc:        ctx.taxpayerRfc,
     odoo_company_id:     ctx.odooCompanyId,
     return_type:         obj.returnType ?? "monthly",

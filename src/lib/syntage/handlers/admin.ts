@@ -18,7 +18,7 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
   const obj = event.data.object as Record<string, unknown>;
 
   const row: Record<string, unknown> = {
-    syntage_id:       obj["@id"],
+    syntage_id:       obj.id ?? obj["@id"],
     taxpayer_rfc:     ctx.taxpayerRfc,
     odoo_company_id:  ctx.odooCompanyId,
     extractor_type:   obj.extractor ?? "unknown",
@@ -43,7 +43,7 @@ export async function handleFileCreatedEvent(ctx: HandlerCtx, event: SyntageEven
   const obj = event.data.object as Record<string, unknown>;
 
   const row: Record<string, unknown> = {
-    syntage_id:                  obj["@id"],
+    syntage_id:                  obj.id ?? obj["@id"],
     taxpayer_rfc:                ctx.taxpayerRfc,
     odoo_company_id:             ctx.odooCompanyId,
     file_type:                   obj.fileType ?? "unknown",

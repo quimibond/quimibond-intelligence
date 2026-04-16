@@ -2,7 +2,8 @@
 import type { HandlerCtx, SyntageEvent } from "@/lib/syntage/types";
 
 interface LineItemPayload {
-  "@id": string;
+  id?: string;
+  "@id"?: string;
   invoice: { uuid: string };
   lineNumber?: number;
   claveProdServ?: string;
@@ -19,7 +20,7 @@ export async function handleInvoiceLineItemEvent(ctx: HandlerCtx, event: Syntage
   const obj = event.data.object as unknown as LineItemPayload;
 
   const row: Record<string, unknown> = {
-    syntage_id:       obj["@id"],
+    syntage_id:       obj.id ?? obj["@id"],
     invoice_uuid:     obj.invoice?.uuid,
     taxpayer_rfc:     ctx.taxpayerRfc,
     odoo_company_id:  ctx.odooCompanyId,

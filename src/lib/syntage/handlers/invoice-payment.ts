@@ -2,7 +2,8 @@
 import type { HandlerCtx, SyntageEvent } from "@/lib/syntage/types";
 
 interface SyntageInvoicePaymentPayload {
-  "@id": string;
+  id?: string;
+  "@id"?: string;
   uuid: string;
   direction: "issued" | "received";
   fechaPago?: string;
@@ -22,7 +23,7 @@ export async function handleInvoicePaymentEvent(ctx: HandlerCtx, event: SyntageE
   const isCancellation = event.type === "invoice_payment.deleted";
 
   const row: Record<string, unknown> = {
-    syntage_id:            obj["@id"],
+    syntage_id:            obj.id ?? obj["@id"],
     uuid_complemento:      obj.uuid,
     taxpayer_rfc:          ctx.taxpayerRfc,
     odoo_company_id:       ctx.odooCompanyId,

@@ -6,7 +6,7 @@ export async function handleTaxRetentionEvent(ctx: HandlerCtx, event: SyntageEve
   const isCancellation = event.type === "tax_retention.deleted";
 
   const row: Record<string, unknown> = {
-    syntage_id:              obj["@id"],
+    syntage_id:              obj.id ?? obj["@id"],
     uuid:                    obj.uuid,
     taxpayer_rfc:            ctx.taxpayerRfc,
     odoo_company_id:         ctx.odooCompanyId,

@@ -5,7 +5,7 @@ export async function handleTaxStatusEvent(ctx: HandlerCtx, event: SyntageEvent)
   const obj = event.data.object as Record<string, unknown>;
 
   const row: Record<string, unknown> = {
-    syntage_id:               obj["@id"],
+    syntage_id:               obj.id ?? obj["@id"],
     taxpayer_rfc:             ctx.taxpayerRfc,
     odoo_company_id:          ctx.odooCompanyId,
     target_rfc:               obj.targetRfc ?? ctx.taxpayerRfc,
