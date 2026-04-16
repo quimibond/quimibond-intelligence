@@ -817,17 +817,25 @@ const topMarginColumns: DataTableColumn<TopMarginProductRow>[] = [
   },
   {
     key: "margin",
-    header: "% Margen",
+    header: "Margen %",
     cell: (r) => (
       <span
-        className={
-          r.weighted_margin_pct >= 50
-            ? "text-success font-semibold"
-            : r.weighted_margin_pct >= 25
-              ? "text-warning"
-              : "text-danger"
+        className={`font-semibold ${
+          r.weighted_margin_pct < 0
+            ? "text-danger"
+            : r.weighted_margin_pct >= 30
+              ? "text-success"
+              : r.weighted_margin_pct >= 15
+                ? "text-warning"
+                : "text-muted-foreground"
+        }`}
+        title={
+          r.weighted_margin_pct < 0
+            ? "PÉRDIDA: el producto se vende bajo costo."
+            : "Margen real = (price − cost) / price. Cost desde BOM o standard_price. Ex-markup values (anteriormente tabla mostraba markup%, ahora convertido a margen real)."
         }
       >
+        {r.weighted_margin_pct < 0 && "⚠ "}
         {r.weighted_margin_pct.toFixed(1)}%
       </span>
     ),
@@ -890,13 +898,16 @@ async function TopMarginTable({
           badge={
             <span
               className={`rounded px-2 py-0.5 text-[11px] font-bold ${
-                r.weighted_margin_pct >= 50
-                  ? "bg-success/15 text-success-foreground"
-                  : r.weighted_margin_pct >= 25
-                    ? "bg-warning/15 text-warning-foreground"
-                    : "bg-danger/15 text-danger-foreground"
+                r.weighted_margin_pct < 0
+                  ? "bg-danger/15 text-danger-foreground"
+                  : r.weighted_margin_pct >= 30
+                    ? "bg-success/15 text-success-foreground"
+                    : r.weighted_margin_pct >= 15
+                      ? "bg-warning/15 text-warning-foreground"
+                      : "bg-muted text-muted-foreground"
               }`}
             >
+              {r.weighted_margin_pct < 0 && "⚠ "}
               {r.weighted_margin_pct.toFixed(1)}%
             </span>
           }

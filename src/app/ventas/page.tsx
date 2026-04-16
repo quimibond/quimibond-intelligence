@@ -667,18 +667,26 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
   },
   {
     key: "margin_pct",
-    header: "% Margen",
+    header: "Margen %",
     cell: (r) =>
       r.margin_pct_12m != null ? (
         <span
-          className={`tabular-nums ${
-            r.margin_pct_12m >= 25
-              ? "text-success"
-              : r.margin_pct_12m >= 15
-                ? "text-warning"
-                : "text-danger"
+          className={`tabular-nums font-semibold ${
+            r.margin_pct_12m < 0
+              ? "text-danger"
+              : r.margin_pct_12m >= 25
+                ? "text-success"
+                : r.margin_pct_12m >= 10
+                  ? "text-warning"
+                  : "text-muted-foreground"
           }`}
+          title={
+            r.margin_pct_12m < 0
+              ? "PÉRDIDA: este cliente se vende bajo costo. Revisar precios."
+              : "Margen = (revenue − costo material) / revenue. Costo desde BOM real o standard_price. Weighted 12m de Quimibond ≈ P&L real (18%)."
+          }
         >
+          {r.margin_pct_12m < 0 && "⚠ "}
           {r.margin_pct_12m.toFixed(1)}%
         </span>
       ) : (

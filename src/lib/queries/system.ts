@@ -80,6 +80,42 @@ export async function getSystemKpis(): Promise<SystemKpis> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Overhead Factor — referencia margen P&L vs margen material CMA
+// ──────────────────────────────────────────────────────────────────────────
+export interface OverheadFactor {
+  totalRevenuePl: number;
+  totalCogsPl: number;
+  totalGrossProfitPl: number;
+  overheadFactorPct: number;  // % de revenue que consume overhead adicional
+  realGrossMarginPct: number; // margen contable P&L (ingresos - costo_ventas)
+  materialMarginPctAvg: number; // margen via BOM/standard_price 12m
+}
+
+/**
+ * Expone la comparación entre margen del P&L (contable) y margen material
+ * de CMA/PMA (via BOM + standard_price). Si overhead_factor_pct ≈ 0, el
+ * cost basis en odoo_products está capturando COGS correctamente y CMA
+ * es confiable. Si diverge mucho, CMA sub/sobre-estima margen.
+ */
+export async function getOverheadFactor(): Promise<OverheadFactor | null> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("overhead_factor_12m")
+    .select("*")
+    .maybeSingle();
+  if (!data) return null;
+  const d = data as Record<string, number | string | null>;
+  return {
+    totalRevenuePl: Number(d.total_revenue_pl) || 0,
+    totalCogsPl: Number(d.total_cogs_pl) || 0,
+    totalGrossProfitPl: Number(d.total_gross_profit_pl) || 0,
+    overheadFactorPct: Number(d.overhead_factor_pct) || 0,
+    realGrossMarginPct: Number(d.real_gross_margin_pct) || 0,
+    materialMarginPctAvg: Number(d.material_margin_pct_avg) || 0,
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Data Quality invariants (desde RPC dq_invariants + view dq_current_issues)
 // ──────────────────────────────────────────────────────────────────────────
 export interface DqInvariant {
