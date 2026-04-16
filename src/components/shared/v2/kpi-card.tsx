@@ -6,6 +6,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { formatValue, type FormatKind } from "@/lib/formatters";
 import { TrendIndicator } from "./trend-indicator";
+import { MiniChart } from "./mini-chart";
 
 interface KpiTrend {
   value: number;
@@ -26,7 +27,29 @@ interface KpiCardProps {
   className?: string;
   /** Tinte del icono y del valor cuando importa destacar el estado. */
   tone?: "default" | "success" | "warning" | "danger" | "info";
+  /**
+   * Sparkline opcional (historial del KPI). Se renderiza en una banda
+   * horizontal al pie de la card, full-width. Se sincroniza el color con
+   * el `tone` si no se pasa uno explícito.
+   */
+  sparkline?: {
+    data: Array<{ value: number }>;
+    color?: "primary" | "success" | "warning" | "danger" | "info";
+    variant?: "area" | "line";
+    height?: number;
+  };
 }
+
+const sparkColorForTone: Record<
+  NonNullable<KpiCardProps["tone"]>,
+  NonNullable<NonNullable<KpiCardProps["sparkline"]>["color"]>
+> = {
+  default: "primary",
+  success: "success",
+  warning: "warning",
+  danger: "danger",
+  info: "info",
+};
 
 const sizeConfig = {
   sm: {
@@ -112,6 +135,7 @@ export function KpiCard({
   size = "default",
   tone = "default",
   className,
+  sparkline,
 }: KpiCardProps) {
   const sz = sizeConfig[size];
   const styles = toneStyles[tone];
@@ -193,6 +217,20 @@ export function KpiCard({
           </div>
         )}
       </CardContent>
+
+      {sparkline && sparkline.data.length > 0 ? (
+        <div
+          className="-mt-1 -mb-px overflow-hidden"
+          aria-hidden
+        >
+          <MiniChart
+            data={sparkline.data}
+            color={sparkline.color ?? sparkColorForTone[tone]}
+            variant={sparkline.variant ?? "area"}
+            height={sparkline.height ?? 36}
+          />
+        </div>
+      ) : null}
     </Card>
   );
 

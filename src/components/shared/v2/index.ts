@@ -23,6 +23,7 @@ export { RowCheckbox, SelectAllCheckbox } from "./row-checkbox";
 export { BatchActionBar } from "./batch-action-bar";
 export { DataViewChart } from "./data-view-chart";
 export { DataViewToggle } from "./data-view-toggle";
+export { TableDensityToggle } from "./table-density-toggle";
 export { TableViewOptions, type ViewColumn } from "./table-view-options";
 export { TableExportButton } from "./table-export-button";
 export { makeSortHref } from "./table-sort-href";

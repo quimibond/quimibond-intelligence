@@ -859,6 +859,12 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
     defaultHidden: true,
     cell: (r) => <Currency amount={r.current_amount} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.current_amount ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "1_30",
@@ -867,6 +873,12 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
     cell: (r) => <Currency amount={r.overdue_1_30} compact />,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.overdue_1_30 ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "31_60",
@@ -875,6 +887,12 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
     cell: (r) => <Currency amount={r.overdue_31_60} compact />,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.overdue_31_60 ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "61_90",
@@ -883,6 +901,12 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
     cell: (r) => <Currency amount={r.overdue_61_90} compact />,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.overdue_61_90 ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "90plus",
@@ -894,6 +918,14 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="text-danger">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.overdue_90plus ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "total",
@@ -905,6 +937,14 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_receivable ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "revenue",
@@ -913,6 +953,12 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.total_revenue} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.total_revenue ?? 0), 0)}
+        compact
+      />
+    ),
   },
 ];
 
@@ -1075,6 +1121,13 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => {
+      const total = rows.reduce(
+        (s, r) => s + (Number(r.amount_residual_mxn) || 0),
+        0
+      );
+      return <Currency amount={total} compact />;
+    },
   },
   {
     key: "total",
@@ -1082,6 +1135,13 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
     defaultHidden: true,
     cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
+    summary: (rows) => {
+      const total = rows.reduce(
+        (s, r) => s + (Number(r.amount_total_mxn) || 0),
+        0
+      );
+      return <Currency amount={total} compact />;
+    },
   },
   {
     key: "days",
@@ -1093,6 +1153,17 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => {
+      if (rows.length === 0) return null;
+      const avg = Math.round(
+        rows.reduce((s, r) => s + (r.days_overdue ?? 0), 0) / rows.length
+      );
+      return (
+        <span className="text-muted-foreground">
+          prom. {avg}d
+        </span>
+      );
+    },
   },
   {
     key: "salesperson",

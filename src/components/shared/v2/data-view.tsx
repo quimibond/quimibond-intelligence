@@ -74,6 +74,7 @@ interface DataViewProps<T> {
   stickyFirstColumn?: boolean;
   maxHeight?: string;
   density?: "compact" | "normal";
+  summaryLabel?: React.ReactNode;
 
   // ── Selection multi-fila ──
   /**

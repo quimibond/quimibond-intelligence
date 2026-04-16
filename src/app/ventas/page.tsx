@@ -326,7 +326,11 @@ export default async function VentasPage({
 // KPIs
 // ──────────────────────────────────────────────────────────────────────────
 async function SalesKpisSection() {
-  const k = await getSalesKpis();
+  const [k, trend] = await Promise.all([
+    getSalesKpis(),
+    getSalesRevenueTrend(12),
+  ]);
+  const revenueSpark = trend.map((p) => ({ value: p.revenue }));
   return (
     <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
@@ -338,6 +342,7 @@ async function SalesKpisSection() {
         trend={{ value: k.ingresosMomPct, good: "up" }}
         subtitle="vs mes anterior"
         tone={k.ingresosMomPct >= 0 ? "success" : "warning"}
+        sparkline={{ data: revenueSpark, variant: "area" }}
       />
       <KpiCard
         title="Utilidad operativa"

@@ -32,6 +32,12 @@ export interface DataTableColumn<T> {
   defaultHidden?: boolean;
   /** Siempre visible (no se puede ocultar). */
   alwaysVisible?: boolean;
+  /**
+   * Agregado para el footer de totales. Recibe las filas renderizadas (de la
+   * página actual si hay paginación) y devuelve el nodo a mostrar en `<tfoot>`.
+   * Si al menos una columna define `summary`, la tabla renderiza el footer.
+   */
+  summary?: (rows: T[]) => React.ReactNode;
 }
 
 export interface DataTableSort {
@@ -80,6 +86,14 @@ interface DataTableProps<T> {
   selectable?: {
     rowId: (row: T) => string;
   };
+
+  // ── Footer de totales ──
+  /**
+   * Etiqueta que va en la primera columna del footer (ej. "Total", "Suma").
+   * Si no se pasa, se muestra el conteo de filas. El footer sólo se renderiza
+   * si al menos una columna define `summary` en su `DataTableColumn`.
+   */
+  summaryLabel?: React.ReactNode;
 }
 
 /**
@@ -106,6 +120,7 @@ export function DataTable<T>({
   maxHeight,
   density = "normal",
   selectable,
+  summaryLabel,
 }: DataTableProps<T>) {
   // Empty state
   if (!data || data.length === 0) {
@@ -285,6 +300,49 @@ export function DataTable<T>({
     );
   };
 
+  const hasSummary =
+    effectiveColumns.some((c) => typeof c.summary === "function") ||
+    summaryLabel != null;
+
+  const renderFooter = () => {
+    if (!hasSummary) return null;
+    return (
+      <tfoot>
+        <TableRow className="border-t-2 border-border bg-muted/30 font-semibold hover:bg-muted/30">
+          {effectiveColumns.map((col, colIdx) => {
+            // La primera columna non-select muestra el label del footer.
+            const isSelectCol = col.key === SELECT_COLUMN_KEY;
+            const isFirstLabelCol =
+              !isSelectCol &&
+              effectiveColumns.findIndex(
+                (c) => c.key !== SELECT_COLUMN_KEY
+              ) === colIdx;
+            const content = col.summary ? (
+              col.summary(data)
+            ) : isFirstLabelCol ? (
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {summaryLabel ?? `Total · ${data.length}`}
+              </span>
+            ) : null;
+            return (
+              <TableCell
+                key={col.key}
+                className={cn(
+                  alignClass(col.align),
+                  col.hideOnMobile && "hidden md:table-cell",
+                  "py-2 tabular-nums",
+                  col.className
+                )}
+              >
+                {content}
+              </TableCell>
+            );
+          })}
+        </TableRow>
+      </tfoot>
+    );
+  };
+
   const tableEl = (
     <table
       data-slot="table"
@@ -297,6 +355,7 @@ export function DataTable<T>({
         </TableRow>
       </TableHeader>
       <TableBody>{data.map((row, i) => renderRow(row, i))}</TableBody>
+      {renderFooter()}
     </table>
   );
 

@@ -1571,6 +1571,27 @@ const varianceColumns: DataTableColumn<SupplierPriceRow>[] = [
         "—"
       ),
     align: "right",
+    summary: (rows) => {
+      const overpaid = rows.reduce(
+        (s, r) => s + (Number(r.overpaid_mxn) || 0),
+        0
+      );
+      const saved = rows.reduce(
+        (s, r) => s + (Number(r.saved_mxn) || 0),
+        0
+      );
+      const net = overpaid - saved;
+      if (net === 0) return <span className="text-muted-foreground">—</span>;
+      return net > 0 ? (
+        <span className="font-bold text-danger">
+          <Currency amount={net} compact />
+        </span>
+      ) : (
+        <span className="font-bold text-success">
+          −<Currency amount={Math.abs(net)} compact />
+        </span>
+      );
+    },
   },
 ];
 

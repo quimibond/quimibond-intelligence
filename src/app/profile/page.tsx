@@ -7,11 +7,13 @@ import {
   LogOut,
   Moon,
   Palette,
+  Rows2,
   Sparkles,
   Sun,
 } from "lucide-react";
 
 import { PageHeader } from "@/components/shared/v2";
+import { TableDensityToggle } from "@/components/shared/v2/table-density-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +75,23 @@ export default function ProfilePage() {
         </CardHeader>
         <CardContent className="pb-4">
           <ThemePreference />
+        </CardContent>
+      </Card>
+
+      {/* Densidad de tablas */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Rows2 className="size-4" />
+            Densidad de tablas
+          </CardTitle>
+          <p className="text-xs text-muted-foreground">
+            Compacta las filas para ver más datos sin scroll. Aplica a todas las
+            tablas del sistema.
+          </p>
+        </CardHeader>
+        <CardContent className="pb-4">
+          <TableDensityToggle />
         </CardContent>
       </Card>
 
