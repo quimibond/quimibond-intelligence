@@ -13,7 +13,7 @@ import {
   KpiCard,
   StatGrid,
   PageHeader,
-  DataTable,
+  DataView,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -25,6 +25,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -49,6 +51,37 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Productos" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+/**
+ * Construye un href para /productos preservando el resto de los searchParams
+ * y actualizando (o borrando) las claves pasadas en `updates`.
+ */
+function buildProductosHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/productos?${s}` : "/productos";
+}
+
+function parseViewParam(
+  sp: SearchParams,
+  key: string
+): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
 
 export default async function ProductosPage({
   searchParams,
@@ -169,7 +202,7 @@ export default async function ProductosPage({
           <Suspense
             fallback={<Skeleton className="h-[300px] rounded-xl" />}
           >
-            <TopMarginTable />
+            <TopMarginTable searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -447,6 +480,7 @@ async function ReorderTable({
     searchParams,
     paramPrefix: "inv_",
   });
+  const view = parseViewParam(searchParams, "inv_view");
   if (rows.length === 0) {
     return (
       <EmptyState
@@ -457,62 +491,78 @@ async function ReorderTable({
       />
     );
   }
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [{ dataKey: "qty_sold_90d", label: "Vendido 90d" }],
+    valueFormat: "number",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
-      data={rows}
-      columns={reorderColumns}
-      rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
-      sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
-      sortHref={sortHref}
-      visibleKeys={visibleKeys}
-      stickyHeader
-      mobileCard={(r) => (
-        <MobileCard
-          title={r.product_name ?? r.product_ref ?? "—"}
-          subtitle={r.product_ref ?? r.category ?? undefined}
-          badge={
-            <Badge variant={reorderVariant[r.reorder_status] ?? "warning"}>
-              {reorderLabel[r.reorder_status] ?? r.reorder_status}
-            </Badge>
-          }
-          fields={[
-            {
-              label: "Disponible",
-              value: Math.round(r.available_qty),
-            },
-            {
-              label: "Días stock",
-              value:
-                r.days_of_stock != null ? Math.round(r.days_of_stock) : "—",
-              className:
-                r.days_of_stock != null && r.days_of_stock <= 14
-                  ? "text-danger font-bold"
-                  : "",
-            },
-            {
-              label: "Vendido 90d",
-              value: Math.round(r.qty_sold_90d),
-            },
-            {
-              label: "Daily rate",
-              value:
-                r.daily_run_rate != null
-                  ? r.daily_run_rate.toFixed(1)
-                  : "—",
-            },
-          ]}
+    <>
+      <DataView
+        data={rows}
+        columns={reorderColumns}
+        chart={chart}
+        view={view}
+        viewHref={(next) =>
+          buildProductosHref(searchParams, {
+            inv_view: next === "chart" ? "chart" : null,
+          })
+        }
+        rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
+        sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
+        sortHref={sortHref}
+        visibleKeys={visibleKeys}
+        stickyHeader
+        mobileCard={(r) => (
+          <MobileCard
+            title={r.product_name ?? r.product_ref ?? "—"}
+            subtitle={r.product_ref ?? r.category ?? undefined}
+            badge={
+              <Badge variant={reorderVariant[r.reorder_status] ?? "warning"}>
+                {reorderLabel[r.reorder_status] ?? r.reorder_status}
+              </Badge>
+            }
+            fields={[
+              {
+                label: "Disponible",
+                value: Math.round(r.available_qty),
+              },
+              {
+                label: "Días stock",
+                value:
+                  r.days_of_stock != null ? Math.round(r.days_of_stock) : "—",
+                className:
+                  r.days_of_stock != null && r.days_of_stock <= 14
+                    ? "text-danger font-bold"
+                    : "",
+              },
+              {
+                label: "Vendido 90d",
+                value: Math.round(r.qty_sold_90d),
+              },
+              {
+                label: "Daily rate",
+                value:
+                  r.daily_run_rate != null
+                    ? r.daily_run_rate.toFixed(1)
+                    : "—",
+              },
+            ]}
+          />
+        )}
+      />
+      {view === "table" && (
+        <DataTablePagination
+          paramPrefix="inv_"
+          total={total}
+          page={params.page}
+          pageSize={params.size}
+          unit="productos"
         />
       )}
-    />
-    <DataTablePagination
-      paramPrefix="inv_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="productos"
-    />
-    </div>
+    </>
   );
 }
 
@@ -653,11 +703,26 @@ async function TopMoversTable({
     searchParams,
     paramPrefix: "tm_",
   });
+  const view = parseViewParam(searchParams, "tm_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [{ dataKey: "qty_sold_90d", label: "Vendido 90d" }],
+    valueFormat: "number",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
+    <>
+    <DataView
       data={rows}
       columns={topMoverColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildProductosHref(searchParams, {
+          tm_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r, i) => `${r.product_ref ?? "tm"}-${i}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -688,14 +753,16 @@ async function TopMoversTable({
         description: "No hay productos con ventas recientes.",
       }}
     />
-    <DataTablePagination
-      paramPrefix="tm_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="productos"
-    />
-    </div>
+    {view === "table" && (
+      <DataTablePagination
+        paramPrefix="tm_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="productos"
+      />
+    )}
+    </>
   );
 }
 
@@ -749,12 +816,31 @@ const topMarginColumns: DataTableColumn<TopMarginProductRow>[] = [
   },
 ];
 
-async function TopMarginTable() {
+async function TopMarginTable({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const rows = await getTopMarginProducts(15);
+  const view = parseViewParam(searchParams, "tmg_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [{ dataKey: "total_revenue", label: "Revenue" }],
+    valueFormat: "currency-compact",
+  };
   return (
-    <DataTable
+    <DataView
       data={rows}
       columns={topMarginColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildProductosHref(searchParams, {
+          tmg_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r, i) => `${r.product_ref ?? "m"}-${i}`}
       mobileCard={(r) => (
         <MobileCard
@@ -892,11 +978,26 @@ async function DeadStockTable({
     searchParams,
     paramPrefix: "ds_",
   });
+  const view = parseViewParam(searchParams, "ds_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [{ dataKey: "inventory_value", label: "Valor inventario" }],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
+    <>
+    <DataView
       data={rows}
       columns={deadStockColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildProductosHref(searchParams, {
+          ds_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r, i) => `${r.product_ref ?? "d"}-${i}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
@@ -934,13 +1035,15 @@ async function DeadStockTable({
         description: "Todos los productos tienen movimiento reciente.",
       }}
     />
-    <DataTablePagination
-      paramPrefix="ds_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="productos"
-    />
-    </div>
+    {view === "table" && (
+      <DataTablePagination
+        paramPrefix="ds_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="productos"
+      />
+    )}
+    </>
   );
 }

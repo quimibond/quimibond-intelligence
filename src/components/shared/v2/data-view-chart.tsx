@@ -35,22 +35,75 @@ export interface DataViewSeries {
   color?: string;
 }
 
+export type ValueFormat =
+  | "number"
+  | "currency"
+  | "currency-compact"
+  | "percent"
+  | "decimal-1";
+
 export interface DataViewChartSpec {
   type: ChartType;
   /** Clave del eje categórico (X axis o slice label en pie). */
   xKey: string;
   /** Series numéricas. */
   series: DataViewSeries[];
-  /** Formateador de valores (ej. currency compact). */
-  valueFormatter?: (v: number) => string;
-  /** Formateador del label del eje X. */
-  xFormatter?: (v: unknown) => string;
+  /**
+   * Token de formato para el eje Y y el tooltip.
+   * Strings (no funciones) para cruzar el boundary server→client de RSC.
+   */
+  valueFormat?: ValueFormat;
   /** Si true en bar: stack las series. */
   stacked?: boolean;
   /** Altura en px. Default 320. */
   height?: number;
   /** Máx de slices en pie (el resto se agrupa como "Otros"). Default 8. */
   maxPieSlices?: number;
+  /**
+   * Si se define, limita las filas renderizadas en la gráfica a las primeras N.
+   * Útil para tablas paginadas donde 25 barras es mucho.
+   * La tabla sigue mostrando todas las filas.
+   */
+  topN?: number;
+}
+
+function resolveFormatter(format?: ValueFormat): (v: number) => string {
+  switch (format) {
+    case "currency":
+      return (v) =>
+        "$" +
+        v.toLocaleString("es-MX", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        });
+    case "currency-compact":
+      return (v) => {
+        const abs = Math.abs(v);
+        const sign = v < 0 ? "-" : "";
+        if (abs >= 1_000_000) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+        if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(0)}K`;
+        return `${sign}$${abs.toFixed(0)}`;
+      };
+    case "percent":
+      return (v) =>
+        `${v.toLocaleString("es-MX", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 1,
+        })}%`;
+    case "decimal-1":
+      return (v) =>
+        v.toLocaleString("es-MX", {
+          minimumFractionDigits: 1,
+          maximumFractionDigits: 1,
+        });
+    case "number":
+    default:
+      return (v) =>
+        v.toLocaleString("es-MX", {
+          minimumFractionDigits: 0,
+          maximumFractionDigits: 0,
+        });
+  }
 }
 
 interface DataViewChartProps {
@@ -73,7 +126,16 @@ const DEFAULT_COLORS = [
  * Client component: recharts no es SSR-friendly. Se renderiza solo cuando
  * `view=chart` en la URL (ver DataView wrapper).
  */
-export function DataViewChart({ data, chart, className }: DataViewChartProps) {
+export function DataViewChart({
+  data: rawData,
+  chart,
+  className,
+}: DataViewChartProps) {
+  const data = React.useMemo(
+    () => (chart.topN ? rawData.slice(0, chart.topN) : rawData),
+    [rawData, chart.topN]
+  );
+
   const config = React.useMemo<ChartConfig>(() => {
     const c: ChartConfig = {};
     chart.series.forEach((s, i) => {
@@ -110,13 +172,11 @@ export function DataViewChart({ data, chart, className }: DataViewChartProps) {
     ];
   }, [chart, data]);
 
-  const tickFormatter = chart.valueFormatter
-    ? (v: number) => chart.valueFormatter!(v)
-    : undefined;
-
-  const categoryTick = chart.xFormatter
-    ? (v: unknown) => chart.xFormatter!(v)
-    : undefined;
+  const formatValue = React.useMemo(
+    () => resolveFormatter(chart.valueFormat),
+    [chart.valueFormat]
+  );
+  const tickFormatter = (v: number) => formatValue(v);
 
   return (
     <ChartContainer
@@ -132,14 +192,13 @@ export function DataViewChart({ data, chart, className }: DataViewChartProps) {
             tickLine={false}
             axisLine={false}
             tickMargin={8}
-            tickFormatter={categoryTick}
           />
           <YAxis
             tickLine={false}
             axisLine={false}
             tickMargin={4}
             tickFormatter={tickFormatter}
-            width={tickFormatter ? 56 : 40}
+            width={56}
           />
           <ChartTooltip
             content={<ChartTooltipContent indicator="dot" />}
@@ -169,14 +228,13 @@ export function DataViewChart({ data, chart, className }: DataViewChartProps) {
             tickLine={false}
             axisLine={false}
             tickMargin={8}
-            tickFormatter={categoryTick}
           />
           <YAxis
             tickLine={false}
             axisLine={false}
             tickMargin={4}
             tickFormatter={tickFormatter}
-            width={tickFormatter ? 56 : 40}
+            width={56}
           />
           <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
           {chart.series.length > 1 && (
@@ -227,14 +285,13 @@ export function DataViewChart({ data, chart, className }: DataViewChartProps) {
             tickLine={false}
             axisLine={false}
             tickMargin={8}
-            tickFormatter={categoryTick}
           />
           <YAxis
             tickLine={false}
             axisLine={false}
             tickMargin={4}
             tickFormatter={tickFormatter}
-            width={tickFormatter ? 56 : 40}
+            width={56}
           />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
           {chart.series.length > 1 && (
