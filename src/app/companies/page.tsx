@@ -15,7 +15,7 @@ import {
   StatGrid,
   KpiCard,
   SectionNav,
-  DataTable,
+  DataView,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -28,6 +28,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -47,6 +49,38 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Empresas" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+function buildCompaniesHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/companies?${s}` : "/companies";
+}
+
+function parseViewParam(sp: SearchParams, key: string): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
+
+function daysSince(iso: string | null): number | null {
+  if (!iso) return null;
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return null;
+  const diffMs = Date.now() - then;
+  return Math.max(0, Math.round(diffMs / 86_400_000));
+}
 
 const statusVariant: Record<
   string,
@@ -120,7 +154,7 @@ export default async function CompaniesPage({
             </div>
           }
         >
-          <ReactivacionSection />
+          <ReactivacionSection searchParams={sp} />
         </Suspense>
       </section>
 
@@ -314,6 +348,15 @@ const rfmColumns: DataTableColumn<RfmSegmentRow>[] = [
     ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => {
+      if (rows.length === 0) return null;
+      const avg = Math.round(
+        rows.reduce((s, r) => s + (r.recency_days ?? 0), 0) / rows.length
+      );
+      return (
+        <span className="text-muted-foreground">prom. {avg}d</span>
+      );
+    },
   },
   {
     key: "frequency",
@@ -322,6 +365,11 @@ const rfmColumns: DataTableColumn<RfmSegmentRow>[] = [
     cell: (r) => <span className="tabular-nums">{r.frequency}</span>,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <span className="text-muted-foreground">
+        Σ {rows.reduce((s, r) => s + (r.frequency ?? 0), 0)}
+      </span>
+    ),
   },
   {
     key: "monetary",
@@ -329,6 +377,12 @@ const rfmColumns: DataTableColumn<RfmSegmentRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.monetary_12m} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.monetary_12m ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "last_purchase",
@@ -338,7 +392,11 @@ const rfmColumns: DataTableColumn<RfmSegmentRow>[] = [
   },
 ];
 
-async function ReactivacionSection() {
+async function ReactivacionSection({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const [atRisk, needAtt, hibernating] = await Promise.all([
     getRfmSegments("AT_RISK", 100),
     getRfmSegments("NEED_ATTENTION", 100),
@@ -360,10 +418,42 @@ async function ReactivacionSection() {
     );
   }
 
+  const view = parseViewParam(searchParams, "rfm_view");
+  const chart: DataViewChartSpec = {
+    type: "scatter",
+    xKey: "recency_days",
+    yKey: "monetary_12m",
+    sizeKey: "outstanding",
+    series: [
+      { dataKey: "recency_days", label: "Días sin comprar" },
+      { dataKey: "monetary_12m", label: "Revenue 12m" },
+    ],
+    valueFormat: "number",
+    secondaryValueFormat: "currency-compact",
+    colorBy: "tier",
+    colorMap: {
+      A: "var(--destructive)",
+      B: "var(--chart-4)",
+      C: "var(--chart-3)",
+    },
+    referenceLine: {
+      value: 120,
+      axis: "x",
+      label: "120d riesgo alto",
+    },
+  };
+
   return (
-    <DataTable
+    <DataView
       data={all}
       columns={rfmColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildCompaniesHref(searchParams, {
+          rfm_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.company_id)}
       rowHref={(r) => `/companies/${r.company_id}`}
       mobileCard={(r) => (
@@ -440,6 +530,12 @@ const columns: DataTableColumn<CompanyListRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.total_revenue} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.total_revenue ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "revenue_90d",
@@ -448,6 +544,12 @@ const columns: DataTableColumn<CompanyListRow>[] = [
     cell: (r) => <Currency amount={r.revenue_90d} compact />,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.revenue_90d ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "trend",
@@ -475,6 +577,15 @@ const columns: DataTableColumn<CompanyListRow>[] = [
       ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => {
+      const total = rows.reduce((s, r) => s + (r.overdue_amount ?? 0), 0);
+      if (total === 0) return <span className="text-muted-foreground">—</span>;
+      return (
+        <span className="text-danger">
+          <Currency amount={total} compact />
+        </span>
+      );
+    },
   },
   {
     key: "max_days",
@@ -564,6 +675,36 @@ async function CompaniesTable({
     );
   }
 
+  const view = parseViewParam(searchParams, "view");
+  // Pre-computamos days_since_last_order para el eje X del scatter.
+  const chartRows = rows.map((r) => ({
+    ...r,
+    days_since_last_order: daysSince(r.last_order_date) ?? 9999,
+  }));
+  const chart: DataViewChartSpec = {
+    type: "scatter",
+    xKey: "days_since_last_order",
+    yKey: "total_revenue",
+    sizeKey: "overdue_amount",
+    series: [
+      { dataKey: "days_since_last_order", label: "Días sin pedido" },
+      { dataKey: "total_revenue", label: "Revenue total" },
+    ],
+    valueFormat: "number",
+    secondaryValueFormat: "currency-compact",
+    colorBy: "pareto_class",
+    colorMap: {
+      A: "var(--chart-2)",
+      B: "var(--chart-3)",
+      C: "var(--chart-1)",
+    },
+    referenceLine: {
+      value: 90,
+      axis: "x",
+      label: "90d inactivo",
+    },
+  };
+
   return (
     <>
       <Card>
@@ -603,9 +744,16 @@ async function CompaniesTable({
         </CardContent>
       </Card>
 
-      <DataTable
-        data={rows}
+      <DataView
+        data={chartRows}
         columns={columns}
+        chart={chart}
+        view={view}
+        viewHref={(next) =>
+          buildCompaniesHref(searchParams, {
+            view: next === "chart" ? "chart" : null,
+          })
+        }
         rowKey={(r) => String(r.company_id)}
         sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
         sortHref={sortHref}
