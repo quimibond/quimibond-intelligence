@@ -202,6 +202,23 @@ export function DataViewChart({
     [rawData, chart.topN]
   );
 
+  // Click en la leyenda oculta/muestra la serie. Permite aislar métricas.
+  const [hiddenSeries, setHiddenSeries] = React.useState<Set<string>>(
+    () => new Set()
+  );
+  const toggleSeries = React.useCallback((key: string) => {
+    setHiddenSeries((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }, []);
+  const visibleSeries = React.useMemo(
+    () => chart.series.filter((s) => !hiddenSeries.has(s.dataKey)),
+    [chart.series, hiddenSeries]
+  );
+
   const config = React.useMemo<ChartConfig>(() => {
     const c: ChartConfig = {};
     chart.series.forEach((s, i) => {
@@ -275,10 +292,16 @@ export function DataViewChart({
     />
   ) : null;
 
+  const showInteractiveLegend =
+    chart.series.length > 1 &&
+    chart.type !== "pie" &&
+    chart.type !== "scatter";
+
   return (
+    <div className={cn("space-y-1.5", className)}>
     <ChartContainer
       config={config}
-      className={cn("w-full", className)}
+      className="w-full"
       style={{ aspectRatio: "auto", height }}
     >
       {chart.type === "bar" ? (
@@ -331,11 +354,9 @@ export function DataViewChart({
             content={<ChartTooltipContent indicator="dot" />}
             cursor={{ fill: "var(--muted)", opacity: 0.4 }}
           />
-          {chart.series.length > 1 && (
-            <ChartLegend content={<ChartLegendContent />} />
-          )}
+          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
-          {chart.series.map((s) => (
+          {visibleSeries.map((s) => (
             <Bar
               key={s.dataKey}
               dataKey={s.dataKey}
@@ -381,11 +402,9 @@ export function DataViewChart({
             width={56}
           />
           <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-          {chart.series.length > 1 && (
-            <ChartLegend content={<ChartLegendContent />} />
-          )}
+          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
-          {chart.series.map((s) => (
+          {visibleSeries.map((s) => (
             <Line
               key={s.dataKey}
               type="monotone"
@@ -439,11 +458,9 @@ export function DataViewChart({
             width={56}
           />
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-          {chart.series.length > 1 && (
-            <ChartLegend content={<ChartLegendContent />} />
-          )}
+          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
-          {chart.series.map((s) => (
+          {visibleSeries.map((s) => (
             <Area
               key={s.dataKey}
               type="monotone"
@@ -584,11 +601,9 @@ export function DataViewChart({
             />
           ) : null}
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-          {chart.series.length > 1 && (
-            <ChartLegend content={<ChartLegendContent />} />
-          )}
+          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
-          {chart.series.map((s) => {
+          {visibleSeries.map((s) => {
             const kind = s.kind ?? "bar";
             const axisId = s.yAxisId ?? "left";
             if (kind === "line") {
@@ -632,5 +647,67 @@ export function DataViewChart({
         </ComposedChart>
       )}
     </ChartContainer>
+    {showInteractiveLegend && (
+      <InteractiveLegend
+        series={chart.series}
+        hidden={hiddenSeries}
+        onToggle={toggleSeries}
+      />
+    )}
+    </div>
+  );
+}
+
+interface InteractiveLegendProps {
+  series: DataViewSeries[];
+  hidden: Set<string>;
+  onToggle: (key: string) => void;
+}
+
+/**
+ * Leyenda interactiva — click para aislar/mostrar la serie.
+ * Reemplaza el ChartLegend de shadcn para soportar toggle y mantener
+ * el mismo aspecto visual (color swatch + label).
+ */
+function InteractiveLegend({
+  series,
+  hidden,
+  onToggle,
+}: InteractiveLegendProps) {
+  const allHidden = series.every((s) => hidden.has(s.dataKey));
+  return (
+    <div className="flex flex-wrap items-center justify-center gap-2 pt-1 text-[11px]">
+      {series.map((s, i) => {
+        const isHidden = hidden.has(s.dataKey);
+        const color =
+          s.color ?? `var(--chart-${(i % 5) + 1})`;
+        return (
+          <button
+            key={s.dataKey}
+            type="button"
+            onClick={() => onToggle(s.dataKey)}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5",
+              "transition-opacity hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              isHidden ? "opacity-40" : "opacity-100"
+            )}
+            aria-pressed={!isHidden}
+            aria-label={`${isHidden ? "Mostrar" : "Ocultar"} ${s.label}`}
+          >
+            <span
+              className="inline-block h-2 w-2 rounded-sm"
+              style={{ backgroundColor: color }}
+              aria-hidden
+            />
+            <span className={cn(isHidden && "line-through")}>{s.label}</span>
+          </button>
+        );
+      })}
+      {allHidden && (
+        <span className="text-muted-foreground">
+          Todas las series ocultas — click para mostrar
+        </span>
+      )}
+    </div>
   );
 }

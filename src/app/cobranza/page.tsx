@@ -31,6 +31,8 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+
+import { PaymentRiskBatchActions } from "./_components/payment-risk-batch-actions";
 import {
   getArAging,
   getCompanyAgingPage,
@@ -739,6 +741,13 @@ async function PaymentRiskTable({
       "Medio": "var(--chart-3)",
     },
   };
+  // Mapa id → nombre legible, para que el client component de batch actions
+  // pueda construir nombres a partir de los IDs seleccionados sin re-fetch.
+  const idToName: Record<string, string> = {};
+  for (const r of chartRows) {
+    idToName[String(r.company_id)] =
+      r.company_name != null ? capitalize(r.company_name) : `#${r.company_id}`;
+  }
   return (
     <>
     <DataView
@@ -752,10 +761,12 @@ async function PaymentRiskTable({
         })
       }
       rowKey={(r) => String(r.company_id)}
+      rowHref={(r) => `/companies/${r.company_id}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
       stickyHeader
+      selection={{ rowId: (r) => String(r.company_id) }}
       mobileCard={(r) => (
         <MobileCard
           title={
@@ -798,7 +809,9 @@ async function PaymentRiskTable({
           ]}
         />
       )}
-    />
+    >
+      <PaymentRiskBatchActions idToName={idToName} />
+    </DataView>
     {view === "table" && (
       <DataTablePagination
         paramPrefix="pr_"
@@ -967,6 +980,7 @@ async function CompanyAgingTable({
         })
       }
       rowKey={(r) => String(r.company_id)}
+      rowHref={(r) => `/companies/${r.company_id}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
@@ -1214,6 +1228,9 @@ async function OverdueTable({
       visibleKeys={visibleKeys}
       stickyHeader
       rowKey={(r) => String(r.id)}
+      rowHref={(r) =>
+        r.company_id ? `/companies/${r.company_id}` : null
+      }
       mobileCard={(r) => (
         <MobileCard
           title={

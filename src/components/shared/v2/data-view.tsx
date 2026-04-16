@@ -13,9 +13,11 @@ import {
   DataViewToggle,
   type DataViewMode,
 } from "./data-view-toggle";
+import { SelectionProvider } from "./selection-context";
 
 export type { DataViewMode } from "./data-view-toggle";
 export type { DataViewChartSpec, ChartType } from "./data-view-chart";
+export type { BatchAction } from "./batch-action-bar";
 
 interface DataViewProps<T> {
   data: T[];
@@ -72,6 +74,24 @@ interface DataViewProps<T> {
   stickyFirstColumn?: boolean;
   maxHeight?: string;
   density?: "compact" | "normal";
+
+  // ── Selection multi-fila ──
+  /**
+   * Habilita selección con checkbox column. DataView monta automáticamente el
+   * `<SelectionProvider>`. La barra de acciones se renderiza como `children`
+   * (debe ser un client component que use `useSelection` — típicamente un
+   * `<BatchActionBar actions={[...]}>` envuelto en un archivo `"use client"`
+   * para que los handlers no crucen el boundary RSC).
+   */
+  selection?: {
+    rowId: (row: T) => string;
+  };
+  /**
+   * Contenido extra renderizado debajo de la tabla/chart, dentro del
+   * `SelectionProvider` cuando `selection` está activo. Pensado para
+   * montar la barra de acciones batch vía un client component.
+   */
+  children?: React.ReactNode;
 }
 
 /**
@@ -108,12 +128,14 @@ export function DataView<T>({
   view = "table",
   viewHref,
   toolbar,
+  selection,
+  children,
   ...tableProps
 }: DataViewProps<T>) {
   const hasChart = Boolean(chart);
   const currentView: DataViewMode = hasChart ? view : "table";
 
-  return (
+  const body = (
     <div className="space-y-3">
       {(hasChart || toolbar) && (
         <div className="flex items-center justify-between gap-2">
@@ -134,8 +156,22 @@ export function DataView<T>({
           chart={chart}
         />
       ) : (
-        <DataTable data={data} columns={columns} {...tableProps} />
+        <DataTable
+          data={data}
+          columns={columns}
+          {...tableProps}
+          selectable={
+            selection && currentView === "table"
+              ? { rowId: selection.rowId }
+              : undefined
+          }
+        />
       )}
+
+      {/* Slot para batch actions o extras que viven dentro del SelectionProvider. */}
+      {selection && currentView === "table" ? children : null}
     </div>
   );
+
+  return selection ? <SelectionProvider>{body}</SelectionProvider> : body;
 }

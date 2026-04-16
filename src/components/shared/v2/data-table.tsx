@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "./empty-state";
+import { RowCheckbox, SelectAllCheckbox } from "./row-checkbox";
+
+/** Magic key para la columna de selección. No usar en column defs externas. */
+const SELECT_COLUMN_KEY = "__select";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Tipos
@@ -67,6 +71,15 @@ interface DataTableProps<T> {
   maxHeight?: string;
   /** Densidad de fila. Default: "normal". */
   density?: "compact" | "normal";
+
+  // ── Selection multi-fila ──
+  /**
+   * Habilita selección. Pasa `rowId` que devuelve un string estable por fila.
+   * Requiere `<SelectionProvider>` en el ancestro (DataView lo maneja).
+   */
+  selectable?: {
+    rowId: (row: T) => string;
+  };
 }
 
 /**
@@ -92,6 +105,7 @@ export function DataTable<T>({
   stickyFirstColumn = false,
   maxHeight,
   density = "normal",
+  selectable,
 }: DataTableProps<T>) {
   // Empty state
   if (!data || data.length === 0) {
@@ -113,11 +127,29 @@ export function DataTable<T>({
   const cellPadding = density === "compact" ? "py-1.5" : "py-2.5";
 
   // Filtrado de columnas visibles
-  const effectiveColumns = columns.filter((c) => {
+  const userColumns = columns.filter((c) => {
     if (c.alwaysVisible) return true;
     if (visibleKeys) return visibleKeys.includes(c.key);
     return !c.defaultHidden;
   });
+
+  // Si hay selección, inyecta la columna checkbox al inicio.
+  const rowIds = selectable ? data.map((r) => selectable.rowId(r)) : [];
+  const effectiveColumns: DataTableColumn<T>[] = selectable
+    ? [
+        {
+          key: SELECT_COLUMN_KEY,
+          header: "",
+          alwaysVisible: true,
+          className: "w-9 px-0",
+          align: "center",
+          cell: (row) => (
+            <RowCheckbox rowId={selectable.rowId(row)} />
+          ),
+        },
+        ...userColumns,
+      ]
+    : userColumns;
 
   // Toggle de sort: null → desc → asc → null
   const nextSortDir = (
@@ -129,6 +161,21 @@ export function DataTable<T>({
   };
 
   const renderHeader = (col: DataTableColumn<T>, index: number) => {
+    const isSelectCol = col.key === SELECT_COLUMN_KEY;
+    if (isSelectCol) {
+      return (
+        <TableHead
+          key={col.key}
+          className={cn(
+            "w-9 px-0 text-center",
+            stickyHeader &&
+              "sticky top-0 z-10 bg-card shadow-[inset_0_-1px_0_var(--border)]"
+          )}
+        >
+          <SelectAllCheckbox ids={rowIds} />
+        </TableHead>
+      );
+    }
     const isSorted = sort?.key === col.key;
     const dir = isSorted ? sort?.dir : null;
     const isSortable = col.sortable && sortHref;
@@ -204,9 +251,10 @@ export function DataTable<T>({
       >
         {effectiveColumns.map((col, colIdx) => {
           const isFirstSticky = stickyFirstColumn && colIdx === 0;
-          const cellContent = clickable ? (
-            // Envolvemos todo el contenido en un Link invisible para que
-            // la fila entera sea clickable (mejor que `onRowClick`).
+          const isSelectCol = col.key === SELECT_COLUMN_KEY;
+          // La columna de selección no se envuelve en el link de la fila —
+          // clickear el checkbox debe togglear selección, no navegar.
+          const cellContent = clickable && !isSelectCol ? (
             <a
               href={href!}
               className="block -m-2 p-2 focus-visible:outline-none"

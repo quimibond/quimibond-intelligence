@@ -561,6 +561,7 @@ async function ReorderRiskTable({
         })
       }
       rowKey={(r) => String(r.company_id)}
+      rowHref={(r) => `/companies/${r.company_id}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
@@ -749,6 +750,7 @@ async function TopCustomersTable({
         })
       }
       rowKey={(r) => String(r.company_id)}
+      rowHref={(r) => `/companies/${r.company_id}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
@@ -1100,6 +1102,9 @@ async function RecentOrdersTable({
         })
       }
       rowKey={(r) => String(r.id)}
+      rowHref={(r) =>
+        r.company_id ? `/companies/${r.company_id}` : null
+      }
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
