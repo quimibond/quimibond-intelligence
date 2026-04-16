@@ -579,6 +579,14 @@ const bankColumns: DataTableColumn<BankBalance>[] = [
     header: "Saldo MXN",
     cell: (r) => <Currency amount={r.saldoMxn} colorBySign />,
     align: "right",
+    summary: (rows) => {
+      const total = rows.reduce((s, r) => s + (r.saldoMxn ?? 0), 0);
+      return (
+        <span className="font-bold">
+          <Currency amount={total} compact colorBySign />
+        </span>
+      );
+    },
   },
 ];
 
