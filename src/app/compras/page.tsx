@@ -499,6 +499,14 @@ const singleSourceColumnsBase: DataTableColumn<SingleSourceRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.total_spent_12m} compact />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_spent_12m ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
 ];
 
@@ -764,6 +772,14 @@ const priceColumns: DataTableColumn<PriceAnomalyRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.total_spent} compact />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_spent ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "date",
@@ -935,6 +951,14 @@ const supplierColumns: DataTableColumn<TopSupplierRow>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.total_spent} compact />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_spent ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "products",
@@ -945,6 +969,11 @@ const supplierColumns: DataTableColumn<TopSupplierRow>[] = [
     ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <span className="tabular-nums">
+        {rows.reduce((s, r) => s + (r.product_count ?? 0), 0)}
+      </span>
+    ),
   },
   {
     key: "orders",
@@ -955,6 +984,11 @@ const supplierColumns: DataTableColumn<TopSupplierRow>[] = [
     ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <span className="tabular-nums">
+        {rows.reduce((s, r) => s + (r.order_count ?? 0), 0)}
+      </span>
+    ),
   },
 ];
 
@@ -1082,6 +1116,14 @@ const orderColumns: DataTableColumn<RecentPurchaseOrder>[] = [
     sortable: true,
     cell: (r) => <Currency amount={r.amount_total_mxn} />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.amount_total_mxn ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "date",

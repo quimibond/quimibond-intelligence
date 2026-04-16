@@ -880,6 +880,11 @@ const salespersonColumns: DataTableColumn<SalespersonRanked>[] = [
     cell: (r) => <span className="tabular-nums">{r.order_count}</span>,
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <span className="tabular-nums">
+        {rows.reduce((s, r) => s + (r.order_count ?? 0), 0)}
+      </span>
+    ),
   },
   {
     key: "avg_ticket",
@@ -892,12 +897,30 @@ const salespersonColumns: DataTableColumn<SalespersonRanked>[] = [
       />
     ),
     align: "right",
+    summary: (rows) => {
+      const totalAmt = rows.reduce((s, r) => s + (r.total_amount ?? 0), 0);
+      const totalOrders = rows.reduce((s, r) => s + (r.order_count ?? 0), 0);
+      return (
+        <Currency
+          amount={totalOrders > 0 ? totalAmt / totalOrders : 0}
+          compact
+        />
+      );
+    },
   },
   {
     key: "total",
     header: "Total",
     cell: (r) => <Currency amount={r.total_amount} compact />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_amount ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
 ];
 
@@ -1027,6 +1050,14 @@ const orderColumns: DataTableColumn<RecentSaleOrder>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.amount_total_mxn ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "date",

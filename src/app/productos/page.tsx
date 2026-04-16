@@ -377,6 +377,13 @@ const reorderColumns: DataTableColumn<ReorderRow>[] = [
     ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <span className="font-bold tabular-nums">
+        {Math.round(
+          rows.reduce((s, r) => s + (r.qty_sold_90d ?? 0), 0)
+        ).toLocaleString("es-MX")}
+      </span>
+    ),
   },
   {
     key: "days_of_stock",
@@ -619,6 +626,13 @@ const topMoverColumns: DataTableColumn<TopMoverRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold tabular-nums">
+        {formatNumber(
+          Math.round(rows.reduce((s, r) => s + (r.qty_sold_90d ?? 0), 0))
+        )}
+      </span>
+    ),
   },
   {
     key: "qty_180d",
@@ -682,6 +696,12 @@ const topMoverColumns: DataTableColumn<TopMoverRow>[] = [
     defaultHidden: true,
     cell: (r) => <Currency amount={r.stock_value} compact />,
     align: "right",
+    summary: (rows) => (
+      <Currency
+        amount={rows.reduce((s, r) => s + (r.stock_value ?? 0), 0)}
+        compact
+      />
+    ),
   },
   {
     key: "turnover",
@@ -814,6 +834,14 @@ const topMarginColumns: DataTableColumn<TopMarginProductRow>[] = [
     header: "Revenue",
     cell: (r) => <Currency amount={r.total_revenue} compact />,
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_revenue ?? 0), 0)}
+          compact
+        />
+      </span>
+    ),
   },
   {
     key: "margin",
