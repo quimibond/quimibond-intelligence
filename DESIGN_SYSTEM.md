@@ -8,8 +8,10 @@
 
 When in doubt:
 1. Check `src/components/ui/*` (shadcn primitives)
-2. Check `src/components/shared/*` (app-specific primitives)
+2. Check `src/components/shared/v2/*` (app-specific primitives — canonical)
 3. Only then add a new shared component
+
+> **Nota (2026-04-16):** `src/components/shared/*` (v1) fue borrado. Solo quedan 4 legacy (`realtime-alerts`, `route-error`, `search-command`, `severity-badge` — importados por `layout.tsx` / error boundaries). **Todo código nuevo debe usar `@/components/shared/v2`.**
 
 ---
 
@@ -85,69 +87,82 @@ All colors in this app are defined as CSS variables in `src/app/globals.css`. **
 | `Avatar` | User/company avatars |
 | `Tooltip` | Hover hints |
 | `DropdownMenu` | Action menus |
+| `Chart` (`ChartContainer` / `ChartTooltipContent` / `ChartLegendContent`) | shadcn chart primitive sobre recharts. **Único wrapper permitido para gráficas** — no usar recharts directo. |
 
-### App primitives (`src/components/shared/`)
+### App primitives (`src/components/shared/v2/`)
+
+Importar vía barrel: `import { DataView, KpiCard } from "@/components/shared/v2"`.
 
 | Component | Purpose |
 |-----------|---------|
-| `PageHeader` | Title + description at top of every page |
+| `PageHeader` | Title + breadcrumbs + actions at top of every page |
 | `EmptyState` | When a list is empty (always show, never blank) |
-| `LoadingGrid` | Placeholder rows during async loads |
-| `StatCard` / `MiniStatCard` | KPI tiles (use `MiniStatCard` for dense layouts) |
-| `SeverityBadge` | critical/high/medium/low/info status |
-| `RiskBadge` | high/critical risk contact indicator |
-| `StateBadge` | Action/insight state (new/seen/acted_on/dismissed/expired) |
-| `TrendBadge` | ↑ / ↓ with % and color |
-| `FeedbackButtons` | was_useful yes/no thumbs |
-| `Breadcrumbs` | Navigation trail on detail pages |
-| `DataFreshness` | "Hace X min" timestamp |
-| `EntityLink` | Clickable chip that links to a company/contact |
-| `AssigneeSelect` | Dropdown for assigning to an employee |
-| `LinkCard` | **Clickable card** — link, button, or anchor variants. Use this instead of div+custom-styles |
-| `FilterBar` | Consistent filter/search row |
-| `HealthRadar` | Radial chart for health score |
-| `HealthTrendChart` | Line chart for score over time |
-| `RevenueChart` | Bar chart for monthly revenue |
-| `AgingChart` | Cartera aging visualization |
-| `InvoiceTable` | Reusable invoice table |
-| `ActivityList` | Activity feed with icons |
+| `KpiCard` / `StatGrid` | KPI tiles con tone (success / warning / danger / info) |
+| `MetricRow` | Métrica inline: label + value + optional trend |
+| `SeverityBadge` | critical / high / medium / low / info |
+| `StatusBadge` | Action/insight state (new/seen/acted_on/dismissed/expired) |
+| `TrendIndicator` | ↑ / ↓ con % y color semántico |
+| `DataTable` | Tabla server-rendered con sort via URL (canónico) |
+| `DataView` | **`DataTable` + toggle opcional a gráfica.** Usar este para cualquier tabla que tenga sentido visualizar también como chart. |
+| `DataTableToolbar` / `DataTablePagination` / `TableViewOptions` / `TableExportButton` | Composición de toolbar para DataTable |
+| `FilterBar` | Fila de filtros/búsqueda |
+| `MiniChart` | Sparkline inline para KPIs y celdas de tabla |
+| `CompanyLink` / `PersonCard` | Entity chips |
+| `Currency` / `DateDisplay` | Formateadores seguros de valores |
+| `EvidencePackView` / `EvidenceTimeline` / `EvidenceChip` | Render de evidencia IA |
+| `PredictionCard` / `PredictionDelta` | Tarjetas de predicción |
+| `InvoiceDetailView` | Detalle de factura reutilizable |
+| `BottomSheet` / `MobileCard` / `PullToRefresh` | Primitivas mobile-first |
+| `ConfirmDialog` | Confirmación destructiva |
+| `SectionNav` | Navegación entre secciones dentro de una página |
 
 ---
 
-## LinkCard pattern (the one you'll use most)
+## DataView pattern (tabla ⇄ gráfica)
 
-**Problem:** 25+ places in the codebase had custom `<div>` / `<Link>` / `<button>` with `rounded-xl border bg-card shadow-sm hover:bg-muted/50 transition` classes — all slightly different.
+**Problema:** El app tiene ~35 tablas y solo ~5 gráficas. Casi cualquier tabla numérica (top productos, aging, costos, revenue por cliente, etc.) es más legible como gráfica.
 
-**Solution:** `<LinkCard>` in `src/components/shared/link-card.tsx`.
+**Solución:** `<DataView>` en `src/components/shared/v2/data-view.tsx`. Envuelve `<DataTable>` y añade un toggle server-rendered al param `?view=table|chart` de la URL.
 
 ```tsx
-// Next.js Link (default)
-<LinkCard href={`/inbox/insight/${id}`} className="flex items-center gap-3 p-3">
-  <Icon className="h-4 w-4 text-primary" />
-  <div>
-    <p className="text-sm font-medium">{title}</p>
-    <p className="text-xs text-muted-foreground">{description}</p>
-  </div>
-</LinkCard>
+import { DataView, type DataViewChartSpec } from "@/components/shared/v2";
+import { formatCurrencyCompact } from "@/lib/utils";
 
-// Mailto / external link
-<LinkCard as="a" href="mailto:..." onClick={handler} className="flex items-center gap-3 p-3">
-  ...
-</LinkCard>
+const chart: DataViewChartSpec = {
+  type: "bar",           // "bar" | "line" | "area" | "pie"
+  xKey: "product_ref",
+  series: [{ dataKey: "revenue_90d", label: "Revenue 90d" }],
+  valueFormatter: formatCurrencyCompact,
+};
 
-// Button (no href, action only)
-<LinkCard as="button" onClick={handler} disabled={loading} className="flex items-center gap-3 p-3">
-  ...
-</LinkCard>
+// Server component
+export default async function Page({ searchParams }) {
+  const sp = await searchParams;
+  const view = sp.view === "chart" ? "chart" : "table";
+  const rows = await getTopMovers();
+
+  return (
+    <DataView
+      data={rows}
+      columns={columns}
+      chart={chart}
+      view={view}
+      viewHref={(v) => {
+        const p = new URLSearchParams(sp);
+        p.set("view", v);
+        return `?${p.toString()}`;
+      }}
+    />
+  );
+}
 ```
 
-All variants share:
-- `rounded-xl border bg-card text-card-foreground shadow-sm`
-- Hover: `bg-muted/50` + `border-primary/30`
-- Focus-visible: `ring-2 ring-ring ring-offset-1` (keyboard a11y)
-- Automatic transition
-
-Add `interactive={false}` for static display (no hover/focus effects).
+Reglas:
+- **Si no pasas `chart`**, `DataView` se comporta idéntico a `<DataTable>` (sin toggle).
+- **Colores:** Rota `--chart-1..5` de `globals.css` por default. Puedes pasar `color: "var(--success)"` en cada serie.
+- **Tooltip/Leyenda:** Heredados de `ChartContainer` shadcn — no los reimplementes.
+- **SSR:** La tabla y el toggle son server-rendered. La gráfica es client (recharts no hidrata server-side); se carga solo cuando `view=chart`.
+- **No usar** recharts directo en páginas nuevas — siempre pasar por `DataView` o `ChartContainer`.
 
 ---
 

@@ -7,6 +7,14 @@ export {
   type DataTableColumn,
   type DataTableSort,
 } from "./data-table";
+export {
+  DataView,
+  type DataViewMode,
+  type DataViewChartSpec,
+  type ChartType,
+} from "./data-view";
+export { DataViewChart } from "./data-view-chart";
+export { DataViewToggle } from "./data-view-toggle";
 export { TableViewOptions, type ViewColumn } from "./table-view-options";
 export { TableExportButton } from "./table-export-button";
 export { makeSortHref } from "./table-sort-href";
