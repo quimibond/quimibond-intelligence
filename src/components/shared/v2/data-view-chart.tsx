@@ -1,7 +1,6 @@
 "use client";
 
 import * as React from "react";
-import { useRouter } from "next/navigation";
 import {
   Area,
   AreaChart,
@@ -149,13 +148,6 @@ interface DataViewChartProps {
   data: Record<string, unknown>[];
   chart: DataViewChartSpec;
   className?: string;
-  /**
-   * Click-through: callback que recibe la fila clickada y devuelve un href.
-   * Si retorna una URL, el chart navega vía Next router. Si retorna null,
-   * no hace nada. Los elementos clickables (barras, bubbles, puntos) reciben
-   * `cursor: pointer` automáticamente.
-   */
-  rowHref?: (row: Record<string, unknown>) => string | null | undefined;
 }
 
 const DEFAULT_COLORS = [
@@ -204,28 +196,7 @@ export function DataViewChart({
   data: rawData,
   chart,
   className,
-  rowHref,
 }: DataViewChartProps) {
-  const router = useRouter();
-
-  // Click-through handler — Recharts pasa `{ payload, ...chartMeta }` en Bar/
-  // Composed, y `{ payload }` en Scatter. Extraemos la fila y navegamos.
-  const handleElementClick = React.useMemo(() => {
-    if (!rowHref) return undefined;
-    return (e: unknown) => {
-      if (!e || typeof e !== "object") return;
-      const candidate = (e as { payload?: Record<string, unknown> })
-        .payload;
-      const row =
-        candidate && typeof candidate === "object"
-          ? candidate
-          : (e as Record<string, unknown>);
-      const href = rowHref(row);
-      if (href) router.push(href);
-    };
-  }, [rowHref, router]);
-
-  const clickableCursor = rowHref ? "pointer" : undefined;
   const data = React.useMemo(
     () => (chart.topN ? rawData.slice(0, chart.topN) : rawData),
     [rawData, chart.topN]
@@ -394,8 +365,6 @@ export function DataViewChart({
                 chart.layout === "horizontal" ? [0, 4, 4, 0] : [4, 4, 0, 0]
               }
               stackId={chart.stacked ? "stack" : undefined}
-              onClick={handleElementClick}
-              style={clickableCursor ? { cursor: clickableCursor } : undefined}
             >
               {chart.colorBy
                 ? data.map((row, i) => (
@@ -583,8 +552,6 @@ export function DataViewChart({
           <Scatter
             data={data}
             fill={chart.series[0]?.color ?? "var(--chart-1)"}
-            onClick={handleElementClick}
-            style={clickableCursor ? { cursor: clickableCursor } : undefined}
           >
             {chart.colorBy
               ? data.map((row, i) => (
@@ -660,10 +627,6 @@ export function DataViewChart({
                 fill={`var(--color-${s.dataKey})`}
                 radius={[4, 4, 0, 0]}
                 stackId={chart.stacked ? "stack" : undefined}
-                onClick={handleElementClick}
-                style={
-                  clickableCursor ? { cursor: clickableCursor } : undefined
-                }
               >
                 {chart.colorBy
                   ? data.map((row, i) => (
