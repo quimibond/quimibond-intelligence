@@ -106,16 +106,59 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ ok: true, result });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
+    const errorDetail = serializeError(err);
     console.error("[syntage/webhook] handler error:", err);
     await supabase.from("pipeline_logs").insert({
       level: "error",
       phase: "syntage_webhook",
-      message: `Handler error: ${message}`,
-      details: { event_id: event.id, event_type: event.type },
+      message: `Handler error: ${errorDetail.message}`,
+      details: {
+        event_id: event.id,
+        event_type: event.type,
+        error: errorDetail,
+        payload_object: event.data?.object ?? null,
+      },
     });
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: errorDetail.message }, { status: 500 });
   }
+}
+
+function serializeError(err: unknown): {
+  message: string;
+  name?: string;
+  code?: string;
+  details?: string;
+  hint?: string;
+  stack?: string;
+  raw?: unknown;
+} {
+  if (err instanceof Error) {
+    const e = err as Error & { code?: string; details?: string; hint?: string };
+    return {
+      message: e.message,
+      name: e.name,
+      code: e.code,
+      details: e.details,
+      hint: e.hint,
+      stack: e.stack?.split("\n").slice(0, 5).join("\n"),
+    };
+  }
+  if (err && typeof err === "object") {
+    const e = err as {
+      message?: unknown;
+      code?: unknown;
+      details?: unknown;
+      hint?: unknown;
+    };
+    return {
+      message: typeof e.message === "string" ? e.message : JSON.stringify(err),
+      code: typeof e.code === "string" ? e.code : undefined,
+      details: typeof e.details === "string" ? e.details : undefined,
+      hint: typeof e.hint === "string" ? e.hint : undefined,
+      raw: err,
+    };
+  }
+  return { message: String(err) };
 }
 
 export async function GET() {
