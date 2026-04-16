@@ -80,6 +80,35 @@ export async function getSystemKpis(): Promise<SystemKpis> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Data Quality invariants (desde RPC dq_invariants + view dq_current_issues)
+// ──────────────────────────────────────────────────────────────────────────
+export interface DqInvariant {
+  check_name: string;
+  severity: "CRITICAL" | "HIGH" | "WARNING" | "INFO";
+  ok: boolean;
+  value: string;
+  expected: string;
+  message: string;
+}
+
+/**
+ * Llama la RPC `dq_invariants()` que evalúa 14 invariantes clave del
+ * sistema (consistency cross-page, coverage, RPC health, data quality).
+ * Diseñada para:
+ *   - Surface en /system como panel de salud
+ *   - Prevenir regresiones tipo M3 CASCADE que rompieron views silenciosamente
+ */
+export async function getDqInvariants(): Promise<DqInvariant[]> {
+  const sb = getServiceClient();
+  const { data, error } = await sb.rpc("dq_invariants");
+  if (error) {
+    console.error("[dq_invariants]", error.message);
+    return [];
+  }
+  return (data ?? []) as DqInvariant[];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Sync freshness per table
 // ──────────────────────────────────────────────────────────────────────────
 export interface SyncFreshnessRow {

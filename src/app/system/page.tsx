@@ -41,6 +41,7 @@ import {
   getCostBreakdown,
   getAgentEffectiveness,
   getDataQuality,
+  getDqInvariants,
   getNotifications,
   getPipelineLogsPage,
   getPipelineLogPhaseOptions,
@@ -48,6 +49,7 @@ import {
   type CostRow,
   type AgentEffectivenessRow,
   type DataQualityRow,
+  type DqInvariant,
   type NotificationRow,
   type PipelineLogRow,
 } from "@/lib/queries/system";
@@ -149,7 +151,23 @@ export default async function SystemPage({
           </Card>
         </TabsContent>
 
-        <TabsContent value="quality" className="mt-4">
+        <TabsContent value="quality" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Integridad del sistema
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                14 invariantes monitoreados (dq_invariants RPC). Previene regresiones silenciosas como la del audit 2026-04-16.
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[200px]" />}>
+                <DqInvariantsPanel />
+              </Suspense>
+            </CardContent>
+          </Card>
+
           <Card data-table-export-root>
             <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
               <CardTitle className="text-base">
@@ -645,6 +663,83 @@ function QualityCard({ row }: { row: DataQualityRow }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Data Quality invariants panel
+// ──────────────────────────────────────────────────────────────────────────
+const invariantSeverityVariant: Record<
+  DqInvariant["severity"],
+  "success" | "warning" | "critical" | "info" | "secondary"
+> = {
+  CRITICAL: "critical",
+  HIGH: "warning",
+  WARNING: "info",
+  INFO: "secondary",
+};
+
+async function DqInvariantsPanel() {
+  const rows = await getDqInvariants();
+  if (rows.length === 0) {
+    return (
+      <EmptyState
+        icon={ShieldCheck}
+        title="Sin invariantes"
+        description="RPC dq_invariants() no devolvió filas."
+        compact
+      />
+    );
+  }
+  const ok = rows.filter((r) => r.ok).length;
+  const issues = rows.filter((r) => !r.ok);
+  const criticalIssues = issues.filter((r) => r.severity === "CRITICAL").length;
+  const highIssues = issues.filter((r) => r.severity === "HIGH").length;
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Badge variant={criticalIssues === 0 ? "success" : "critical"}>
+          {ok}/{rows.length} OK
+        </Badge>
+        {criticalIssues > 0 && (
+          <Badge variant="critical">{criticalIssues} CRITICAL</Badge>
+        )}
+        {highIssues > 0 && (
+          <Badge variant="warning">{highIssues} HIGH</Badge>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((r) => (
+          <div
+            key={r.check_name}
+            className={`flex items-start gap-3 rounded-md border p-2.5 ${
+              r.ok ? "border-border/50 bg-muted/20" : "border-warning/40 bg-warning/5"
+            }`}
+          >
+            <Badge
+              variant={r.ok ? "success" : invariantSeverityVariant[r.severity]}
+              className="mt-0.5 shrink-0 text-[10px] uppercase"
+            >
+              {r.ok ? "OK" : r.severity}
+            </Badge>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-mono text-foreground">
+                {r.check_name}
+              </div>
+              <div className="mt-0.5 text-xs text-muted-foreground">
+                {r.message}
+              </div>
+              <div className="mt-1 text-[10px] text-muted-foreground">
+                <span className="tabular-nums">{r.value}</span>
+                <span className="mx-1">·</span>
+                <span className="tabular-nums">expected {r.expected}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
