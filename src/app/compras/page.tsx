@@ -13,7 +13,7 @@ import {
   KpiCard,
   StatGrid,
   PageHeader,
-  DataTable,
+  DataView,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -27,6 +27,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -58,6 +60,30 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Compras" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+function buildComprasHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/compras?${s}` : "/compras";
+}
+
+function parseViewParam(sp: SearchParams, key: string): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
 
 export default async function ComprasPage({
   searchParams,
@@ -143,7 +169,7 @@ export default async function ComprasPage({
               </div>
             }
           >
-            <StockoutsSection />
+            <StockoutsSection searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -230,7 +256,7 @@ export default async function ComprasPage({
               </div>
             }
           >
-            <VarianceMarketSection />
+            <VarianceMarketSection searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -507,11 +533,32 @@ async function SingleSourceTable({
       />
     );
   }
+  const view = parseViewParam(searchParams, "ss_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [
+      {
+        dataKey: "total_spent_12m",
+        label: "Gasto 12m",
+        color: "var(--warning)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-      <DataTable
+    <>
+      <DataView
         data={rows}
         columns={singleSourceColumnsBase}
+        chart={chart}
+        view={view}
+        viewHref={(next) =>
+          buildComprasHref(searchParams, {
+            ss_view: next === "chart" ? "chart" : null,
+          })
+        }
         rowKey={(r) => String(r.odoo_product_id)}
         sort={
           params.sort
@@ -562,14 +609,16 @@ async function SingleSourceTable({
           />
         )}
       />
-      <DataTablePagination
-        paramPrefix="ss_"
-        total={total}
-        page={params.page}
-        pageSize={params.size}
-        unit="productos"
-      />
-    </div>
+      {view === "table" && (
+        <DataTablePagination
+          paramPrefix="ss_"
+          total={total}
+          page={params.page}
+          pageSize={params.size}
+          unit="productos"
+        />
+      )}
+    </>
   );
 }
 
@@ -747,11 +796,32 @@ async function PriceAnomaliesTable({
       />
     );
   }
+  const view = parseViewParam(searchParams, "pa_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [
+      {
+        dataKey: "price_vs_avg_pct",
+        label: "% vs promedio",
+        color: "var(--danger)",
+      },
+    ],
+    valueFormat: "percent",
+  };
   return (
-    <div className="space-y-3">
-      <DataTable
+    <>
+      <DataView
         data={rows}
         columns={priceColumns}
+        chart={chart}
+        view={view}
+        viewHref={(next) =>
+          buildComprasHref(searchParams, {
+            pa_view: next === "chart" ? "chart" : null,
+          })
+        }
         rowKey={(r, i) => `${r.product_ref ?? "p"}-${i}`}
         sort={
           params.sort ? { key: params.sort, dir: params.sortDir } : null
@@ -799,14 +869,16 @@ async function PriceAnomaliesTable({
           />
         )}
       />
-      <DataTablePagination
-        paramPrefix="pa_"
-        total={total}
-        page={params.page}
-        pageSize={params.size}
-        unit="productos"
-      />
-    </div>
+      {view === "table" && (
+        <DataTablePagination
+          paramPrefix="pa_"
+          total={total}
+          page={params.page}
+          pageSize={params.size}
+          unit="productos"
+        />
+      )}
+    </>
   );
 }
 
@@ -876,11 +948,32 @@ async function TopSuppliersTable({
     searchParams,
     paramPrefix: "sup_",
   });
+  const view = parseViewParam(searchParams, "sup_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "supplier_name",
+    topN: 15,
+    series: [
+      {
+        dataKey: "total_spent",
+        label: "Total gastado",
+        color: "var(--chart-2)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-    <DataTable
+    <>
+    <DataView
       data={rows}
       columns={supplierColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildComprasHref(searchParams, {
+          sup_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => r.supplier_name}
       sort={
         params.sort ? { key: params.sort, dir: params.sortDir } : null
@@ -907,14 +1000,16 @@ async function TopSuppliersTable({
         description: "No hay datos en supplier_product_matrix.",
       }}
     />
-    <DataTablePagination
-      paramPrefix="sup_"
-      total={total}
-      page={params.page}
-      pageSize={params.size}
-      unit="proveedores"
-    />
-    </div>
+    {view === "table" && (
+      <DataTablePagination
+        paramPrefix="sup_"
+        total={total}
+        page={params.page}
+        pageSize={params.size}
+        unit="proveedores"
+      />
+    )}
+    </>
   );
 }
 
@@ -1028,11 +1123,32 @@ async function RecentPurchasesTable({
     searchParams,
     paramPrefix: "po_",
   });
+  const view = parseViewParam(searchParams, "po_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "name",
+    topN: 15,
+    series: [
+      {
+        dataKey: "amount_total_mxn",
+        label: "Monto",
+        color: "var(--chart-3)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <div className="space-y-3">
-      <DataTable
+    <>
+      <DataView
         data={rows}
         columns={orderColumns}
+        chart={chart}
+        view={view}
+        viewHref={(next) =>
+          buildComprasHref(searchParams, {
+            po_view: next === "chart" ? "chart" : null,
+          })
+        }
         rowKey={(r) => String(r.id)}
         sort={
           params.sort ? { key: params.sort, dir: params.sortDir } : null
@@ -1078,14 +1194,16 @@ async function RecentPurchasesTable({
           description: "Ajusta los filtros o el rango de fechas.",
         }}
       />
-      <DataTablePagination
-        paramPrefix="po_"
-        total={total}
-        page={params.page}
-        pageSize={params.size}
-        unit="órdenes"
-      />
-    </div>
+      {view === "table" && (
+        <DataTablePagination
+          paramPrefix="po_"
+          total={total}
+          page={params.page}
+          pageSize={params.size}
+          unit="órdenes"
+        />
+      )}
+    </>
   );
 }
 
@@ -1213,7 +1331,11 @@ const stockoutColumns: DataTableColumn<StockoutRow>[] = [
   },
 ];
 
-async function StockoutsSection() {
+async function StockoutsSection({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   const rows = await getStockoutQueue(undefined, 50);
   const actionable = rows.filter(
     (r) => r.urgency !== "OK" && r.urgency !== "ATTENTION"
@@ -1228,10 +1350,31 @@ async function StockoutsSection() {
       />
     );
   }
+  const view = parseViewParam(searchParams, "so_view");
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "product_ref",
+    topN: 15,
+    series: [
+      {
+        dataKey: "revenue_at_risk_30d_mxn",
+        label: "Revenue en riesgo 30d",
+        color: "var(--danger)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <DataTable
+    <DataView
       data={actionable}
       columns={stockoutColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildComprasHref(searchParams, {
+          so_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.odoo_product_id)}
       mobileCard={(r) => (
         <MobileCard
@@ -1392,7 +1535,11 @@ const varianceColumns: DataTableColumn<SupplierPriceRow>[] = [
   },
 ];
 
-async function VarianceMarketSection() {
+async function VarianceMarketSection({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
   // Combinamos overpriced + above_market + below_market en una tabla.
   const [overpriced, aboveMarket, belowMarket] = await Promise.all([
     getSupplierPriceAlerts("overpriced", 6, 60),
@@ -1412,10 +1559,36 @@ async function VarianceMarketSection() {
       />
     );
   }
+  const view = parseViewParam(searchParams, "vm_view");
+  // Enrich rows with a display-friendly label for the x-axis.
+  const chartRows = all.map((r) => ({
+    ...r,
+    label: `${r.product_ref ?? "?"} · ${r.supplier_name}`,
+  }));
+  const chart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "label",
+    topN: 15,
+    series: [
+      {
+        dataKey: "overpaid_mxn",
+        label: "Sobreprecio MXN",
+        color: "var(--danger)",
+      },
+    ],
+    valueFormat: "currency-compact",
+  };
   return (
-    <DataTable
-      data={all}
+    <DataView
+      data={chartRows}
       columns={varianceColumns}
+      chart={chart}
+      view={view}
+      viewHref={(next) =>
+        buildComprasHref(searchParams, {
+          vm_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r, i) => `${r.odoo_product_id}-${r.supplier_id}-${r.month}-${i}`}
       mobileCard={(r) => (
         <MobileCard
