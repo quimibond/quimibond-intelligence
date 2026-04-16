@@ -4,7 +4,6 @@ import {
   Flame,
   Inbox,
   Mail,
-  Phone,
   UserCheck,
   UserCircle,
 } from "lucide-react";
@@ -75,11 +74,7 @@ export default async function ContactDetailPage({
           { label: contact.name ?? "Contacto" },
         ]}
         title={contact.name ?? "Sin nombre"}
-        subtitle={
-          [contact.position, contact.company_name ?? contact.company]
-            .filter(Boolean)
-            .join(" · ") || undefined
-        }
+        subtitle={contact.company_name ?? undefined}
         actions={
           <div className="flex flex-wrap gap-2">
             {contact.risk_level && (
@@ -150,17 +145,6 @@ export default async function ContactDetailPage({
           <CardContent className="space-y-3 pb-4">
             <InfoRow icon={Mail} label="Email" value={contact.email} copyable />
             <InfoRow
-              icon={Phone}
-              label="Teléfono"
-              value={contact.phone}
-              copyable
-            />
-            <InfoRow
-              icon={UserCircle}
-              label="Puesto"
-              value={contact.position}
-            />
-            <InfoRow
               icon={Building2}
               label="Empresa"
               value={
@@ -170,7 +154,7 @@ export default async function ContactDetailPage({
                     name={contact.company_name}
                   />
                 ) : (
-                  contact.company ?? "—"
+                  "—"
                 )
               }
             />
@@ -234,16 +218,6 @@ export default async function ContactDetailPage({
                 )
               }
             />
-            {contact.notes && (
-              <div className="pt-2">
-                <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-                  Notas
-                </div>
-                <p className="mt-1 whitespace-pre-wrap text-xs">
-                  {contact.notes}
-                </p>
-              </div>
-            )}
           </CardContent>
         </Card>
       </div>

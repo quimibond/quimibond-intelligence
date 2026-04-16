@@ -192,8 +192,13 @@ export async function getInsightsByDepartment(): Promise<
     assignee_department: string | null;
     severity: string | null;
   }>) {
-    if (!row.assignee_department) continue;
-    const b = buckets.get(row.assignee_department) ?? {
+    // El guard `.not('assignee_department','is',null)` a nivel SQL no
+    // filtra strings vacíos; hay 3 insights con `assignee_department=''`
+    // (routing fallido). Si no los filtramos aquí, /equipo renderiza una
+    // fila con nombre en blanco y conteo misterioso.
+    const dept = row.assignee_department?.trim();
+    if (!dept) continue;
+    const b = buckets.get(dept) ?? {
       total: 0,
       critical: 0,
       high: 0,
@@ -201,7 +206,7 @@ export async function getInsightsByDepartment(): Promise<
     b.total += 1;
     if (row.severity === "critical") b.critical += 1;
     if (row.severity === "high") b.high += 1;
-    buckets.set(row.assignee_department, b);
+    buckets.set(dept, b);
   }
   return [...buckets.entries()]
     .map(([department, v]) => ({

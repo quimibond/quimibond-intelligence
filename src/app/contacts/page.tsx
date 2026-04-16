@@ -85,11 +85,6 @@ const contactColumns: DataTableColumn<ContactListRow>[] = [
     cell: (r) => (
       <div className="flex flex-col min-w-0">
         <span className="font-medium truncate">{r.name ?? "—"}</span>
-        {r.position && (
-          <span className="text-[11px] text-muted-foreground truncate">
-            {r.position}
-          </span>
-        )}
       </div>
     ),
   },
@@ -121,8 +116,6 @@ const contactColumns: DataTableColumn<ContactListRow>[] = [
           name={r.company_name}
           truncate
         />
-      ) : r.company ? (
-        <span className="truncate text-xs">{r.company}</span>
       ) : (
         <span className="text-muted-foreground">—</span>
       ),
@@ -145,20 +138,6 @@ const contactColumns: DataTableColumn<ContactListRow>[] = [
       </div>
     ),
     hideOnMobile: true,
-  },
-  {
-    key: "position",
-    header: "Puesto",
-    defaultHidden: true,
-    cell: (r) => <span className="text-xs">{r.position ?? "—"}</span>,
-  },
-  {
-    key: "phone",
-    header: "Teléfono",
-    defaultHidden: true,
-    cell: (r) => (
-      <span className="font-mono text-xs">{r.phone ?? "—"}</span>
-    ),
   },
   {
     key: "health",
@@ -373,7 +352,7 @@ async function ContactsTable({
         mobileCard={(r) => (
           <MobileCard
             title={r.name ?? "—"}
-            subtitle={r.position ?? r.email ?? undefined}
+            subtitle={r.email ?? undefined}
             badge={
               r.risk_level ? (
                 <Badge variant={riskVariant[r.risk_level] ?? "secondary"}>
@@ -396,7 +375,7 @@ async function ContactsTable({
               },
               {
                 label: "Empresa",
-                value: r.company_name ?? r.company ?? "—",
+                value: r.company_name ?? "—",
                 className: "truncate",
               },
               {

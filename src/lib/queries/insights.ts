@@ -2,8 +2,25 @@ import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { joinedCompanyName } from "./_helpers";
 
-/** Slugs de agentes legacy/sistema cuyos insights NO deben llegar al CEO. */
+/** Slugs de agentes legacy/sistema cuyos insights NO deben llegar al CEO.
+ *  Se usan SOLO cuando `excludeLegacy=true` (default) — la página
+ *  `/agents/[slug]` los habilita explícitamente para poder mostrar los
+ *  insights de data_quality/meta/cleanup/odoo al CEO cuando navega a
+ *  la ficha del agente. */
 const LEGACY_AGENT_SLUGS = new Set(["data_quality", "meta", "cleanup", "odoo"]);
+
+/**
+ * Filtro SQL (PostgREST .or()) que replica `isVisibleToCEO`.
+ * Cobranza insights se ocultan EXCEPTO si severity=critical o
+ * business_impact_estimate >= 500K. Cualquier otra categoría pasa.
+ *
+ *   (category != 'cobranza') OR (severity = 'critical') OR (impact >= 500K)
+ *
+ * Exportado para que getContactsKpis/getContactDetail/equipo apliquen
+ * la misma regla del lado SQL.
+ */
+export const CEO_VISIBLE_FILTER =
+  "category.neq.cobranza,severity.eq.critical,business_impact_estimate.gte.500000";
 
 /**
  * CEO inbox filter (audit 2026-04-15 sprint 2).
@@ -63,11 +80,21 @@ export interface InsightRow {
 /**
  * Lista de insights con join a companies (FK) y ai_agents (FK).
  * Usa nombres reales: description (no summary), assignee_name, agent_id.
+ *
+ *  - `agentId`: si se pasa, aplica `.eq('agent_id', id)` EN LA QUERY (no
+ *    post-filter). Evita la trampa de limit-antes-de-filter cuando la
+ *    página `/agents/[slug]` pedía 30 globales y descartaba 81-96% de
+ *    los insights tras filtrar por agente.
+ *  - `excludeLegacy`: default `true`. La página `/agents/[slug]` lo pone
+ *    a `false` para poder mostrar insights de data_quality/meta/cleanup/
+ *    odoo cuando el CEO abre la ficha del agente.
  */
 export async function getInsights(params?: {
   state?: InsightState | InsightState[];
   severity?: string | string[];
   limit?: number;
+  agentId?: number;
+  excludeLegacy?: boolean;
 }): Promise<InsightRow[]> {
   const sb = getServiceClient();
   let query = sb
@@ -96,11 +123,17 @@ export async function getInsights(params?: {
     }
   }
 
+  if (params?.agentId != null) {
+    query = query.eq("agent_id", params.agentId);
+  }
+
   const { data } = await query;
   type Raw = Omit<
     InsightRow,
     "company_name" | "agent_slug" | "agent_name"
   > & { companies: unknown; ai_agents: unknown };
+
+  const excludeLegacy = params?.excludeLegacy ?? true;
 
   return ((data ?? []) as unknown as Raw[])
     .map((row) => {
@@ -127,7 +160,10 @@ export async function getInsights(params?: {
         recommendation: row.recommendation,
       };
     })
-    .filter((row) => !row.agent_slug || !LEGACY_AGENT_SLUGS.has(row.agent_slug));
+    .filter(
+      (row) =>
+        !excludeLegacy || !row.agent_slug || !LEGACY_AGENT_SLUGS.has(row.agent_slug),
+    );
 }
 
 export interface InsightDetail extends InsightRow {
@@ -208,6 +244,11 @@ export async function getInsightById(
   };
 }
 
+/**
+ * Conteos por estado/severidad del `/inbox`. Aplica CEO_VISIBLE_FILTER
+ * para que los badges "X critical" coincidan exactamente con lo que
+ * la lista renderiza (antes podían diferir por cobranza oculta).
+ */
 export async function getInsightCounts(): Promise<{
   new: number;
   seen: number;
@@ -223,29 +264,35 @@ export async function getInsightCounts(): Promise<{
       sb
         .from("agent_insights")
         .select("id", { count: "exact", head: true })
-        .eq("state", "new"),
+        .eq("state", "new")
+        .or(CEO_VISIBLE_FILTER),
       sb
         .from("agent_insights")
         .select("id", { count: "exact", head: true })
-        .eq("state", "seen"),
+        .eq("state", "seen")
+        .or(CEO_VISIBLE_FILTER),
       sb
         .from("agent_insights")
         .select("id", { count: "exact", head: true })
-        .eq("state", "acted_on"),
+        .eq("state", "acted_on")
+        .or(CEO_VISIBLE_FILTER),
       sb
         .from("agent_insights")
         .select("id", { count: "exact", head: true })
-        .eq("state", "dismissed"),
+        .eq("state", "dismissed")
+        .or(CEO_VISIBLE_FILTER),
       sb
         .from("agent_insights")
         .select("id", { count: "exact", head: true })
         .in("state", ["new", "seen"])
-        .eq("severity", "critical"),
+        .eq("severity", "critical")
+        .or(CEO_VISIBLE_FILTER),
       sb
         .from("agent_insights")
         .select("id", { count: "exact", head: true })
         .in("state", ["new", "seen"])
-        .eq("severity", "high"),
+        .eq("severity", "high")
+        .or(CEO_VISIBLE_FILTER),
     ]);
   return {
     new: totalNew.count ?? 0,

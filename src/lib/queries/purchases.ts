@@ -96,9 +96,16 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
         : 0,
     poCount: (curr.data ?? []).length,
     supplierPayable,
-    pagosProv30d:
-      (cfo.data as { pagos_prov_30d: number | null } | null)?.pagos_prov_30d ??
-      0,
+    // `cfo_dashboard.pagos_prov_30d` viene signado en negativo (outflow).
+    // En `/compras` se renderiza como KPI "Pagos 30d" con `format=currency`
+    // — sin Math.abs se lee como "-$25.1M" (pérdida). La magnitud del
+    // volumen de egresos es lo relevante aquí; el signo lo guarda
+    // `finance.ts` para `/finanzas` donde sí se usa en `cobros + pagos`.
+    pagosProv30d: Math.abs(
+      Number(
+        (cfo.data as { pagos_prov_30d: number | null } | null)?.pagos_prov_30d,
+      ) || 0,
+    ),
     singleSourceCount: ssRows.length,
     singleSourceSpent,
   };

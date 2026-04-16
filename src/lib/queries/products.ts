@@ -424,14 +424,28 @@ export async function getDeadStock(limit = 20): Promise<DeadStockRow[]> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Top margin products (aggregated por product across all customers)
+// Top markup products (aggregated por product across all customers)
 // ──────────────────────────────────────────────────────────────────────────
+// IMPORTANTE: `product_margin_analysis.gross_margin_pct` es MARKUP
+// `(price-cost)/cost*100`, NO margen `(price-cost)/price*100`. Valores de
+// 691%, 758% son válidos como markup (precio 7-8x el costo) pero se leen
+// como "margen" incoherentes. Convertimos a margen real aquí antes de
+// renderizar. Referencia: customer_margin_analysis sí computa margen real
+// `SUM(line_margin)/SUM(line_revenue)*100` (0-100%), así que /ventas y
+// /productos ahora son comparables.
 export interface TopMarginProductRow {
   product_ref: string | null;
   product_name: string | null;
   total_revenue: number;
   weighted_margin_pct: number;
+  weighted_markup_pct: number;
   customers: number;
+}
+
+/** Convierte markup a margen real: m% = markup% / (1 + markup%/100). */
+function markupToMargin(markupPct: number): number {
+  if (!Number.isFinite(markupPct)) return 0;
+  return (markupPct / (100 + markupPct)) * 100;
 }
 
 export async function getTopMarginProducts(
@@ -459,7 +473,7 @@ export async function getTopMarginProducts(
       product_ref: string | null;
       product_name: string | null;
       revenue_sum: number;
-      margin_weighted: number;
+      markup_weighted: number;
       customers: Set<number>;
     }
   >();
@@ -472,26 +486,29 @@ export async function getTopMarginProducts(
         product_ref: r.product_ref,
         product_name: r.product_name,
         revenue_sum: 0,
-        margin_weighted: 0,
+        markup_weighted: 0,
         customers: new Set<number>(),
       };
     const rev = Number(r.total_order_value) || 0;
-    const margin = Number(r.gross_margin_pct) || 0;
+    const markup = Number(r.gross_margin_pct) || 0;
     entry.revenue_sum += rev;
-    entry.margin_weighted += rev * margin;
+    entry.markup_weighted += rev * markup;
     if (r.company_id) entry.customers.add(r.company_id);
     byProduct.set(key, entry);
   }
 
   return [...byProduct.values()]
-    .map((v) => ({
-      product_ref: v.product_ref,
-      product_name: v.product_name,
-      total_revenue: v.revenue_sum,
-      weighted_margin_pct:
-        v.revenue_sum > 0 ? v.margin_weighted / v.revenue_sum : 0,
-      customers: v.customers.size,
-    }))
+    .map((v) => {
+      const markup = v.revenue_sum > 0 ? v.markup_weighted / v.revenue_sum : 0;
+      return {
+        product_ref: v.product_ref,
+        product_name: v.product_name,
+        total_revenue: v.revenue_sum,
+        weighted_markup_pct: markup,
+        weighted_margin_pct: markupToMargin(markup),
+        customers: v.customers.size,
+      };
+    })
     .sort((a, b) => b.total_revenue - a.total_revenue)
     .slice(0, limit);
 }

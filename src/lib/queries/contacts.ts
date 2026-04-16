@@ -1,6 +1,7 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { paginationRange, type TableParams } from "./table-params";
+import { CEO_VISIBLE_FILTER } from "./insights";
 
 /**
  * Contacts queries — personas físicas linkeadas a companies / entities.
@@ -13,7 +14,6 @@ export interface ContactListRow {
   id: string;
   name: string | null;
   email: string | null;
-  company: string | null;
   company_id: number | null;
   company_name: string | null;
   risk_level: string | null;
@@ -22,8 +22,6 @@ export interface ContactListRow {
   last_activity: string | null;
   is_customer: boolean | null;
   is_supplier: boolean | null;
-  phone: string | null;
-  position: string | null;
 }
 
 export interface ContactListPage {
@@ -55,7 +53,7 @@ export async function getContactsPage(
   let query = sb
     .from("contacts")
     .select(
-      "id, name, email, company, company_id, risk_level, current_health_score, sentiment_score, last_activity, is_customer, is_supplier, phone, position, companies:company_id(name)",
+      "id, name, email, company_id, risk_level, current_health_score, sentiment_score, last_activity, is_customer, is_supplier, companies:company_id(name)",
       { count: "exact" }
     )
     .not("name", "is", null);
@@ -63,7 +61,7 @@ export async function getContactsPage(
   if (params.q) {
     const needle = params.q.replace(/[%_]/g, "\\$&");
     query = query.or(
-      `name.ilike.%${needle}%,email.ilike.%${needle}%,company.ilike.%${needle}%`
+      `name.ilike.%${needle}%,email.ilike.%${needle}%`
     );
   }
   if (params.risk && params.risk.length > 0) {
@@ -90,7 +88,6 @@ export async function getContactsPage(
       id: r.id,
       name: r.name,
       email: r.email,
-      company: r.company,
       company_id: r.company_id,
       company_name: companyName,
       risk_level: r.risk_level,
@@ -99,8 +96,6 @@ export async function getContactsPage(
       last_activity: r.last_activity,
       is_customer: r.is_customer,
       is_supplier: r.is_supplier,
-      phone: r.phone,
-      position: r.position,
     };
   });
 
@@ -114,9 +109,6 @@ export interface ContactDetail {
   id: string;
   name: string | null;
   email: string | null;
-  phone: string | null;
-  position: string | null;
-  company: string | null;
   company_id: number | null;
   company_name: string | null;
   entity_id: string | null;
@@ -127,7 +119,6 @@ export interface ContactDetail {
   is_customer: boolean | null;
   is_supplier: boolean | null;
   odoo_partner_id: number | null;
-  notes: string | null;
   created_at: string | null;
   total_emails: number;
   active_insights: number;
@@ -140,7 +131,7 @@ export async function getContactDetail(
   const { data } = await sb
     .from("contacts")
     .select(
-      "id, name, email, phone, position, company, company_id, entity_id, risk_level, current_health_score, sentiment_score, last_activity, is_customer, is_supplier, odoo_partner_id, notes, created_at, companies:company_id(name)"
+      "id, name, email, company_id, entity_id, risk_level, current_health_score, sentiment_score, last_activity, is_customer, is_supplier, odoo_partner_id, created_at, companies:company_id(name)"
     )
     .eq("id", id)
     .maybeSingle();
@@ -156,7 +147,8 @@ export async function getContactDetail(
       .from("agent_insights")
       .select("id", { count: "exact", head: true })
       .eq("contact_id", id)
-      .in("state", ["new", "seen"]),
+      .in("state", ["new", "seen"])
+      .or(CEO_VISIBLE_FILTER),
   ]);
 
   const joined = (data as { companies?: { name?: string | null } | { name?: string | null }[] | null }).companies;
@@ -168,9 +160,6 @@ export async function getContactDetail(
     id: data.id,
     name: data.name,
     email: data.email,
-    phone: data.phone,
-    position: data.position,
-    company: data.company,
     company_id: data.company_id,
     company_name: companyName,
     entity_id: data.entity_id,
@@ -181,7 +170,6 @@ export async function getContactDetail(
     is_customer: data.is_customer,
     is_supplier: data.is_supplier,
     odoo_partner_id: data.odoo_partner_id,
-    notes: data.notes,
     created_at: data.created_at,
     total_emails: emailsRes.count ?? 0,
     active_insights: insightsRes.count ?? 0,
@@ -219,7 +207,8 @@ export async function getContactsKpis(): Promise<ContactsKpis> {
       .from("agent_insights")
       .select("id", { count: "exact", head: true })
       .not("contact_id", "is", null)
-      .in("state", ["new", "seen"]),
+      .in("state", ["new", "seen"])
+      .or(CEO_VISIBLE_FILTER),
   ]);
 
   return {

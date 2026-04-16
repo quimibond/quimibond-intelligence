@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { sanitizeCompanyName } from "@/lib/queries/_helpers";
 
 interface CompanyLinkProps {
   companyId: string | number;
@@ -28,6 +29,11 @@ export function CompanyLink({
   className,
   truncate,
 }: CompanyLinkProps) {
+  // Nombres raw de MVs (company_profile, rfm_segments, cash_flow_aging, etc.)
+  // no pasan por `joinedCompanyName`, así que pueden traer basura (193 rows
+  // en producción: "8141", "5806", "1139" — Odoo partners sin nombre real).
+  // Este es el último backstop antes del render.
+  const displayName = sanitizeCompanyName(name) ?? "—";
   return (
     <Link
       href={`/companies/${companyId}`}
@@ -37,7 +43,7 @@ export function CompanyLink({
       )}
     >
       <span className={cn(truncate && "truncate max-w-[180px]")}>
-        {name ?? "—"}
+        {displayName}
       </span>
       {tier && (
         <Badge

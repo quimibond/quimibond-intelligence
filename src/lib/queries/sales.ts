@@ -157,45 +157,56 @@ export interface RevenueTrendPoint {
   ma3m: number;
 }
 
+/**
+ * Serie mensual de ingresos para el chart de /ventas.
+ *
+ * Usa `pl_estado_resultados.ingresos` — MISMA fuente que el KPI "Ingresos
+ * del mes" en `getSalesKpis`. Antes el KPI usaba P&L pero el chart venía
+ * de `monthly_revenue_by_company.net_revenue`, que incluye out_invoices
+ * booked a cuentas no-income (leasing, intercompany). Para Mar-2026 eso
+ * producía un delta del 79% entre el número del KPI ($14.4M) y la barra
+ * ($25.7M) en la misma página — mismo label "ingresos".
+ *
+ * `ma3m` ahora se computa client-side con ventana rodante de 3 meses
+ * sobre `pl_estado_resultados` (antes venía del MV).
+ */
 export async function getSalesRevenueTrend(
   months = 12
 ): Promise<RevenueTrendPoint[]> {
   const sb = getServiceClient();
-  const since = new Date();
-  since.setMonth(since.getMonth() - months);
-  const sinceStr = monthStart(since);
-
+  // Pedimos `months + 2` para tener contexto para el ma3m del mes más
+  // antiguo de la ventana, pero solo devolvemos los últimos `months`.
   const { data } = await sb
-    .from("monthly_revenue_by_company")
-    .select("month, net_revenue, ma_3m")
-    .gte("month", sinceStr)
-    .order("month", { ascending: true });
+    .from("pl_estado_resultados")
+    .select("period, ingresos")
+    .order("period", { ascending: false })
+    .limit(months + 2);
 
-  const buckets = new Map<
-    string,
-    { revenue: number; ma3mSum: number; count: number }
-  >();
-  for (const row of (data ?? []) as Array<{
-    month: string | null;
-    net_revenue: number | null;
-    ma_3m: number | null;
-  }>) {
-    if (!row.month) continue;
-    const key = row.month.slice(0, 7);
-    const entry = buckets.get(key) ?? { revenue: 0, ma3mSum: 0, count: 0 };
-    entry.revenue += Number(row.net_revenue) || 0;
-    entry.ma3mSum += Number(row.ma_3m) || 0;
-    entry.count += 1;
-    buckets.set(key, entry);
-  }
+  const rows = ((data ?? []) as Array<{
+    period: string | null;
+    ingresos: number | null;
+  }>)
+    .filter((r) => {
+      if (!r.period) return false;
+      const y = Number(r.period.split("-")[0]);
+      return y >= 2020 && y <= 2030;
+    })
+    .map((r) => ({
+      period: r.period!.slice(0, 7),
+      revenue: Number(r.ingresos) || 0,
+    }))
+    .sort((a, b) => a.period.localeCompare(b.period));
 
-  return [...buckets.entries()]
-    .sort(([a], [b]) => a.localeCompare(b))
-    .map(([period, v]) => ({
-      period,
-      revenue: v.revenue,
-      ma3m: v.count > 0 ? v.ma3mSum / v.count : 0,
-    }));
+  const points: RevenueTrendPoint[] = rows.map((r, i) => {
+    const window = rows.slice(Math.max(0, i - 2), i + 1);
+    const ma3m =
+      window.length > 0
+        ? window.reduce((s, w) => s + w.revenue, 0) / window.length
+        : 0;
+    return { period: r.period, revenue: r.revenue, ma3m };
+  });
+
+  return points.slice(-months);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
