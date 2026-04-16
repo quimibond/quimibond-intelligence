@@ -87,6 +87,43 @@ export default async function CompanyDetailPage({
   const company = await getCompanyDetail(id);
   if (!company) notFound();
 
+  // M8: /companies/[id] para empresas self (Quimibond + variantes
+  // Google Drive/Chat) renderizaba métricas vacías. Ahora muestra un
+  // banner claro — análisis comercial no aplica a empresas internas.
+  if (company.isSelf) {
+    return (
+      <div className="space-y-5 pb-24 md:pb-6">
+        <PageHeader
+          breadcrumbs={[
+            { label: "Dashboard", href: "/" },
+            { label: "Empresas", href: "/companies" },
+            { label: company.name },
+          ]}
+          title={company.name}
+          subtitle="Empresa interna"
+          actions={
+            <Badge variant="secondary">Interna</Badge>
+          }
+        />
+        <Card>
+          <CardContent className="flex flex-col items-center gap-3 py-12 text-center">
+            <Building2 className="size-10 text-muted-foreground" />
+            <h3 className="text-base font-semibold">Esta es una empresa interna</h3>
+            <p className="max-w-md text-sm text-muted-foreground">
+              {company.name} está marcada como <code className="rounded bg-muted px-1">relationship_type=self</code> —
+              no aplica análisis comercial (revenue, cartera, reorder, etc.). Las
+              empresas externas se ven en{" "}
+              <a href="/companies" className="underline hover:text-primary">
+                /companies
+              </a>
+              .
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       {/* Header con breadcrumbs */}

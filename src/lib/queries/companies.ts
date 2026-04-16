@@ -272,6 +272,9 @@ export interface CompanyDetail {
   // Team
   salespeople: string | null;
   topProducts: string | null;
+  // M8: self/internal flag — /companies/[id] renderiza banner en vez
+  // de métricas comerciales vacías cuando la empresa es self.
+  isSelf: boolean;
 }
 
 export async function getCompanyDetail(
@@ -283,7 +286,7 @@ export async function getCompanyDetail(
     sb
       .from("companies")
       .select(
-        "id, name, canonical_name, rfc, industry, city, country, is_customer, is_supplier, credit_limit, payment_term, monthly_avg"
+        "id, name, canonical_name, rfc, industry, city, country, is_customer, is_supplier, credit_limit, payment_term, monthly_avg, relationship_type"
       )
       .eq("id", id)
       .maybeSingle(),
@@ -315,6 +318,7 @@ export async function getCompanyDetail(
     credit_limit: number | null;
     payment_term: string | null;
     monthly_avg: number | null;
+    relationship_type: string | null;
   };
   const p = (profile.data ?? {}) as Partial<{
     total_revenue: number;
@@ -396,6 +400,7 @@ export async function getCompanyDetail(
     recentComplaints: n.recent_complaints ?? null,
     salespeople: n.salespeople ?? null,
     topProducts: n.top_products ?? null,
+    isSelf: b.relationship_type === "self",
   };
 }
 
