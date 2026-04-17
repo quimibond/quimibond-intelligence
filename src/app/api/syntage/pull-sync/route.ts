@@ -1,0 +1,88 @@
+import { NextRequest, NextResponse } from "next/server";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
+import { runPullSync, resolveSyntageEntityId, type PullResource } from "@/lib/syntage/pull-sync";
+
+export const maxDuration = 60;
+export const dynamic = "force-dynamic";
+
+const VALID_RESOURCES: PullResource[] = [
+  "invoices",
+  "invoice-line-items",
+  "invoice-payments",
+  "tax-retentions",
+  "tax-returns",
+];
+
+/**
+ * Admin endpoint to pull-sync a resource directly from Syntage REST API.
+ *
+ * Usage:
+ *   curl -H "Authorization: Bearer $CRON_SECRET" \
+ *     "https://quimibond-intelligence.vercel.app/api/syntage/pull-sync?resource=invoices&from=2024-01-01&to=2024-12-31"
+ *
+ *   # Continue from where previous call left off (cursor in response):
+ *   curl -H "Authorization: Bearer $CRON_SECRET" \
+ *     "https://quimibond-intelligence.vercel.app/api/syntage/pull-sync?resource=invoices&cursor=/entities/abc/invoices?page=2"
+ *
+ * Parameters:
+ *   resource   (required) — invoices | invoice-line-items | invoice-payments
+ *                           | tax-retentions | tax-returns
+ *   taxpayer   (optional) — default PNT920218IW5
+ *   from       (optional) — YYYY-MM-DD period start
+ *   to         (optional) — YYYY-MM-DD period end
+ *   cursor     (optional) — continue from previous page
+ *   maxPages   (optional) — default 50
+ *   pageSize   (optional) — default 100
+ */
+export async function GET(request: NextRequest) {
+  return handle(request);
+}
+export async function POST(request: NextRequest) {
+  return handle(request);
+}
+
+async function handle(request: NextRequest): Promise<NextResponse> {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
+  const url = new URL(request.url);
+  const params = url.searchParams;
+
+  const resource = params.get("resource") as PullResource | null;
+  if (!resource || !VALID_RESOURCES.includes(resource)) {
+    return NextResponse.json({
+      error: "resource param is required",
+      valid: VALID_RESOURCES,
+    }, { status: 400 });
+  }
+
+  const taxpayerRfc = params.get("taxpayer") ?? "PNT920218IW5";
+  const from = params.get("from") ?? undefined;
+  const to = params.get("to") ?? undefined;
+  const cursor = params.get("cursor") ?? null;
+  const maxPages = Number(params.get("maxPages") ?? "50");
+  const pageSize = Number(params.get("pageSize") ?? "100");
+
+  try {
+    const { entityId, odooCompanyId } = await resolveSyntageEntityId(taxpayerRfc);
+
+    const result = await runPullSync({
+      resource,
+      entityId,
+      taxpayerRfc,
+      odooCompanyId,
+      periodFrom: from,
+      periodTo: to,
+      cursor,
+      maxPages: Number.isFinite(maxPages) ? maxPages : 50,
+      pageSize: Number.isFinite(pageSize) ? pageSize : 100,
+      softTimeoutMs: 50000, // leave 10s buffer before Vercel hard timeout (60s)
+    });
+
+    return NextResponse.json({ ok: true, ...result });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[syntage/pull-sync] error:", err);
+    return NextResponse.json({ ok: false, error: message }, { status: 500 });
+  }
+}
