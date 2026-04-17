@@ -6,6 +6,31 @@ import { joinedCompanyName } from "./_helpers";
  * Single-invoice detail for the InvoiceDetail drill-down.
  * Used by EvidenceChip drill-downs in evidence packs and insights.
  */
+
+/**
+ * Busca el link email↔CFDI por UUID en `email_cfdi_links`.
+ * Reemplaza consultas directas a `cfdi_documents` (deprecated en Fase 5 PR 4).
+ * Retorna null si no se ha procesado todavía (la tabla está vacía hasta PR 4).
+ */
+export interface CfdiEmailLink {
+  id: number;
+  email_id: number | null;
+  gmail_message_id: string | null;
+  account: string | null;
+  uuid: string | null;
+}
+
+export async function getCfdiLinkByUuid(
+  uuid: string
+): Promise<CfdiEmailLink | null> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("email_cfdi_links")
+    .select("id, email_id, gmail_message_id, account, uuid")
+    .eq("uuid", uuid)
+    .maybeSingle();
+  return (data as CfdiEmailLink | null) ?? null;
+}
 export interface InvoiceDetail {
   id: number;
   name: string | null;

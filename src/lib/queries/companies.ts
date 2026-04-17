@@ -2,6 +2,9 @@ import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "./_helpers";
 import { paginationRange, type TableParams } from "./table-params";
+import { getUnifiedInvoicesForCompany } from "@/lib/queries/unified";
+
+const USE_UNIFIED_LAYER = process.env.USE_UNIFIED_LAYER !== "false";
 
 /**
  * Companies queries v2 — usa views canónicas:
@@ -494,7 +497,7 @@ export interface CompanyInvoicesPage {
   total: number;
 }
 
-export async function getCompanyInvoicesPage(
+async function legacyGetCompanyInvoicesPage(
   companyId: number,
   params: import("./table-params").TableParams & { payment_state?: string[] }
 ): Promise<CompanyInvoicesPage> {
@@ -540,7 +543,76 @@ export async function getCompanyInvoicesPage(
   };
 }
 
-export async function getCompanyInvoices(
+export async function getCompanyInvoicesPage(
+  companyId: number,
+  params: import("./table-params").TableParams & { payment_state?: string[] }
+): Promise<CompanyInvoicesPage> {
+  if (USE_UNIFIED_LAYER) {
+    const { paginationRange, endOfDay } = await import("./table-params");
+    const [start, end] = paginationRange(params.page, params.size);
+    const ascending = params.sortDir === "asc";
+    const sortMap: Record<string, string> = {
+      date: "invoice_date",
+      due: "due_date",
+      amount: "odoo_amount_total",
+      residual: "amount_residual",
+      days: "days_overdue",
+    };
+    const sortKey = (params.sort && sortMap[params.sort]) ?? "invoice_date";
+
+    let rows = await getUnifiedInvoicesForCompany(companyId, {
+      direction: "issued",
+      includeNonComputable: true,
+    });
+
+    // Apply filters
+    if (params.q) {
+      const q = params.q.toLowerCase();
+      rows = rows.filter((r) => r.odoo_ref?.toLowerCase().includes(q) ?? false);
+    }
+    if (params.payment_state && params.payment_state.length > 0) {
+      const states = new Set(params.payment_state);
+      rows = rows.filter((r) => r.payment_state && states.has(r.payment_state));
+    }
+    if (params.from) rows = rows.filter((r) => (r.invoice_date ?? "") >= params.from!);
+    if (params.to) {
+      const next = endOfDay(params.to);
+      if (next) rows = rows.filter((r) => (r.invoice_date ?? "") < next);
+    }
+
+    const total = rows.length;
+
+    // Sort
+    rows.sort((a, b) => {
+      const av = (a as unknown as Record<string, unknown>)[sortKey] as string | number | null;
+      const bv = (b as unknown as Record<string, unknown>)[sortKey] as string | number | null;
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      return ascending ? (av < bv ? -1 : 1) : av > bv ? -1 : 1;
+    });
+
+    // Paginate
+    const page = rows.slice(start, end + 1);
+
+    const mapped: CompanyInvoiceRow[] = page.map((r) => ({
+      id: r.odoo_invoice_id ?? 0,
+      name: r.odoo_ref,
+      invoice_date: r.invoice_date,
+      due_date: r.due_date,
+      amount_total_mxn: r.odoo_amount_total,
+      amount_residual_mxn: r.amount_residual,
+      currency: r.odoo_currency,
+      payment_state: r.payment_state,
+      days_overdue: r.days_overdue,
+    }));
+
+    return { rows: mapped, total };
+  }
+  return legacyGetCompanyInvoicesPage(companyId, params);
+}
+
+async function legacyGetCompanyInvoices(
   companyId: number,
   limit = 20
 ): Promise<CompanyInvoiceRow[]> {
@@ -555,6 +627,30 @@ export async function getCompanyInvoices(
     .order("invoice_date", { ascending: false })
     .limit(limit);
   return (data ?? []) as CompanyInvoiceRow[];
+}
+
+export async function getCompanyInvoices(
+  companyId: number,
+  limit = 20
+): Promise<CompanyInvoiceRow[]> {
+  if (USE_UNIFIED_LAYER) {
+    const rows = await getUnifiedInvoicesForCompany(companyId, {
+      direction: "issued",
+      includeNonComputable: true,
+    });
+    return rows.slice(0, limit).map((r) => ({
+      id: r.odoo_invoice_id ?? 0,
+      name: r.odoo_ref,
+      invoice_date: r.invoice_date,
+      due_date: r.due_date,
+      amount_total_mxn: r.odoo_amount_total,
+      amount_residual_mxn: r.amount_residual,
+      currency: r.odoo_currency,
+      payment_state: r.payment_state,
+      days_overdue: r.days_overdue,
+    }));
+  }
+  return legacyGetCompanyInvoices(companyId, limit);
 }
 
 export interface CompanyDeliveryRow {
