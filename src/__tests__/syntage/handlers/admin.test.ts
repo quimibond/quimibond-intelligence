@@ -24,7 +24,7 @@ function makeCtx(capture: { table?: string; row?: Record<string, unknown> }): Ha
 }
 
 describe("handleElectronicAccountingEvent (real Syntage schema)", () => {
-  it("upserts a balanza with year/month → ejercicio/periodo", async () => {
+  it("maps a Balanza Normal via fileType=BN", async () => {
     const capture: { table?: string; row?: Record<string, unknown> } = {};
     const evt: SyntageEvent = {
       id: "evt_ea_1", type: "electronic_accounting_record.created",
@@ -34,10 +34,11 @@ describe("handleElectronicAccountingEvent (real Syntage schema)", () => {
           id: "91106968-1abd-4d64-85c1-4e73d96fb997",
           year: 2022,
           month: 3,
-          type: "BALANZA",
-          reason: "normal",
-          filename: "BALANZA_202203.xml",
-          code: "hash-abc",
+          type: null,
+          reason: "EM",
+          fileType: "BN",
+          filename: "PNT920218IW5202203BN.zip",
+          code: "0001211000000000040254",
         },
       },
       createdAt: "2022-04-01T00:00:00Z",
@@ -49,7 +50,39 @@ describe("handleElectronicAccountingEvent (real Syntage schema)", () => {
     expect(r.record_type).toBe("balanza");
     expect(r.ejercicio).toBe(2022);
     expect(r.periodo).toBe("03");
-    expect(r.hash).toBe("hash-abc");
+    expect(r.tipo_envio).toBe("EM");
+    expect(r.hash).toBe("0001211000000000040254");
+  });
+
+  it("maps a Catálogo via fileType=CT", async () => {
+    const capture: { table?: string; row?: Record<string, unknown> } = {};
+    const evt: SyntageEvent = {
+      id: "evt_ea_2", type: "electronic_accounting_record.created",
+      taxpayer: { id: "PNT920218IW5" },
+      data: {
+        object: {
+          id: "a18fb8fa-a74b-4be0-af40-e4e21865362f",
+          year: 2021, month: 10, type: null,
+          reason: "EM", fileType: "CT",
+          filename: "PNT920218IW5202110CT.zip",
+          code: "0001211000000000040254",
+        },
+      },
+      createdAt: "2021-12-02T18:38:53Z",
+    };
+    await handleElectronicAccountingEvent(makeCtx(capture), evt);
+    expect(capture.row!.record_type).toBe("catalogo_cuentas");
+  });
+
+  it("throws when fileType is unknown", async () => {
+    const capture: { table?: string; row?: Record<string, unknown> } = {};
+    const evt: SyntageEvent = {
+      id: "evt_ea_3", type: "electronic_accounting_record.created",
+      taxpayer: { id: "PNT920218IW5" },
+      data: { object: { id: "x", year: 2022, month: 1, fileType: "XX", filename: "x.zip" } },
+      createdAt: "2022-02-01T00:00:00Z",
+    };
+    await expect(handleElectronicAccountingEvent(makeCtx(capture), evt)).rejects.toThrow(/required fields/);
   });
 });
 

@@ -55,7 +55,7 @@ describe("handleInvoiceLineItemEvent (real Syntage InvoiceLineItem schema)", () 
     expect(r.descuento).toBe(0);
   });
 
-  it("throws when invoice.uuid is missing", async () => {
+  it("accepts missing invoice.uuid (soft reference — line_items may arrive before parent invoice)", async () => {
     const capture: { row?: Record<string, unknown> } = {};
     const evt: SyntageEvent = {
       id: "evt_li_2",
@@ -64,6 +64,8 @@ describe("handleInvoiceLineItemEvent (real Syntage InvoiceLineItem schema)", () 
       data: { object: { id: "xyz", invoice: {} } },
       createdAt: "2026-04-16T23:37:17Z",
     };
-    await expect(handleInvoiceLineItemEvent(makeCtx(capture), evt)).rejects.toThrow(/invoice\.uuid/);
+    await handleInvoiceLineItemEvent(makeCtx(capture), evt);
+    expect(capture.row!.syntage_id).toBe("xyz");
+    expect(capture.row!.invoice_uuid).toBeNull();
   });
 });
