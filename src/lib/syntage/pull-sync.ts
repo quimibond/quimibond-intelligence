@@ -71,6 +71,28 @@ export interface PullSyncOptions {
   maxPages?: number;             // default 50 (≈5000 items)
   pageSize?: number;             // default 100
   softTimeoutMs?: number;        // stop early if exceeded (default 25000)
+  isIssuer?: boolean | null;     // only for invoices: filter emitter=taxpayer
+  isReceiver?: boolean | null;   // only for invoices: filter receiver=taxpayer
+}
+
+/**
+ * Maps our internal resource name to the Syntage URL path.
+ * Most resources are entity-scoped, but invoice-payments is TOP-LEVEL
+ * (GET /invoices/payments) — not /entities/{id}/invoice-payments.
+ */
+function pathForResource(resource: PullResource, entityId: string): string {
+  switch (resource) {
+    case "invoices":
+      return `/entities/${entityId}/invoices`;
+    case "invoice-line-items":
+      return `/entities/${entityId}/invoices/line-items`;
+    case "invoice-payments":
+      return `/invoices/payments`;
+    case "tax-retentions":
+      return `/entities/${entityId}/tax-retentions`;
+    case "tax-returns":
+      return `/entities/${entityId}/tax-returns`;
+  }
 }
 
 export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult> {
@@ -101,9 +123,16 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
   } else {
     const qs = new URLSearchParams();
     qs.set("itemsPerPage", String(pageSize));
-    if (opts.periodFrom) qs.set("period[from]", opts.periodFrom);
-    if (opts.periodTo) qs.set("period[to]", opts.periodTo);
-    firstUrl = `${API_BASE}/entities/${opts.entityId}/${opts.resource}?${qs.toString()}`;
+    // Syntage uses `issuedAt[after]/[before]` for date filtering on invoices &
+    // tax-retentions (NOT `period[from]/[to]` which is extraction-option style).
+    if (opts.periodFrom) qs.set("issuedAt[after]", opts.periodFrom);
+    if (opts.periodTo) qs.set("issuedAt[before]", opts.periodTo);
+    // Invoice role filter: only applies to the invoices resource.
+    if (opts.resource === "invoices") {
+      if (opts.isIssuer != null) qs.set("isIssuer", String(opts.isIssuer));
+      if (opts.isReceiver != null) qs.set("isReceiver", String(opts.isReceiver));
+    }
+    firstUrl = `${API_BASE}${pathForResource(opts.resource, opts.entityId)}?${qs.toString()}`;
   }
 
   const result: PullSyncResult = {

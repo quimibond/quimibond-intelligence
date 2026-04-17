@@ -71,6 +71,15 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   const cursor = cursorParam ?? null;
   const maxPages = Number(params.get("maxPages") ?? "50");
   const pageSize = Number(params.get("pageSize") ?? "100");
+  const parseBool = (v: string | null): boolean | null => {
+    if (v == null) return null;
+    const s = v.toLowerCase();
+    if (s === "true" || s === "1") return true;
+    if (s === "false" || s === "0") return false;
+    return null;
+  };
+  const isIssuer = parseBool(params.get("isIssuer"));
+  const isReceiver = parseBool(params.get("isReceiver"));
 
   try {
     const { entityId, odooCompanyId } = await resolveSyntageEntityId(taxpayerRfc);
@@ -86,6 +95,8 @@ async function handle(request: NextRequest): Promise<NextResponse> {
       maxPages: Number.isFinite(maxPages) ? maxPages : 50,
       pageSize: Number.isFinite(pageSize) ? pageSize : 100,
       softTimeoutMs: 50000, // leave 10s buffer before Vercel hard timeout (60s)
+      isIssuer,
+      isReceiver,
     });
 
     return NextResponse.json({ ok: true, ...result });
