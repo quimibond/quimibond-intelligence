@@ -48,10 +48,19 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   const url = new URL(request.url);
   const params = url.searchParams;
 
-  const resource = params.get("resource") as PullResource | null;
+  const cursorParam = params.get("cursor");
+
+  // If cursor is provided, derive resource from the URL path inside it
+  // (e.g. "/entities/xxx/invoices?page=2" → "invoices").
+  let resource = params.get("resource") as PullResource | null;
+  if (!resource && cursorParam) {
+    const match = cursorParam.match(/\/entities\/[^/]+\/([^?]+)/);
+    if (match) resource = match[1] as PullResource;
+  }
+
   if (!resource || !VALID_RESOURCES.includes(resource)) {
     return NextResponse.json({
-      error: "resource param is required",
+      error: "resource param is required (or cursor with /entities/xxx/{resource})",
       valid: VALID_RESOURCES,
     }, { status: 400 });
   }
@@ -59,7 +68,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   const taxpayerRfc = params.get("taxpayer") ?? "PNT920218IW5";
   const from = params.get("from") ?? undefined;
   const to = params.get("to") ?? undefined;
-  const cursor = params.get("cursor") ?? null;
+  const cursor = cursorParam ?? null;
   const maxPages = Number(params.get("maxPages") ?? "50");
   const pageSize = Number(params.get("pageSize") ?? "100");
 
