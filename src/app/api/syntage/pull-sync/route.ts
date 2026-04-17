@@ -80,9 +80,16 @@ async function handle(request: NextRequest): Promise<NextResponse> {
   };
   const isIssuer = parseBool(params.get("isIssuer"));
   const isReceiver = parseBool(params.get("isReceiver"));
+  const entityIdOverride = params.get("entityId");
 
   try {
-    const { entityId, odooCompanyId } = await resolveSyntageEntityId(taxpayerRfc);
+    // Resolve entity via Syntage API, but allow caller to override — the default
+    // resolver picks the first entity returned by /entities?taxpayer=..., which
+    // may not be the one holding the credential/data for this taxpayer when the
+    // org has multiple entities for the same RFC.
+    const resolved = await resolveSyntageEntityId(taxpayerRfc);
+    const entityId = entityIdOverride ?? resolved.entityId;
+    const odooCompanyId = resolved.odooCompanyId;
 
     const result = await runPullSync({
       resource,
