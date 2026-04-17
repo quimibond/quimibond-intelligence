@@ -119,7 +119,13 @@ export async function POST(request: NextRequest) {
         level: "info",
         phase: "syntage_webhook",
         message: `Unhandled event type: ${event.type}`,
-        details: { event_id: event.id, event_type: event.type },
+        details: {
+          event_id: event.id,
+          event_type: event.type,
+          taxpayer: event.taxpayer ?? null,
+          payload_object: event.data?.object ?? null,
+          payload_changes: event.data?.changes ?? null,
+        },
       });
     }
 
