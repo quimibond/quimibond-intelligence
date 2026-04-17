@@ -17,6 +17,7 @@ import {
   StatGrid,
   PageHeader,
   DataTable,
+  DataViewChart,
   TableExportButton,
   SectionNav,
   MobileCard,
@@ -24,6 +25,7 @@ import {
   MetricRow,
   EmptyState,
   type DataTableColumn,
+  type DataViewChartSpec,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +48,7 @@ import {
   type BankBalance,
   type PlPoint,
 } from "@/lib/queries/finance";
-import { formatRelative } from "@/lib/formatters";
+import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 
 import { PlHistoryChart } from "./_components/pl-history-chart";
 import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
@@ -602,11 +604,42 @@ async function BanksSection() {
       />
     );
   }
+
+  // Aggregate MXN-equivalent balance by currency for donut composition.
+  const byCurrency = new Map<string, number>();
+  for (const r of rows) {
+    const key = r.moneda ?? "MXN";
+    byCurrency.set(key, (byCurrency.get(key) ?? 0) + (r.saldoMxn ?? 0));
+  }
+  const currencyData = Array.from(byCurrency.entries())
+    .map(([moneda, saldoMxn]) => ({ moneda, saldoMxn }))
+    .sort((a, b) => b.saldoMxn - a.saldoMxn);
+  const totalMxn = currencyData.reduce((s, r) => s + r.saldoMxn, 0);
+  const donutChart: DataViewChartSpec = {
+    type: "donut",
+    xKey: "moneda",
+    series: [{ dataKey: "saldoMxn", label: "Saldo MXN" }],
+    valueFormat: "currency-compact",
+    donutCenterLabel: formatCurrencyMXN(totalMxn, { compact: true }),
+    height: 240,
+  };
   return (
-    <DataTable
-      data={rows}
-      columns={bankColumns}
-      rowKey={(r, i) => `${r.banco ?? "bank"}-${i}`}
+    <div className="space-y-4">
+      {currencyData.length > 1 ? (
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Composición por moneda (MXN equivalente)
+          </div>
+          <DataViewChart
+            data={currencyData as unknown as Record<string, unknown>[]}
+            chart={donutChart}
+          />
+        </div>
+      ) : null}
+      <DataTable
+        data={rows}
+        columns={bankColumns}
+        rowKey={(r, i) => `${r.banco ?? "bank"}-${i}`}
       mobileCard={(r) => (
         <MobileCard
           title={r.banco ?? "—"}
@@ -634,7 +667,8 @@ async function BanksSection() {
           ]}
         />
       )}
-    />
+      />
+    </div>
   );
 }
 
