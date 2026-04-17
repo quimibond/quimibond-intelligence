@@ -35,6 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
 
+import { SyntageHealthPanel } from "@/components/system/SyntageHealthPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -99,6 +100,7 @@ export default async function SystemPage({
           <TabsTrigger value="costs">Costos</TabsTrigger>
           <TabsTrigger value="agents">Agentes</TabsTrigger>
           <TabsTrigger value="quality">Calidad</TabsTrigger>
+          <TabsTrigger value="syntage">Syntage</TabsTrigger>
           <TabsTrigger value="notifications">Notificaciones</TabsTrigger>
           <TabsTrigger value="logs">Logs</TabsTrigger>
         </TabsList>
@@ -178,6 +180,22 @@ export default async function SystemPage({
             <CardContent className="pb-4">
               <Suspense fallback={<Skeleton className="h-[300px]" />}>
                 <QualityTable />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="syntage" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Sincronización Syntage (SAT)</CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Estado del backfill fiscal: extractions, cross-check con Odoo, error rate, distribución por año.
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[600px]" />}>
+                <SyntageHealthPanel />
               </Suspense>
             </CardContent>
           </Card>
