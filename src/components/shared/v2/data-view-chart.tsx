@@ -10,11 +10,15 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
+  Label,
   Legend,
   Line,
   LineChart,
   Pie,
   PieChart,
+  PolarAngleAxis,
+  RadialBar,
+  RadialBarChart,
   ReferenceLine,
   Scatter,
   ScatterChart,
@@ -38,6 +42,8 @@ export type ChartType =
   | "line"
   | "area"
   | "pie"
+  | "donut"
+  | "radial"
   | "scatter"
   | "composed";
 
@@ -113,6 +119,27 @@ export interface DataViewChartSpec {
    * Si algún placeholder no se puede resolver (valor null/undefined), no navega.
    */
   rowHrefTemplate?: string;
+  /**
+   * Mostrar el eje Y. Default:
+   * - false  para bar/line/area single-series (look shadcn minimalista)
+   * - true   para stacked, composed, scatter (requerido por lectura)
+   * Override explícito con este prop.
+   */
+  showYAxis?: boolean;
+  /**
+   * Tipo de cuadrícula en bar/line/area/composed.
+   * Default: "horizontal" (solo líneas horizontales, como shadcn).
+   */
+  grid?: "none" | "horizontal" | "vertical" | "both";
+  /**
+   * Solo donut: métrica a mostrar en el centro. Usa el primer series.
+   * Default: suma del dataKey formateada con valueFormat.
+   */
+  donutCenterLabel?: string;
+  /**
+   * Solo radial/gauge: valor máximo del dominio (default 100).
+   */
+  radialMax?: number;
 }
 
 function resolveFormatter(format?: ValueFormat): (v: number) => string {
@@ -290,7 +317,7 @@ export function DataViewChart({
   const height = chart.height ?? 320;
 
   const pieData = React.useMemo(() => {
-    if (chart.type !== "pie") return data;
+    if (chart.type !== "pie" && chart.type !== "donut") return data;
     const series = chart.series[0];
     if (!series) return [];
     const max = chart.maxPieSlices ?? 8;
@@ -346,7 +373,30 @@ export function DataViewChart({
   const showInteractiveLegend =
     chart.series.length > 1 &&
     chart.type !== "pie" &&
+    chart.type !== "donut" &&
+    chart.type !== "radial" &&
     chart.type !== "scatter";
+
+  // Defaults shadcn-aware: YAxis oculto en single-series bar/line/area para
+  // look limpio; visible en stacked, composed, scatter (requiere contexto).
+  const showYAxis =
+    chart.showYAxis ??
+    (chart.type === "scatter" ||
+      chart.type === "composed" ||
+      chart.stacked === true ||
+      chart.layout === "horizontal");
+
+  // Grid por default "horizontal" (solo líneas horizontales, sin puntillado).
+  const gridMode = chart.grid ?? "horizontal";
+  const gridEl =
+    gridMode === "none" ? null : (
+      <CartesianGrid
+        horizontal={gridMode === "horizontal" || gridMode === "both"}
+        vertical={gridMode === "vertical" || gridMode === "both"}
+        stroke="var(--border)"
+        strokeOpacity={0.4}
+      />
+    );
 
   return (
     <div className={cn("space-y-1.5", className)}>
@@ -357,22 +407,19 @@ export function DataViewChart({
     >
       {chart.type === "bar" ? (
         <BarChart
+          accessibilityLayer
           data={data}
           layout={chart.layout === "horizontal" ? "vertical" : "horizontal"}
-          margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+          margin={{ left: 12, right: 12, top: 10, bottom: 4 }}
         >
-          <CartesianGrid
-            horizontal={chart.layout !== "horizontal"}
-            vertical={chart.layout === "horizontal"}
-            strokeDasharray="3 3"
-          />
+          {gridEl}
           {chart.layout === "horizontal" ? (
             <>
               <XAxis
                 type="number"
                 tickLine={false}
                 axisLine={false}
-                tickMargin={4}
+                tickMargin={8}
                 tickFormatter={tickFormatter}
               />
               <YAxis
@@ -391,21 +438,24 @@ export function DataViewChart({
                 tickLine={false}
                 axisLine={false}
                 tickMargin={8}
+                minTickGap={32}
+                padding={{ left: 12, right: 12 }}
               />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                tickMargin={4}
-                tickFormatter={tickFormatter}
-                width={56}
-              />
+              {showYAxis ? (
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  tickMargin={8}
+                  tickFormatter={tickFormatter}
+                  width={48}
+                />
+              ) : null}
             </>
           )}
           <ChartTooltip
             content={<ChartTooltipContent indicator="dot" />}
             cursor={{ fill: "var(--muted)", opacity: 0.4 }}
           />
-          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
           {visibleSeries.map((s) => (
             <Bar
@@ -413,7 +463,11 @@ export function DataViewChart({
               dataKey={s.dataKey}
               fill={`var(--color-${s.dataKey})`}
               radius={
-                chart.layout === "horizontal" ? [0, 4, 4, 0] : [4, 4, 0, 0]
+                chart.stacked
+                  ? 0
+                  : chart.layout === "horizontal"
+                    ? [0, 4, 4, 0]
+                    : [4, 4, 0, 0]
               }
               stackId={chart.stacked ? "stack" : undefined}
               onClick={handleElementClick}
@@ -437,41 +491,52 @@ export function DataViewChart({
         </BarChart>
       ) : chart.type === "line" ? (
         <LineChart
+          accessibilityLayer
           data={data}
-          margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+          margin={{ left: 12, right: 12, top: 10, bottom: 4 }}
         >
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          {gridEl}
           <XAxis
             dataKey={chart.xKey}
             tickLine={false}
             axisLine={false}
             tickMargin={8}
+            minTickGap={32}
+            padding={{ left: 12, right: 12 }}
           />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            tickMargin={4}
-            tickFormatter={tickFormatter}
-            width={56}
-          />
+          {showYAxis ? (
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tickFormatter={tickFormatter}
+              width={48}
+            />
+          ) : null}
           <ChartTooltip content={<ChartTooltipContent indicator="line" />} />
-          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
           {visibleSeries.map((s) => (
             <Line
               key={s.dataKey}
-              type="monotone"
+              type="natural"
               dataKey={s.dataKey}
               stroke={`var(--color-${s.dataKey})`}
               strokeWidth={2}
-              dot={false}
+              dot={{
+                r: 3,
+                strokeWidth: 2,
+                fill: "var(--background)",
+                stroke: `var(--color-${s.dataKey})`,
+              }}
+              activeDot={{ r: 5 }}
             />
           ))}
         </LineChart>
       ) : chart.type === "area" ? (
         <AreaChart
+          accessibilityLayer
           data={data}
-          margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+          margin={{ left: 12, right: 12, top: 10, bottom: 4 }}
         >
           <defs>
             {chart.series.map((s) => (
@@ -486,37 +551,39 @@ export function DataViewChart({
                 <stop
                   offset="5%"
                   stopColor={`var(--color-${s.dataKey})`}
-                  stopOpacity={0.4}
+                  stopOpacity={0.8}
                 />
                 <stop
                   offset="95%"
                   stopColor={`var(--color-${s.dataKey})`}
-                  stopOpacity={0.05}
+                  stopOpacity={0.1}
                 />
               </linearGradient>
             ))}
           </defs>
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          {gridEl}
           <XAxis
             dataKey={chart.xKey}
             tickLine={false}
             axisLine={false}
             tickMargin={8}
+            minTickGap={32}
           />
-          <YAxis
-            tickLine={false}
-            axisLine={false}
-            tickMargin={4}
-            tickFormatter={tickFormatter}
-            width={56}
-          />
-          <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
+          {showYAxis ? (
+            <YAxis
+              tickLine={false}
+              axisLine={false}
+              tickMargin={8}
+              tickFormatter={tickFormatter}
+              width={48}
+            />
+          ) : null}
+          <ChartTooltip content={<ChartTooltipContent indicator="dashed" />} />
           {referenceEl}
           {visibleSeries.map((s) => (
             <Area
               key={s.dataKey}
-              type="monotone"
+              type="natural"
               dataKey={s.dataKey}
               stroke={`var(--color-${s.dataKey})`}
               strokeWidth={2}
@@ -525,29 +592,143 @@ export function DataViewChart({
             />
           ))}
         </AreaChart>
-      ) : chart.type === "pie" ? (
+      ) : chart.type === "pie" || chart.type === "donut" ? (
         <PieChart margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
-          <ChartTooltip content={<ChartTooltipContent hideLabel />} />
+          <ChartTooltip
+            cursor={false}
+            content={<ChartTooltipContent hideLabel />}
+          />
           <Pie
             data={pieData}
             dataKey={chart.series[0]?.dataKey ?? "value"}
             nameKey={chart.xKey}
-            innerRadius="45%"
+            innerRadius={chart.type === "donut" ? "55%" : 0}
             outerRadius="80%"
-            paddingAngle={2}
+            paddingAngle={chart.type === "donut" ? 2 : 1}
+            strokeWidth={chart.type === "donut" ? 2 : 0}
           >
-            {pieData.map((_, i) => (
+            {pieData.map((row, i) => (
               <Cell
                 key={i}
-                fill={DEFAULT_COLORS[i % DEFAULT_COLORS.length]}
+                fill={
+                  chart.colorBy && chart.colorMap
+                    ? colorForRow(
+                        row,
+                        chart.colorBy,
+                        chart.colorMap,
+                        DEFAULT_COLORS[i % DEFAULT_COLORS.length]
+                      )
+                    : DEFAULT_COLORS[i % DEFAULT_COLORS.length]
+                }
+                stroke="var(--background)"
               />
             ))}
+            {chart.type === "donut" ? (
+              <Label
+                content={({ viewBox }) => {
+                  if (
+                    !viewBox ||
+                    typeof (viewBox as { cx?: number }).cx !== "number"
+                  ) {
+                    return null;
+                  }
+                  const { cx, cy } = viewBox as { cx: number; cy: number };
+                  const total = pieData.reduce(
+                    (s, r) =>
+                      s +
+                      (Number(
+                        (r as Record<string, unknown>)[
+                          chart.series[0]?.dataKey ?? "value"
+                        ]
+                      ) || 0),
+                    0
+                  );
+                  const label =
+                    chart.donutCenterLabel ?? formatValue(total);
+                  return (
+                    <text
+                      x={cx}
+                      y={cy}
+                      textAnchor="middle"
+                      dominantBaseline="middle"
+                    >
+                      <tspan
+                        x={cx}
+                        y={cy - 6}
+                        className="fill-foreground text-lg font-bold tabular-nums"
+                      >
+                        {label}
+                      </tspan>
+                      <tspan
+                        x={cx}
+                        y={cy + 14}
+                        className="fill-muted-foreground text-[11px]"
+                      >
+                        {chart.series[0]?.label ?? "Total"}
+                      </tspan>
+                    </text>
+                  );
+                }}
+              />
+            ) : null}
           </Pie>
-          <ChartLegend content={<ChartLegendContent nameKey={chart.xKey} />} />
+          <ChartLegend
+            content={<ChartLegendContent nameKey={chart.xKey} />}
+          />
         </PieChart>
+      ) : chart.type === "radial" ? (
+        <RadialBarChart
+          data={pieData}
+          startAngle={90}
+          endAngle={-270}
+          innerRadius="60%"
+          outerRadius="95%"
+          barSize={18}
+        >
+          <PolarAngleAxis
+            type="number"
+            domain={[0, chart.radialMax ?? 100]}
+            angleAxisId={0}
+            tick={false}
+          />
+          <ChartTooltip
+            cursor={false}
+            content={<ChartTooltipContent hideLabel />}
+          />
+          <RadialBar
+            dataKey={chart.series[0]?.dataKey ?? "value"}
+            background={{ fill: "var(--muted)" }}
+            cornerRadius={8}
+          >
+            {pieData.map((row, i) => (
+              <Cell
+                key={i}
+                fill={
+                  chart.colorBy && chart.colorMap
+                    ? colorForRow(
+                        row,
+                        chart.colorBy,
+                        chart.colorMap,
+                        DEFAULT_COLORS[i % DEFAULT_COLORS.length]
+                      )
+                    : DEFAULT_COLORS[i % DEFAULT_COLORS.length]
+                }
+              />
+            ))}
+          </RadialBar>
+          <ChartLegend
+            content={<ChartLegendContent nameKey={chart.xKey} />}
+          />
+        </RadialBarChart>
       ) : chart.type === "scatter" ? (
-        <ScatterChart margin={{ top: 12, right: 16, left: 8, bottom: 8 }}>
-          <CartesianGrid strokeDasharray="3 3" />
+        <ScatterChart
+          accessibilityLayer
+          margin={{ left: 12, right: 16, top: 12, bottom: 4 }}
+        >
+          <CartesianGrid
+            stroke="var(--border)"
+            strokeOpacity={0.4}
+          />
           <XAxis
             type="number"
             dataKey={chart.xKey}
@@ -563,15 +744,15 @@ export function DataViewChart({
             name={chart.series[1]?.label ?? chart.yKey ?? ""}
             tickLine={false}
             axisLine={false}
-            tickMargin={4}
+            tickMargin={8}
             tickFormatter={tickFormatterSecondary}
-            width={64}
+            width={56}
           />
           {chart.sizeKey ? (
             <ZAxis
               type="number"
               dataKey={chart.sizeKey}
-              range={[40, 400]}
+              range={[60, 400]}
               name={chart.sizeKey}
             />
           ) : null}
@@ -626,23 +807,26 @@ export function DataViewChart({
       ) : (
         // composed
         <ComposedChart
+          accessibilityLayer
           data={data}
-          margin={{ top: 8, right: 8, left: 8, bottom: 8 }}
+          margin={{ left: 12, right: 12, top: 10, bottom: 4 }}
         >
-          <CartesianGrid vertical={false} strokeDasharray="3 3" />
+          {gridEl}
           <XAxis
             dataKey={chart.xKey}
             tickLine={false}
             axisLine={false}
             tickMargin={8}
+            minTickGap={32}
+            padding={{ left: 12, right: 12 }}
           />
           <YAxis
             yAxisId="left"
             tickLine={false}
             axisLine={false}
-            tickMargin={4}
+            tickMargin={8}
             tickFormatter={tickFormatter}
-            width={56}
+            width={48}
           />
           {chart.series.some((s) => s.yAxisId === "right") ? (
             <YAxis
@@ -650,13 +834,12 @@ export function DataViewChart({
               orientation="right"
               tickLine={false}
               axisLine={false}
-              tickMargin={4}
+              tickMargin={8}
               tickFormatter={tickFormatterSecondary}
-              width={56}
+              width={48}
             />
           ) : null}
           <ChartTooltip content={<ChartTooltipContent indicator="dot" />} />
-          {/* Leyenda interactiva externa al chart (ver InteractiveLegend abajo). */}
           {referenceEl}
           {visibleSeries.map((s) => {
             const kind = s.kind ?? "bar";
@@ -665,12 +848,18 @@ export function DataViewChart({
               return (
                 <Line
                   key={s.dataKey}
-                  type="monotone"
+                  type="natural"
                   yAxisId={axisId}
                   dataKey={s.dataKey}
                   stroke={`var(--color-${s.dataKey})`}
                   strokeWidth={2.5}
-                  dot={{ r: 3 }}
+                  dot={{
+                    r: 3,
+                    strokeWidth: 2,
+                    fill: "var(--background)",
+                    stroke: `var(--color-${s.dataKey})`,
+                  }}
+                  activeDot={{ r: 5 }}
                 />
               );
             }
