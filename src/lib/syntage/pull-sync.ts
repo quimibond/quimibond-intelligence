@@ -1,11 +1,13 @@
 import { getServiceClient } from "@/lib/supabase-server";
 import { resolveEntity, supabaseEntityMapStore } from "@/lib/syntage/entity-resolver";
-import type { HandlerCtx, SyntageEvent } from "@/lib/syntage/types";
-import { handleInvoiceEvent } from "@/lib/syntage/handlers/invoice";
-import { handleInvoiceLineItemEvent } from "@/lib/syntage/handlers/invoice-line-item";
-import { handleInvoicePaymentEvent } from "@/lib/syntage/handlers/invoice-payment";
-import { handleTaxRetentionEvent } from "@/lib/syntage/handlers/tax-retention";
-import { handleTaxReturnEvent } from "@/lib/syntage/handlers/tax-return";
+import {
+  mapInvoice,
+  mapInvoiceLineItem,
+  mapInvoicePayment,
+  mapTaxRetention,
+  mapTaxReturn,
+  type MapperCtx,
+} from "@/lib/syntage/mappers";
 
 /**
  * Pull-based sync for Syntage resources.
@@ -16,17 +18,15 @@ import { handleTaxReturnEvent } from "@/lib/syntage/handlers/tax-return";
  * missing rows even though Syntage has them.
  *
  * This module queries Syntage's REST API (GET /entities/{id}/{resource})
- * paginated, and runs each result through the same handler used for webhooks.
- * The handler performs its normal upsert, so the mirror converges on Syntage's
- * state regardless of event history.
+ * paginated, and batch-upserts the rows to our mirror tables.
  *
- * Idempotency: fake webhook-event ids are generated per-pull and ignored on
- * syntage_invoices.syntage_id (PK) conflicts. Safe to run as many times as
+ * Idempotency: upsert-on-conflict(syntage_id). Safe to run as many times as
  * needed.
  *
- * Pagination: Syntage uses cursor-based (hydra:view.hydra:next). We stop when
- * either maxPages is reached or there is no next cursor. Callers can chain by
- * re-calling with the returned `nextCursor`.
+ * Pagination: Cursor-based (X-Pagination-Style: cursor). We stop on either:
+ *   - no hydra:next in response (finished=true)
+ *   - soft timeout hit (return next_cursor so caller can continue)
+ *   - maxPages reached
  */
 
 const API_BASE = process.env.SYNTAGE_API_BASE ?? "https://api.syntage.com";
@@ -42,9 +42,7 @@ interface SyntageListResponse {
 
 /**
  * Diagnostic: returns Syntage's reported totalItems for a resource+filter combo,
- * without iterating. Useful to know "what does Syntage actually have" before a
- * pull run. Uses X-Pagination-Enable-Partial: 0 which forces totalItems in the
- * response even for cursor pagination (normally omitted for performance).
+ * without iterating.
  */
 export async function countSyntageResource(
   resource: PullResource,
@@ -55,7 +53,7 @@ export async function countSyntageResource(
   if (!apiKey) throw new Error("SYNTAGE_API_KEY not set");
 
   const qs = new URLSearchParams();
-  qs.set("itemsPerPage", "1"); // minimize payload
+  qs.set("itemsPerPage", "1");
   if (opts.periodFrom) qs.set("issuedAt[after]", opts.periodFrom);
   if (opts.periodTo) qs.set("issuedAt[before]", opts.periodTo);
   if (resource === "invoices") {
@@ -100,37 +98,65 @@ export type PullResource =
 
 export interface PullSyncOptions {
   resource: PullResource;
-  entityId: string;              // Syntage entity UUID (not RFC)
-  taxpayerRfc: string;           // used for row context
+  entityId: string;
+  taxpayerRfc: string;
   odooCompanyId: number;
-  periodFrom?: string;           // YYYY-MM-DD
-  periodTo?: string;             // YYYY-MM-DD
-  cursor?: string | null;        // continue from previous page
-  maxPages?: number;             // default 50 (≈5000 items)
-  pageSize?: number;             // default 100
-  softTimeoutMs?: number;        // stop early if exceeded (default 25000)
-  isIssuer?: boolean | null;     // only for invoices: filter emitter=taxpayer
-  isReceiver?: boolean | null;   // only for invoices: filter receiver=taxpayer
+  periodFrom?: string;
+  periodTo?: string;
+  cursor?: string | null;
+  maxPages?: number;
+  pageSize?: number;
+  softTimeoutMs?: number;
+  isIssuer?: boolean | null;
+  isReceiver?: boolean | null;
 }
 
 /**
- * Maps our internal resource name to the Syntage URL path.
- * Most resources are entity-scoped, but invoice-payments is TOP-LEVEL
- * (GET /invoices/payments) — not /entities/{id}/invoice-payments.
+ * Per-resource config: URL path, destination table, conflict key, and
+ * pure row mapper.
  */
+interface ResourceConfig {
+  path: (entityId: string) => string;
+  table: string;
+  conflictKey: string;
+  mapRow: (obj: Record<string, unknown>, ctx: MapperCtx) => Record<string, unknown>;
+}
+
+const RESOURCE_BATCH_CONFIG: Record<PullResource, ResourceConfig> = {
+  "invoices": {
+    path: id => `/entities/${id}/invoices`,
+    table: "syntage_invoices",
+    conflictKey: "syntage_id",
+    mapRow: mapInvoice,
+  },
+  "invoice-line-items": {
+    path: id => `/entities/${id}/invoices/line-items`,
+    table: "syntage_invoice_line_items",
+    conflictKey: "syntage_id",
+    mapRow: mapInvoiceLineItem,
+  },
+  "invoice-payments": {
+    path: () => `/invoices/payments`,  // top-level, not entity-scoped
+    table: "syntage_invoice_payments",
+    conflictKey: "syntage_id",
+    mapRow: mapInvoicePayment,
+  },
+  "tax-retentions": {
+    path: id => `/entities/${id}/tax-retentions`,
+    table: "syntage_tax_retentions",
+    conflictKey: "syntage_id",
+    mapRow: mapTaxRetention,
+  },
+  "tax-returns": {
+    path: id => `/entities/${id}/tax-returns`,
+    table: "syntage_tax_returns",
+    conflictKey: "syntage_id",
+    mapRow: mapTaxReturn,
+  },
+};
+
 function pathForResource(resource: PullResource, entityId: string): string {
-  switch (resource) {
-    case "invoices":
-      return `/entities/${entityId}/invoices`;
-    case "invoice-line-items":
-      return `/entities/${entityId}/invoices/line-items`;
-    case "invoice-payments":
-      return `/invoices/payments`;
-    case "tax-retentions":
-      return `/entities/${entityId}/tax-retentions`;
-    case "tax-returns":
-      return `/entities/${entityId}/tax-returns`;
-  }
+  return RESOURCE_BATCH_CONFIG[resource].path(entityId);
 }
 
 export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult> {
@@ -143,34 +169,27 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
   const softTimeoutMs = opts.softTimeoutMs ?? 25000;
 
   const supabase = getServiceClient();
-  const ctx: HandlerCtx = {
-    supabase,
+  const mapperCtx: MapperCtx = {
     odooCompanyId: opts.odooCompanyId,
     taxpayerRfc: opts.taxpayerRfc,
   };
-
-  const handler = pickHandler(opts.resource);
-  const eventType = eventTypeFor(opts.resource);
+  const cfg = RESOURCE_BATCH_CONFIG[opts.resource];
 
   let cursor: string | null = opts.cursor ?? null;
   let firstUrl: string;
 
   if (cursor) {
-    // Cursor is already a full path (e.g. "/entities/{id}/invoices?page=2").
     firstUrl = `${API_BASE}${cursor}`;
   } else {
     const qs = new URLSearchParams();
     qs.set("itemsPerPage", String(pageSize));
-    // Syntage uses `issuedAt[after]/[before]` for date filtering on invoices &
-    // tax-retentions (NOT `period[from]/[to]` which is extraction-option style).
     if (opts.periodFrom) qs.set("issuedAt[after]", opts.periodFrom);
     if (opts.periodTo) qs.set("issuedAt[before]", opts.periodTo);
-    // Invoice role filter: only applies to the invoices resource.
     if (opts.resource === "invoices") {
       if (opts.isIssuer != null) qs.set("isIssuer", String(opts.isIssuer));
       if (opts.isReceiver != null) qs.set("isReceiver", String(opts.isReceiver));
     }
-    firstUrl = `${API_BASE}${pathForResource(opts.resource, opts.entityId)}?${qs.toString()}`;
+    firstUrl = `${API_BASE}${cfg.path(opts.entityId)}?${qs.toString()}`;
   }
 
   const result: PullSyncResult = {
@@ -190,7 +209,6 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
 
   while (currentUrl && result.pages_fetched < maxPages) {
     if (Date.now() - start > softTimeoutMs) {
-      // Soft timeout: return nextCursor so caller can continue.
       result.next_cursor = extractRelativePath(currentUrl);
       break;
     }
@@ -199,8 +217,8 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
       headers: {
         "X-API-Key": apiKey,
         "Accept": "application/ld+json",
-        "X-Pagination-Style": "cursor",      // per Syntage docs: opt-in to cursor pagination
-        "X-Pagination-Enable-Partial": "0",  // request hydra:totalItems for diagnostics
+        "X-Pagination-Style": "cursor",
+        "X-Pagination-Enable-Partial": "0",
       },
     });
 
@@ -214,23 +232,42 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
     const items = json["hydra:member"] ?? [];
     result.items_fetched += items.length;
 
+    // Map all items to rows (pure, no DB calls). Collect errors inline.
+    const rows: Record<string, unknown>[] = [];
     for (const item of items) {
       const itemId = (item.id as string) ?? (item["@id"] as string) ?? "(unknown)";
       try {
-        const fakeEvent: SyntageEvent = {
-          id: `pull:${opts.resource}:${itemId}:${start}`,
-          type: eventType,
-          taxpayer: { id: opts.taxpayerRfc },
-          data: { object: item },
-          createdAt: new Date().toISOString(),
-        };
-        await handler(ctx, fakeEvent);
-        result.items_upserted++;
+        rows.push(cfg.mapRow(item, mapperCtx));
       } catch (err) {
         result.items_errored++;
         const msg = err instanceof Error ? err.message : String(err);
         result.errors.push({ id: itemId, message: msg });
-        // Don't abort; log and continue.
+      }
+    }
+
+    // ONE batch upsert per page. 100x fewer Supabase round-trips than the
+    // per-item pattern used by webhook handlers.
+    if (rows.length > 0) {
+      const { error: upsertErr } = await supabase
+        .from(cfg.table)
+        .upsert(rows, { onConflict: cfg.conflictKey });
+
+      if (upsertErr) {
+        // Fall back to per-row so a single bad row doesn't lose the batch.
+        for (const row of rows) {
+          const rowId = String(row[cfg.conflictKey] ?? "(unknown)");
+          const { error: singleErr } = await supabase
+            .from(cfg.table)
+            .upsert(row, { onConflict: cfg.conflictKey });
+          if (singleErr) {
+            result.items_errored++;
+            result.errors.push({ id: rowId, message: singleErr.message });
+          } else {
+            result.items_upserted++;
+          }
+        }
+      } else {
+        result.items_upserted += rows.length;
       }
     }
 
@@ -251,13 +288,6 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
   return result;
 }
 
-/**
- * Resolves Syntage entity UUID from the taxpayer RFC via syntage_entity_map +
- * a lookup against Syntage's own entities endpoint.
- *
- * Entities in Syntage are separate from taxpayers — the entity wraps the
- * taxpayer with a credential and a link. Pull endpoints scope by entityId.
- */
 export async function resolveSyntageEntityId(taxpayerRfc: string): Promise<{ entityId: string; odooCompanyId: number }> {
   const supabase = getServiceClient();
   const map = await resolveEntity(supabaseEntityMapStore(supabase), taxpayerRfc);
@@ -276,26 +306,6 @@ export async function resolveSyntageEntityId(taxpayerRfc: string): Promise<{ ent
   const entityId = first?.id as string | undefined;
   if (!entityId) throw new Error(`No Syntage entity found for taxpayer ${taxpayerRfc}`);
   return { entityId, odooCompanyId: map.odooCompanyId };
-}
-
-function pickHandler(resource: PullResource): (ctx: HandlerCtx, event: SyntageEvent) => Promise<void> {
-  switch (resource) {
-    case "invoices":              return handleInvoiceEvent;
-    case "invoice-line-items":    return handleInvoiceLineItemEvent;
-    case "invoice-payments":      return handleInvoicePaymentEvent;
-    case "tax-retentions":        return handleTaxRetentionEvent;
-    case "tax-returns":           return handleTaxReturnEvent;
-  }
-}
-
-function eventTypeFor(resource: PullResource): string {
-  switch (resource) {
-    case "invoices":              return "invoice.updated";
-    case "invoice-line-items":    return "invoice_line_item.updated";
-    case "invoice-payments":      return "invoice_payment.updated";
-    case "tax-retentions":        return "tax_retention.updated";
-    case "tax-returns":           return "tax_return.updated";
-  }
 }
 
 function extractRelativePath(url: string): string {
