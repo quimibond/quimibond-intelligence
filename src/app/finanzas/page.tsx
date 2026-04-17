@@ -49,6 +49,7 @@ import {
   type PlPoint,
 } from "@/lib/queries/finance";
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
+import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
 
 import { PlHistoryChart } from "./_components/pl-history-chart";
 import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
@@ -81,6 +82,7 @@ export default function FinanzasPage() {
         items={[
           { id: "runway", label: "Runway" },
           { id: "kpis", label: "KPIs CFO" },
+          { id: "cfdis", label: "CFDIs SAT" },
           { id: "flow", label: "Flujo 30d" },
           { id: "recommendations", label: "Recomendaciones" },
           { id: "projection", label: "Proyección 13s" },
@@ -110,6 +112,13 @@ export default function FinanzasPage() {
         }
       >
         <CfoKpisSection />
+      </Suspense>
+      </section>
+
+      <section id="cfdis" className="scroll-mt-24">
+      {/* CFDIs validados SAT — mes corriente */}
+      <Suspense fallback={<Skeleton className="h-[120px] rounded-xl" />}>
+        <CfdiValidationSection />
       </Suspense>
       </section>
 
@@ -1175,6 +1184,50 @@ async function RecommendationsSection() {
     );
   }
   return <CashflowRecommendations data={data} />;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// CFDIs validados SAT — mes corriente
+// ──────────────────────────────────────────────────────────────────────────
+async function CfdiValidationSection() {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .slice(0, 10);
+  const monthEnd = now.toISOString().slice(0, 10);
+  const revenueAgg = await getUnifiedRevenueAggregates(monthStart, monthEnd);
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">CFDIs validados SAT · mes corriente</CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Facturas emitidas con UUID SAT / total posted
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-baseline gap-3">
+          <span className="font-mono text-3xl tabular-nums">
+            {Math.round(revenueAgg.pctValidated)}%
+          </span>
+          <Badge
+            className={
+              revenueAgg.pctValidated > 90
+                ? "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100"
+                : revenueAgg.pctValidated > 70
+                  ? "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100"
+                  : "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-100"
+            }
+          >
+            {revenueAgg.uuidValidated} de {revenueAgg.count}
+          </Badge>
+        </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          Revenue total (posted no-cancelado): ${revenueAgg.revenue.toLocaleString("es-MX", { minimumFractionDigits: 2 })}
+        </div>
+      </CardContent>
+    </Card>
+  );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
