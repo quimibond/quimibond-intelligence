@@ -31,8 +31,14 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
   // The Extraction payload embeds the full Taxpayer object inline.
   await upsertTaxpayerFromEvent(ctx, obj.taxpayer);
 
+  // Syntage reports 3 counters: totalDataPoints (cumulative), createdDataPoints
+  // and updatedDataPoints (per-attempt). The final `extraction.updated` event
+  // often has created/updated = 0 while totalDataPoints holds the real total.
+  // Prefer totalDataPoints; fall back to created+updated for early events.
+  const totalDP = typeof obj.totalDataPoints === "number" ? obj.totalDataPoints : 0;
   const createdDP = typeof obj.createdDataPoints === "number" ? obj.createdDataPoints : 0;
   const updatedDP = typeof obj.updatedDataPoints === "number" ? obj.updatedDataPoints : 0;
+  const rowsProduced = totalDP > 0 ? totalDP : createdDP + updatedDP;
 
   const row: Record<string, unknown> = {
     syntage_id:       obj.id ?? obj["@id"],
@@ -43,7 +49,7 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
     status:           obj.status ?? "pending",
     started_at:       obj.startedAt ?? null,
     finished_at:      obj.finishedAt ?? null,
-    rows_produced:    createdDP + updatedDP,
+    rows_produced:    rowsProduced,
     error:            obj.errorCode ?? null,
     raw_payload:      obj,
     updated_at:       new Date().toISOString(),
