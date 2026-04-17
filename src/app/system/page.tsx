@@ -36,6 +36,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
 
 import { SyntageHealthPanel } from "@/components/system/SyntageHealthPanel";
+import { SyntageReconciliationPanel } from "@/components/system/SyntageReconciliationPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -186,19 +187,44 @@ export default async function SystemPage({
         </TabsContent>
 
         <TabsContent value="syntage" className="mt-4 space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Sincronización Syntage (SAT)</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Estado del backfill fiscal: extractions, cross-check con Odoo, error rate, distribución por año.
-              </p>
-            </CardHeader>
-            <CardContent className="pb-4">
-              <Suspense fallback={<Skeleton className="h-[600px]" />}>
-                <SyntageHealthPanel />
-              </Suspense>
-            </CardContent>
-          </Card>
+          <Tabs defaultValue="health" className="w-full">
+            <TabsList>
+              <TabsTrigger value="health">Health &amp; backfill</TabsTrigger>
+              <TabsTrigger value="reconciliation">Reconciliación</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="health" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Sincronización Syntage (SAT)</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Estado del backfill fiscal: extractions, cross-check con Odoo, error rate, distribución por año.
+                  </p>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <Suspense fallback={<Skeleton className="h-[600px]" />}>
+                    <SyntageHealthPanel />
+                  </Suspense>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="reconciliation" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Layer 3 · Reconciliación Syntage vs Odoo</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    invoices_unified + reconciliation_issues. Refresh automático cada 15min via pg_cron. Spec: Fase 3.
+                  </p>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <Suspense fallback={<Skeleton className="h-[600px]" />}>
+                    <SyntageReconciliationPanel />
+                  </Suspense>
+                </CardContent>
+              </Card>
+            </TabsContent>
+          </Tabs>
         </TabsContent>
 
         <TabsContent value="notifications" className="mt-4">
