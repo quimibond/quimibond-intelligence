@@ -234,7 +234,20 @@ export default async function OperacionesPage({
 // Hero KPIs
 // ──────────────────────────────────────────────────────────────────────────
 async function OpsHeroKpis() {
-  const k = await getOperationsKpis();
+  const [k, trend] = await Promise.all([
+    getOperationsKpis(),
+    getWeeklyTrend(12),
+  ]);
+  // Trend está ordenado desc (más reciente primero); lo invertimos para sparkline
+  // left→right = pasado→presente.
+  const ordered = [...trend].reverse();
+  const otdSpark = ordered
+    .filter((w) => w.otd_pct != null)
+    .map((w) => ({ value: Number(w.otd_pct) }));
+  const leadSpark = ordered
+    .filter((w) => w.avg_lead_days != null)
+    .map((w) => ({ value: Number(w.avg_lead_days) }));
+  const lateSpark = ordered.map((w) => ({ value: Number(w.late) || 0 }));
   return (
     <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
@@ -256,6 +269,9 @@ async function OpsHeroKpis() {
                 ? "warning"
                 : "danger"
         }
+        sparkline={
+          otdSpark.length > 1 ? { data: otdSpark, variant: "area" } : undefined
+        }
       />
       <KpiCard
         title="Entregas tarde"
@@ -264,6 +280,9 @@ async function OpsHeroKpis() {
         icon={AlertTriangle}
         subtitle="abiertas"
         tone={k.lateOpen > 0 ? "warning" : "success"}
+        sparkline={
+          lateSpark.length > 1 ? { data: lateSpark, variant: "line" } : undefined
+        }
       />
       <KpiCard
         title="Manufactura activa"
@@ -280,6 +299,9 @@ async function OpsHeroKpis() {
         format="days"
         icon={Clock}
         subtitle="4 semanas"
+        sparkline={
+          leadSpark.length > 1 ? { data: leadSpark, variant: "area" } : undefined
+        }
       />
     </StatGrid>
   );

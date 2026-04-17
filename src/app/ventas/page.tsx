@@ -54,6 +54,7 @@ import {
   getCustomerCohorts,
   type CohortMatrix,
 } from "@/lib/queries/analytics";
+import { getPlHistory } from "@/lib/queries/finance";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
@@ -326,11 +327,18 @@ export default async function VentasPage({
 // KPIs
 // ──────────────────────────────────────────────────────────────────────────
 async function SalesKpisSection() {
-  const [k, trend] = await Promise.all([
+  const [k, trend, pl] = await Promise.all([
     getSalesKpis(),
     getSalesRevenueTrend(12),
+    getPlHistory(12),
   ]);
   const revenueSpark = trend.map((p) => ({ value: p.revenue }));
+  // getPlHistory retorna desc → invertir para sparkline presente al final.
+  const plOrdered = [...pl].reverse();
+  const utilidadSpark = plOrdered.map((p) => ({
+    value: p.utilidadOperativa,
+  }));
+  const yoySpark = trend.map((p) => ({ value: p.revenue }));
   return (
     <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
       <KpiCard
@@ -352,6 +360,11 @@ async function SalesKpisSection() {
         icon={k.utilidadOperativaMes >= 0 ? ArrowUpRight : ArrowDownRight}
         subtitle="del mes"
         tone={k.utilidadOperativaMes >= 0 ? "success" : "danger"}
+        sparkline={
+          utilidadSpark.length > 1
+            ? { data: utilidadSpark, variant: "area" }
+            : undefined
+        }
       />
       <KpiCard
         title="YoY"
@@ -360,6 +373,11 @@ async function SalesKpisSection() {
         icon={TrendingUp}
         subtitle={`vs ${formatCurrencyMXN(k.ingresosYoy, { compact: true })} año pasado`}
         tone={k.ingresosYoyPct >= 0 ? "success" : "danger"}
+        sparkline={
+          yoySpark.length > 1
+            ? { data: yoySpark, variant: "line" }
+            : undefined
+        }
       />
       <KpiCard
         title="Pedidos del mes"
