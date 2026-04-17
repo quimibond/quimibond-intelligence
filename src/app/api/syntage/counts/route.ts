@@ -21,9 +21,11 @@ export async function GET(request: NextRequest) {
 
   const url = new URL(request.url);
   const taxpayerRfc = url.searchParams.get("taxpayer") ?? "PNT920218IW5";
+  const entityIdOverride = url.searchParams.get("entityId");
 
   try {
-    const { entityId } = await resolveSyntageEntityId(taxpayerRfc);
+    const entityId = entityIdOverride
+      ?? (await resolveSyntageEntityId(taxpayerRfc)).entityId;
 
     const resources: PullResource[] = [
       "invoices",
