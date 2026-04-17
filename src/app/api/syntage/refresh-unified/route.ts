@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 import { getServiceClient } from "@/lib/supabase-server";
 
-export const maxDuration = 30;
+// invoices_unified refresh ~14s @ 70k rows. Payments + network overhead → necesitamos
+// budget generoso. Vercel Pro permite hasta 300s. 60s cubre hasta ~4x el dataset actual.
+export const maxDuration = 60;
 export const dynamic = "force-dynamic";
 
 /**
