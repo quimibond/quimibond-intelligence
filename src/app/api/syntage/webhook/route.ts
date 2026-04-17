@@ -51,18 +51,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
+  const supabase = getServiceClient();
+
   let event: SyntageEvent;
   try {
     event = JSON.parse(rawBody) as SyntageEvent;
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    await supabase.from("pipeline_logs").insert({
+      level: "warning",
+      phase: "syntage_webhook",
+      message: "Invalid JSON in webhook body",
+      details: { body_prefix: rawBody.slice(0, 1000) },
+    });
+    return NextResponse.json({ ok: true, skipped: "invalid_json" });
   }
 
+  // Some Syntage event types (e.g. export.*) may omit taxpayer in the envelope.
+  // Return 200 so Syntage doesn't retry forever, and log so we can inspect.
   if (!event?.id || !event?.type || !event?.taxpayer?.id) {
-    return NextResponse.json({ error: "Malformed event" }, { status: 400 });
+    await supabase.from("pipeline_logs").insert({
+      level: "warning",
+      phase: "syntage_webhook",
+      message: `Malformed event (missing ${!event?.id ? "id" : !event?.type ? "type" : "taxpayer.id"})`,
+      details: {
+        event_id: event?.id ?? null,
+        event_type: event?.type ?? null,
+        taxpayer: event?.taxpayer ?? null,
+        payload_prefix: rawBody.slice(0, 1500),
+      },
+    });
+    return NextResponse.json({ ok: true, skipped: "malformed_event" });
   }
-
-  const supabase = getServiceClient();
 
   const status = await recordWebhookEvent(
     supabaseEventStore(supabase),
