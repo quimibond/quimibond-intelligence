@@ -426,8 +426,55 @@ async function CeiTimeline() {
     );
   }
 
+  // Gauge: usa el cohort más reciente útil (primer elemento) como KPI actual.
+  const latest = useful[0];
+  const latestPct = Math.max(0, Math.min(100, latest.cei_pct));
+  const gaugeChart: DataViewChartSpec = {
+    type: "radial",
+    xKey: "label",
+    series: [{ dataKey: "pct", label: "CEI" }],
+    valueFormat: "percent",
+    radialMax: 100,
+    donutCenterLabel: `${latestPct.toFixed(1)}%`,
+    colorBy: "status",
+    colorMap: {
+      healthy: "var(--chart-2)",
+      watch: "var(--chart-3)",
+      at_risk: "var(--chart-4)",
+      degraded: "var(--destructive)",
+      too_recent: "var(--muted-foreground)",
+    },
+    height: 180,
+  };
+  const gaugeData = [
+    {
+      label: formatCohortMonth(latest.cohort_month),
+      pct: latestPct,
+      status: latest.health_status,
+    },
+  ];
+
   return (
-    <div className="space-y-2">
+    <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          CEI último cohort · meta 95%
+        </div>
+        <DataViewChart
+          data={gaugeData as unknown as Record<string, unknown>[]}
+          chart={gaugeChart}
+        />
+        <div className="pt-2 text-center text-[11px] text-muted-foreground">
+          {formatCohortMonth(latest.cohort_month)} ·{" "}
+          <Badge
+            variant={ceiHealthVariant[latest.health_status]}
+            className="text-[10px] uppercase"
+          >
+            {ceiHealthLabel[latest.health_status]}
+          </Badge>
+        </div>
+      </div>
+      <div className="space-y-2">
       {useful.map((r: CeiRow) => {
         const pct = Math.min(100, Math.max(0, r.cei_pct));
         const delta = r.cei_delta_vs_prev;
@@ -500,6 +547,7 @@ async function CeiTimeline() {
         de cobranza. Health: ≥95% saludable, 85-95% vigilar, 70-85% en riesgo,
         &lt;70% degradado.
       </p>
+      </div>
     </div>
   );
 }
