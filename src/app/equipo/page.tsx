@@ -225,6 +225,11 @@ const backlogColumns: DataTableColumn<UserBacklogRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold tabular-nums">
+        {formatNumber(rows.reduce((s, r) => s + (r.pending ?? 0), 0))}
+      </span>
+    ),
   },
   {
     key: "overdue",
@@ -241,6 +246,20 @@ const backlogColumns: DataTableColumn<UserBacklogRow>[] = [
       </span>
     ),
     align: "right",
+    summary: (rows) => {
+      const total = rows.reduce((s, r) => s + (r.overdue ?? 0), 0);
+      return (
+        <span
+          className={
+            total > 0
+              ? "font-bold tabular-nums text-danger"
+              : "tabular-nums text-muted-foreground"
+          }
+        >
+          {formatNumber(total)}
+        </span>
+      );
+    },
   },
   {
     key: "insights",
@@ -255,6 +274,13 @@ const backlogColumns: DataTableColumn<UserBacklogRow>[] = [
       ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => (
+      <span className="font-bold tabular-nums">
+        {formatNumber(
+          rows.reduce((s, r) => s + (r.insights_assigned ?? 0), 0)
+        )}
+      </span>
+    ),
   },
 ];
 

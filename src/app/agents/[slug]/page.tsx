@@ -400,6 +400,18 @@ const runColumns: DataTableColumn<AgentRunRow>[] = [
         : "—",
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => {
+      const withDur = rows.filter((r) => r.duration_seconds != null);
+      if (withDur.length === 0) return "—";
+      const avg =
+        withDur.reduce((s, r) => s + (r.duration_seconds ?? 0), 0) /
+        withDur.length;
+      return (
+        <span className="text-muted-foreground">
+          prom. {avg.toFixed(1)}s
+        </span>
+      );
+    },
   },
   {
     key: "insights",
@@ -408,6 +420,11 @@ const runColumns: DataTableColumn<AgentRunRow>[] = [
       <span className="tabular-nums">{r.insights_generated ?? 0}</span>
     ),
     align: "right",
+    summary: (rows) => (
+      <span className="font-bold tabular-nums">
+        {rows.reduce((s, r) => s + (r.insights_generated ?? 0), 0)}
+      </span>
+    ),
   },
   {
     key: "tokens",
@@ -422,6 +439,17 @@ const runColumns: DataTableColumn<AgentRunRow>[] = [
     ),
     align: "right",
     hideOnMobile: true,
+    summary: (rows) => {
+      const total = rows.reduce(
+        (s, r) => s + (r.input_tokens ?? 0) + (r.output_tokens ?? 0),
+        0
+      );
+      return (
+        <span className="font-bold tabular-nums">
+          {formatNumber(total, { compact: true })}
+        </span>
+      );
+    },
   },
 ];
 
