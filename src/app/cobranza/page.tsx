@@ -1281,6 +1281,15 @@ const invoiceColumns: DataTableColumn<OverdueInvoice>[] = [
     cell: (r) => <DateDisplay date={r.due_date} />,
     hideOnMobile: true,
   },
+  {
+    key: "sat",
+    header: "SAT",
+    defaultHidden: false,
+    cell: (r) => (
+      <SatBadge estadoSat={r.estado_sat} uuidSat={r.uuid_sat} />
+    ),
+    hideOnMobile: true,
+  },
 ];
 
 const overdueInvoicesViewColumns = [
@@ -1292,6 +1301,7 @@ const overdueInvoicesViewColumns = [
   { key: "salesperson", label: "Vendedor" },
   { key: "invoice", label: "Emisión", defaultHidden: true },
   { key: "due", label: "Vencimiento" },
+  { key: "sat", label: "SAT" },
 ];
 
 function bucketFromDays(days: number | null): string {
