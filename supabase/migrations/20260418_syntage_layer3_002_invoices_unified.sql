@@ -6,15 +6,22 @@ DROP MATERIALIZED VIEW IF EXISTS public.invoices_unified CASCADE;
 
 CREATE MATERIALIZED VIEW public.invoices_unified AS
 WITH
-  -- Nivel 1: match por UUID
+  -- Nivel 1: match por UUID.
+  -- Odoo tiene ~1500 cfdi_uuid duplicados (mismo UUID en múltiples invoices — data quality
+  -- issue del ERP, seguramente duplicated imports). DISTINCT ON pickea la invoice más
+  -- reciente por UUID; detectamos el caso en match_quality para no perder el flag.
   uuid_matches AS (
-    SELECT s.uuid AS uuid_sat, o.id AS odoo_invoice_id
+    SELECT DISTINCT ON (s.uuid)
+      s.uuid AS uuid_sat,
+      o.id   AS odoo_invoice_id,
+      COUNT(*) OVER (PARTITION BY s.uuid) AS n_odoo_candidates
     FROM public.syntage_invoices s
     JOIN public.odoo_invoices o
       ON o.cfdi_uuid = s.uuid
      AND o.odoo_company_id = s.odoo_company_id
     WHERE s.tipo_comprobante IN ('I','E')
       AND o.move_type IN ('out_invoice','out_refund','in_invoice','in_refund')
+    ORDER BY s.uuid, o.invoice_date DESC NULLS LAST, o.id DESC
   ),
   -- Nivel 2: match composite (sólo syntage rows sin match UUID)
   composite_candidates AS (
@@ -31,13 +38,14 @@ WITH
      AND abs(s.total - o.amount_total) < 0.01
      AND date(s.fecha_emision) = date(o.invoice_date)
      AND (
-          COALESCE(s.serie,'') || COALESCE(s.folio,'') ILIKE '%' || COALESCE(o.ref,'') || '%'
-       OR COALESCE(o.ref,'') ILIKE '%' || COALESCE(s.folio,'') || '%'
+          COALESCE(s.serie,'') || COALESCE(s.folio,'') ILIKE '%' || o.ref || '%'
+       OR o.ref ILIKE '%' || COALESCE(s.folio,'') || '%'
      )
      AND o.odoo_company_id = s.odoo_company_id
      AND o.move_type IN ('out_invoice','out_refund','in_invoice','in_refund')
     WHERE s.tipo_comprobante IN ('I','E')
       AND NOT EXISTS (SELECT 1 FROM uuid_matches u WHERE u.uuid_sat = s.uuid)
+      AND o.ref IS NOT NULL AND o.ref <> ''  -- evita falso match cuando Odoo no tiene ref (el ILIKE '%%' matchea todo)
   ),
   composite_matches AS (
     SELECT uuid_sat, odoo_invoice_id, n_candidates
@@ -45,7 +53,10 @@ WITH
     WHERE rn = 1
   ),
   paired AS (
-    SELECT uuid_sat, odoo_invoice_id, 'match_uuid'::text AS match_status, 'high'::text AS match_quality
+    SELECT
+      uuid_sat, odoo_invoice_id,
+      'match_uuid'::text AS match_status,
+      CASE WHEN n_odoo_candidates > 1 THEN 'medium' ELSE 'high' END AS match_quality
     FROM uuid_matches
     UNION ALL
     SELECT uuid_sat, odoo_invoice_id,
