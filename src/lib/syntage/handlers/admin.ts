@@ -27,6 +27,10 @@ export async function handleLinkEvent(_ctx: HandlerCtx, _event: SyntageEvent): P
 export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
   const obj = event.data.object as Record<string, unknown>;
 
+  // Upsert the taxpayer first — syntage_extractions has FK to syntage_taxpayers.
+  // The Extraction payload embeds the full Taxpayer object inline.
+  await upsertTaxpayerFromEvent(ctx, obj.taxpayer);
+
   const createdDP = typeof obj.createdDataPoints === "number" ? obj.createdDataPoints : 0;
   const updatedDP = typeof obj.updatedDataPoints === "number" ? obj.updatedDataPoints : 0;
 
@@ -52,6 +56,34 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
   const { error } = await ctx.supabase
     .from("syntage_extractions")
     .upsert(row, { onConflict: "syntage_id" });
+  if (error) throw error;
+}
+
+/**
+ * Upserts a syntage_taxpayers row from an embedded Taxpayer object.
+ * Ensures FK constraints (e.g. syntage_extractions.taxpayer_rfc) are satisfied.
+ * Idempotent via ON CONFLICT on rfc PK.
+ */
+async function upsertTaxpayerFromEvent(ctx: HandlerCtx, taxpayer: unknown): Promise<void> {
+  if (!taxpayer || typeof taxpayer !== "object") return;
+  const t = taxpayer as { id?: string; name?: string; personType?: string; registrationDate?: string };
+  const rfc = t.id ?? ctx.taxpayerRfc;
+  if (!rfc) return;
+
+  const row: Record<string, unknown> = {
+    rfc,
+    person_type:        t.personType ?? null,
+    name:               t.name ?? null,
+    registration_date:  t.registrationDate
+                          ? String(t.registrationDate).slice(0, 10)
+                          : null,
+    raw_payload:        t,
+    updated_at:         new Date().toISOString(),
+  };
+
+  const { error } = await ctx.supabase
+    .from("syntage_taxpayers")
+    .upsert(row, { onConflict: "rfc" });
   if (error) throw error;
 }
 
