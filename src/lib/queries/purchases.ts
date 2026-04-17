@@ -217,6 +217,42 @@ export async function getSingleSourceRisk(
   }));
 }
 
+/** Agregado por nivel de concentración para donut/summary. */
+export interface SingleSourceSummaryRow {
+  level: string;
+  spent_12m: number;
+  product_count: number;
+}
+
+export async function getSingleSourceSummary(): Promise<
+  SingleSourceSummaryRow[]
+> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("supplier_concentration_herfindahl")
+    .select("concentration_level, total_spent_12m")
+    .in("concentration_level", ["single_source", "very_high", "high"]);
+  const acc = new Map<string, { spent: number; count: number }>();
+  for (const r of (data ?? []) as Array<{
+    concentration_level: string | null;
+    total_spent_12m: number | null;
+  }>) {
+    const key = r.concentration_level ?? "—";
+    const cur = acc.get(key) ?? { spent: 0, count: 0 };
+    cur.spent += Number(r.total_spent_12m) || 0;
+    cur.count += 1;
+    acc.set(key, cur);
+  }
+  const order = ["single_source", "very_high", "high"];
+  return Array.from(acc.entries())
+    .map(([level, v]) => ({
+      level,
+      spent_12m: v.spent,
+      product_count: v.count,
+    }))
+    .sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
+}
+
 // ──────────────────────────────────────────────────────────────────────────
 // Price anomalies — productos comprados arriba del promedio
 // ──────────────────────────────────────────────────────────────────────────

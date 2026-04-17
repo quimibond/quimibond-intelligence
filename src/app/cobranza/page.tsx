@@ -13,6 +13,7 @@ import {
   StatGrid,
   PageHeader,
   DataView,
+  DataViewChart,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -31,6 +32,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { PaymentRiskBatchActions } from "./_components/payment-risk-batch-actions";
 import {
@@ -521,22 +523,50 @@ async function AgingBuckets() {
     "91-120": "danger",
     "120+": "danger",
   };
+  const total = buckets.reduce((s, b) => s + (b.amount_mxn ?? 0), 0);
+  const donutChart: DataViewChartSpec = {
+    type: "donut",
+    xKey: "bucket",
+    series: [{ dataKey: "amount_mxn", label: "Saldo" }],
+    valueFormat: "currency-compact",
+    donutCenterLabel: formatCurrencyMXN(total, { compact: true }),
+    colorBy: "bucket",
+    colorMap: {
+      "1-30": "var(--chart-3)",
+      "31-60": "var(--chart-4)",
+      "61-90": "var(--chart-5)",
+      "91-120": "var(--destructive)",
+      "120+": "var(--destructive)",
+    },
+    height: 220,
+  };
   return (
-    <StatGrid columns={{ mobile: 2, tablet: 5, desktop: 5 }}>
-      {buckets.map((b) => (
-        <KpiCard
-          key={b.bucket}
-          title={`${b.bucket} días`}
-          value={b.amount_mxn}
-          format="currency"
-          compact
-          icon={iconMap[b.bucket] ?? Calendar}
-          subtitle={`${b.count} facturas`}
-          tone={toneMap[b.bucket] ?? "info"}
-          size="sm"
+    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+      <div className="rounded-xl border border-border bg-card p-3">
+        <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          Composición cartera vencida
+        </div>
+        <DataViewChart
+          data={buckets as unknown as Record<string, unknown>[]}
+          chart={donutChart}
         />
-      ))}
-    </StatGrid>
+      </div>
+      <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 3 }}>
+        {buckets.map((b) => (
+          <KpiCard
+            key={b.bucket}
+            title={`${b.bucket} días`}
+            value={b.amount_mxn}
+            format="currency"
+            compact
+            icon={iconMap[b.bucket] ?? Calendar}
+            subtitle={`${b.count} facturas`}
+            tone={toneMap[b.bucket] ?? "info"}
+            size="sm"
+          />
+        ))}
+      </StatGrid>
+    </div>
   );
 }
 

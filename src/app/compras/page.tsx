@@ -14,6 +14,7 @@ import {
   StatGrid,
   PageHeader,
   DataView,
+  DataViewChart,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -33,10 +34,12 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import { formatCurrencyMXN } from "@/lib/formatters";
 
 import {
   getPurchasesKpis,
   getSingleSourceRiskPage,
+  getSingleSourceSummary,
   getPriceAnomaliesPage,
   getPurchaseOrdersPage,
   getPurchaseBuyerOptions,
@@ -521,10 +524,13 @@ async function SingleSourceTable({
     defaultSize: 25,
     defaultSort: "-spent",
   });
-  const { rows, total } = await getSingleSourceRiskPage({
-    ...params,
-    level: params.facets.level,
-  });
+  const [{ rows, total }, summary] = await Promise.all([
+    getSingleSourceRiskPage({
+      ...params,
+      level: params.facets.level,
+    }),
+    getSingleSourceSummary(),
+  ]);
   const visibleKeys = parseVisibleKeys(searchParams, "ss_");
   const sortHref = makeSortHref({
     pathname: "/compras",
@@ -542,6 +548,33 @@ async function SingleSourceTable({
     );
   }
   const view = parseViewParam(searchParams, "ss_view");
+  const summaryTotalSpent = summary.reduce(
+    (s, r) => s + (r.spent_12m ?? 0),
+    0
+  );
+  const summaryChartRows = summary.map((r) => ({
+    ...r,
+    level_label:
+      r.level === "single_source"
+        ? "Único proveedor"
+        : r.level === "very_high"
+          ? "Muy alta"
+          : "Alta",
+  }));
+  const summaryDonut: DataViewChartSpec = {
+    type: "donut",
+    xKey: "level_label",
+    series: [{ dataKey: "spent_12m", label: "Gasto 12m" }],
+    valueFormat: "currency-compact",
+    donutCenterLabel: formatCurrencyMXN(summaryTotalSpent, { compact: true }),
+    colorBy: "level",
+    colorMap: {
+      single_source: "var(--destructive)",
+      very_high: "var(--chart-4)",
+      high: "var(--chart-3)",
+    },
+    height: 220,
+  };
   const chart: DataViewChartSpec = {
     type: "scatter",
     xKey: "total_spent_12m",
@@ -566,6 +599,17 @@ async function SingleSourceTable({
   };
   return (
     <>
+      {summaryChartRows.length > 1 ? (
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Concentración total · gasto 12m por nivel
+          </div>
+          <DataViewChart
+            data={summaryChartRows as unknown as Record<string, unknown>[]}
+            chart={summaryDonut}
+          />
+        </div>
+      ) : null}
       <DataView
         data={rows}
         columns={singleSourceColumnsBase}
