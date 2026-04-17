@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 import { runPullSync, resolveSyntageEntityId, type PullResource } from "@/lib/syntage/pull-sync";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 export const dynamic = "force-dynamic";
 
 const VALID_RESOURCES: PullResource[] = [
