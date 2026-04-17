@@ -12,7 +12,8 @@ import {
   KpiCard,
   StatGrid,
   PageHeader,
-  DataTable,
+  DataView,
+  DataViewChart,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -23,6 +24,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -37,6 +40,30 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Contactos" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+function buildContactsHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/contacts?${s}` : "/contacts";
+}
+
+function parseViewParam(sp: SearchParams, key: string): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
 
 const riskVariant: Record<
   string,
@@ -338,11 +365,97 @@ async function ContactsTable({
     );
   }
 
+  const view = parseViewParam(searchParams, "view");
+
+  // Donut summary: distribución por risk_level sobre la página actual.
+  const riskCounts = new Map<string, number>();
+  for (const r of rows) {
+    const k = r.risk_level ?? "—";
+    riskCounts.set(k, (riskCounts.get(k) ?? 0) + 1);
+  }
+  const riskSummary = Array.from(riskCounts.entries())
+    .map(([risk, count]) => ({ risk, count, label: riskLabel[risk] ?? risk }))
+    .sort(
+      (a, b) =>
+        ["critical", "high", "medium", "low", "—"].indexOf(a.risk) -
+        ["critical", "high", "medium", "low", "—"].indexOf(b.risk)
+    );
+  const riskDonut: DataViewChartSpec = {
+    type: "donut",
+    xKey: "label",
+    series: [{ dataKey: "count", label: "Contactos" }],
+    valueFormat: "number",
+    donutCenterLabel: String(rows.length),
+    colorBy: "risk",
+    colorMap: {
+      low: "var(--chart-2)",
+      medium: "var(--chart-3)",
+      high: "var(--chart-4)",
+      critical: "var(--destructive)",
+    },
+    height: 220,
+  };
+
+  // Scatter: health_score × sentiment_score, colorBy risk_level.
+  const scatterRows = rows
+    .filter(
+      (r) =>
+        r.current_health_score != null && r.sentiment_score != null
+    )
+    .map((r) => ({
+      ...r,
+      // escalar sentiment (-1..1) a -100..100 para legibilidad en eje Y
+      sentiment_scaled: Math.round((r.sentiment_score ?? 0) * 100),
+    }));
+  const scatterChart: DataViewChartSpec = {
+    type: "scatter",
+    xKey: "current_health_score",
+    yKey: "sentiment_scaled",
+    series: [
+      { dataKey: "current_health_score", label: "Health score" },
+      { dataKey: "sentiment_scaled", label: "Sentimiento" },
+    ],
+    valueFormat: "number",
+    secondaryValueFormat: "number",
+    colorBy: "risk_level",
+    colorMap: {
+      low: "var(--chart-2)",
+      medium: "var(--chart-3)",
+      high: "var(--chart-4)",
+      critical: "var(--destructive)",
+    },
+    referenceLine: {
+      value: 50,
+      axis: "x",
+      label: "Health 50",
+    },
+    rowHrefTemplate: "/contacts/{id}",
+  };
+
   return (
     <div className="space-y-3">
-      <DataTable
+      {riskSummary.length > 1 && view === "table" ? (
+        <div className="rounded-xl border border-border bg-card p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Distribución por riesgo · página actual
+          </div>
+          <DataViewChart
+            data={riskSummary as unknown as Record<string, unknown>[]}
+            chart={riskDonut}
+          />
+        </div>
+      ) : null}
+      <DataView
         data={rows}
         columns={contactColumns}
+        chart={scatterChart}
+        chartData={scatterRows as unknown as Record<string, unknown>[]}
+        view={view}
+        viewHref={(next) =>
+          buildContactsHref(searchParams, {
+            view: next === "chart" ? "chart" : null,
+          })
+        }
         rowKey={(r) => r.id}
         sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
         sortHref={sortHref}

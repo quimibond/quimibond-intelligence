@@ -12,7 +12,7 @@ import {
   KpiCard,
   StatGrid,
   PageHeader,
-  DataTable,
+  DataView,
   DataTableToolbar,
   DataTablePagination,
   TableViewOptions,
@@ -25,6 +25,8 @@ import {
   EmptyState,
   makeSortHref,
   type DataTableColumn,
+  type DataViewChartSpec,
+  type DataViewMode,
 } from "@/components/shared/v2";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +50,30 @@ export const dynamic = "force-dynamic";
 export const metadata = { title: "Operaciones" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
+
+function buildOperacionesHref(
+  sp: SearchParams,
+  updates: Record<string, string | null>
+): string {
+  const p = new URLSearchParams();
+  for (const [k, v] of Object.entries(sp)) {
+    if (v == null) continue;
+    if (Array.isArray(v)) v.forEach((x) => p.append(k, x));
+    else p.set(k, v);
+  }
+  for (const [k, v] of Object.entries(updates)) {
+    if (v === null || v === "") p.delete(k);
+    else p.set(k, v);
+  }
+  const s = p.toString();
+  return s ? `/operaciones?${s}` : "/operaciones";
+}
+
+function parseViewParam(sp: SearchParams, key: string): DataViewMode {
+  const raw = sp[key];
+  const v = Array.isArray(raw) ? raw[0] : raw;
+  return v === "chart" ? "chart" : "table";
+}
 
 export default async function OperacionesPage({
   searchParams,
@@ -395,11 +421,51 @@ async function DeliveriesTable({
       />
     );
   }
+
+  const view = parseViewParam(searchParams, "dl_view");
+  // Chart: donut por state (distribución del pipeline actual).
+  const stateCounts = new Map<string, number>();
+  for (const r of rows) {
+    const s = r.state ?? "—";
+    stateCounts.set(s, (stateCounts.get(s) ?? 0) + 1);
+  }
+  const stateData = Array.from(stateCounts.entries())
+    .map(([state, count]) => ({
+      state,
+      count,
+      label: deliveryStateLabel[state] ?? state,
+    }))
+    .sort((a, b) => b.count - a.count);
+  const donutChart: DataViewChartSpec = {
+    type: "donut",
+    xKey: "label",
+    series: [{ dataKey: "count", label: "Entregas" }],
+    valueFormat: "number",
+    donutCenterLabel: String(rows.length),
+    colorBy: "state",
+    colorMap: {
+      draft: "var(--muted-foreground)",
+      waiting: "var(--chart-3)",
+      confirmed: "var(--chart-1)",
+      assigned: "var(--chart-2)",
+      done: "var(--chart-2)",
+      cancel: "var(--destructive)",
+    },
+    height: 260,
+  };
   return (
     <div className="space-y-3">
-      <DataTable
+      <DataView
         data={rows}
         columns={deliveryColumns}
+        chart={donutChart}
+        chartData={stateData as unknown as Record<string, unknown>[]}
+        view={view}
+        viewHref={(next) =>
+          buildOperacionesHref(searchParams, {
+            dl_view: next === "chart" ? "chart" : null,
+          })
+        }
         rowKey={(r) => String(r.id)}
         sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
         sortHref={sortHref}
@@ -628,11 +694,50 @@ async function ManufacturingTable({
     searchParams,
     paramPrefix: "mfg_",
   });
+  const view = parseViewParam(searchParams, "mfg_view");
+  // Chart: donut por state (distribución del work-in-progress).
+  const stateCounts = new Map<string, number>();
+  for (const r of rows) {
+    const s = r.state ?? "—";
+    stateCounts.set(s, (stateCounts.get(s) ?? 0) + 1);
+  }
+  const stateData = Array.from(stateCounts.entries())
+    .map(([state, count]) => ({
+      state,
+      count,
+      label: mfgStateLabel[state] ?? state,
+    }))
+    .sort((a, b) => b.count - a.count);
+  const mfgDonut: DataViewChartSpec = {
+    type: "donut",
+    xKey: "label",
+    series: [{ dataKey: "count", label: "Órdenes" }],
+    valueFormat: "number",
+    donutCenterLabel: String(rows.length),
+    colorBy: "state",
+    colorMap: {
+      draft: "var(--muted-foreground)",
+      confirmed: "var(--chart-3)",
+      progress: "var(--chart-4)",
+      to_close: "var(--chart-1)",
+      done: "var(--chart-2)",
+      cancel: "var(--destructive)",
+    },
+    height: 260,
+  };
   return (
     <div className="space-y-3">
-    <DataTable
+    <DataView
       data={rows}
       columns={mfgColumns}
+      chart={mfgDonut}
+      chartData={stateData as unknown as Record<string, unknown>[]}
+      view={view}
+      viewHref={(next) =>
+        buildOperacionesHref(searchParams, {
+          mfg_view: next === "chart" ? "chart" : null,
+        })
+      }
       rowKey={(r) => String(r.id)}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
