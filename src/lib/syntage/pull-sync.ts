@@ -40,6 +40,44 @@ interface SyntageListResponse {
   };
 }
 
+/**
+ * Diagnostic: returns Syntage's reported totalItems for a resource+filter combo,
+ * without iterating. Useful to know "what does Syntage actually have" before a
+ * pull run. Uses X-Pagination-Enable-Partial: 0 which forces totalItems in the
+ * response even for cursor pagination (normally omitted for performance).
+ */
+export async function countSyntageResource(
+  resource: PullResource,
+  entityId: string,
+  opts: { isIssuer?: boolean | null; isReceiver?: boolean | null; periodFrom?: string; periodTo?: string } = {},
+): Promise<number> {
+  const apiKey = process.env.SYNTAGE_API_KEY;
+  if (!apiKey) throw new Error("SYNTAGE_API_KEY not set");
+
+  const qs = new URLSearchParams();
+  qs.set("itemsPerPage", "1"); // minimize payload
+  if (opts.periodFrom) qs.set("issuedAt[after]", opts.periodFrom);
+  if (opts.periodTo) qs.set("issuedAt[before]", opts.periodTo);
+  if (resource === "invoices") {
+    if (opts.isIssuer != null) qs.set("isIssuer", String(opts.isIssuer));
+    if (opts.isReceiver != null) qs.set("isReceiver", String(opts.isReceiver));
+  }
+
+  const res = await fetch(
+    `${API_BASE}${pathForResource(resource, entityId)}?${qs.toString()}`,
+    {
+      headers: {
+        "X-API-Key": apiKey,
+        "Accept": "application/ld+json",
+        "X-Pagination-Enable-Partial": "0",
+      },
+    },
+  );
+  if (!res.ok) throw new Error(`Syntage count ${res.status} on ${resource}: ${await res.text()}`);
+  const body = (await res.json()) as SyntageListResponse;
+  return body["hydra:totalItems"] ?? 0;
+}
+
 export interface PullSyncResult {
   resource: string;
   entity_id: string;
@@ -71,6 +109,28 @@ export interface PullSyncOptions {
   maxPages?: number;             // default 50 (≈5000 items)
   pageSize?: number;             // default 100
   softTimeoutMs?: number;        // stop early if exceeded (default 25000)
+  isIssuer?: boolean | null;     // only for invoices: filter emitter=taxpayer
+  isReceiver?: boolean | null;   // only for invoices: filter receiver=taxpayer
+}
+
+/**
+ * Maps our internal resource name to the Syntage URL path.
+ * Most resources are entity-scoped, but invoice-payments is TOP-LEVEL
+ * (GET /invoices/payments) — not /entities/{id}/invoice-payments.
+ */
+function pathForResource(resource: PullResource, entityId: string): string {
+  switch (resource) {
+    case "invoices":
+      return `/entities/${entityId}/invoices`;
+    case "invoice-line-items":
+      return `/entities/${entityId}/invoices/line-items`;
+    case "invoice-payments":
+      return `/invoices/payments`;
+    case "tax-retentions":
+      return `/entities/${entityId}/tax-retentions`;
+    case "tax-returns":
+      return `/entities/${entityId}/tax-returns`;
+  }
 }
 
 export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult> {
@@ -101,9 +161,16 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
   } else {
     const qs = new URLSearchParams();
     qs.set("itemsPerPage", String(pageSize));
-    if (opts.periodFrom) qs.set("period[from]", opts.periodFrom);
-    if (opts.periodTo) qs.set("period[to]", opts.periodTo);
-    firstUrl = `${API_BASE}/entities/${opts.entityId}/${opts.resource}?${qs.toString()}`;
+    // Syntage uses `issuedAt[after]/[before]` for date filtering on invoices &
+    // tax-retentions (NOT `period[from]/[to]` which is extraction-option style).
+    if (opts.periodFrom) qs.set("issuedAt[after]", opts.periodFrom);
+    if (opts.periodTo) qs.set("issuedAt[before]", opts.periodTo);
+    // Invoice role filter: only applies to the invoices resource.
+    if (opts.resource === "invoices") {
+      if (opts.isIssuer != null) qs.set("isIssuer", String(opts.isIssuer));
+      if (opts.isReceiver != null) qs.set("isReceiver", String(opts.isReceiver));
+    }
+    firstUrl = `${API_BASE}${pathForResource(opts.resource, opts.entityId)}?${qs.toString()}`;
   }
 
   const result: PullSyncResult = {
@@ -132,6 +199,8 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
       headers: {
         "X-API-Key": apiKey,
         "Accept": "application/ld+json",
+        "X-Pagination-Style": "cursor",      // per Syntage docs: opt-in to cursor pagination
+        "X-Pagination-Enable-Partial": "0",  // request hydra:totalItems for diagnostics
       },
     });
 
