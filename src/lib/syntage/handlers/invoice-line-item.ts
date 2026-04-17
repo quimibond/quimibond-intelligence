@@ -47,13 +47,10 @@ export async function handleInvoiceLineItemEvent(ctx: HandlerCtx, event: Syntage
   if (!row.syntage_id) {
     throw new Error("invoice_line_item event missing id");
   }
-  if (!row.invoice_uuid) {
-    // FK requires the parent invoice; if payload came before invoice event,
-    // we throw → Syntage retries (backoff handles ordering).
-    throw new Error(
-      `invoice_line_item event missing invoice.uuid (syntage_id=${String(row.syntage_id)})`,
-    );
-  }
+  // NOTE: invoice_uuid is a soft reference (FK dropped in migration
+  // 20260417_syntage_line_items_drop_fk). Line items can arrive before their
+  // parent invoice event; we accept the row regardless and the JOIN is
+  // resolved at query time in invoices_unified.
 
   const { error } = await ctx.supabase
     .from("syntage_invoice_line_items")
