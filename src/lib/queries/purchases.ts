@@ -1,11 +1,15 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
+import { getUnifiedInvoicesForCompany } from "@/lib/queries/unified";
 import { resolveCompanyNames } from "./_helpers";
 import {
   endOfDay,
   paginationRange,
   type TableParams,
 } from "./table-params";
+
+// Feature flag: set USE_UNIFIED_LAYER=false to revert to legacy direct query
+const USE_UNIFIED_LAYER = process.env.USE_UNIFIED_LAYER !== "false";
 
 /**
  * Purchases queries v2 — usa views canónicas:
@@ -615,4 +619,92 @@ export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
     }))
     .sort((a, b) => b.total_spent - a.total_spent)
     .slice(0, limit);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Supplier invoices — Layer 3 dispatch (Syntage Fase 5)
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Legacy: fetch supplier invoices directly from odoo_invoices.
+ * Kept for rollback via USE_UNIFIED_LAYER=false.
+ */
+async function legacyGetSupplierInvoices(supplierCompanyId: number) {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("odoo_invoices")
+    .select("*")
+    .eq("odoo_partner_id", supplierCompanyId)
+    .in("move_type", ["in_invoice", "in_refund"])
+    .order("invoice_date", { ascending: false })
+    .limit(500);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+}
+
+/**
+ * Get supplier invoices for a company.
+ * Layer 3: dispatches to getUnifiedInvoicesForCompany(direction='received')
+ * unless USE_UNIFIED_LAYER=false.
+ */
+export async function getSupplierInvoices(supplierCompanyId: number) {
+  if (USE_UNIFIED_LAYER) {
+    return getUnifiedInvoicesForCompany(supplierCompanyId, {
+      direction: "received",
+    });
+  }
+  return legacyGetSupplierInvoices(supplierCompanyId);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// 69-B blacklist helpers — queries reconciliation_issues
+// ──────────────────────────────────────────────────────────────────────────
+
+/**
+ * Returns the blacklist_status for a single supplier, or null if not listed.
+ */
+export async function getSupplierBlacklistStatus(
+  supplierCompanyId: number
+): Promise<string | null> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("reconciliation_issues")
+    .select("metadata")
+    .eq("company_id", supplierCompanyId)
+    .eq("issue_type", "partner_blacklist_69b")
+    .is("resolved_at", null)
+    .limit(1);
+  if (error) return null;
+  const row = ((data ?? [])[0]) as
+    | { metadata?: { blacklist_status?: string } }
+    | undefined;
+  return row?.metadata?.blacklist_status ?? null;
+}
+
+/**
+ * Bulk fetch: returns a map of company_id → blacklist_status for all
+ * suppliers that have an open 69-B issue. Avoids N+1 when rendering lists.
+ */
+export async function getSuppliersBlacklistMap(
+  supplierCompanyIds: number[]
+): Promise<Record<number, string>> {
+  if (supplierCompanyIds.length === 0) return {};
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("reconciliation_issues")
+    .select("company_id,metadata")
+    .in("company_id", supplierCompanyIds)
+    .eq("issue_type", "partner_blacklist_69b")
+    .is("resolved_at", null);
+  if (error) return {};
+  const map: Record<number, string> = {};
+  for (const row of (data ?? []) as Array<{
+    company_id: number;
+    metadata: { blacklist_status?: string };
+  }>) {
+    if (row.metadata?.blacklist_status) {
+      map[row.company_id] = row.metadata.blacklist_status;
+    }
+  }
+  return map;
 }

@@ -44,6 +44,7 @@ import {
   getPurchaseOrdersPage,
   getPurchaseBuyerOptions,
   getTopSuppliersPage,
+  getSuppliersBlacklistMap,
   type SingleSourceRow,
   type PriceAnomalyRow,
   type RecentPurchaseOrder,
@@ -531,6 +532,12 @@ async function SingleSourceTable({
     }),
     getSingleSourceSummary(),
   ]);
+
+  // Fetch 69-B blacklist status for all supplier company IDs in the result set
+  const supplierCompanyIds = rows
+    .map((r) => r.top_supplier_company_id)
+    .filter((id): id is number => id != null);
+  const blacklistMap = await getSuppliersBlacklistMap(supplierCompanyIds);
   const visibleKeys = parseVisibleKeys(searchParams, "ss_");
   const sortHref = makeSortHref({
     pathname: "/compras",
@@ -612,7 +619,32 @@ async function SingleSourceTable({
       ) : null}
       <DataView
         data={rows}
-        columns={singleSourceColumnsBase}
+        columns={singleSourceColumnsBase.map((col) =>
+          col.key !== "supplier"
+            ? col
+            : {
+                ...col,
+                cell: (r: SingleSourceRow) => (
+                  <span className="flex flex-wrap items-center gap-1">
+                    {r.top_supplier_company_id && r.top_supplier_name ? (
+                      <CompanyLink
+                        companyId={r.top_supplier_company_id}
+                        name={r.top_supplier_name}
+                        truncate
+                      />
+                    ) : (
+                      <span className="truncate">{r.top_supplier_name ?? "—"}</span>
+                    )}
+                    {r.top_supplier_company_id != null &&
+                      blacklistMap[r.top_supplier_company_id] && (
+                        <Badge className="bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-100 ml-1 shrink-0">
+                          69-B: {blacklistMap[r.top_supplier_company_id]}
+                        </Badge>
+                      )}
+                  </span>
+                ),
+              }
+        )}
         chart={chart}
         view={view}
         viewHref={(next) =>
@@ -646,16 +678,25 @@ async function SingleSourceTable({
             fields={[
               {
                 label: "Proveedor",
-                value:
-                  r.top_supplier_company_id && r.top_supplier_name ? (
-                    <CompanyLink
-                      companyId={r.top_supplier_company_id}
-                      name={r.top_supplier_name}
-                      truncate
-                    />
-                  ) : (
-                    (r.top_supplier_name ?? "—")
-                  ),
+                value: (
+                  <span className="flex flex-wrap items-center gap-1">
+                    {r.top_supplier_company_id && r.top_supplier_name ? (
+                      <CompanyLink
+                        companyId={r.top_supplier_company_id}
+                        name={r.top_supplier_name}
+                        truncate
+                      />
+                    ) : (
+                      (r.top_supplier_name ?? "—")
+                    )}
+                    {r.top_supplier_company_id != null &&
+                      blacklistMap[r.top_supplier_company_id] && (
+                        <Badge className="bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-100">
+                          69-B: {blacklistMap[r.top_supplier_company_id]}
+                        </Badge>
+                      )}
+                  </span>
+                ),
                 className: "col-span-2",
               },
               {
