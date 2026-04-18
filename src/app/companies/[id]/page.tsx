@@ -42,6 +42,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
+import { CompanyReconciliationTab } from "@/components/system/CompanyReconciliationTab";
+
 import {
   getCompanyDetail,
   getCompanyOrdersPage,
@@ -237,6 +239,9 @@ export default async function CompanyDetailPage({
             <Activity className="size-3.5" />
             Actividad
           </TabsTrigger>
+          <TabsTrigger value="reconciliacion" className="gap-1.5">
+            Reconciliación
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-4 space-y-4">
@@ -357,6 +362,12 @@ export default async function CompanyDetailPage({
               </Suspense>
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="reconciliacion" className="mt-4">
+          <Suspense fallback={<Skeleton className="h-[400px]" />}>
+            <CompanyReconciliationTab companyId={id} />
+          </Suspense>
         </TabsContent>
       </Tabs>
     </div>
