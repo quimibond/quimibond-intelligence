@@ -35,7 +35,7 @@ import {
 } from "@/lib/queries/team";
 import { formatNumber } from "@/lib/formatters";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Equipo" };
 
 export default function EquipoPage() {

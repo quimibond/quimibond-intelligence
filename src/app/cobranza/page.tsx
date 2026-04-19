@@ -57,7 +57,7 @@ import {
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Cobranza" };
 
 type SearchParams = Record<string, string | string[] | undefined>;

@@ -46,7 +46,7 @@ import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 import { OtdWeeklyChart } from "./_components/otd-weekly-chart";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Operaciones" };
 
 type SearchParams = Record<string, string | string[] | undefined>;

@@ -60,7 +60,7 @@ import {
 import { getCompanyEvidencePack } from "@/lib/queries/evidence";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30; // 30s ISR cache · detail pages change faster with user activity
 
 export async function generateMetadata({
   params,

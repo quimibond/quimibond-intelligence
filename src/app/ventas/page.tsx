@@ -60,8 +60,7 @@ import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Ventas" };
 
 type SearchParams = Record<string, string | string[] | undefined>;

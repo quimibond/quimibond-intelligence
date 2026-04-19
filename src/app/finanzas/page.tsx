@@ -57,8 +57,7 @@ import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table"
 import { CashflowRecommendations } from "./_components/cashflow-recommendations";
 import { CashflowProfiles } from "./_components/cashflow-profiles";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Finanzas" };
 
 const monthLabels = [
