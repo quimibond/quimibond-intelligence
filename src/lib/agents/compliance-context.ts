@@ -95,3 +95,46 @@ ${safeJSON((cancelledPosted as { data: unknown }).data)}
 ## SAT-ONLY CFDI ISSUED ÚLTIMOS 30 DÍAS (top 20)
 ${safeJSON((satOnlyRecent as { data: unknown }).data)}`;
 }
+
+/**
+ * MODO ESTRATÉGICO: foto fiscal del trimestre y tendencias.
+ * 5 queries via RPCs (pre-agregadas en SQL), ~18K tokens context total.
+ *
+ * Usa RPCs en lugar de queries crudas para reducir payload y mover el cost
+ * de agregación al plano de la DB.
+ */
+export async function buildComplianceContextEstrategico(
+  sb: SupabaseClient,
+  profileSection: string
+): Promise<string> {
+  const [
+    trendRes,
+    unlinkedRes,
+    coverageRes,
+    resolutionsRes,
+    taxReturnsRes,
+  ] = await Promise.all([
+    sb.rpc("syntage_open_issues_by_week"),
+    sb.rpc("syntage_top_unlinked_rfcs", { p_limit: 10 }),
+    sb.rpc("syntage_validation_coverage_by_month", { p_months: 6 }),
+    sb.rpc("syntage_recent_resolutions", { p_days: 30 }),
+    sb.rpc("syntage_recent_tax_returns", { p_months: 12 }),
+  ]);
+
+  return `${profileSection}## MODO: ESTRATÉGICO (foto fiscal 6-12m)
+
+## TREND ISSUES OPEN POR SEMANA (12 semanas)
+${safeJSON((trendRes as { data: unknown }).data)}
+
+## DECLARACIONES SAT (últimos 12 meses)
+${safeJSON((taxReturnsRes as { data: unknown }).data)}
+
+## TOP 10 RFCs NO LINKEADOS (sat_only_cfdi_received)
+${safeJSON((unlinkedRes as { data: unknown }).data)}
+
+## COBERTURA VALIDACIÓN (ratio validated/posted por mes)
+${safeJSON((coverageRes as { data: unknown }).data)}
+
+## RESOLUCIONES ÚLTIMOS 30 DÍAS
+${safeJSON((resolutionsRes as { data: unknown }).data)}`;
+}

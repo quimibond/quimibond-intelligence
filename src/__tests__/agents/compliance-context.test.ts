@@ -56,3 +56,29 @@ describe("buildComplianceContextOperativo", () => {
     expect(out).toContain("Sin issues abiertos");
   });
 });
+
+describe("buildComplianceContextEstrategico", () => {
+  it("incluye trend semanal + cobertura validación + declaraciones + resoluciones", async () => {
+    const { buildComplianceContextEstrategico } =
+      await import("@/lib/agents/compliance-context");
+    // Reuse makeSbMock from outer scope if defined there, else redefine.
+    const sb = {
+      from: () => ({} as never),
+      rpc: (name: string) => {
+        const fixtures: Record<string, unknown> = {
+          syntage_open_issues_by_week: [{ week: "2026-W15", severity: "critical", cnt: 9985 }],
+          syntage_top_unlinked_rfcs: [{ rfc: "XAXX010101ABC", cnt: 100, last_seen: "2026-04-01" }],
+          syntage_validation_coverage_by_month: [{ month: "2026-03", posted: 1200, validated: 1170, ratio: 0.975 }],
+          syntage_recent_resolutions: [{ resolution: "historical_pre_odoo", cnt: 100 }],
+        };
+        return Promise.resolve({ data: fixtures[name] ?? null });
+      }
+    } as unknown as import("@supabase/supabase-js").SupabaseClient;
+    const out = await buildComplianceContextEstrategico(sb, "## PROFILE\n");
+    expect(out).toContain("MODO: ESTRATÉGICO");
+    expect(out).toContain("TREND");
+    expect(out).toContain("COBERTURA");
+    expect(out).toContain("DECLARACIONES");
+    expect(out).toContain("RESOLUCIONES");
+  });
+});
