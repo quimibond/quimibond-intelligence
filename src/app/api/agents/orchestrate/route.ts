@@ -18,6 +18,8 @@ import { loadDirectorConfig, filterInsightsByConfig } from "@/lib/agents/directo
 import { hasConcreteEvidence, looksLikeMetaHallucination } from "@/lib/agents/grounding";
 import { buildFinancieroContextOperativo, buildFinancieroContextEstrategico } from "@/lib/agents/financiero-context";
 import { advanceMode } from "@/lib/agents/mode-rotation";
+import { buildComplianceContextOperativo, buildComplianceContextEstrategico } from "@/lib/agents/compliance-context";
+import { applyFiscalAnnotation } from "@/lib/agents/fiscal-annotation";
 import { getDirectorBriefing, type DirectorSlug, type DirectorBriefing } from "@/lib/queries/evidence";
 
 export const maxDuration = 300;
@@ -111,7 +113,11 @@ export async function POST(request: NextRequest) {
       weekly:  6 * 86400_000,       // ~once a week, slack for missed crons
       hourly:  50 * 60_000,
     };
+    const complianceEnabled = process.env.ENABLE_COMPLIANCE_DIRECTOR !== "false";
     const eligibleAgents = agents.filter(a => {
+      // Fase 6: ENABLE_COMPLIANCE_DIRECTOR=false desactiva el director sin
+      // tener que ALTER is_active en DB. Rollback en caliente vía env var.
+      if (a.slug === "compliance" && !complianceEnabled) return false;
       const schedule = String(a.analysis_schedule ?? "daily").toLowerCase();
       const minInterval = MIN_INTERVAL_MS[schedule] ?? 0;
       if (minInterval === 0) return true; // unknown schedule → let it run
@@ -509,11 +515,31 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
         console.log(`[orchestrate] ${agent.slug} config filter: ${rows.length} → ${filteredRows.length}`);
       }
 
-      console.log(`[orchestrate] ${agent.slug} inserting ${filteredRows.length} rows (from ${cappedInsights.length} capped, ${insights.length} raw)`);
-      if (filteredRows.length === 0) {
+      // Fase 6: enriquecer con fiscal_annotation antes del INSERT.
+      // applyFiscalAnnotation devuelve null si: company_id null, agent es compliance,
+      // company sin issues open, o description ya menciona el flag (self-flag guard).
+      // La annotation agrega el flag fiscal determinístico sin impactar el grounding,
+      // que ya corrió antes. Costo: 1 RPC call por insight (<50ms cada una).
+      const annotatedRows = await Promise.all(
+        filteredRows.map(async ({ _srcIdx, ...r }) => {
+          const annotation = await applyFiscalAnnotation(supabase, {
+            company_id: (r.company_id as number | null) ?? null,
+            agent_slug: agent.slug,
+            description: String(r.description ?? ""),
+          });
+          return annotation ? { ...r, fiscal_annotation: annotation } : r;
+        })
+      );
+      const annotatedCount = annotatedRows.filter(r => (r as Record<string, unknown>).fiscal_annotation != null).length;
+      if (annotatedCount > 0) {
+        console.log(`[orchestrate] ${agent.slug} fiscal_annotation added to ${annotatedCount}/${annotatedRows.length} rows`);
+      }
+
+      console.log(`[orchestrate] ${agent.slug} inserting ${annotatedRows.length} rows (from ${cappedInsights.length} capped, ${insights.length} raw)`);
+      if (annotatedRows.length === 0) {
         console.warn(`[orchestrate] ${agent.slug} rows empty after filters. Sample titles: ${cappedInsights.slice(0, 3).map(i => String(i.title || "").slice(0, 60)).join(" | ")}`);
       }
-      const { data: savedInsights, error: insertErr } = await supabase.from("agent_insights").insert(filteredRows.map(({ _srcIdx, ...r }) => r)).select("id");
+      const { data: savedInsights, error: insertErr } = await supabase.from("agent_insights").insert(annotatedRows).select("id");
       if (insertErr) {
         console.error(`[orchestrate] ${agent.slug} insert error:`, JSON.stringify(insertErr));
         console.error(`[orchestrate] ${agent.slug} first row sample:`, JSON.stringify(filteredRows[0]).slice(0, 500));
@@ -1367,6 +1393,17 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         return buildFinancieroContextEstrategico(sb, profileSection);
       }
       return buildFinancieroContextOperativo(sb, profileSection);
+    }
+    case "compliance": {
+      // Fase 6: mismo patrón que financiero (modo rotativo operativo/estrategico).
+      const modes = directorConfig?.mode_rotation?.length
+        ? directorConfig.mode_rotation
+        : ["operativo", "estrategico"];
+      const mode = agentId != null ? await advanceMode(sb, agentId, modes) : "operativo";
+      if (mode === "estrategico") {
+        return buildComplianceContextEstrategico(sb, profileSection);
+      }
+      return buildComplianceContextOperativo(sb, profileSection);
     }
     case "operaciones_dir": {
       const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries, productionDelays, otdHistory, slowMoving] = await Promise.all([
