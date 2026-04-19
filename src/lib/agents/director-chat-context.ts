@@ -146,7 +146,7 @@ function safeJSON(v: any): string {
 // ── Context builders por director ───────────────────────────────────────
 
 async function buildComercial(sb: SupabaseClient): Promise<string> {
-  const [ltvHealth, reorderRisk, top, crmLeads, clientOverdue, clientThreads, cancelledPostedCfdi] = await Promise.all([
+  const [ltvHealth, reorderRisk, top, crmLeads, clientOverdue, clientThreads, cancelledPostedCfdi, fiscalLifetimeClients, clientCancelRates] = await Promise.all([
     // NEW (Fase 7): customer_ltv_health — churn_risk_score + overdue_risk_score + LTV ranking
     sb.from("customer_ltv_health")
       .select("company_name, tier, ltv_mxn, revenue_12m, revenue_3m, trend_pct_vs_prior_quarters, churn_risk_score, overdue_risk_score, days_since_last_order, max_days_overdue")
@@ -187,6 +187,16 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
       .is("resolved_at", null)
       .order("detected_at", { ascending: false })
       .limit(5),
+    // Fase 6: top clientes fiscal histórico con YoY
+    sb.from("syntage_top_clients_fiscal_lifetime")
+      .select("rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, yoy_pct, cancellation_rate_pct, days_since_last_cfdi, company_id")
+      .order("lifetime_revenue_mxn", { ascending: false })
+      .limit(20),
+    // Fase 6: clientes con alto cancellation rate
+    sb.from("syntage_client_cancellation_rates")
+      .select("rfc, name, total_cfdis_24m, cancelados_24m, cancellation_rate_pct, cancelled_amount_mxn, company_id")
+      .order("cancellation_rate_pct", { ascending: false })
+      .limit(10),
   ]);
   return [
     `## LTV + churn risk score (>= 100K LTV, ordenado por churn_risk)\n${safeJSON(ltvHealth.data)}`,
@@ -196,6 +206,8 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
     `## Clientes con cartera vencida\n${safeJSON(clientOverdue.data)}`,
     `## Emails de clientes sin respuesta >24h\n${safeJSON(clientThreads.data)}`,
     `## CFDI CANCELADO EN SAT PERO POSTED EN ODOO (clientes, top 5)\n${safeJSON(cancelledPostedCfdi.data)}`,
+    `## TOP 20 CLIENTES FISCAL HISTÓRICO (Syntage · 12 años, con YoY)\n${safeJSON(fiscalLifetimeClients.data)}`,
+    `## CLIENTES CON CANCELLATION RATE ALTO (últimos 24m)\n${safeJSON(clientCancelRates.data)}`,
   ].join("\n\n");
 }
 
@@ -239,7 +251,7 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildCompras(sb: SupabaseClient): Promise<string> {
-  const [herfindahl, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix, gastoNoCapturado] = await Promise.all([
+  const [herfindahl, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix, gastoNoCapturado, fiscalLifetimeSuppliers] = await Promise.all([
     // NEW (Fase 7): concentracion Herfindahl por producto (single_source / very_high riesgo de sourcing)
     sb.from("supplier_concentration_herfindahl")
       .select("product_ref, product_name, supplier_count, herfindahl_idx, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level")
@@ -283,6 +295,11 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
       .is("resolved_at", null)
       .order("detected_at", { ascending: false })
       .limit(10),
+    // Fase 6: top proveedores fiscal histórico
+    sb.from("syntage_top_suppliers_fiscal_lifetime")
+      .select("rfc, name, lifetime_spend_mxn, spend_12m_mxn, yoy_pct, retenciones_lifetime_mxn, days_since_last_cfdi, company_id")
+      .order("lifetime_spend_mxn", { ascending: false })
+      .limit(20),
   ]);
   return [
     `## Concentracion Herfindahl por producto (single_source/very_high, 12m)\n${safeJSON(herfindahl.data)}`,
@@ -293,11 +310,12 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
     `## Dependencia por producto\n${safeJSON(supplierMatrix.data)}`,
     `## Emails con proveedores sin respuesta >48h\n${safeJSON(supplierThreads.data)}`,
     `## PROVEEDORES CON GASTO NO CAPTURADO EN SAT (top 10)\n${safeJSON(gastoNoCapturado.data)}`,
+    `## TOP 20 PROVEEDORES FISCAL HISTÓRICO (Syntage · 12 años con retenciones)\n${safeJSON(fiscalLifetimeSuppliers.data)}`,
   ].join("\n\n");
 }
 
 async function buildCostos(sb: SupabaseClient): Promise<string> {
-  const [belowCostLines, priceErosion, deadStock, purchasePrices, topProducts] = await Promise.all([
+  const [belowCostLines, priceErosion, deadStock, purchasePrices, topProducts, productLineAnalysis] = await Promise.all([
     sb.from("invoice_line_margins")
       .select("move_name, invoice_date, company_name, product_ref, quantity, price_unit, unit_cost, gross_margin_pct, below_cost, margin_total, discount")
       .order("margin_total", { ascending: true })
@@ -322,6 +340,11 @@ async function buildCostos(sb: SupabaseClient): Promise<string> {
       .gt("stock_qty", 0)
       .order("stock_qty", { ascending: false })
       .limit(10),
+    // Fase 6: productos agregados desde 172K line items SAT
+    sb.from("syntage_product_line_analysis")
+      .select("clave_prod_serv, descripcion, revenue_mxn_aprox, total_lineas, precio_promedio_mxn, precio_stddev")
+      .order("revenue_mxn_aprox", { ascending: false })
+      .limit(20),
   ]);
   return [
     `## Ventas bajo costo / margen <15% (eventos puntuales)\n${safeJSON(belowCostLines.data)}`,
@@ -329,6 +352,7 @@ async function buildCostos(sb: SupabaseClient): Promise<string> {
     `## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}`,
     `## Comprando mas caro que promedio (impacto en costos)\n${safeJSON(purchasePrices.data)}`,
     `## Productos con mas stock\n${safeJSON(topProducts.data)}`,
+    `## TOP 20 PRODUCTOS POR REVENUE FISCAL (Syntage line items, 172K rows)\n${safeJSON(productLineAnalysis.data)}`,
   ].join("\n\n");
 }
 
@@ -375,7 +399,7 @@ async function buildOperaciones(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildRiesgo(sb: SupabaseClient): Promise<string> {
-  const [narrativesRisk, payRisk, topClients, trends, unanswered, supplierWeOwe, fiscalIssuesOpen, fiscalBlacklist] = await Promise.all([
+  const [narrativesRisk, payRisk, topClients, trends, unanswered, supplierWeOwe, fiscalIssuesOpen, fiscalBlacklist, fiscalConcentration] = await Promise.all([
     sb.from("company_narrative")
       .select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople")
       .not("risk_signal", "is", null)
@@ -420,12 +444,18 @@ async function buildRiesgo(sb: SupabaseClient): Promise<string> {
       .eq("issue_type", "partner_blacklist_69b")
       .is("resolved_at", null)
       .order("detected_at", { ascending: false }),
+    // Fase 6: concentración fiscal — top 10 clientes como % del revenue total
+    sb.from("syntage_top_clients_fiscal_lifetime")
+      .select("rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, yoy_pct")
+      .order("revenue_12m_mxn", { ascending: false })
+      .limit(10),
   ]);
   const rows = (topClients.data ?? []) as { total_revenue?: number }[];
   const totalRevenue = rows.reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
   const top5Revenue = rows.slice(0, 5).reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
   const concentrationPct = totalRevenue > 0 ? Math.round((top5Revenue / totalRevenue) * 100) : 0;
   return [
+    `## CONCENTRACIÓN FISCAL REAL (Syntage · top 10 clientes últimos 12m por revenue fiscal)\n${safeJSON(fiscalConcentration.data)}`,
     `## Concentracion revenue: top 5 clientes = ${concentrationPct}% del total\n${safeJSON(rows.slice(0, 5))}`,
     `## Empresas con senales de alerta\n${safeJSON(narrativesRisk.data)}`,
     `## Clientes que exceden patron de pago\n${safeJSON(payRisk.data)}`,
@@ -494,7 +524,7 @@ async function buildEquipo(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildCompliance(sb: SupabaseClient): Promise<string> {
-  const [criticalIssues, summary, blacklist, taxStatus, ppdSinComp, cancelledPosted] = await Promise.all([
+  const [criticalIssues, summary, blacklist, taxStatus, ppdSinComp, cancelledPosted, complianceRevenueTrend, complianceTaxReturns] = await Promise.all([
     sb.from("reconciliation_issues")
       .select("issue_id, issue_type, severity, description, company_id, detected_at")
       .eq("severity", "critical")
@@ -522,6 +552,17 @@ async function buildCompliance(sb: SupabaseClient): Promise<string> {
       .is("resolved_at", null)
       .order("detected_at", { ascending: false })
       .limit(10),
+    // Fase 6: trend revenue fiscal compliance
+    sb.from("syntage_revenue_fiscal_monthly")
+      .select("month, revenue_mxn, gasto_mxn, iva_trasladado_mxn, retenciones_mxn, cancelados")
+      .order("month", { ascending: false })
+      .limit(12),
+    // Fase 6: tax returns últimos 12 meses
+    sb.from("syntage_tax_returns")
+      .select("ejercicio, periodo, tipo_declaracion, impuesto, monto_pagado, fecha_presentacion")
+      .gte("fecha_presentacion", new Date(Date.now() - 365 * 86400_000).toISOString())
+      .order("fecha_presentacion", { ascending: false })
+      .limit(30),
   ]);
   return [
     `## Resumen fiscal global (get_syntage_reconciliation_summary)\n${safeJSON(summary.data)}`,
@@ -530,6 +571,8 @@ async function buildCompliance(sb: SupabaseClient): Promise<string> {
     `## Partner blacklist 69-B (open)\n${safeJSON(blacklist.data)}`,
     `## Pagos PPD sin complemento tipo P (top 10)\n${safeJSON(ppdSinComp.data)}`,
     `## CFDI cancelado en SAT / posted en Odoo (top 10)\n${safeJSON(cancelledPosted.data)}`,
+    `## TREND FISCAL REVENUE/GASTO (últimos 12 meses)\n${safeJSON(complianceRevenueTrend.data)}`,
+    `## DECLARACIONES SAT PRESENTADAS (últimos 12 meses)\n${safeJSON(complianceTaxReturns.data)}`,
   ].join("\n\n");
 }
 

@@ -114,7 +114,7 @@ export async function buildFinancieroContextEstrategico(
   sb: SupabaseClient,
   profileSection: string
 ): Promise<string> {
-  const [cfoDash, plReport, workingCap, bankBalances, anomalies, budgetVsActual, validationCoverage] = await Promise.all([
+  const [cfoDash, plReport, workingCap, bankBalances, anomalies, budgetVsActual, validationCoverage, revenueFiscalTrend, taxReturns12m] = await Promise.all([
     sb.from("cfo_dashboard").select("*").limit(1),
     sb.from("pl_estado_resultados").select("*").order("period", { ascending: false }).limit(6),
     sb.from("working_capital").select("*").limit(1),
@@ -131,6 +131,17 @@ export async function buildFinancieroContextEstrategico(
     Promise.resolve(sb.rpc("syntage_validation_coverage_by_month", { p_months: 6 }))
       .then((r: { data: unknown }) => r)
       .catch(() => ({ data: null })),
+    // Fase 6: trend revenue fiscal 24 meses
+    sb.from("syntage_revenue_fiscal_monthly")
+      .select("month, revenue_mxn, gasto_mxn, cfdis_emitidos, cfdis_recibidos, clientes_unicos")
+      .order("month", { ascending: false })
+      .limit(24),
+    // Fase 6: tax returns últimos 12 meses
+    sb.from("syntage_tax_returns")
+      .select("ejercicio, periodo, tipo_declaracion, impuesto, monto_pagado, fecha_presentacion")
+      .gte("fecha_presentacion", new Date(Date.now() - 365 * 86400_000).toISOString())
+      .order("fecha_presentacion", { ascending: false })
+      .limit(24),
   ]);
 
   const dash = (cfoDash.data ?? [])[0] as Record<string, unknown> | undefined;
@@ -161,5 +172,11 @@ ${safeJSON(budgetVsActual.data)}
 ${safeJSON(anomalies.data)}
 
 ## COBERTURA VALIDACIÓN SAT (Fase 6, ratio validated/posted 6m)
-${safeJSON(validationCoverage.data)}`;
+${safeJSON(validationCoverage.data)}
+
+## TREND REVENUE FISCAL (Syntage · últimos 24 meses)
+${safeJSON(revenueFiscalTrend.data)}
+
+## DECLARACIONES SAT (últimos 12 meses)
+${safeJSON(taxReturns12m.data)}`;
 }
