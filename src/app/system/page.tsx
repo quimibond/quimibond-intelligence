@@ -37,6 +37,7 @@ import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
 
 import { SyntageHealthPanel } from "@/components/system/SyntageHealthPanel";
 import { SyntageReconciliationPanel } from "@/components/system/SyntageReconciliationPanel";
+import { FiscalHistoricoPanel } from "@/components/fiscal/FiscalHistoricoPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -76,6 +77,14 @@ export default async function SystemPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+
+  // Support ?tab=historico-fiscal to deep-link into syntage sub-tab
+  const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
+  const outerTab =
+    tabParam === "historico-fiscal" ? "syntage" : (tabParam ?? "sync");
+  const innerSyntageTab =
+    tabParam === "historico-fiscal" ? "historico-fiscal" : "health";
+
   return (
     <div className="space-y-5 pb-24 md:pb-6">
       <PageHeader
@@ -95,7 +104,7 @@ export default async function SystemPage({
         <SystemKpisSection />
       </Suspense>
 
-      <Tabs defaultValue="sync" className="w-full">
+      <Tabs defaultValue={outerTab} className="w-full">
         <TabsList className="w-full justify-start overflow-x-auto sm:w-auto">
           <TabsTrigger value="sync">Sync</TabsTrigger>
           <TabsTrigger value="costs">Costos</TabsTrigger>
@@ -187,10 +196,11 @@ export default async function SystemPage({
         </TabsContent>
 
         <TabsContent value="syntage" className="mt-4 space-y-4">
-          <Tabs defaultValue="health" className="w-full">
+          <Tabs defaultValue={innerSyntageTab} className="w-full">
             <TabsList>
               <TabsTrigger value="health">Health &amp; backfill</TabsTrigger>
               <TabsTrigger value="reconciliation">Reconciliación</TabsTrigger>
+              <TabsTrigger value="historico-fiscal">Histórico Fiscal</TabsTrigger>
             </TabsList>
 
             <TabsContent value="health" className="mt-4">
@@ -223,6 +233,12 @@ export default async function SystemPage({
                   </Suspense>
                 </CardContent>
               </Card>
+            </TabsContent>
+
+            <TabsContent value="historico-fiscal" className="mt-4">
+              <Suspense fallback={<Skeleton className="h-[800px]" />}>
+                <FiscalHistoricoPanel />
+              </Suspense>
             </TabsContent>
           </Tabs>
         </TabsContent>

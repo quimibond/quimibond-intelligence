@@ -48,6 +48,7 @@ import {
   type BankBalance,
   type PlPoint,
 } from "@/lib/queries/finance";
+import { FiscalRevenueKpiCard } from "@/components/fiscal/FiscalRevenueKpiCard";
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
 
@@ -82,6 +83,7 @@ export default function FinanzasPage() {
           { id: "runway", label: "Runway" },
           { id: "kpis", label: "KPIs CFO" },
           { id: "cfdis", label: "CFDIs SAT" },
+          { id: "fiscal-sat", label: "Fiscal SAT" },
           { id: "flow", label: "Flujo 30d" },
           { id: "recommendations", label: "Recomendaciones" },
           { id: "projection", label: "Proyección 13s" },
@@ -118,6 +120,13 @@ export default function FinanzasPage() {
       {/* CFDIs validados SAT — mes corriente */}
       <Suspense fallback={<Skeleton className="h-[120px] rounded-xl" />}>
         <CfdiValidationSection />
+      </Suspense>
+      </section>
+
+      <section id="fiscal-sat" className="scroll-mt-24">
+      {/* Revenue Fiscal SAT 24m — KPI card con link a /system historico */}
+      <Suspense fallback={<Skeleton className="h-[96px] rounded-xl" />}>
+        <FiscalRevenueKpiCard />
       </Suspense>
       </section>
 
