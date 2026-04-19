@@ -10,6 +10,25 @@
 
 **Spec:** `docs/superpowers/specs/2026-04-19-syntage-fase-6-directores-ia-design.md`
 
+## ⚠️ Schema corrections (descubierto en Task 2)
+
+La tabla `public.reconciliation_issues` (verified via `information_schema.columns` 2026-04-19) tiene estas columnas reales que difieren del spec/plan:
+
+| Plan/Spec asumió | Schema real |
+|---|---|
+| `id bigint` | `issue_id uuid` |
+| `status = 'open'` | **NO existe columna `status`.** Open = `resolved_at IS NULL` |
+| `created_at` | `detected_at timestamptz` |
+| — | `metadata jsonb NOT NULL` (adicional, útil para enrichment) |
+
+**TODAS las queries en Tasks 3-16 deben usar:**
+- `issue_id` en lugar de `id`
+- `resolved_at IS NULL` en lugar de `status = 'open'`
+- `detected_at` en lugar de `created_at`
+- `issue_ids` en `FiscalAnnotation` TypeScript type es `string[]` (UUIDs as text), NO `number[]`
+
+Task 2 ya aplicó estas correcciones. El resto del plan se lee con este patching implícito.
+
 ---
 
 ## File Structure
