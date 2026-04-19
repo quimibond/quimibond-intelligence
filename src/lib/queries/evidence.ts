@@ -202,7 +202,8 @@ export type DirectorSlug =
   | "compras"
   | "riesgo"
   | "equipo"
-  | "costos";
+  | "costos"
+  | "compliance";
 
 export interface DirectorBriefing {
   director: DirectorSlug;
@@ -242,4 +243,5 @@ export const DIRECTOR_LABELS: Record<DirectorSlug, string> = {
   riesgo: "Riesgo",
   equipo: "Equipo",
   costos: "Costos",
+  compliance: "Cumplimiento Fiscal",
 };
