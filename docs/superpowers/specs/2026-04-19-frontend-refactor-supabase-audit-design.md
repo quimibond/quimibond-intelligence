@@ -33,6 +33,7 @@ Lo que **no** busca este refactor: cambiar arquitectura de agentes, modificar La
 | 4 | Home page | **A · `/inbox` se queda** — no hay `/dashboard` nuevo. |
 | 5 | Scope Supabase | **C · S1 + S3** — Audit organización + Data utilization. S2 (Data Quality) queda OUT (existen `dq_*` views). |
 | 6 | Validación | **A · V1-V4 antes de cada commit** — lint + tsc + test + build. `main` auto-deploya a prod, un build roto rompe producción. |
+| 7 | F2 v2 vs patterns | **A · Renombrar v2 → patterns + agregar 3 faltantes** — no crear duplicados. `shared/v2` ya tiene 30+ componentes canónicos. |
 
 ---
 
@@ -176,9 +177,9 @@ Lo que **no** busca este refactor: cambiar arquitectura de agentes, modificar La
 
 ---
 
-### 4.3 F2 — Design system + core components (~1.5h)
+### 4.3 F2 — Design system + consolidación de patterns (~1.5h)
 
-**Objetivo:** documentar tokens + crear 7 componentes canónicos.
+**Contexto:** Ya existe `src/components/shared/v2/` (30+ componentes auto-descritos como "Catálogo v2 de 15 componentes reutilizables"). Incluye `PageHeader`, `DataTable`, `KpiCard`, `EmptyState`, `MetricRow`, `FilterBar`, `DataView`, `SeverityBadge`, etc. Decisión brainstorm 2026-04-19 (opción A): **renombrar v2 → patterns/** + agregar los 3 faltantes (`PageLayout`, `SectionHeader`, `LoadingCard/Table/List`). Consolidamos en un solo home canónico.
 
 **Pasos:**
 
@@ -189,27 +190,25 @@ Lo que **no** busca este refactor: cambiar arquitectura de agentes, modificar La
    - **Density**: compact (tablas densas) vs comfortable (cards).
    - **Loading**: `<Skeleton>` con shape del content. Sin spinners.
    - **Empty**: icon Lucide + heading + description + CTA.
-   - **Charts**: shadcn chart para visualizaciones, tabla CSS para tabulares densas.
+   - **Charts**: `recharts` vía componente wrapper, tabla densa para tabulares.
+   - **Catálogo patterns**: lista de los 30+ componentes existentes + 3 nuevos, con ejemplo por cada.
 
-2. Crear 7 componentes en `src/components/patterns/`:
+2. Renombrar `src/components/shared/v2/` → `src/components/patterns/`.
+   Actualizar todos los imports `@/components/shared/v2` → `@/components/patterns`. Grep global. ~60+ archivos.
 
-   | Componente | Prop contract |
-   |---|---|
-   | `<PageLayout>` | `children`; wrap en `<main className="max-w-7xl mx-auto px-6 py-8 space-y-6">` |
-   | `<PageHeader>` | `title: string`, `description?: string`, `breadcrumbs?: Array<{label, href?}>`, `sources?: SourceKind[]`, `actions?: ReactNode` |
-   | `<SectionHeader>` | `title`, `description?`, `sources?`, `action?` |
-   | `<LoadingCard>` / `<LoadingTable>` / `<LoadingList>` | `rows?: number` |
-   | `<EmptyState>` | `icon: LucideIcon`, `heading`, `description?`, `cta?`, `variant?: 'default'\|'search'\|'error'` |
-   | `<KPICard>` | `label`, `value`, `trend?: 'up'\|'down'\|'flat'`, `delta?`, `source?: SourceKind` |
-   | `<DataTable>` | `columns`, `data`, `sortable?`, `filterable?`, `paginate?`, `emptyState?`; wrapper de `@tanstack/react-table` + shadcn Table |
+3. Agregar 3 componentes nuevos en `src/components/patterns/`:
 
-3. Exports: `src/components/patterns/index.ts` barrel.
+   | Componente | Prop contract | Notas |
+   |---|---|---|
+   | `<PageLayout>` | `children`, `className?` | Wrap en `<main className="max-w-7xl mx-auto px-6 py-8 space-y-6">`. Compone con `PageHeader` existente. |
+   | `<SectionHeader>` | `title`, `description?`, `sources?`, `action?` | Variant pequeño de `PageHeader` para secciones internas. |
+   | `<LoadingCard>` / `<LoadingTable>` / `<LoadingList>` | `rows?: number` | Skeletons con shape semántico; usa `<Skeleton>` internamente. |
 
-4. Agregar ejemplo de uso en `docs/design-system.md` para cada componente.
+4. Actualizar `src/components/patterns/index.ts` (antes `v2/index.ts`) con los 3 nuevos exports.
 
-5. Commit: `feat(ds): design system doc + 7 canonical patterns`.
+5. Commit: `feat(ds): design system doc + patterns consolidation (v2 → patterns + 3 new)`.
 
-**Validación:** cada componente renderiza en isolation (importar desde `src/app/_components/_test-patterns/page.tsx` temporal o Storybook-like ad-hoc — no queda en prod).
+**Validación:** tsc + build pasan. Cada nuevo componente renderiza (verificable en siguiente fase F4 al usarlos).
 
 ---
 
@@ -277,9 +276,10 @@ Lo que **no** busca este refactor: cambiar arquitectura de agentes, modificar La
 4. `src/components/` → reorganizar:
    ```
    ui/         (shadcn primitives, no tocar)
-   patterns/   (PageLayout, PageHeader, etc. de F2)
-   domain/     (feature-specific: FiscalRevenueKpiCard, TopClientsFiscalTable, ...)
-   shared/     (legacy; marcar para migrar a patterns o domain)
+   patterns/   (ex-v2 + 3 nuevos de F2)
+   domain/     (feature-specific: mover `components/fiscal/*`, `components/system/*` aquí)
+   layout/     (AppSidebar, MainContent, etc. — se queda)
+   shared/     (legacy restante: realtime-alerts, route-error, search-command, severity-badge. Mover severity-badge a patterns si aplica)
    ```
    `src/app/[route]/_components/` se mantiene (page-local).
 
