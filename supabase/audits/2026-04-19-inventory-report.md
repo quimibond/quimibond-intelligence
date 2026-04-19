@@ -66,7 +66,7 @@ Candidate views from the L2-canonical-or-legacy bucket that were specifically ch
 | `company_narrative` | VIEW | NOT FOUND in schema (does not exist) |
 | `expense_breakdown` | VIEW | NOT FOUND in schema (does not exist) |
 | `payment_analysis` | VIEW | NOT FOUND in schema (does not exist) |
-| `cash_flow_aging` | VIEW | NO — no alias; view exists as `cash_flow_aging` |
+| `cash_flow_aging` | VIEW | YES → `analytics_ar_aging` (finance AR semantic; alias created in `20260419_reorg_r1_analytics_aliases.sql`) |
 | `margin_analysis` | VIEW | NOT FOUND in schema (does not exist) |
 | `budget_vs_actual` | VIEW | NO — no alias; view exists as `budget_vs_actual` |
 | `cfdi_invoice_match` | VIEW | NOT FOUND in schema (does not exist) |
@@ -77,8 +77,7 @@ These exist in the schema but have no `analytics_*` counterpart yet:
 
 | View | Description |
 |---|---|
-| `cash_flow_aging` | Cash flow by aging bucket — needs `analytics_finance_cash_flow_aging` |
-| `budget_vs_actual` | Budget variance — needs `analytics_finance_budget_vs_actual` |
+| `budget_vs_actual` | Budget variance — aliased as `analytics_budget_vs_actual` in S1.2 (v2 migration). |
 | `invoice_line_margins` | Margin by invoice line — needs `analytics_finance_invoice_line_margins` |
 | `revenue_concentration` | Customer revenue concentration — needs `analytics_revenue_concentration` |
 | `collection_effectiveness_index` | AR collection KPI — needs `analytics_ar_collection_effectiveness` |
@@ -105,7 +104,7 @@ This means every BASE TABLE in the public schema has been accessed via at least 
 | Priority | Action |
 |---|---|
 | HIGH | Alias first (non-destructive), then schedule deprecation after frontend migration verified (see S1.2). 5 confirmed legacy views with `analytics_*` replacements: `cfo_dashboard`, `pl_estado_resultados`, `monthly_revenue_trend`, `cash_position`, `working_capital` |
-| HIGH | Create `analytics_*` aliases for `cash_flow_aging` and `budget_vs_actual` (frontend uses these) |
+| HIGH | ~~Create `analytics_*` aliases for `cash_flow_aging` and `budget_vs_actual`~~ DONE: `cash_flow_aging` was already aliased as `analytics_ar_aging` (finance AR semantic). `budget_vs_actual` aliased as `analytics_budget_vs_actual` in S1.2 (migration `20260419_s1_legacy_view_aliases_v2`). |
 | MEDIUM | Reclassify 21 `v_audit_*` views to `dq_*` prefix |
 | MEDIUM | Evaluate 15 `cashflow_*` views — migrate to `analytics_cashflow_*` or keep as internal layer |
 | LOW | Re-run never-read scan in 30 days to capture actual dead tables |
