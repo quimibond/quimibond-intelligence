@@ -14,6 +14,8 @@ import {
   Bot,
   Brain,
   Building2,
+  ChevronDown,
+  ChevronRight,
   ChevronsLeft,
   ChevronsRight,
   Factory,
@@ -34,15 +36,11 @@ import {
 import { Button } from "@/components/ui/button";
 
 // ──────────────────────────────────────────────────────────────────────────
-// Estructura agrupada del sidebar.
-//
-// La IA sigue el mental model del CEO:
-//   1. Atajos del día        — lo que revisa al abrir la app
-//   2. Clientes              — personas + empresas
-//   3. Financiero            — flujo de dinero (cobro + venta + caja)
-//   4. Operación             — cadena de valor física
-//   5. Equipo                — quién ejecuta (personas + agentes IA)
-//   6. Admin                 — tooling, fijo al fondo
+// Sidebar restructurado a 4 grupos colapsables (F1.2):
+//   1. Decisión     — home, inbox, briefings, chat
+//   2. Operación    — ventas, cobranza, compras, operaciones, equipo, finanzas
+//   3. Entidades    — empresas, contactos, productos
+//   4. Sistema      — directores, sistema, perfil
 // ──────────────────────────────────────────────────────────────────────────
 
 interface NavItem {
@@ -57,44 +55,34 @@ interface NavItem {
 }
 
 interface NavGroup {
-  /** Label del grupo (en uppercase pequeño). Omitir para ungrouped. */
-  label?: string;
+  /** Label del grupo. */
+  label: string;
+  /** Si el grupo es colapsable via header click. */
+  collapsible?: boolean;
+  /** localStorage key para persistir estado collapsed. */
+  storageKey?: string;
   items: NavItem[];
 }
 
 const topGroups: NavGroup[] = [
   {
-    label: "Atajos del día",
+    label: "Decisión",
+    collapsible: true,
+    storageKey: "sidebar-group-decision",
     items: [
       { href: "/", label: "Home", icon: Home, exact: true },
-      {
-        href: "/inbox",
-        label: "Insights",
-        icon: Inbox,
-        badgeKey: "alerts",
-      },
-      { href: "/chat", label: "Chat IA", icon: Sparkles },
+      { href: "/inbox", label: "Inbox", icon: Inbox, badgeKey: "alerts" },
       { href: "/briefings", label: "Briefings", icon: FileText },
-    ],
-  },
-  {
-    label: "Clientes",
-    items: [
-      { href: "/companies", label: "Empresas", icon: Building2 },
-      { href: "/contacts", label: "Contactos", icon: MessageSquare },
-    ],
-  },
-  {
-    label: "Financiero",
-    items: [
-      { href: "/ventas", label: "Ventas", icon: TrendingUp },
-      { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
-      { href: "/finanzas", label: "Finanzas", icon: Banknote },
+      { href: "/chat", label: "Chat", icon: Sparkles },
     ],
   },
   {
     label: "Operación",
+    collapsible: true,
+    storageKey: "sidebar-group-operacion",
     items: [
+      { href: "/ventas", label: "Ventas", icon: TrendingUp },
+      { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
       {
         href: "/compras",
         label: "Compras",
@@ -104,26 +92,32 @@ const topGroups: NavGroup[] = [
         // fusionaron como secciones dentro de /compras.
         children: [{ href: "/compras/costos-bom", label: "Costos BOM" }],
       },
-      { href: "/productos", label: "Productos", icon: Package },
       { href: "/operaciones", label: "Operaciones", icon: Factory },
+      { href: "/equipo", label: "Equipo", icon: Users },
+      { href: "/finanzas", label: "Finanzas", icon: Banknote },
     ],
   },
   {
-    label: "Equipo",
+    label: "Entidades",
+    collapsible: true,
+    storageKey: "sidebar-group-entidades",
     items: [
-      { href: "/equipo", label: "Mi equipo", icon: Users },
-      { href: "/agents", label: "Directores IA", icon: Bot },
+      { href: "/companies", label: "Empresas", icon: Building2 },
+      { href: "/contacts", label: "Contactos", icon: MessageSquare },
+      { href: "/productos", label: "Productos", icon: Package },
+    ],
+  },
+  {
+    label: "Sistema",
+    collapsible: true,
+    storageKey: "sidebar-group-sistema",
+    items: [
+      { href: "/agents", label: "Directores", icon: Bot },
+      { href: "/system", label: "Sistema", icon: Settings },
+      { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },
 ];
-
-const bottomGroup: NavGroup = {
-  label: "Admin",
-  items: [
-    { href: "/system", label: "Sistema", icon: Settings },
-    { href: "/profile", label: "Perfil", icon: UserCircle },
-  ],
-};
 
 // ──────────────────────────────────────────────────────────────────────────
 
@@ -132,6 +126,31 @@ export function AppSidebar() {
   const [, setOpen] = useState(false);
   const { collapsed, toggle: toggleCollapse } = useSidebar();
   const counts = useSidebarCounts();
+
+  // Group collapsible state — keyed by storageKey
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  // Load group collapsed state from localStorage on mount
+  useEffect(() => {
+    const loaded: Record<string, boolean> = {};
+    for (const g of topGroups) {
+      if (g.collapsible && g.storageKey && typeof window !== "undefined") {
+        const stored = window.localStorage.getItem(g.storageKey);
+        loaded[g.storageKey] = stored === "1";
+      }
+    }
+    setCollapsedGroups(loaded);
+  }, []);
+
+  const toggleGroup = useCallback((storageKey: string) => {
+    setCollapsedGroups((prev) => {
+      const next = { ...prev, [storageKey]: !prev[storageKey] };
+      try {
+        window.localStorage.setItem(storageKey, next[storageKey] ? "1" : "0");
+      } catch {}
+      return next;
+    });
+  }, []);
 
   // Close mobile sidebar on route change
   useEffect(() => {
@@ -233,22 +252,54 @@ export function AppSidebar() {
   };
 
   const renderGroup = (group: NavGroup, isFirst: boolean) => {
+    // In icon-only mode, ignore group collapsible state — show all items as
+    // icons with no group headers (preserve existing icon-only UX).
+    if (collapsed) {
+      return (
+        <div key={group.storageKey ?? group.label} className={cn(!isFirst && "mt-4")}>
+          {/* Divider between groups in icon-only mode (skip first) */}
+          {!isFirst && (
+            <div className="mx-auto mb-2 mt-1 h-px w-6 bg-sidebar-border" />
+          )}
+          <div className="flex flex-col gap-0.5">
+            {group.items.map(renderItem)}
+          </div>
+        </div>
+      );
+    }
+
+    // Expanded sidebar — support collapsible groups
+    const isGroupCollapsed =
+      group.collapsible && group.storageKey
+        ? collapsedGroups[group.storageKey] === true
+        : false;
+
     return (
-      <div
-        key={group.label ?? "ungrouped"}
-        className={cn(!isFirst && "mt-4")}
-      >
-        {group.label && !collapsed && (
+      <div key={group.storageKey ?? group.label} className={cn(!isFirst && "mt-4")}>
+        {group.collapsible && group.storageKey ? (
+          <button
+            type="button"
+            onClick={() => toggleGroup(group.storageKey!)}
+            aria-expanded={!isGroupCollapsed}
+            className="mb-1 flex w-full items-center justify-between px-3 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40 hover:text-sidebar-foreground/70 transition-colors"
+          >
+            <span>{group.label}</span>
+            {isGroupCollapsed ? (
+              <ChevronRight className="h-3 w-3" />
+            ) : (
+              <ChevronDown className="h-3 w-3" />
+            )}
+          </button>
+        ) : (
           <div className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
             {group.label}
           </div>
         )}
-        {group.label && collapsed && !isFirst && (
-          <div className="mx-auto mb-2 mt-1 h-px w-6 bg-sidebar-border" />
+        {!isGroupCollapsed && (
+          <div className="flex flex-col gap-0.5">
+            {group.items.map(renderItem)}
+          </div>
         )}
-        <div className="flex flex-col gap-0.5">
-          {group.items.map(renderItem)}
-        </div>
       </div>
     );
   };
@@ -311,7 +362,7 @@ export function AppSidebar() {
           </Button>
         </div>
 
-        {/* Main navigation — grouped */}
+        {/* Main navigation — 4 collapsible groups */}
         <nav
           aria-label="Navegación principal"
           className={cn(
@@ -321,16 +372,6 @@ export function AppSidebar() {
         >
           {topGroups.map((g, i) => renderGroup(g, i === 0))}
         </nav>
-
-        {/* Admin group — fijo al fondo */}
-        <div
-          className={cn(
-            "border-t border-sidebar-border px-3 pt-3",
-            collapsed && "md:px-2"
-          )}
-        >
-          {renderGroup(bottomGroup, true)}
-        </div>
 
         {/* Collapse toggle (desktop only) */}
         <div className="hidden items-center justify-center border-t border-sidebar-border py-2 md:flex">
