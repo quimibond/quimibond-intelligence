@@ -79,7 +79,7 @@ export default async function CompanyDetailPage({
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/" },
-            { label: "Empresas", href: "/companies" },
+            { label: "Empresas", href: "/empresas" },
             { label: company.name },
           ]}
           title={company.name}
@@ -95,8 +95,8 @@ export default async function CompanyDetailPage({
               <code className="rounded bg-muted px-1">relationship_type=self</code>{" "}
               — no aplica análisis comercial (revenue, cartera, reorder, etc.). Las
               empresas externas se ven en{" "}
-              <a href="/companies" className="underline hover:text-primary">
-                /companies
+              <a href="/empresas" className="underline hover:text-primary">
+                /empresas
               </a>
               .
             </p>
@@ -114,7 +114,7 @@ export default async function CompanyDetailPage({
       <PageHeader
         breadcrumbs={[
           { label: "Dashboard", href: "/" },
-          { label: "Empresas", href: "/companies" },
+          { label: "Empresas", href: "/empresas" },
           { label: company.name },
         ]}
         title={company.name}

@@ -63,8 +63,8 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
   {
     label: "Clientes",
     tabs: [
-      { href: "/companies", label: "Empresas", icon: Building2 },
-      { href: "/contacts", label: "Contactos", icon: MessageSquare },
+      { href: "/empresas", label: "Empresas", icon: Building2 },
+      { href: "/contactos", label: "Contactos", icon: MessageSquare },
     ],
   },
   {
@@ -86,13 +86,13 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
     label: "Equipo",
     tabs: [
       { href: "/equipo", label: "Mi equipo", icon: Users },
-      { href: "/agents", label: "Directores IA", icon: Bot },
+      { href: "/directores", label: "Directores IA", icon: Bot },
     ],
   },
   {
     label: "Admin",
     tabs: [
-      { href: "/system", label: "Sistema", icon: Settings },
+      { href: "/sistema", label: "Sistema", icon: Settings },
       { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },

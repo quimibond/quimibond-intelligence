@@ -502,7 +502,7 @@ async function AtRiskClientsPanel() {
       ))}
       {totalAtRisk > clients.length && (
         <Link
-          href="/companies"
+          href="/empresas"
           className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-primary"
         >
           Ver los {totalAtRisk} clientes en riesgo

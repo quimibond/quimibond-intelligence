@@ -581,7 +581,7 @@ async function ReorderRiskTable({
       axis: "x",
       label: "A tiempo",
     },
-    rowHrefTemplate: "/companies/{company_id}",
+    rowHrefTemplate: "/empresas/{company_id}",
   };
   return (
     <div className="space-y-3">
@@ -810,7 +810,7 @@ async function TopCustomersTable({
     ],
     valueFormat: "currency-compact",
     secondaryValueFormat: "percent",
-    rowHrefTemplate: "/companies/{company_id}",
+    rowHrefTemplate: "/empresas/{company_id}",
   };
   return (
     <div className="space-y-3">

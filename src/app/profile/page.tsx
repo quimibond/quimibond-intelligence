@@ -109,7 +109,7 @@ export default function ProfilePage() {
           </Suspense>
           <div className="flex flex-wrap gap-2 pt-2">
             <Button variant="outline" size="sm" asChild>
-              <a href="/system">
+              <a href="/sistema">
                 <Sparkles className="size-3.5" />
                 Abrir panel del sistema
               </a>

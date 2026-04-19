@@ -102,8 +102,8 @@ const topGroups: NavGroup[] = [
     collapsible: true,
     storageKey: "sidebar-group-entidades",
     items: [
-      { href: "/companies", label: "Empresas", icon: Building2 },
-      { href: "/contacts", label: "Contactos", icon: MessageSquare },
+      { href: "/empresas", label: "Empresas", icon: Building2 },
+      { href: "/contactos", label: "Contactos", icon: MessageSquare },
       { href: "/productos", label: "Productos", icon: Package },
     ],
   },
@@ -112,8 +112,8 @@ const topGroups: NavGroup[] = [
     collapsible: true,
     storageKey: "sidebar-group-sistema",
     items: [
-      { href: "/agents", label: "Directores", icon: Bot },
-      { href: "/system", label: "Sistema", icon: Settings },
+      { href: "/directores", label: "Directores", icon: Bot },
+      { href: "/sistema", label: "Sistema", icon: Settings },
       { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },

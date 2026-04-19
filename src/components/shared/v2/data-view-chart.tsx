@@ -113,7 +113,7 @@ export interface DataViewChartSpec {
   referenceLine?: DataViewReferenceLine;
   /**
    * Click-through serializable: template con placeholders `{key}` que se
-   * reemplazan con valores del row clickeado. Ej. `"/companies/{company_id}"`.
+   * reemplazan con valores del row clickeado. Ej. `"/empresas/{company_id}"`.
    * Se navega vía Next router. Soportado en bar/scatter/composed.
    *
    * IMPORTANTE: es un string (no función) para cruzar el boundary server→client.

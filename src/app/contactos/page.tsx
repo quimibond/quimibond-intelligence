@@ -56,7 +56,7 @@ function buildContactsHref(
     else p.set(k, v);
   }
   const s = p.toString();
-  return s ? `/contacts?${s}` : "/contacts";
+  return s ? `/contactos?${s}` : "/contactos";
 }
 
 function parseViewParam(sp: SearchParams, key: string): DataViewMode {
@@ -351,7 +351,7 @@ async function ContactsTable({
   });
   const visibleKeys = parseVisibleKeys(searchParams);
   const sortHref = makeSortHref({
-    pathname: "/contacts",
+    pathname: "/contactos",
     searchParams,
   });
 
@@ -429,7 +429,7 @@ async function ContactsTable({
       axis: "x",
       label: "Health 50",
     },
-    rowHrefTemplate: "/contacts/{id}",
+    rowHrefTemplate: "/contactos/{id}",
   };
 
   return (

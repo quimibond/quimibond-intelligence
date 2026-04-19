@@ -65,7 +65,7 @@ function buildCompaniesHref(
     else p.set(k, v);
   }
   const s = p.toString();
-  return s ? `/companies?${s}` : "/companies";
+  return s ? `/empresas?${s}` : "/empresas";
 }
 
 function parseViewParam(sp: SearchParams, key: string): DataViewMode {
@@ -441,7 +441,7 @@ async function ReactivacionSection({
       axis: "x",
       label: "120d riesgo alto",
     },
-    rowHrefTemplate: "/companies/{company_id}",
+    rowHrefTemplate: "/empresas/{company_id}",
   };
 
   return (
@@ -662,7 +662,7 @@ async function CompaniesTable({
   });
   const visibleKeys = parseVisibleKeys(searchParams);
   const sortHref = makeSortHref({
-    pathname: "/companies",
+    pathname: "/empresas",
     searchParams,
   });
 
@@ -704,7 +704,7 @@ async function CompaniesTable({
       axis: "x",
       label: "90d inactivo",
     },
-    rowHrefTemplate: "/companies/{company_id}",
+    rowHrefTemplate: "/empresas/{company_id}",
   };
 
   return (

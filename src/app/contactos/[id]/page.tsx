@@ -70,7 +70,7 @@ export default async function ContactDetailPage({
       <PageHeader
         breadcrumbs={[
           { label: "Dashboard", href: "/" },
-          { label: "Contactos", href: "/contacts" },
+          { label: "Contactos", href: "/contactos" },
           { label: contact.name ?? "Contacto" },
         ]}
         title={contact.name ?? "Sin nombre"}

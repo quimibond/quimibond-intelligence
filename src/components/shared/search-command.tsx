@@ -106,8 +106,8 @@ const NAV_GROUPS: SearchGroup[] = [
     label: "Clientes",
     icon: Building2,
     items: [
-      { key: "companies", href: "/companies", icon: Building2, label: "Empresas" },
-      { key: "contacts", href: "/contacts", icon: MessageSquare, label: "Contactos" },
+      { key: "companies", href: "/empresas", icon: Building2, label: "Empresas" },
+      { key: "contacts", href: "/contactos", icon: MessageSquare, label: "Contactos" },
     ],
   },
   {
@@ -133,14 +133,14 @@ const NAV_GROUPS: SearchGroup[] = [
     icon: Users,
     items: [
       { key: "equipo", href: "/equipo", icon: Users, label: "Mi equipo" },
-      { key: "agents", href: "/agents", icon: Bot, label: "Directores IA" },
+      { key: "agents", href: "/directores", icon: Bot, label: "Directores IA" },
     ],
   },
   {
     label: "Admin",
     icon: Settings,
     items: [
-      { key: "system", href: "/system", icon: Settings, label: "Sistema" },
+      { key: "system", href: "/sistema", icon: Settings, label: "Sistema" },
       { key: "profile", href: "/profile", icon: UserCircle, label: "Perfil" },
     ],
   },

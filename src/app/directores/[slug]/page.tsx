@@ -67,7 +67,7 @@ export default async function AgentDetailPage({
       <PageHeader
         breadcrumbs={[
           { label: "Dashboard", href: "/" },
-          { label: "Directores IA", href: "/agents" },
+          { label: "Directores IA", href: "/directores" },
           { label: agent.name },
         ]}
         title={agent.name}
