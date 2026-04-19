@@ -3,28 +3,30 @@
 Audit of public schema layer convention compliance.
 Queries executed against project `tozqezmivpblmcubmnpi`.
 
+**Snapshot:** 2026-04-19 (counts reflect state at audit time, expected to drift).
+
 ---
 
 ## 1. Layer Distribution
 
-Total objects in `public` schema: **150**
+Total objects in `public` schema: **165**
 
 | Layer | Count | BASE TABLE | VIEW | Notes |
 |---|---|---|---|---|
 | L1-raw-odoo | 26 | 24 | 2 | `odoo_push_last_events`, `odoo_sync_freshness` are views |
-| L1-raw-syntage | 17 | 11 | 6 | 6 analytical views mixed into raw layer |
-| L2-canonical-or-legacy | 79 | 30 | 49 | Largest bucket — many legacy views without layer prefix |
+| L1-raw-syntage | 17 | 12 | 5 | 5 analytical views mixed into raw layer |
+| L2-canonical-or-legacy | 94 | 34 | 60 | Largest bucket — many legacy views without layer prefix |
 | L3-unified | 3 | 1 | 2 | `unified_invoices`, `unified_payment_allocations`, `unified_refresh_queue` |
 | L4-analytics | 13 | 0 | 13 | All correctly prefixed views |
-| L5-intelligence | 7 | 5 | 2 | `ai_agents`, `agent_*` tables + `agent_effectiveness` view |
+| L5-intelligence | 7 | 6 | 1 | `ai_agents`, `agent_*` tables + `agent_effectiveness` view |
 | DQ | 5 | 0 | 5 | `dq_*` views — all correctly classified |
-| **TOTAL** | **150** | **70** | **80** | |
+| **TOTAL** | **165** | **77** | **88** | |
 
 ### Notable observations
 
-- **L1-raw-syntage has 6 analytical views** (`syntage_client_cancellation_rates`, `syntage_product_line_analysis`, `syntage_revenue_fiscal_monthly`, `syntage_top_clients_fiscal_lifetime`, `syntage_top_suppliers_fiscal_lifetime`) that belong semantically in L4 but are prefixed `syntage_`. They have `analytics_*` aliases — see section 2.
-- **L2-canonical-or-legacy is the largest bucket (79 objects)** and contains the bulk of legacy/unclassified views that are candidates for renaming to `analytics_*`.
-- **`v_audit_*` views (19 objects)** in L2 use a `v_audit_` prefix not covered by the layer convention. These are sync-quality audit views created for the costos audit project and should be classified as DQ.
+- **L1-raw-syntage has 5 analytical views** (`syntage_client_cancellation_rates`, `syntage_product_line_analysis`, `syntage_revenue_fiscal_monthly`, `syntage_top_clients_fiscal_lifetime`, `syntage_top_suppliers_fiscal_lifetime`) that belong semantically in L4 but are prefixed `syntage_`. They have `analytics_*` aliases — see section 2.
+- **L2-canonical-or-legacy is the largest bucket (94 objects)** and contains the bulk of legacy/unclassified views that are candidates for renaming to `analytics_*`.
+- **`v_audit_*` views (21 objects)** in L2 use a `v_audit_` prefix not covered by the layer convention. These are sync-quality audit views created for the costos audit project and should be classified as DQ.
 
 ---
 
@@ -84,7 +86,7 @@ These exist in the schema but have no `analytics_*` counterpart yet:
 | `projected_cash_flow_weekly` | Weekly cashflow projection — needs `analytics_finance_cashflow_weekly` |
 | `working_capital_cycle` | WC cycle days — needs `analytics_finance_working_capital_cycle` |
 | `overhead_factor_12m` | Overhead rate — needs `analytics_finance_overhead_factor` |
-| `cashflow_*` (14 views) | Detailed cashflow components — prefix `cashflow_` not in convention; candidates for `analytics_cashflow_*` |
+| `cashflow_*` (15 views) | Detailed cashflow components — prefix `cashflow_` not in convention; candidates for `analytics_cashflow_*` |
 
 ---
 
@@ -102,8 +104,8 @@ This means every BASE TABLE in the public schema has been accessed via at least 
 
 | Priority | Action |
 |---|---|
-| HIGH | Drop or alias 5 confirmed legacy views that have `analytics_*` replacements: `cfo_dashboard`, `pl_estado_resultados`, `monthly_revenue_trend`, `cash_position`, `working_capital` |
+| HIGH | Alias first (non-destructive), then schedule deprecation after frontend migration verified (see S1.2). 5 confirmed legacy views with `analytics_*` replacements: `cfo_dashboard`, `pl_estado_resultados`, `monthly_revenue_trend`, `cash_position`, `working_capital` |
 | HIGH | Create `analytics_*` aliases for `cash_flow_aging` and `budget_vs_actual` (frontend uses these) |
-| MEDIUM | Reclassify 19 `v_audit_*` views to `dq_*` prefix |
-| MEDIUM | Evaluate 14 `cashflow_*` views — migrate to `analytics_cashflow_*` or keep as internal layer |
+| MEDIUM | Reclassify 21 `v_audit_*` views to `dq_*` prefix |
+| MEDIUM | Evaluate 15 `cashflow_*` views — migrate to `analytics_cashflow_*` or keep as internal layer |
 | LOW | Re-run never-read scan in 30 days to capture actual dead tables |

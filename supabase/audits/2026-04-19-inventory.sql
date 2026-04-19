@@ -15,3 +15,12 @@ SELECT
 FROM information_schema.tables
 WHERE table_schema = 'public'
 ORDER BY 1, 3;
+
+-- ============================================================
+-- Never-read scan (Section 3 of report)
+-- ============================================================
+SELECT relname, n_live_tup, seq_scan, idx_scan,
+       pg_size_pretty(pg_total_relation_size(relid)) AS size
+FROM pg_stat_user_tables
+WHERE schemaname = 'public' AND seq_scan = 0 AND idx_scan = 0
+ORDER BY n_live_tup DESC;
