@@ -18,6 +18,15 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
 
+// ── Fase 6: fiscal helpers (defined in sibling module to avoid Next.js
+// route export type constraints on non-HTTP handler exports) ───────────
+import {
+  type ReconciliationSnapshot,
+  type FiscalTriggerSnap,
+  buildFiscalOneLiner,
+  shouldIncludeFiscalSection,
+} from "./fiscal-helpers";
+
 export async function GET(request: NextRequest) {
   return POST(request);
 }
@@ -136,8 +145,108 @@ export async function POST(request: NextRequest) {
     const payments = recentPaymentsRes.data ?? [];
     const previousSummary = previousRes.data?.[0]?.summary_text ?? "";
 
+    // ── Fase 6: fiscal snapshots + section triggers ───────────────────
+    const scope = new URL(request.url).searchParams.get("scope") ?? "daily";
+    const todayDate = today; // yyyy-mm-dd
+    const yesterdayDate = new Date(Date.now() - 86400_000).toISOString().split("T")[0];
+    const [todaySnap, yesterdaySnap] = await Promise.all([
+      supabase.from("reconciliation_summary_daily")
+        .select("total_open, severity_counts, tax_status_opinion")
+        .eq("snapshot_date", todayDate)
+        .maybeSingle(),
+      supabase.from("reconciliation_summary_daily")
+        .select("total_open, severity_counts, tax_status_opinion")
+        .eq("snapshot_date", yesterdayDate)
+        .maybeSingle(),
+    ]);
+    const fiscalLine = buildFiscalOneLiner(
+      (todaySnap.data as ReconciliationSnapshot | null),
+      (yesterdaySnap.data as ReconciliationSnapshot | null)
+    );
+
+    // Triggers para sección expandida
+    const yesterdayIso = new Date(Date.now() - 86400_000).toISOString();
+    const [newCriticalRes, newBlacklistRes, newCancelledRes] = await Promise.all([
+      supabase.from("reconciliation_issues")
+        .select("issue_id", { count: "exact", head: true })
+        .eq("severity", "critical")
+        .is("resolved_at", null)
+        .gte("detected_at", yesterdayIso),
+      supabase.from("reconciliation_issues")
+        .select("issue_id", { count: "exact", head: true })
+        .eq("issue_type", "partner_blacklist_69b")
+        .gte("detected_at", yesterdayIso),
+      supabase.from("reconciliation_issues")
+        .select("issue_id", { count: "exact", head: true })
+        .eq("issue_type", "cancelled_but_posted")
+        .gte("detected_at", yesterdayIso),
+    ]);
+    const todayOpinion = (todaySnap.data as { tax_status_opinion?: string | null } | null)?.tax_status_opinion ?? null;
+    const yesterdayOpinion = (yesterdaySnap.data as { tax_status_opinion?: string | null } | null)?.tax_status_opinion ?? null;
+    const triggerSnap: FiscalTriggerSnap = {
+      new_critical_24h: newCriticalRes.count ?? 0,
+      blacklist_new_24h: newBlacklistRes.count ?? 0,
+      cancelled_but_posted_new_24h: newCancelledRes.count ?? 0,
+      tax_status_changed: todayOpinion !== yesterdayOpinion,
+    };
+
+    let fiscalSection = "";
+    if (shouldIncludeFiscalSection(triggerSnap)) {
+      const complianceAgentRes = await supabase.from("ai_agents").select("id").eq("slug", "compliance").maybeSingle();
+      const complianceId = complianceAgentRes.data?.id ?? -1;
+      const [topNewIssuesRes, complianceInsightRes] = await Promise.all([
+        supabase.from("reconciliation_issues")
+          .select("issue_id, issue_type, severity, description, company_id, detected_at")
+          .in("severity", ["critical", "high"])
+          .is("resolved_at", null)
+          .gte("detected_at", yesterdayIso)
+          .order("severity", { ascending: true })
+          .limit(3),
+        supabase.from("agent_insights")
+          .select("id, title, description, created_at")
+          .eq("agent_id", complianceId)
+          .gte("created_at", yesterdayIso)
+          .order("created_at", { ascending: false })
+          .limit(1),
+      ]);
+      const topIssues = topNewIssuesRes.data ?? [];
+      const compInsight = (complianceInsightRes.data ?? [])[0];
+      fiscalSection = [
+        "\n\nFISCAL TRUTH (Fase 6):",
+        `Issues nuevos últimas 24h: ${triggerSnap.new_critical_24h} críticos, ${triggerSnap.blacklist_new_24h} nuevos en 69-B, ${triggerSnap.cancelled_but_posted_new_24h} cancelled_but_posted.`,
+        `Top 3 nuevos: ${JSON.stringify(topIssues)}`,
+        `Recomendación Compliance (24h): ${compInsight?.description ?? "sin corrida hoy"}`,
+      ].join("\n");
+    }
+
+    // ── Fase 6: Meta weekly reconciliation fiscal-vs-operativo ────────
+    // Solo aplica cuando scope='weekly'. Identifica conflictos entre
+    // directores operativos y Compliance: insights con fiscal_annotation
+    // IS NOT NULL de directores que NO son compliance.
+    const isWeekly = scope === "weekly";
+    let metaConflictsBlock = "";
+    if (isWeekly) {
+      const weekAgoIso = new Date(Date.now() - 7 * 86400_000).toISOString();
+      const conflictsRes = await supabase
+        .from("agent_insights")
+        .select("id, agent_slug, title, description, fiscal_annotation, company_id, created_at")
+        .not("fiscal_annotation", "is", null)
+        .neq("agent_slug", "compliance")
+        .gte("created_at", weekAgoIso);
+      const conflicts = conflictsRes.data ?? [];
+      if (conflicts.length > 0) {
+        metaConflictsBlock = [
+          "\n\nCRUCE FISCAL-OPERATIVO (últimos 7 días):",
+          `Conflictos detectados: ${conflicts.length}`,
+          `Evidencia: ${JSON.stringify(conflicts)}`,
+          "",
+          "Instrucción Meta: agrupa por company_id, identifica el agent_slug operativo que recomendó acción y el flag fiscal que contrasta. Entrega evidencia neutral, sin concluir quién gana. Jamás arbitres.",
+        ].join("\n");
+      }
+    }
+
     // ── Build the consolidated data package ─────────────────────────────
-    const dataPackage = buildConsolidatedPackage({
+    const dataPackage_base = buildConsolidatedPackage({
       today,
       top3,
       narratives,
@@ -149,6 +258,8 @@ export async function POST(request: NextRequest) {
       emailCount: emailVolumeRes.count ?? 0,
       previousSummary,
     });
+
+    const dataPackage = `${fiscalLine}${fiscalSection}${metaConflictsBlock}\n\n${dataPackage_base}`;
 
     // ── Generate briefing with Claude ───────────────────────────────────
     const system = `Eres el analista de inteligencia ejecutiva de Quimibond, fabricante mexicano de entretelas y no-tejidos.
