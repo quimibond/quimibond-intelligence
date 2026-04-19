@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 // Layer 3 unified helpers — imported for feature-flag dispatch
 // getUnifiedCashFlowAging is available for future callers in this module
@@ -44,7 +45,7 @@ export interface CfoSnapshot {
   clientesMorosos: number;
 }
 
-export async function getCfoSnapshot(): Promise<CfoSnapshot | null> {
+async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
   const sb = getServiceClient();
   const { data } = await sb.from("cfo_dashboard").select("*").maybeSingle();
   if (!data) return null;
@@ -77,6 +78,12 @@ export async function getCfoSnapshot(): Promise<CfoSnapshot | null> {
     clientesMorosos: Number(d.clientes_morosos) || 0,
   };
 }
+
+export const getCfoSnapshot = unstable_cache(
+  _getCfoSnapshotRaw,
+  ["finance-cfo-snapshot-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
 
 /** AR zombies: facturas out_invoice vencidas >1 año que siguen abiertas.
  *  Se restan visualmente de "cartera vencida cobrable" para que el CEO

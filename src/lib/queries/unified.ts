@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 export type Severity = "critical" | "high" | "medium" | "low";
@@ -162,7 +163,7 @@ export async function getUnifiedReconciliationCounts(
   return { open: rows.length, bySeverity };
 }
 
-export async function getUnifiedRefreshStaleness(): Promise<UnifiedRefreshStaleness> {
+async function _getUnifiedRefreshStalenessRaw(): Promise<UnifiedRefreshStaleness> {
   const supabase = getServiceClient();
   const { data, error } = await supabase.rpc("get_syntage_reconciliation_summary");
   if (error) throw new Error(error.message);
@@ -175,3 +176,9 @@ export async function getUnifiedRefreshStaleness(): Promise<UnifiedRefreshStalen
   const minutesSinceRefresh = Math.round((Date.now() - new Date(oldestRef).getTime()) / 60_000);
   return { invoicesRefreshedAt: invRef, paymentsRefreshedAt: payRef, minutesSinceRefresh };
 }
+
+export const getUnifiedRefreshStaleness = unstable_cache(
+  _getUnifiedRefreshStalenessRaw,
+  ["unified-refresh-staleness-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
