@@ -9,7 +9,7 @@
 
 export interface MapperCtx {
   taxpayerRfc: string;
-  odooCompanyId: number;
+  odooCompanyId: number | null;
 }
 
 type Row = Record<string, unknown>;
@@ -121,20 +121,28 @@ export function mapInvoicePayment(obj: Row, ctx: MapperCtx): Row {
   const direction: "issued" | "received" = amount !== null && amount < 0 ? "issued" : "received";
   const isCancellation = obj.canceledAt != null;
 
+  // batchPayment viene embedded como objeto en la respuesta API (verificado en
+  // raw_payload de filas ingestadas via webhook/pull-sync). Trae los campos
+  // fiscales del envelope CFDI Tipo P — sin ellos payments_unified no matchea.
+  // Las filas CSV-imported NO traen batchPayment → estos campos quedan null
+  // hasta re-pull desde API.
+  const bp = extractBatchPayment(obj);
+
   return {
     syntage_id:            syntageId,
     uuid_complemento:      syntageId,
     taxpayer_rfc:          ctx.taxpayerRfc,
     odoo_company_id:       ctx.odooCompanyId,
     direction,
-    fecha_pago:            (obj.date as string | null) ?? null,
-    forma_pago_p:          (obj.paymentMethod as string | null) ?? null,
+    fecha_pago:            asString(bp?.date) ?? (obj.date as string | null) ?? null,
+    forma_pago_p:          asString(bp?.paymentMethod) ?? (obj.paymentMethod as string | null) ?? null,
     moneda_p:              obj.currency ?? "MXN",
     tipo_cambio_p:         (obj.exchangeRate as number | null) ?? 1,
     monto:                 amount !== null ? Math.abs(amount) : null,
-    num_operacion:         null,
-    rfc_emisor_cta_ord:    null,
-    rfc_emisor_cta_ben:    null,
+    num_operacion:         asString(bp?.operationNumber),
+    rfc_emisor_cta_ord:    extractBankRfc(bp?.payerBank),
+    rfc_emisor_cta_ben:    extractBankRfc(bp?.beneficiaryBank),
+    batch_payment_id:      extractBatchPaymentId(obj),
     doctos_relacionados:   [
       {
         uuid_docto:         obj.invoiceUuid ?? null,
@@ -148,6 +156,48 @@ export function mapInvoicePayment(obj: Row, ctx: MapperCtx): Row {
     raw_payload:           obj,
     synced_at:             new Date().toISOString(),
   };
+}
+
+/**
+ * batchPayment en el payload Syntage viene como objeto embebido con @id, id,
+ * date, paymentMethod, operationNumber, payerBank[], beneficiaryBank[], etc.
+ * También acepta IRI string por defensa (ej: "/invoices/batch-payments/abc").
+ */
+function extractBatchPayment(obj: Row): Record<string, unknown> | null {
+  const bp = obj.batchPayment;
+  if (bp && typeof bp === "object") return bp as Record<string, unknown>;
+  return null;
+}
+
+export function extractBatchPaymentId(obj: Row): string | null {
+  const bp = obj.batchPayment;
+  if (typeof bp === "string") return bp;
+  if (bp && typeof bp === "object") {
+    const rec = bp as Record<string, unknown>;
+    return (rec["@id"] as string | undefined)
+      ?? (rec.id as string | undefined)
+      ?? null;
+  }
+  return null;
+}
+
+function asString(v: unknown): string | null {
+  if (v == null) return null;
+  if (typeof v === "string") return v.trim() || null;
+  if (typeof v === "number") return String(v);
+  return null;
+}
+
+function extractBankRfc(arr: unknown): string | null {
+  if (!Array.isArray(arr) || arr.length === 0) return null;
+  for (const b of arr) {
+    if (b && typeof b === "object") {
+      const rfc = (b as Record<string, unknown>).rfc;
+      const s = asString(rfc);
+      if (s) return s;
+    }
+  }
+  return null;
 }
 
 // ───────────────────────── TaxRetention ─────────────────────────

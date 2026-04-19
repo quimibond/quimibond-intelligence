@@ -1,60 +1,27 @@
 import type { HandlerCtx, SyntageEvent } from "@/lib/syntage/types";
+import { mapInvoicePayment } from "@/lib/syntage/mappers";
 
 /**
  * Handles invoice_payment.* events.
  *
- * Syntage's InvoicePayment schema represents ONE installment payment for ONE
- * invoice (not a full CFDI Tipo P — that's split across rows). Real fields per
- * the OpenAPI spec:
- *   { id, invoiceUuid, currency, exchangeRate, installment, previousBalance,
- *     amount (+income / -expense), outstandingBalance, invoice (IRI),
- *     batchPayment (IRI), canceledAt, createdAt, updatedAt }
+ * Delegates field mapping al pure mapper compartido con pull-sync (mappers.ts).
+ * El payload trae batchPayment embedded como objeto con operationNumber, date,
+ * paymentMethod, payerBank[]/beneficiaryBank[] — el mapper los extrae inline.
  *
- * NOTE: fechaPago, numOperacion and bank RFCs live on the BatchPayment, not
- * here — leave NULL until we enrich via GET /batch-payments/{id} in Phase 3+.
- *
- * We set `direction` from the sign of `amount`: positive → received (income),
- * negative → issued (expense). Syntage encodes direction via sign per docs.
- * uuid_complemento stores the InvoicePayment own id (UUID) because Syntage
- * doesn't expose a distinct complemento CFDI UUID at this granularity.
+ * direction derivado del signo de `amount`: positivo → received, negativo →
+ * issued. uuid_complemento usa el id del InvoicePayment (Syntage no expone
+ * un UUID de complemento distinto a este granularity).
  */
 export async function handleInvoicePaymentEvent(ctx: HandlerCtx, event: SyntageEvent): Promise<void> {
   const obj = event.data.object as Record<string, unknown>;
-
-  const amount = typeof obj.amount === "number" ? obj.amount : null;
-  const direction: "issued" | "received" =
-    amount !== null && amount < 0 ? "issued" : "received";
-
   const isCancellation =
     event.type === "invoice_payment.deleted" || obj.canceledAt != null;
 
-  const row: Record<string, unknown> = {
-    syntage_id:            obj.id ?? obj["@id"],
-    uuid_complemento:      obj.id, // Syntage has no distinct complemento UUID here
-    taxpayer_rfc:          ctx.taxpayerRfc,
-    odoo_company_id:       ctx.odooCompanyId,
-    direction,
-    fecha_pago:            null, // lives in BatchPayment — enriched in Phase 3+
-    forma_pago_p:          null,
-    moneda_p:              obj.currency ?? "MXN",
-    tipo_cambio_p:         (obj.exchangeRate as number | null) ?? 1,
-    monto:                 amount !== null ? Math.abs(amount) : null,
-    num_operacion:         null, // lives in BatchPayment
-    rfc_emisor_cta_ord:    null,
-    rfc_emisor_cta_ben:    null,
-    doctos_relacionados:   [
-      {
-        uuid_docto:          obj.invoiceUuid ?? null,
-        parcialidad:         obj.installment ?? null,
-        imp_saldo_ant:       obj.previousBalance ?? null,
-        imp_pagado:          amount !== null ? Math.abs(amount) : null,
-        imp_saldo_insoluto:  obj.outstandingBalance ?? null,
-      },
-    ],
-    estado_sat:            isCancellation ? "cancelado" : "vigente",
-    raw_payload:           obj,
-    synced_at:             new Date().toISOString(),
-  };
+  const row = mapInvoicePayment(obj, {
+    taxpayerRfc: ctx.taxpayerRfc,
+    odooCompanyId: ctx.odooCompanyId,
+  });
+  if (isCancellation) row.estado_sat = "cancelado";
 
   if (!row.syntage_id) {
     throw new Error("invoice_payment event missing id");

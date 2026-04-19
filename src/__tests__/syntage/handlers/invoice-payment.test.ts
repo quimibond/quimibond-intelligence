@@ -82,4 +82,100 @@ describe("handleInvoicePaymentEvent (real Syntage InvoicePayment schema)", () =>
     expect(capture.row!.direction).toBe("issued");
     expect(capture.row!.monto).toBe(1000);
   });
+
+  it("extracts batchPayment fields inline (operationNumber, bank RFCs, batch_payment_id)", async () => {
+    const capture: { row?: Record<string, unknown> } = {};
+    const evt: SyntageEvent = {
+      id: "evt_3",
+      type: "invoice_payment.created",
+      taxpayer: { id: "PNT920218IW5" },
+      data: {
+        object: {
+          id: "payment-id-3",
+          invoiceUuid: "inv-uuid-3",
+          currency: "MXN",
+          exchangeRate: 1,
+          amount: 100,
+          batchPayment: {
+            id: "batch-3",
+            "@id": "/invoices/batch-payments/batch-3",
+            date: "2024-04-05 18:00:00",
+            operationNumber: "FOLIO 0267850",
+            paymentMethod: "01",
+            payerBank: [{ rfc: "BBB010101AAA" }],
+            beneficiaryBank: [{ rfc: "CCC020202BBB" }],
+          },
+        },
+      },
+      createdAt: "2026-04-10T00:00:00Z",
+    };
+    await handleInvoicePaymentEvent(makeCtx(capture), evt);
+    const r = capture.row!;
+    expect(r.batch_payment_id).toBe("/invoices/batch-payments/batch-3");
+    expect(r.num_operacion).toBe("FOLIO 0267850");
+    expect(r.rfc_emisor_cta_ord).toBe("BBB010101AAA");
+    expect(r.rfc_emisor_cta_ben).toBe("CCC020202BBB");
+    expect(r.forma_pago_p).toBe("01");
+    expect(r.fecha_pago).toBe("2024-04-05 18:00:00");
+  });
+
+  it("handles empty payerBank/beneficiaryBank arrays (real Syntage data)", async () => {
+    const capture: { row?: Record<string, unknown> } = {};
+    const evt: SyntageEvent = {
+      id: "evt_4",
+      type: "invoice_payment.created",
+      taxpayer: { id: "PNT920218IW5" },
+      data: {
+        object: {
+          id: "payment-id-4",
+          invoiceUuid: "inv-uuid-4",
+          currency: "MXN",
+          exchangeRate: 1,
+          amount: 100,
+          batchPayment: {
+            id: "batch-4",
+            "@id": "/invoices/batch-payments/batch-4",
+            operationNumber: "OP-123",
+            payerBank: [],
+            beneficiaryBank: [],
+          },
+        },
+      },
+      createdAt: "2026-04-10T00:00:00Z",
+    };
+    await handleInvoicePaymentEvent(makeCtx(capture), evt);
+    expect(capture.row!.num_operacion).toBe("OP-123");
+    expect(capture.row!.rfc_emisor_cta_ord).toBeNull();
+    expect(capture.row!.rfc_emisor_cta_ben).toBeNull();
+  });
+
+  it("sets batch_payment_id and fiscal fields to null when batchPayment absent (CSV-imported shape)", async () => {
+    const capture: { row?: Record<string, unknown> } = {};
+    const evt: SyntageEvent = {
+      id: "evt_5",
+      type: "invoice_payment.created",
+      taxpayer: { id: "PNT920218IW5" },
+      data: {
+        object: {
+          id: "payment-id-5",
+          invoiceUuid: "inv-uuid-5",
+          currency: "MXN",
+          exchangeRate: 1,
+          amount: 100,
+          date: "2019-12-03 18:00:00",
+          paymentMethod: "03",
+        },
+      },
+      createdAt: "2026-04-10T00:00:00Z",
+    };
+    await handleInvoicePaymentEvent(makeCtx(capture), evt);
+    const r = capture.row!;
+    expect(r.batch_payment_id).toBeNull();
+    expect(r.num_operacion).toBeNull();
+    expect(r.rfc_emisor_cta_ord).toBeNull();
+    expect(r.rfc_emisor_cta_ben).toBeNull();
+    // InvoicePayment-level fallback for fecha_pago/forma_pago_p sigue funcionando
+    expect(r.fecha_pago).toBe("2019-12-03 18:00:00");
+    expect(r.forma_pago_p).toBe("03");
+  });
 });
