@@ -46,6 +46,12 @@ export function hasConcreteEvidence(
   // 4) Email address (elimina placeholders genericos tipo "un cliente"):
   //    user@domain.tld with a non-trivial local part (3+ chars).
   if (/\b[a-zA-Z0-9._%+-]{3,}@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b/.test(haystack)) return true;
+  // 5) UUID SAT (8-4-4-4-12 hex): identificador fiscal único por CFDI.
+  //    Añadido en Fase 6 para que el director Compliance pueda usar UUID
+  //    como evidencia grounded (antes era "vago" y fallaba el validator).
+  if (/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i.test(haystack)) return true;
+  // 6) RFC mexicano (12 moral / 13 física). Identificador fiscal de contraparte.
+  if (/\b[A-ZÑ&]{3,4}\d{6}[A-Z0-9]{3}\b/.test(haystack)) return true;
 
   // ── SOFT identifier: company name + specific numeric/date ─────────────
   // Company name alone is too weak. Require it to be paired with a concrete

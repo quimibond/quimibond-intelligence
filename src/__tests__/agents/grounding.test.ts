@@ -67,6 +67,31 @@ describe("hasConcreteEvidence", () => {
     const insight = { evidence: ["BRAZZI no paga desde 15-mar"] };
     expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
   });
+
+  it("acepta insight con UUID_SAT (Fase 6)", () => {
+    const insight = { evidence: ["CFDI 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d emitido sin factura en Odoo"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("acepta insight con UUID_SAT uppercase", () => {
+    const insight = { evidence: ["CFDI 1A2B3C4D-5E6F-7A8B-9C0D-1E2F3A4B5C6D posted-cancelado"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("acepta insight con RFC mexicano de 13 chars (persona física)", () => {
+    const insight = { evidence: ["RFC MEMJ800101ABC detectado en 69-B"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("acepta insight con RFC mexicano de 12 chars (moral)", () => {
+    const insight = { evidence: ["RFC PNT920218IW5 con 5,200 CFDIs huérfanos"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(true);
+  });
+
+  it("rechaza UUID mal formado (sólo guiones)", () => {
+    const insight = { evidence: ["CFDI 1234-5678-9abc"] };
+    expect(hasConcreteEvidence(insight, sampleContext)).toBe(false);
+  });
 });
 
 describe("looksLikeMetaHallucination", () => {
