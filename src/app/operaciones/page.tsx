@@ -45,6 +45,7 @@ import {
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 
 import { OtdWeeklyChart } from "./_components/otd-weekly-chart";
+import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Operaciones" };
@@ -86,6 +87,7 @@ export default async function OperacionesPage({
       <PageHeader
         title="Operaciones"
         subtitle="¿Estoy entregando a tiempo y qué está en producción?"
+        actions={<DataSourceBadge source="odoo" coverage="2021+" />}
       />
 
       <SectionNav

@@ -34,6 +34,7 @@ import {
   type EmployeeRow,
 } from "@/lib/queries/team";
 import { formatNumber } from "@/lib/formatters";
+import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Equipo" };
@@ -44,6 +45,7 @@ export default function EquipoPage() {
       <PageHeader
         title="Equipo"
         subtitle="¿Quién tiene backlog, qué insights tiene pendientes y cómo está distribuido?"
+        actions={<DataSourceBadge source="odoo" coverage="2021+" />}
       />
 
       <SectionNav

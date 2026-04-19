@@ -59,6 +59,7 @@ import {
   type PriceFlag,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Compras" };
@@ -101,7 +102,8 @@ export default async function ComprasPage({
         title="Compras"
         subtitle="¿Qué compré, a quién, a qué precio y qué falta por ordenar?"
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <DataSourceBadge source="odoo" coverage="2021+" />
             <a
               href="/compras/price-variance"
               className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"

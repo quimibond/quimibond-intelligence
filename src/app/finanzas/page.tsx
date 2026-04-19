@@ -31,6 +31,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
+import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 import {
   getCfoSnapshot,
@@ -78,157 +79,40 @@ export default function FinanzasPage() {
         subtitle="¿Cuánto cash tengo, cuánto me dura, y cómo se está moviendo?"
       />
 
+      {/* Anchor nav con las 3 secciones + subsecciones */}
       <SectionNav
         items={[
-          { id: "runway", label: "Runway" },
-          { id: "kpis", label: "KPIs CFO" },
-          { id: "cfdis", label: "CFDIs SAT" },
-          { id: "fiscal-sat", label: "Fiscal SAT" },
-          { id: "flow", label: "Flujo 30d" },
-          { id: "recommendations", label: "Recomendaciones" },
-          { id: "projection", label: "Proyección 13s" },
-          { id: "cycle", label: "Ciclo CxT" },
-          { id: "pl", label: "P&L 12m" },
-          { id: "cash", label: "Posición de caja" },
+          { id: "operativo", label: "Operativo (Odoo)" },
+          { id: "fiscal", label: "Fiscal SAT" },
+          { id: "unificado", label: "Unificado" },
           { id: "profiles", label: "Perfiles" },
         ]}
       />
 
-      <section id="runway" className="scroll-mt-24">
-      {/* Runway alert — lo más crítico para el CEO */}
-      <Suspense fallback={<Skeleton className="h-24 rounded-xl" />}>
-        <RunwaySection />
-      </Suspense>
-      </section>
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 1 — Operativo (Odoo)
+          Datos contables/financieros directamente de Odoo ERP
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="operativo" className="scroll-mt-24 space-y-5">
+        {/* Header de sección */}
+        <div className="flex items-center gap-2 pb-1 border-b border-border">
+          <h2 className="text-base font-semibold">Operativo (Odoo)</h2>
+          <DataSourceBadge source="odoo" coverage="2021+" />
+        </div>
 
-      <section id="kpis" className="scroll-mt-24">
-      {/* KPIs del CFO dashboard */}
-      <Suspense
-        fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[96px] rounded-xl" />
-            ))}
-          </StatGrid>
-        }
-      >
-        <CfoKpisSection />
-      </Suspense>
-      </section>
-
-      <section id="cfdis" className="scroll-mt-24">
-      {/* CFDIs validados SAT — mes corriente */}
-      <Suspense fallback={<Skeleton className="h-[120px] rounded-xl" />}>
-        <CfdiValidationSection />
-      </Suspense>
-      </section>
-
-      <section id="fiscal-sat" className="scroll-mt-24">
-      {/* Revenue Fiscal SAT 24m — KPI card con link a /system historico */}
-      <Suspense fallback={<Skeleton className="h-[96px] rounded-xl" />}>
-        <FiscalRevenueKpiCard />
-      </Suspense>
-      </section>
-
-      <section id="flow" className="scroll-mt-24">
-      {/* Flujo 30 días + working capital */}
-      <div className="grid gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Flujo 30 días</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
-              <FlowSection />
-            </Suspense>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Capital de trabajo</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
-              <WorkingCapitalSection />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
-      </section>
-
-      <section id="recommendations" className="scroll-mt-24">
-      {/* Recomendaciones ejecutivas basadas en la situación de liquidez */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Recomendaciones del director financiero
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            Análisis automático de liquidez, acciones priorizadas por impacto,
-            top clientes a cobrar y top proveedores a negociar.
-          </p>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense
-            fallback={
-              <div className="space-y-3">
-                <Skeleton className="h-[80px] rounded-xl" />
-                <Skeleton className="h-[120px] rounded-xl" />
-                <Skeleton className="h-[200px] rounded-xl" />
-              </div>
-            }
-          >
-            <RecommendationsSection />
+        {/* Runway alert */}
+        <div id="runway" className="scroll-mt-24">
+          <Suspense fallback={<Skeleton className="h-24 rounded-xl" />}>
+            <RunwaySection />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </div>
 
-      <section id="projection" className="scroll-mt-24">
-      {/* Flujo de efectivo proyectado 13 semanas (v2 método directo) */}
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Flujo de efectivo proyectado · 13 semanas
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Método directo · AR/SO/AP/PO ponderados por behavior real del
-              cliente, nómina quincenal desde cuentas contables, ajuste por pagos
-              no conciliados y cash clasificado (operativo / en tránsito / restringido).
-            </p>
+        {/* KPIs del CFO dashboard */}
+        <div id="kpis" className="scroll-mt-24">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-muted-foreground">KPIs CFO</p>
+            <DataSourceBadge source="odoo" />
           </div>
-          <TableExportButton filename="projected-cash-flow" />
-        </CardHeader>
-        <CardContent className="space-y-4 pb-4">
-          <Suspense
-            fallback={
-              <div className="space-y-3">
-                <Skeleton className="h-[96px] rounded-xl" />
-                <Skeleton className="h-[280px] rounded-xl" />
-                <Skeleton className="h-48 rounded-xl" />
-              </div>
-            }
-          >
-            <ProjectedCashFlowSection />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="cycle" className="scroll-mt-24">
-      {/* Working Capital Cycle — DSO/DPO/DIO/CCC con COGS real */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            Ciclo de capital de trabajo
-          </CardTitle>
-          <p className="text-xs text-muted-foreground">
-            DSO + DIO − DPO = CCC. Días entre que comprometemos cash y lo
-            recuperamos. COGS desde plan de cuentas oficial.
-          </p>
-        </CardHeader>
-        <CardContent className="pb-4">
           <Suspense
             fallback={
               <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
@@ -238,63 +122,236 @@ export default function FinanzasPage() {
               </StatGrid>
             }
           >
-            <WorkingCapitalCycleSection />
+            <CfoKpisSection />
           </Suspense>
-        </CardContent>
-      </Card>
+        </div>
+
+        {/* Bancos */}
+        <div id="cash" className="scroll-mt-24">
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Posición de caja</CardTitle>
+                <DataSourceBadge source="odoo" />
+              </div>
+              <TableExportButton filename="cash-position" />
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+                <BanksSection />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Flujo 30 días + working capital */}
+        <div id="flow" className="scroll-mt-24">
+          <div className="grid gap-4 lg:grid-cols-2">
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Flujo 30 días</CardTitle>
+                  <DataSourceBadge source="odoo" />
+                </div>
+              </CardHeader>
+              <CardContent className="pb-4">
+                <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+                  <FlowSection />
+                </Suspense>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Capital de trabajo</CardTitle>
+                  <DataSourceBadge source="odoo" />
+                </div>
+              </CardHeader>
+              <CardContent className="pb-4">
+                <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+                  <WorkingCapitalSection />
+                </Suspense>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+
+        {/* P&L 12m */}
+        <div id="pl" className="scroll-mt-24">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">P&amp;L últimos 12 meses</CardTitle>
+                <DataSourceBadge source="odoo" />
+              </div>
+            </CardHeader>
+            <CardContent>
+              <Suspense
+                fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
+              >
+                <PlHistorySection />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Ciclo de capital de trabajo */}
+        <div id="cycle" className="scroll-mt-24">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Ciclo de capital de trabajo</CardTitle>
+                <DataSourceBadge source="odoo" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                DSO + DIO − DPO = CCC. Días entre que comprometemos cash y lo
+                recuperamos. COGS desde plan de cuentas oficial.
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense
+                fallback={
+                  <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+                    {Array.from({ length: 4 }).map((_, i) => (
+                      <Skeleton key={i} className="h-[96px] rounded-xl" />
+                    ))}
+                  </StatGrid>
+                }
+              >
+                <WorkingCapitalCycleSection />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Recomendaciones ejecutivas */}
+        <div id="recommendations" className="scroll-mt-24">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">
+                  Recomendaciones del director financiero
+                </CardTitle>
+                <DataSourceBadge source="ia" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Análisis automático de liquidez, acciones priorizadas por impacto,
+                top clientes a cobrar y top proveedores a negociar.
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense
+                fallback={
+                  <div className="space-y-3">
+                    <Skeleton className="h-[80px] rounded-xl" />
+                    <Skeleton className="h-[120px] rounded-xl" />
+                    <Skeleton className="h-[200px] rounded-xl" />
+                  </div>
+                }
+              >
+                <RecommendationsSection />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Flujo proyectado 13 semanas */}
+        <div id="projection" className="scroll-mt-24">
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">
+                    Flujo de efectivo proyectado · 13 semanas
+                  </CardTitle>
+                  <DataSourceBadge source="odoo" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Método directo · AR/SO/AP/PO ponderados por behavior real del
+                  cliente, nómina quincenal desde cuentas contables, ajuste por pagos
+                  no conciliados y cash clasificado (operativo / en tránsito / restringido).
+                </p>
+              </div>
+              <TableExportButton filename="projected-cash-flow" />
+            </CardHeader>
+            <CardContent className="space-y-4 pb-4">
+              <Suspense
+                fallback={
+                  <div className="space-y-3">
+                    <Skeleton className="h-[96px] rounded-xl" />
+                    <Skeleton className="h-[280px] rounded-xl" />
+                    <Skeleton className="h-48 rounded-xl" />
+                  </div>
+                }
+              >
+                <ProjectedCashFlowSection />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
       </section>
 
-      <section id="pl" className="scroll-mt-24">
-      {/* P&L chart */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">P&amp;L últimos 12 meses</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Suspense
-            fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
-          >
-            <PlHistorySection />
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 2 — Fiscal SAT (Syntage)
+          Data fiscal histórica desde Syntage (CFDIs desde 2014)
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="fiscal" className="scroll-mt-24 space-y-5 pt-4 border-t border-border">
+        {/* Header de sección */}
+        <div className="flex items-center gap-2 pb-1">
+          <h2 className="text-base font-semibold">Fiscal SAT (Syntage)</h2>
+          <DataSourceBadge source="syntage" coverage="2014+" />
+        </div>
+
+        {/* Revenue Fiscal SAT 24m */}
+        <div id="fiscal-sat" className="scroll-mt-24">
+          <Suspense fallback={<Skeleton className="h-[96px] rounded-xl" />}>
+            <FiscalRevenueKpiCard />
           </Suspense>
-        </CardContent>
-      </Card>
+        </div>
       </section>
 
-      <section id="cash" className="scroll-mt-24">
-      {/* Cuentas bancarias */}
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <CardTitle className="text-base">Posición de caja</CardTitle>
-          <TableExportButton filename="cash-position" />
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
-            <BanksSection />
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 3 — Unificado (reconciliado)
+          Híbrido Odoo operativo + Syntage fiscal reconciliado
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="unificado" className="scroll-mt-24 space-y-5 pt-4 border-t border-border">
+        {/* Header de sección */}
+        <div className="flex items-center gap-2 pb-1">
+          <h2 className="text-base font-semibold">Unificado (reconciliado)</h2>
+          <DataSourceBadge source="unified" refresh="15min" />
+        </div>
+
+        {/* CFDIs validados SAT — mes corriente */}
+        <div id="cfdis" className="scroll-mt-24">
+          <Suspense fallback={<Skeleton className="h-[120px] rounded-xl" />}>
+            <CfdiValidationSection />
           </Suspense>
-        </CardContent>
-      </Card>
+        </div>
       </section>
 
-      <section id="profiles" className="scroll-mt-24">
-      {/* Perfiles estadísticos v3 · validación */}
-      <div className="mb-3">
-        <h2 className="text-base font-semibold">Perfiles de cashflow</h2>
+      {/* ══════════════════════════════════════════════════════════════
+          PERFILES — Cashflow profiles v3
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="profiles" className="scroll-mt-24 space-y-3 pt-4 border-t border-border">
+        <div className="flex items-center gap-2">
+          <h2 className="text-base font-semibold">Perfiles de cashflow</h2>
+          <DataSourceBadge source="odoo" />
+        </div>
         <p className="text-xs text-muted-foreground">
           Comportamiento de pago real derivado de los últimos 24 meses de
           movimientos bancarios. Fuente del próximo modelo v3 de proyección.
         </p>
-      </div>
-      <Suspense
-        fallback={
-          <div className="space-y-3">
-            <Skeleton className="h-[240px] rounded-xl" />
-            <Skeleton className="h-[240px] rounded-xl" />
-            <Skeleton className="h-[240px] rounded-xl" />
-          </div>
-        }
-      >
-        <CashflowProfilesSection />
-      </Suspense>
+        <Suspense
+          fallback={
+            <div className="space-y-3">
+              <Skeleton className="h-[240px] rounded-xl" />
+              <Skeleton className="h-[240px] rounded-xl" />
+              <Skeleton className="h-[240px] rounded-xl" />
+            </div>
+          }
+        >
+          <CashflowProfilesSection />
+        </Suspense>
       </section>
     </div>
   );

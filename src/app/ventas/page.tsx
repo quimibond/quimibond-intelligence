@@ -59,6 +59,7 @@ import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
+import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Ventas" };
@@ -101,12 +102,15 @@ export default async function VentasPage({
         title="Ventas"
         subtitle="¿Cómo van las ventas, quién compra y quién dejó de comprar?"
         actions={
-          <a
-            href="/ventas/cohorts"
-            className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
-          >
-            Retención por cohorte →
-          </a>
+          <div className="flex flex-wrap items-center gap-2">
+            <DataSourceBadge source="odoo" coverage="2021+" />
+            <a
+              href="/ventas/cohorts"
+              className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
+            >
+              Retención por cohorte →
+            </a>
+          </div>
         }
       />
 

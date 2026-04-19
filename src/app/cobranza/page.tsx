@@ -49,6 +49,7 @@ import {
 import { getUnifiedRefreshStaleness } from "@/lib/queries/unified";
 import { SatBadge } from "@/components/shared/v2/sat-badge";
 import { RefreshStalenessBadge } from "@/components/shared/v2/refresh-staleness-badge";
+import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { getCfoSnapshot } from "@/lib/queries/finance";
 import {
   getCollectionEffectiveness,
@@ -98,6 +99,9 @@ export default async function CobranzaPage({
       <PageHeader
         title="Cobranza"
         subtitle="¿Quién me debe, cuánto, y quién va a pagar mal?"
+        actions={
+          <DataSourceBadge source="unified" coverage="Odoo operativo + SAT validado" refresh="15min" />
+        }
       />
 
       <RefreshStalenessBadge
