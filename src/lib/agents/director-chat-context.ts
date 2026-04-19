@@ -19,6 +19,7 @@ export const DIRECTOR_SLUGS = [
   "operaciones",
   "riesgo",
   "equipo",
+  "compliance",
 ] as const;
 
 export type DirectorSlug = (typeof DIRECTOR_SLUGS)[number];
@@ -102,6 +103,16 @@ export const DIRECTOR_META: Record<DirectorSlug, DirectorMeta> = {
       "@equipo cartera vencida por responsable",
     ],
   },
+  compliance: {
+    slug: "compliance",
+    label: "Director de Cumplimiento Fiscal",
+    department: "Cumplimiento",
+    sampleQuestions: [
+      "@compliance ¿estamos al corriente con el SAT?",
+      "@compliance CFDIs emitidos sin respaldo en Odoo",
+      "@compliance proveedores 69-B activos",
+    ],
+  },
 };
 
 export function isDirectorSlug(s: string): s is DirectorSlug {
@@ -135,7 +146,7 @@ function safeJSON(v: any): string {
 // ── Context builders por director ───────────────────────────────────────
 
 async function buildComercial(sb: SupabaseClient): Promise<string> {
-  const [ltvHealth, reorderRisk, top, crmLeads, clientOverdue, clientThreads] = await Promise.all([
+  const [ltvHealth, reorderRisk, top, crmLeads, clientOverdue, clientThreads, cancelledPostedCfdi] = await Promise.all([
     // NEW (Fase 7): customer_ltv_health — churn_risk_score + overdue_risk_score + LTV ranking
     sb.from("customer_ltv_health")
       .select("company_name, tier, ltv_mxn, revenue_12m, revenue_3m, trend_pct_vs_prior_quarters, churn_risk_score, overdue_risk_score, days_since_last_order, max_days_overdue")
@@ -169,6 +180,13 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
       .in("status", ["needs_response", "stalled"])
       .order("hours_without_response", { ascending: false })
       .limit(8),
+    // Fase 6: clientes que emitieron y cancelaron CFDIs
+    sb.from("reconciliation_issues")
+      .select("issue_id, description, metadata, company_id, detected_at")
+      .eq("issue_type", "cancelled_but_posted")
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false })
+      .limit(5),
   ]);
   return [
     `## LTV + churn risk score (>= 100K LTV, ordenado por churn_risk)\n${safeJSON(ltvHealth.data)}`,
@@ -177,6 +195,7 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
     `## Pipeline CRM — oportunidades activas\n${safeJSON(crmLeads.data)}`,
     `## Clientes con cartera vencida\n${safeJSON(clientOverdue.data)}`,
     `## Emails de clientes sin respuesta >24h\n${safeJSON(clientThreads.data)}`,
+    `## CFDI CANCELADO EN SAT PERO POSTED EN ODOO (clientes, top 5)\n${safeJSON(cancelledPostedCfdi.data)}`,
   ].join("\n\n");
 }
 
@@ -220,7 +239,7 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildCompras(sb: SupabaseClient): Promise<string> {
-  const [herfindahl, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix] = await Promise.all([
+  const [herfindahl, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix, gastoNoCapturado] = await Promise.all([
     // NEW (Fase 7): concentracion Herfindahl por producto (single_source / very_high riesgo de sourcing)
     sb.from("supplier_concentration_herfindahl")
       .select("product_ref, product_name, supplier_count, herfindahl_idx, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level")
@@ -257,6 +276,13 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
       .select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, last_purchase")
       .order("purchase_value", { ascending: false })
       .limit(15),
+    // Fase 6: proveedores con gasto en SAT no capturado en Odoo
+    sb.from("reconciliation_issues")
+      .select("issue_id, description, metadata, company_id, detected_at")
+      .eq("issue_type", "sat_only_cfdi_received")
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false })
+      .limit(10),
   ]);
   return [
     `## Concentracion Herfindahl por producto (single_source/very_high, 12m)\n${safeJSON(herfindahl.data)}`,
@@ -266,6 +292,7 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
     `## Proveedor unico (single source)\n${safeJSON(singleSource.data)}`,
     `## Dependencia por producto\n${safeJSON(supplierMatrix.data)}`,
     `## Emails con proveedores sin respuesta >48h\n${safeJSON(supplierThreads.data)}`,
+    `## PROVEEDORES CON GASTO NO CAPTURADO EN SAT (top 10)\n${safeJSON(gastoNoCapturado.data)}`,
   ].join("\n\n");
 }
 
@@ -348,7 +375,7 @@ async function buildOperaciones(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildRiesgo(sb: SupabaseClient): Promise<string> {
-  const [narrativesRisk, payRisk, topClients, trends, unanswered, supplierWeOwe] = await Promise.all([
+  const [narrativesRisk, payRisk, topClients, trends, unanswered, supplierWeOwe, fiscalIssuesOpen, fiscalBlacklist] = await Promise.all([
     sb.from("company_narrative")
       .select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople")
       .not("risk_signal", "is", null)
@@ -380,6 +407,19 @@ async function buildRiesgo(sb: SupabaseClient): Promise<string> {
       .eq("anomaly_type", "supplier_overdue")
       .order("amount", { ascending: false })
       .limit(10),
+    // Fase 6: issues fiscales críticos/high open
+    sb.from("reconciliation_issues")
+      .select("issue_id, issue_type, severity, description, company_id, detected_at")
+      .in("severity", ["critical", "high"])
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false })
+      .limit(10),
+    // Fase 6: partner_blacklist_69b (es issue_type, no tabla)
+    sb.from("reconciliation_issues")
+      .select("issue_id, description, metadata, company_id, detected_at")
+      .eq("issue_type", "partner_blacklist_69b")
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false }),
   ]);
   const rows = (topClients.data ?? []) as { total_revenue?: number }[];
   const totalRevenue = rows.reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
@@ -392,6 +432,9 @@ async function buildRiesgo(sb: SupabaseClient): Promise<string> {
     `## Proveedores a quienes debemos (riesgo relacion)\n${safeJSON(supplierWeOwe.data)}`,
     `## Tendencia semanal\n${safeJSON(trends.data)}`,
     `## Emails de clientes sin respuesta >72h\n${safeJSON(unanswered.data)}`,
+    // Fase 6: exposición fiscal
+    `## EXPOSICIÓN FISCAL SAT — issues critical/high abiertos\n${safeJSON(fiscalIssuesOpen.data)}`,
+    `## PARTNER BLACKLIST 69-B (open)\n${safeJSON(fiscalBlacklist.data)}`,
   ].join("\n\n");
 }
 
@@ -450,6 +493,46 @@ async function buildEquipo(sb: SupabaseClient): Promise<string> {
   ].join("\n\n");
 }
 
+async function buildCompliance(sb: SupabaseClient): Promise<string> {
+  const [criticalIssues, summary, blacklist, taxStatus, ppdSinComp, cancelledPosted] = await Promise.all([
+    sb.from("reconciliation_issues")
+      .select("issue_id, issue_type, severity, description, company_id, detected_at")
+      .eq("severity", "critical")
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false })
+      .limit(15),
+    sb.rpc("get_syntage_reconciliation_summary"),
+    sb.from("reconciliation_issues")
+      .select("issue_id, description, metadata")
+      .eq("issue_type", "partner_blacklist_69b")
+      .is("resolved_at", null),
+    sb.from("syntage_tax_status")
+      .select("opinion_cumplimiento, fecha_consulta, regimen_fiscal")
+      .order("fecha_consulta", { ascending: false, nullsFirst: false })
+      .limit(1),
+    sb.from("reconciliation_issues")
+      .select("issue_id, description, company_id, detected_at")
+      .eq("issue_type", "payment_missing_complemento")
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false })
+      .limit(10),
+    sb.from("reconciliation_issues")
+      .select("issue_id, description, company_id, detected_at")
+      .eq("issue_type", "cancelled_but_posted")
+      .is("resolved_at", null)
+      .order("detected_at", { ascending: false })
+      .limit(10),
+  ]);
+  return [
+    `## Resumen fiscal global (get_syntage_reconciliation_summary)\n${safeJSON(summary.data)}`,
+    `## Opinión SAT / 32-D — última consulta\n${safeJSON(taxStatus.data)}`,
+    `## Issues críticos abiertos (top 15)\n${safeJSON(criticalIssues.data)}`,
+    `## Partner blacklist 69-B (open)\n${safeJSON(blacklist.data)}`,
+    `## Pagos PPD sin complemento tipo P (top 10)\n${safeJSON(ppdSinComp.data)}`,
+    `## CFDI cancelado en SAT / posted en Odoo (top 10)\n${safeJSON(cancelledPosted.data)}`,
+  ].join("\n\n");
+}
+
 /**
  * Construye el bloque de contexto para un director dado. Si alguna query
  * individual falla, se reemplaza con "(error)" pero la funcion no lanza —
@@ -468,6 +551,7 @@ export async function buildDirectorChatContext(
       case "operaciones": return await buildOperaciones(sb);
       case "riesgo": return await buildRiesgo(sb);
       case "equipo": return await buildEquipo(sb);
+      case "compliance": return await buildCompliance(sb);
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
