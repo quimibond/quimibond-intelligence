@@ -32,6 +32,7 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
+import { Button } from "@/components/ui/button";
 
 interface TabDef {
   href: string;
@@ -145,11 +146,11 @@ export function MobileTabBar() {
         })}
         <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
           <SheetTrigger asChild>
-            <button
-              type="button"
+            <Button
+              variant="ghost"
               aria-label="Abrir menú de navegación"
               className={cn(
-                "flex flex-col items-center justify-center gap-1 flex-1 py-1.5 min-w-[56px] min-h-[56px] transition-colors",
+                "flex flex-col items-center justify-center gap-1 flex-1 h-auto py-1.5 min-w-[56px] min-h-[56px]",
                 isMorePath ? "text-primary" : "text-muted-foreground"
               )}
             >
@@ -164,7 +165,7 @@ export function MobileTabBar() {
               >
                 Más
               </span>
-            </button>
+            </Button>
           </SheetTrigger>
           <SheetContent
             side="bottom"
@@ -186,15 +187,15 @@ export function MobileTabBar() {
                     {group.tabs.map(({ href, label, icon: Icon }) => {
                       const active = isActive(href);
                       return (
-                        <button
+                        <Button
                           key={href}
-                          type="button"
+                          variant="ghost"
                           onClick={() => {
                             setSheetOpen(false);
                             router.push(href);
                           }}
                           className={cn(
-                            "flex flex-col items-center gap-2 rounded-xl border border-border bg-card p-3 transition-colors",
+                            "flex h-auto flex-col items-center gap-2 rounded-xl border border-border bg-card p-3",
                             "min-h-[88px]",
                             active
                               ? "border-primary bg-primary/5 text-primary"
@@ -215,7 +216,7 @@ export function MobileTabBar() {
                           >
                             {label}
                           </span>
-                        </button>
+                        </Button>
                       );
                     })}
                   </div>

@@ -1,5 +1,13 @@
 import { getFiscalRevenueMonthly } from "@/lib/queries/fiscal-historical";
 import { formatCurrencyMXN } from "@/lib/formatters";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function formatMonth(month: string): string {
   const labels = [
@@ -30,36 +38,36 @@ export async function FiscalRevenueTrendTable({ months = 24 }: { months?: number
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left">Mes</th>
-            <th className="px-3 py-2 text-right">Revenue (SAT)</th>
-            <th className="hidden px-3 py-2 text-right sm:table-cell">Gasto</th>
-            <th className="hidden px-3 py-2 text-right md:table-cell">CFDIs emit.</th>
-            <th className="hidden px-3 py-2 text-right md:table-cell">Clientes</th>
-            <th className="px-3 py-2 text-left">Tendencia</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Mes</TableHead>
+            <TableHead className="text-right">Revenue (SAT)</TableHead>
+            <TableHead className="hidden text-right sm:table-cell">Gasto</TableHead>
+            <TableHead className="hidden text-right md:table-cell">CFDIs emit.</TableHead>
+            <TableHead className="hidden text-right md:table-cell">Clientes</TableHead>
+            <TableHead>Tendencia</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r) => {
             const barPct = maxRevenue > 0 ? (r.revenue_mxn / maxRevenue) * 100 : 0;
             return (
-              <tr key={r.month} className="border-t hover:bg-muted/20">
-                <td className="px-3 py-2 font-mono text-xs">{formatMonth(r.month)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">
+              <TableRow key={r.month}>
+                <TableCell className="font-mono text-xs">{formatMonth(r.month)}</TableCell>
+                <TableCell className="text-right tabular-nums">
                   {formatCurrencyMXN(r.revenue_mxn, { compact: true })}
-                </td>
-                <td className="hidden px-3 py-2 text-right tabular-nums text-muted-foreground sm:table-cell">
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums text-muted-foreground sm:table-cell">
                   {formatCurrencyMXN(r.gasto_mxn, { compact: true })}
-                </td>
-                <td className="hidden px-3 py-2 text-right tabular-nums md:table-cell">
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums md:table-cell">
                   {r.cfdis_emitidos?.toLocaleString("es-MX") ?? "—"}
-                </td>
-                <td className="hidden px-3 py-2 text-right tabular-nums md:table-cell">
+                </TableCell>
+                <TableCell className="hidden text-right tabular-nums md:table-cell">
                   {r.clientes_unicos?.toLocaleString("es-MX") ?? "—"}
-                </td>
-                <td className="px-3 py-2">
+                </TableCell>
+                <TableCell>
                   <div className="flex items-center gap-1">
                     <div
                       className="h-3 rounded-sm bg-primary/60"
@@ -67,12 +75,12 @@ export async function FiscalRevenueTrendTable({ months = 24 }: { months?: number
                       title={`${barPct.toFixed(0)}%`}
                     />
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             );
           })}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

@@ -3,6 +3,14 @@ import type { IssueType, Severity } from "@/lib/queries/syntage-reconciliation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatNumber } from "@/lib/formatters";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -50,7 +58,7 @@ export async function SyntageReconciliationPanel() {
         {summary.by_type.map((issue) => {
           const sev = SEVERITY_STYLES[issue.severity];
           return (
-            <div key={issue.type} className="rounded-md border bg-card p-3">
+            <Card key={issue.type} className="p-3">
               <div className="text-xs text-muted-foreground">
                 {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
               </div>
@@ -65,14 +73,14 @@ export async function SyntageReconciliationPanel() {
                   +{formatNumber(issue.resolved_7d)} resueltos 7d
                 </div>
               )}
-            </div>
+            </Card>
           );
         })}
         {/* Fill remaining slots if fewer than 8 issue types returned */}
         {summary.by_type.length === 0 && (
-          <div className="col-span-4 rounded-md border bg-card p-3 text-center text-sm text-muted-foreground">
+          <Card className="col-span-4 p-3 text-center text-sm text-muted-foreground">
             Sin issues activos.
-          </div>
+          </Card>
         )}
       </div>
 
@@ -82,13 +90,13 @@ export async function SyntageReconciliationPanel() {
           const count = summary.by_severity[sev];
           const style = SEVERITY_STYLES[sev];
           return (
-            <div key={sev} className="rounded-md border bg-card p-3">
+            <Card key={sev} className="p-3">
               <div className="text-xs text-muted-foreground">Severidad</div>
               <div className="mt-1 flex items-center gap-2">
                 <span className="text-lg font-semibold tabular-nums">{formatNumber(count)}</span>
                 <Badge className={style.className}>{style.label}</Badge>
               </div>
-            </div>
+            </Card>
           );
         })}
 
@@ -128,58 +136,58 @@ export async function SyntageReconciliationPanel() {
         </CardHeader>
         <CardContent className="px-0 pb-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 text-left">Severidad</th>
-                  <th className="px-4 py-2 text-left">Tipo</th>
-                  <th className="px-4 py-2 text-left">Descripción</th>
-                  <th className="px-4 py-2 text-left">Contraparte</th>
-                  <th className="px-4 py-2 text-right">Dif. monto</th>
-                  <th className="px-4 py-2 text-left">Detectado</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Severidad</TableHead>
+                  <TableHead>Tipo</TableHead>
+                  <TableHead>Descripción</TableHead>
+                  <TableHead>Contraparte</TableHead>
+                  <TableHead className="text-right">Dif. monto</TableHead>
+                  <TableHead>Detectado</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {summary.recent_critical.length === 0 ? (
-                  <tr>
-                    <td
-                      className="px-4 py-6 text-center text-muted-foreground"
+                  <TableRow>
+                    <TableCell
+                      className="py-6 text-center text-muted-foreground"
                       colSpan={6}
                     >
                       Sin issues críticos o altos activos.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   summary.recent_critical.slice(0, 20).map((issue) => {
                     const sev = SEVERITY_STYLES[issue.severity];
                     return (
-                      <tr key={issue.issue_id} className="border-t">
-                        <td className="px-4 py-2">
+                      <TableRow key={issue.issue_id}>
+                        <TableCell>
                           <Badge className={sev.className}>{sev.label}</Badge>
-                        </td>
-                        <td className="px-4 py-2 text-xs">
+                        </TableCell>
+                        <TableCell className="text-xs">
                           {ISSUE_TYPE_LABELS[issue.type] ?? issue.type}
-                        </td>
-                        <td className="max-w-[260px] truncate px-4 py-2 text-xs">
+                        </TableCell>
+                        <TableCell className="max-w-[260px] truncate text-xs">
                           {issue.description}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
                           {issue.company ?? "—"}
-                        </td>
-                        <td className="px-4 py-2 text-right font-mono text-xs tabular-nums">
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs tabular-nums">
                           {issue.amount_diff != null
                             ? formatNumber(parseFloat(issue.amount_diff))
                             : "—"}
-                        </td>
-                        <td className="px-4 py-2 text-xs text-muted-foreground">
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
                           {new Date(issue.detected_at).toLocaleDateString("es-MX")}
-                        </td>
-                      </tr>
+                        </TableCell>
+                      </TableRow>
                     );
                   })
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>

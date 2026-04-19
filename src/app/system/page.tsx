@@ -33,6 +33,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
 
 import { SyntageHealthPanel } from "@/components/system/SyntageHealthPanel";
@@ -935,28 +943,28 @@ async function LogsTable({ searchParams }: { searchParams: SearchParams }) {
   }
   return (
     <div className="space-y-3">
-      {/* Ocultamos el table HTML para el export pero renderizamos */}
+      {/* Ocultamos la tabla para el export pero renderizamos */}
       <div className="hidden">
-        <table>
-          <thead>
-            <tr>
-              <th>Nivel</th>
-              <th>Fase</th>
-              <th>Mensaje</th>
-              <th>Creado</th>
-            </tr>
-          </thead>
-          <tbody>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Nivel</TableHead>
+              <TableHead>Fase</TableHead>
+              <TableHead>Mensaje</TableHead>
+              <TableHead>Creado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
             {rows.map((l) => (
-              <tr key={l.id}>
-                <td>{l.level}</td>
-                <td>{l.phase}</td>
-                <td>{l.message}</td>
-                <td>{l.created_at}</td>
-              </tr>
+              <TableRow key={l.id}>
+                <TableCell>{l.level}</TableCell>
+                <TableCell>{l.phase}</TableCell>
+                <TableCell>{l.message}</TableCell>
+                <TableCell>{l.created_at}</TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+        </Table>
       </div>
       <div className="space-y-1.5">
         {rows.map((log) => (

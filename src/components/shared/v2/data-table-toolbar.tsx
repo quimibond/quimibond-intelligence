@@ -153,14 +153,15 @@ function ToolbarSearch({
         aria-label={placeholder}
       />
       {value && (
-        <button
-          type="button"
+        <Button
+          variant="ghost"
+          size="icon"
           onClick={() => setValue("")}
-          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground hover:bg-muted"
+          className="absolute right-1 top-1/2 h-6 w-6 -translate-y-1/2 text-muted-foreground hover:bg-muted"
           aria-label="Limpiar búsqueda"
         >
           <X className="size-3.5" />
-        </button>
+        </Button>
       )}
     </div>
   );
@@ -404,12 +405,12 @@ function ToolbarFacet({ filter }: { filter: FacetFilter }) {
             filteredOptions.map((o) => {
               const isSel = selectedSet.has(o.value);
               return (
-                <button
+                <Button
                   key={o.value}
-                  type="button"
+                  variant="ghost"
                   onClick={() => toggle(o.value)}
                   className={cn(
-                    "flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none hover:bg-accent hover:text-accent-foreground",
+                    "flex h-auto w-full cursor-default select-none items-center justify-start gap-2 rounded-sm px-2 py-1.5 text-sm",
                     isSel && "bg-accent/40"
                   )}
                 >
@@ -429,7 +430,7 @@ function ToolbarFacet({ filter }: { filter: FacetFilter }) {
                       {o.count}
                     </span>
                   )}
-                </button>
+                </Button>
               );
             })
           )}

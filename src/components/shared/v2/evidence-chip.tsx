@@ -13,6 +13,7 @@ import {
 import { BottomSheet } from "./bottom-sheet";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 export type EvidenceType =
   | "invoice"
@@ -121,14 +122,15 @@ export function EvidenceChip({
 
   return (
     <>
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="sm"
         onClick={() => setOpen(true)}
-        className="inline-block"
+        className="h-auto p-0"
         aria-label={`Ver detalle ${cfg.label} ${reference}`}
       >
         {content}
-      </button>
+      </Button>
       <BottomSheet
         open={open}
         onOpenChange={setOpen}

@@ -1,5 +1,13 @@
 import { type TopSupplierFiscalRow } from "@/lib/queries/fiscal-historical";
 import { formatCurrencyMXN } from "@/lib/formatters";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 function YoYBadge({ pct }: { pct: number | null }) {
   if (pct == null) return <span className="text-muted-foreground">—</span>;
@@ -35,43 +43,43 @@ export function TopSuppliersFiscalTable({ rows }: Props) {
 
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
-        <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-          <tr>
-            <th className="px-3 py-2 text-left">Proveedor</th>
-            <th className="px-3 py-2 text-right">Lifetime</th>
-            <th className="px-3 py-2 text-right">12m</th>
-            <th className="hidden px-3 py-2 text-right sm:table-cell">YoY</th>
-            <th className="hidden px-3 py-2 text-right md:table-cell">Retenciones</th>
-          </tr>
-        </thead>
-        <tbody>
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Proveedor</TableHead>
+            <TableHead className="text-right">Lifetime</TableHead>
+            <TableHead className="text-right">12m</TableHead>
+            <TableHead className="hidden text-right sm:table-cell">YoY</TableHead>
+            <TableHead className="hidden text-right md:table-cell">Retenciones</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {rows.map((r, i) => (
-            <tr key={r.rfc ?? i} className="border-t hover:bg-muted/20">
-              <td className="px-3 py-2">
+            <TableRow key={r.rfc ?? i}>
+              <TableCell>
                 <div className="font-medium leading-tight">{r.name ?? "—"}</div>
                 {r.rfc && (
-                  <div className="text-[10px] font-mono text-muted-foreground">{r.rfc}</div>
+                  <div className="font-mono text-[10px] text-muted-foreground">{r.rfc}</div>
                 )}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
                 {formatCurrencyMXN(r.lifetime_spend_mxn, { compact: true })}
-              </td>
-              <td className="px-3 py-2 text-right tabular-nums">
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
                 {formatCurrencyMXN(r.spend_12m_mxn, { compact: true })}
-              </td>
-              <td className="hidden px-3 py-2 text-right sm:table-cell">
+              </TableCell>
+              <TableCell className="hidden text-right sm:table-cell">
                 <YoYBadge pct={r.yoy_pct ?? null} />
-              </td>
-              <td className="hidden px-3 py-2 text-right tabular-nums md:table-cell text-muted-foreground">
+              </TableCell>
+              <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">
                 {r.retenciones_lifetime_mxn != null
                   ? formatCurrencyMXN(r.retenciones_lifetime_mxn, { compact: true })
                   : "—"}
-              </td>
-            </tr>
+              </TableCell>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
     </div>
   );
 }

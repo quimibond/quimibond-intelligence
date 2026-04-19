@@ -3,6 +3,7 @@
 import * as React from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 type Theme = "light" | "dark" | "system";
 
@@ -94,15 +95,14 @@ export function ThemePreference() {
       {OPTIONS.map(({ value, label, icon: Icon, description }) => {
         const isActive = theme === value;
         return (
-          <button
+          <Button
             key={value}
-            type="button"
+            variant="ghost"
             role="radio"
             aria-checked={isActive}
             onClick={() => handleChange(value)}
             className={cn(
-              "flex flex-col items-start gap-2 rounded-xl border p-3 text-left transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+              "flex h-auto flex-col items-start gap-2 rounded-xl border p-3 text-left",
               isActive
                 ? "border-primary bg-primary/5"
                 : "border-border bg-card hover:bg-accent/40"
@@ -124,7 +124,7 @@ export function ThemePreference() {
                 {description}
               </div>
             </div>
-          </button>
+          </Button>
         );
       })}
     </div>

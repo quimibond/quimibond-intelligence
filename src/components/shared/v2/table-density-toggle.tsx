@@ -4,6 +4,7 @@ import * as React from "react";
 import { Rows2, Rows4 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 type Density = "normal" | "compact";
 
@@ -67,24 +68,23 @@ export function TableDensityToggle({
         const Icon = d === "normal" ? Rows2 : Rows4;
         const label = d === "normal" ? "Normal" : "Compacto";
         return (
-          <button
+          <Button
             key={d}
-            type="button"
+            variant="ghost"
             role="radio"
             aria-checked={active}
             aria-label={label}
             onClick={() => change(d)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-2 py-1 text-xs font-medium whitespace-nowrap transition-colors",
-              "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1",
+              "inline-flex h-auto items-center gap-1.5 rounded px-2 py-1 text-xs font-medium whitespace-nowrap",
               active
-                ? "bg-background text-foreground shadow-sm"
+                ? "bg-background text-foreground shadow-sm hover:bg-background"
                 : "hover:text-foreground"
             )}
           >
             <Icon className="h-3.5 w-3.5" aria-hidden />
             <span className="hidden sm:inline">{label}</span>
-          </button>
+          </Button>
         );
       })}
     </div>

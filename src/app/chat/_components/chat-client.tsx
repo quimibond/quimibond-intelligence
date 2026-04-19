@@ -290,19 +290,15 @@ function EmptyChatState({
           Sugerencias
         </div>
         {SUGGESTIONS.map((s) => (
-          <button
+          <Button
             key={s}
-            type="button"
+            variant="outline"
             onClick={() => onPick(s)}
             disabled={disabled}
-            className={cn(
-              "rounded-lg border border-border bg-card px-4 py-3 text-left text-sm transition-colors",
-              "hover:bg-accent hover:border-accent-foreground/10",
-              "disabled:opacity-50 disabled:cursor-not-allowed"
-            )}
+            className="h-auto justify-start rounded-lg px-4 py-3 text-left text-sm"
           >
             {s}
-          </button>
+          </Button>
         ))}
       </div>
     </div>

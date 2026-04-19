@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { ChevronRight } from "lucide-react";
 
 interface MobileCardField {
@@ -86,13 +87,13 @@ export function MobileCard({
   }
   if (onClick) {
     return (
-      <button
-        type="button"
+      <Button
+        variant="ghost"
         onClick={onClick}
-        className="block w-full min-h-[56px] text-left"
+        className="block h-auto w-full min-h-[56px] p-0 text-left"
       >
         {inner}
-      </button>
+      </Button>
     );
   }
   return inner;

@@ -122,14 +122,13 @@ export function TableViewOptions({
           {columns.map((col) => {
             const isSel = current.has(col.key);
             return (
-              <button
+              <Button
                 key={col.key}
-                type="button"
+                variant="ghost"
                 disabled={col.alwaysVisible}
                 onClick={() => toggle(col.key, col.alwaysVisible)}
                 className={cn(
-                  "flex w-full cursor-default select-none items-center gap-2 rounded-sm px-2 py-1.5 text-sm outline-none transition-colors",
-                  "hover:bg-accent hover:text-accent-foreground",
+                  "flex h-auto w-full cursor-default select-none items-center justify-start gap-2 rounded-sm px-2 py-1.5 text-sm",
                   col.alwaysVisible && "cursor-not-allowed opacity-50"
                 )}
               >
@@ -144,7 +143,7 @@ export function TableViewOptions({
                   {isSel && <Check className="size-3" />}
                 </div>
                 <span className="flex-1 truncate text-left">{col.label}</span>
-              </button>
+              </Button>
             );
           })}
         </div>

@@ -35,6 +35,14 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 import {
   getSalesKpis,
@@ -1315,41 +1323,41 @@ function RetentionTable({ data }: { data: CohortMatrix }) {
   const { cohorts, maxQuarters, matrix, baseSize } = data;
   return (
     <div className="space-y-3">
-      <table className="w-full min-w-[640px] border-collapse text-xs">
-        <thead>
-          <tr>
-            <th className="sticky left-0 top-0 z-20 border-b bg-background px-3 py-2 text-left font-semibold">
+      <Table className="min-w-[640px] border-collapse text-xs">
+        <TableHeader>
+          <TableRow>
+            <TableHead className="sticky left-0 top-0 z-20 bg-background px-3 py-2 text-left font-semibold">
               Cohort
-            </th>
-            <th className="sticky top-0 z-10 border-b bg-background px-2 py-2 text-right font-semibold">
+            </TableHead>
+            <TableHead className="sticky top-0 z-10 bg-background px-2 py-2 text-right font-semibold">
               #
-            </th>
+            </TableHead>
             {Array.from({ length: maxQuarters + 1 }).map((_, q) => (
-              <th
+              <TableHead
                 key={q}
-                className="sticky top-0 z-10 border-b bg-background px-2 py-2 text-center font-semibold"
+                className="sticky top-0 z-10 bg-background px-2 py-2 text-center font-semibold"
               >
                 Q+{q}
-              </th>
+              </TableHead>
             ))}
-          </tr>
-        </thead>
-        <tbody>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
           {cohorts.map((cohort, i) => (
-            <tr key={cohort}>
-              <td className="sticky left-0 z-10 border-b bg-background px-3 py-2 font-mono">
+            <TableRow key={cohort}>
+              <TableCell className="sticky left-0 z-10 bg-background px-3 py-2 font-mono">
                 {formatCohortLabel(cohort)}
-              </td>
-              <td className="border-b px-2 py-2 text-right tabular-nums text-muted-foreground">
+              </TableCell>
+              <TableCell className="px-2 py-2 text-right tabular-nums text-muted-foreground">
                 {baseSize[i]}
-              </td>
+              </TableCell>
               {Array.from({ length: maxQuarters + 1 }).map((_, q) => {
                 const cell = matrix[i][q];
                 const pct = retentionPct(cell, baseSize[i]);
                 return (
-                  <td
+                  <TableCell
                     key={q}
-                    className={`border-b px-2 py-2 text-center tabular-nums ${
+                    className={`px-2 py-2 text-center tabular-nums ${
                       pct != null
                         ? "font-semibold text-foreground"
                         : "text-muted-foreground"
@@ -1362,13 +1370,13 @@ function RetentionTable({ data }: { data: CohortMatrix }) {
                     }
                   >
                     {pct != null ? `${pct.toFixed(0)}%` : "—"}
-                  </td>
+                  </TableCell>
                 );
               })}
-            </tr>
+            </TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </Table>
       <div className="flex items-center gap-2 pt-2 text-[11px] text-muted-foreground">
         <span>Retención</span>
         <div className="flex overflow-hidden rounded border border-border">

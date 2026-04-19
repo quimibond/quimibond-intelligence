@@ -2,6 +2,14 @@ import { getSyntageHealth } from "@/lib/queries/syntage-health";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatNumber } from "@/lib/formatters";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 const HEALTH_STYLES = {
   healthy: { label: "Saludable", className: "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100" },
@@ -54,10 +62,10 @@ export async function SyntageHealthPanel() {
         <CardContent>
           <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3 md:grid-cols-4">
             {Object.entries(report.counts).map(([table, count]) => (
-              <div key={table} className="rounded-md border bg-card p-3">
+              <Card key={table} className="p-3">
                 <div className="text-xs text-muted-foreground">{table.replace("syntage_", "")}</div>
                 <div className="font-mono text-lg tabular-nums">{formatNumber(count)}</div>
-              </div>
+              </Card>
             ))}
           </div>
         </CardContent>
@@ -73,50 +81,50 @@ export async function SyntageHealthPanel() {
         </CardHeader>
         <CardContent className="px-0 pb-0">
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                <tr>
-                  <th className="px-4 py-2 text-left">ID</th>
-                  <th className="px-4 py-2 text-left">Extractor</th>
-                  <th className="px-4 py-2 text-left">Status</th>
-                  <th className="px-4 py-2 text-right">Syntage total</th>
-                  <th className="px-4 py-2 text-right">Created / Updated</th>
-                  <th className="px-4 py-2 text-left">Inicio</th>
-                  <th className="px-4 py-2 text-left">Fin</th>
-                  <th className="px-4 py-2 text-left">Error</th>
-                </tr>
-              </thead>
-              <tbody>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>ID</TableHead>
+                  <TableHead>Extractor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead className="text-right">Syntage total</TableHead>
+                  <TableHead className="text-right">Created / Updated</TableHead>
+                  <TableHead>Inicio</TableHead>
+                  <TableHead>Fin</TableHead>
+                  <TableHead>Error</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
                 {report.extractions.length === 0 ? (
-                  <tr>
-                    <td className="px-4 py-6 text-center text-muted-foreground" colSpan={8}>
+                  <TableRow>
+                    <TableCell className="py-6 text-center text-muted-foreground" colSpan={8}>
                       Sin extractions todavía.
-                    </td>
-                  </tr>
+                    </TableCell>
+                  </TableRow>
                 ) : (
                   report.extractions.map(x => (
-                    <tr key={x.id} className="border-t">
-                      <td className="px-4 py-2 font-mono text-xs">{x.id}</td>
-                      <td className="px-4 py-2">{x.extractor}</td>
-                      <td className="px-4 py-2">
+                    <TableRow key={x.id}>
+                      <TableCell className="font-mono text-xs">{x.id}</TableCell>
+                      <TableCell>{x.extractor}</TableCell>
+                      <TableCell>
                         <Badge className={STATUS_STYLES[x.status] ?? "bg-muted"}>{x.status}</Badge>
-                      </td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">{formatNumber(x.syntage_total)}</td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums text-xs">
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatNumber(x.syntage_total)}</TableCell>
+                      <TableCell className="text-right font-mono text-xs tabular-nums">
                         {formatNumber(x.syntage_created)} / {formatNumber(x.syntage_updated)}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
                         {x.started_at ? new Date(x.started_at).toLocaleString("es-MX") : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-muted-foreground">
+                      </TableCell>
+                      <TableCell className="text-xs text-muted-foreground">
                         {x.finished_at ? new Date(x.finished_at).toLocaleString("es-MX") : "—"}
-                      </td>
-                      <td className="px-4 py-2 text-xs text-rose-700">{x.error_code ?? ""}</td>
-                    </tr>
+                      </TableCell>
+                      <TableCell className="text-xs text-rose-700">{x.error_code ?? ""}</TableCell>
+                    </TableRow>
                   ))
                 )}
-              </tbody>
-            </table>
+              </TableBody>
+            </Table>
           </div>
         </CardContent>
       </Card>
@@ -156,26 +164,26 @@ export async function SyntageHealthPanel() {
           </CardHeader>
           <CardContent className="px-0 pb-0">
             <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
-                  <tr>
-                    <th className="px-4 py-2 text-left">Año</th>
-                    <th className="px-4 py-2 text-right">Emitidas</th>
-                    <th className="px-4 py-2 text-right">Recibidas</th>
-                    <th className="px-4 py-2 text-right">Total</th>
-                  </tr>
-                </thead>
-                <tbody>
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Año</TableHead>
+                    <TableHead className="text-right">Emitidas</TableHead>
+                    <TableHead className="text-right">Recibidas</TableHead>
+                    <TableHead className="text-right">Total</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
                   {report.yearly_distribution.map(y => (
-                    <tr key={y.year} className="border-t">
-                      <td className="px-4 py-2 font-mono tabular-nums">{y.year}</td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">{formatNumber(y.issued)}</td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">{formatNumber(y.received)}</td>
-                      <td className="px-4 py-2 text-right font-mono tabular-nums">{formatNumber(y.total)}</td>
-                    </tr>
+                    <TableRow key={y.year}>
+                      <TableCell className="font-mono tabular-nums">{y.year}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatNumber(y.issued)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatNumber(y.received)}</TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">{formatNumber(y.total)}</TableCell>
+                    </TableRow>
                   ))}
-                </tbody>
-              </table>
+                </TableBody>
+              </Table>
             </div>
           </CardContent>
         </Card>
@@ -212,10 +220,10 @@ export async function SyntageHealthPanel() {
 
 function KpiBox({ label, value, sub }: { label: string; value: React.ReactNode; sub?: string }) {
   return (
-    <div className="rounded-md border bg-card p-3">
+    <Card className="p-3">
       <div className="text-xs text-muted-foreground">{label}</div>
       <div className="mt-1 text-lg font-semibold tabular-nums">{value}</div>
       {sub && <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div>}
-    </div>
+    </Card>
   );
 }

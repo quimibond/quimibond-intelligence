@@ -2,6 +2,7 @@ import * as React from "react";
 import type { LucideIcon } from "lucide-react";
 import { ArrowDown, ArrowUp, ChevronsUpDown } from "lucide-react";
 import {
+  Table,
   TableBody,
   TableCell,
   TableHead,
@@ -344,10 +345,7 @@ export function DataTable<T>({
   };
 
   const tableEl = (
-    <table
-      data-slot="table"
-      className="w-full caption-bottom text-sm"
-    >
+    <Table>
       {caption && <caption className="sr-only">{caption}</caption>}
       <TableHeader>
         <TableRow>
@@ -356,7 +354,7 @@ export function DataTable<T>({
       </TableHeader>
       <TableBody>{data.map((row, i) => renderRow(row, i))}</TableBody>
       {renderFooter()}
-    </table>
+    </Table>
   );
 
   return (

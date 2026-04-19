@@ -35,6 +35,7 @@ import {
   ChartTooltipContent,
   type ChartConfig,
 } from "@/components/ui/chart";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 export type ChartType =
@@ -930,13 +931,12 @@ function InteractiveLegend({
         const color =
           s.color ?? `var(--chart-${(i % 5) + 1})`;
         return (
-          <button
+          <Button
             key={s.dataKey}
-            type="button"
+            variant="ghost"
             onClick={() => onToggle(s.dataKey)}
             className={cn(
-              "inline-flex items-center gap-1.5 rounded px-1.5 py-0.5",
-              "transition-opacity hover:bg-accent focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+              "inline-flex h-auto items-center gap-1.5 rounded px-1.5 py-0.5 text-[11px]",
               isHidden ? "opacity-40" : "opacity-100"
             )}
             aria-pressed={!isHidden}
@@ -948,7 +948,7 @@ function InteractiveLegend({
               aria-hidden
             />
             <span className={cn(isHidden && "line-through")}>{s.label}</span>
-          </button>
+          </Button>
         );
       })}
       {allHidden && (

@@ -31,6 +31,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Estructura agrupada del sidebar.
@@ -284,7 +285,8 @@ export function AppSidebar() {
 
         {/* Search hint (⌘K) */}
         <div className={cn("px-3 pb-2", collapsed && "md:px-2")}>
-          <button
+          <Button
+            variant="ghost"
             onClick={() => {
               document.dispatchEvent(
                 new KeyboardEvent("keydown", { key: "k", metaKey: true })
@@ -292,7 +294,7 @@ export function AppSidebar() {
             }}
             title={collapsed ? "Buscar (⌘K)" : undefined}
             className={cn(
-              "flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/20 px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-sidebar-accent/50",
+              "flex w-full items-center gap-2 rounded-md border border-sidebar-border bg-sidebar-accent/20 px-3 py-2 text-xs text-muted-foreground hover:bg-sidebar-accent/50",
               collapsed && "md:justify-center md:border-0 md:bg-transparent md:px-0"
             )}
           >
@@ -306,7 +308,7 @@ export function AppSidebar() {
             >
               ⌘K
             </kbd>
-          </button>
+          </Button>
         </div>
 
         {/* Main navigation — grouped */}
@@ -332,9 +334,11 @@ export function AppSidebar() {
 
         {/* Collapse toggle (desktop only) */}
         <div className="hidden items-center justify-center border-t border-sidebar-border py-2 md:flex">
-          <button
+          <Button
+            variant="ghost"
+            size="icon"
             onClick={toggleCollapse}
-            className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
+            className="h-8 w-8 text-muted-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-foreground"
             aria-label={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
             title={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
           >
@@ -343,7 +347,7 @@ export function AppSidebar() {
             ) : (
               <ChevronsLeft className="h-4 w-4" />
             )}
-          </button>
+          </Button>
         </div>
 
         {/* Pipeline status + version */}

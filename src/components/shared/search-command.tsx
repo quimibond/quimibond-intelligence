@@ -32,6 +32,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { SeverityBadge } from "@/components/shared/severity-badge";
 import { cn, timeAgo, truncate } from "@/lib/utils";
 
@@ -412,12 +414,12 @@ export function SearchCommand() {
         {/* Input */}
         <div className="flex items-center gap-3 border-b border-border px-4">
           <Search className="size-4 shrink-0 text-muted-foreground" />
-          <input
+          <Input
             ref={inputRef}
             value={query}
             onChange={(e) => handleQueryChange(e.target.value)}
             placeholder="Buscar empresa, contacto, insight, factura… o escribe un comando"
-            className="flex-1 bg-transparent py-4 text-sm outline-none placeholder:text-muted-foreground"
+            className="flex-1 border-0 bg-transparent py-4 shadow-none outline-none focus-visible:ring-0 placeholder:text-muted-foreground"
             autoComplete="off"
             autoCapitalize="off"
             spellCheck={false}
@@ -459,16 +461,16 @@ export function SearchCommand() {
                     const isActive = idx === activeIndex;
                     const Icon = item.icon;
                     return (
-                      <button
+                      <Button
                         key={item.key}
-                        type="button"
+                        variant="ghost"
                         data-index={idx}
                         role="option"
                         aria-selected={isActive}
                         onMouseEnter={() => setActiveIndex(idx)}
                         onClick={() => navigate(item.href)}
                         className={cn(
-                          "flex w-full items-center gap-3 rounded-md px-3 py-2 text-left text-sm transition-colors",
+                          "flex h-auto w-full items-center justify-start gap-3 rounded-md px-3 py-2 text-left text-sm",
                           isActive
                             ? "bg-accent text-accent-foreground"
                             : "text-foreground hover:bg-accent/50"
@@ -495,7 +497,7 @@ export function SearchCommand() {
                         {item.detail && (
                           <div className="shrink-0">{item.detail}</div>
                         )}
-                      </button>
+                      </Button>
                     );
                   })}
                 </div>
