@@ -57,6 +57,23 @@ WHERE issue_type='partner_blacklist_69b' AND resolved_at IS NULL
 - `amount_mismatch`: 19
 - `partner_blacklist_69b`: 2
 
+**`ai_agents` schema real:**
+- NO tiene columna `default_confidence`. La config está en `config` JSONB.
+- `director_config` NO es tabla separada — es `ai_agents.config` JSONB.
+- Keys reales del config (lo que `loadDirectorConfig()` lee): `mode_rotation` (array), `max_insights_per_run`, `min_confidence_floor`, `max_business_impact_mxn`, `min_business_impact_mxn`.
+- Control de cadencia vive en `analysis_schedule` (`daily`/`weekly`/`hourly`/`manual`) + `MIN_INTERVAL_MS` en orchestrate — NO en una `max_runs_per_day` key.
+
+**Config sugerido para compliance** (vs. `riesgo` que usa thresholds similares):
+```json
+{
+  "mode_rotation": ["operativo", "estrategico"],
+  "max_insights_per_run": 3,
+  "min_confidence_floor": 0.85,
+  "max_business_impact_mxn": 50000000,
+  "min_business_impact_mxn": 500000
+}
+```
+
 ---
 
 ## File Structure
