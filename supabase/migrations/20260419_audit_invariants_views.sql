@@ -97,8 +97,9 @@ WITH classified AS (
   SELECT
     ab.*,
     coa.odoo_company_id AS coa_company_id,
+    -- SAT MX chart uses codes like 115.01.01; 1150* never matches.
     CASE
-      WHEN coa.code LIKE '1150%'
+      WHEN coa.code LIKE '115%'
         THEN 'account_balances.inventory_accounts_balance'
       WHEN coa.code LIKE '5%'
         THEN 'account_balances.cogs_accounts_balance'
