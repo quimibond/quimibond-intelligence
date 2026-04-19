@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
@@ -51,7 +52,7 @@ export interface RfmSegmentRow {
   contact_priority_score: number;
 }
 
-export async function getRfmSegments(
+async function _getRfmSegmentsRaw(
   segment?: RfmSegment,
   limit = 200
 ): Promise<RfmSegmentRow[]> {
@@ -86,6 +87,22 @@ export async function getRfmSegments(
     rfm_code: Number(r.rfm_code) || 0,
     contact_priority_score: Number(r.contact_priority_score) || 0,
   }));
+}
+
+// Cache RFM full-table fetch for 60s — rfm_segments is a MV refreshed by pg_cron,
+// so 60s staleness is acceptable and eliminates 4 identical round-trips per cold render
+// of /companies (CompaniesResumen + ReactivacionSection each call this).
+const _getRfmSegmentsCached = unstable_cache(
+  _getRfmSegmentsRaw,
+  ["rfm_segments"],
+  { revalidate: 60, tags: ["rfm_segments"] }
+);
+
+export async function getRfmSegments(
+  segment?: RfmSegment,
+  limit = 200
+): Promise<RfmSegmentRow[]> {
+  return _getRfmSegmentsCached(segment, limit);
 }
 
 export interface RfmSegmentSummary {
@@ -269,7 +286,7 @@ export interface StockoutRow {
   priority_score: number;
 }
 
-export async function getStockoutQueue(
+async function _getStockoutQueueRaw(
   urgency?: StockoutUrgency,
   limit = 100
 ): Promise<StockoutRow[]> {
@@ -306,6 +323,21 @@ export async function getStockoutQueue(
     urgency: (r.urgency as StockoutUrgency) ?? "OK",
     priority_score: Number(r.priority_score) || 0,
   }));
+}
+
+// Cache stockout_queue for 60s — it's a view over inventory_velocity (MV) and
+// real-time stock won't change faster than the Odoo sync (1h). Saves ~42ms on cold render.
+const _getStockoutQueueCached = unstable_cache(
+  _getStockoutQueueRaw,
+  ["stockout_queue"],
+  { revalidate: 60, tags: ["stockout_queue"] }
+);
+
+export async function getStockoutQueue(
+  urgency?: StockoutUrgency,
+  limit = 100
+): Promise<StockoutRow[]> {
+  return _getStockoutQueueCached(urgency, limit);
 }
 
 export interface StockoutSummary {

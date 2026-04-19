@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getUnifiedInvoicesForCompany } from "@/lib/queries/unified";
 import { resolveCompanyNames } from "./_helpers";
@@ -39,7 +40,7 @@ export interface PurchasesKpis {
   singleSourceSpent: number;
 }
 
-export async function getPurchasesKpis(): Promise<PurchasesKpis> {
+async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
   const sb = getServiceClient();
   const now = new Date();
   const thisStart = monthStart(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -114,6 +115,13 @@ export async function getPurchasesKpis(): Promise<PurchasesKpis> {
     singleSourceSpent,
   };
 }
+
+// Cache KPIs for 60s — data comes from Odoo sync (1h cadence), 60s staleness is fine
+export const getPurchasesKpis = unstable_cache(
+  _getPurchasesKpisRaw,
+  ["purchases_kpis"],
+  { revalidate: 60, tags: ["purchase_orders", "odoo_invoices"] }
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Single-source risk — productos con UN solo proveedor
@@ -449,7 +457,7 @@ export async function getPurchaseOrdersPage(
   };
 }
 
-export async function getPurchaseBuyerOptions(): Promise<string[]> {
+const _getPurchaseBuyerOptionsRaw = async (): Promise<string[]> => {
   const sb = getServiceClient();
   const since = new Date();
   since.setMonth(since.getMonth() - 6);
@@ -464,7 +472,14 @@ export async function getPurchaseBuyerOptions(): Promise<string[]> {
     if (r.buyer_name) set.add(r.buyer_name);
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
-}
+};
+
+// Cache buyer options — distinct buyer names change infrequently (max once/hour via Odoo sync)
+export const getPurchaseBuyerOptions = unstable_cache(
+  _getPurchaseBuyerOptionsRaw,
+  ["purchase_buyer_options"],
+  { revalidate: 300, tags: ["purchase_orders"] }
+);
 
 export async function getRecentPurchaseOrders(
   limit = 25
@@ -509,24 +524,35 @@ export interface TopSuppliersPage {
 }
 
 /**
+ * Loads all supplier_product_matrix rows once, cached for 60s, then
+ * aggregates in memory. Avoids re-fetching 3700 rows on every cold render.
+ */
+const _getAllSupplierMatrixRows = unstable_cache(
+  async () => {
+    const sb = getServiceClient();
+    const { data } = await sb
+      .from("supplier_product_matrix")
+      .select("supplier_name, purchase_value, purchase_orders, odoo_product_id")
+      .gt("purchase_value", 0);
+    return (data ?? []) as Array<{
+      supplier_name: string | null;
+      purchase_value: number | null;
+      purchase_orders: number | null;
+      odoo_product_id: number | null;
+    }>;
+  },
+  ["supplier_product_matrix_all"],
+  { revalidate: 60, tags: ["supplier_product_matrix"] }
+);
+
+/**
  * Top proveedores paginados + búsqueda. Se agrega en memoria porque la
  * view `supplier_product_matrix` es por supplier×product, no por supplier.
  */
 export async function getTopSuppliersPage(
   params: TableParams
 ): Promise<TopSuppliersPage> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("supplier_product_matrix")
-    .select("supplier_name, purchase_value, purchase_orders, odoo_product_id")
-    .gt("purchase_value", 0);
-
-  const rows = (data ?? []) as Array<{
-    supplier_name: string | null;
-    purchase_value: number | null;
-    purchase_orders: number | null;
-    odoo_product_id: number | null;
-  }>;
+  const rows = await _getAllSupplierMatrixRows();
   const buckets = new Map<
     string,
     { spent: number; products: Set<number>; orders: number }
@@ -583,17 +609,7 @@ export async function getTopSuppliersPage(
 }
 
 export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("supplier_product_matrix")
-    .select("supplier_name, purchase_value, purchase_orders, odoo_product_id")
-    .gt("purchase_value", 0);
-  const rows = (data ?? []) as Array<{
-    supplier_name: string | null;
-    purchase_value: number | null;
-    purchase_orders: number | null;
-    odoo_product_id: number | null;
-  }>;
+  const rows = await _getAllSupplierMatrixRows();
   const buckets = new Map<
     string,
     { spent: number; products: Set<number>; orders: number }
