@@ -1,69 +1,75 @@
 -- 20260419_audit_invariants_views.sql
--- SQL views for sync-audit Fase 1:
---   5 auxiliary bucket views (used by Odoo-side cross-check methods)
---   + 15 internal invariant views (A-O, checked SQL-side by run_internal_audits).
+-- Audit invariant views for sync-audit Fase 1.
 -- Spec: docs/superpowers/specs/2026-04-19-sync-audit-design.md
--- Plan: docs/superpowers/plans/2026-04-19-sync-audit-implementation.md
---       Tasks 1.2 Step 4, 1.3 Step 4, 1.4 Step 3, 1.5 Step 3, 1.6 Step 3,
---       2.1 Step 1, 2.2 Step 1, 2.3, 2.4.
+--
+-- NOTE: Original plan assumed Odoo-side column names. Production Supabase
+-- schema differs. Changes recorded here (see audit_invariants.md):
+--   * odoo_invoice_lines FK is `odoo_move_id` (not invoice_id), joined to
+--     odoo_invoices.odoo_invoice_id (not id).
+--   * odoo_invoice_lines has no `currency_code` / `exchange_rate` columns
+--     (only `currency` text).  Invariant D (fx_sanity) cannot be expressed
+--     and is stubbed.  Invariant C (fx_present) only checks that
+--     `price_subtotal_mxn` is not NULL for non-MXN lines.
+--   * odoo_order_lines uses `subtotal` / `subtotal_mxn` / `order_date` /
+--     `odoo_order_id` / `odoo_product_id`.
+--   * Orders parent-link uses `ol.odoo_order_id = so.odoo_order_id`
+--     (Odoo-id match), same for purchase.
+--   * odoo_account_balances has no `odoo_company_id` and its `period` is
+--     text ("YYYY-MM"). Company derived via join to odoo_chart_of_accounts
+--     on `odoo_account_id`. Chart uses `code` (not `account_code`).
+--   * odoo_deliveries uses `odoo_partner_id`; contacts has `odoo_partner_id`.
 
 -- ============================================================
 -- AUXILIARY BUCKET VIEWS (used by Odoo-side audit_* methods)
 -- ============================================================
 
--- Bucket aggregator for invoice_lines (used by audit_invoice_lines from Odoo)
--- Task 1.2 Step 4
 CREATE OR REPLACE VIEW v_audit_invoice_lines_buckets AS
 SELECT
-  to_char(i.invoice_date, 'YYYY-MM') || '|' || i.move_type || '|'
-    || i.odoo_company_id::text AS bucket_key,
-  i.invoice_date AS date_from,
-  i.invoice_date AS date_to,
-  i.move_type,
-  i.odoo_company_id,
+  to_char(il.invoice_date, 'YYYY-MM') || '|' || il.move_type || '|'
+    || COALESCE(il.odoo_company_id::text, '0') AS bucket_key,
+  il.invoice_date AS date_from,
+  il.invoice_date AS date_to,
+  il.move_type,
+  il.odoo_company_id,
   COUNT(*) AS count,
   SUM(
-    CASE WHEN i.move_type IN ('out_refund','in_refund') THEN -1 ELSE 1 END
+    CASE WHEN il.move_type IN ('out_refund','in_refund') THEN -1 ELSE 1 END
     * COALESCE(il.price_subtotal_mxn, il.price_subtotal)
   ) AS sum_subtotal_mxn,
   SUM(
-    CASE WHEN i.move_type IN ('out_refund','in_refund') THEN -1 ELSE 1 END
+    CASE WHEN il.move_type IN ('out_refund','in_refund') THEN -1 ELSE 1 END
     * il.quantity
   ) AS sum_qty
 FROM odoo_invoice_lines il
-JOIN odoo_invoices i ON il.invoice_id = i.id
+JOIN odoo_invoices i ON il.odoo_move_id = i.odoo_invoice_id
 WHERE i.state = 'posted'
-  AND i.invoice_date IS NOT NULL
-GROUP BY to_char(i.invoice_date,'YYYY-MM'), i.invoice_date, i.move_type,
-         i.odoo_company_id;
+  AND il.invoice_date IS NOT NULL
+GROUP BY to_char(il.invoice_date,'YYYY-MM'), il.invoice_date, il.move_type,
+         il.odoo_company_id;
 
 COMMENT ON VIEW v_audit_invoice_lines_buckets IS
   'Usado por quimibond.sync.audit.audit_invoice_lines';
 
--- Bucket aggregator for order_lines (used by audit_order_lines from Odoo)
--- Task 1.3 Step 4
 CREATE OR REPLACE VIEW v_audit_order_lines_buckets AS
 SELECT
-  to_char(date_order::date, 'YYYY-MM') || '|' || order_type || '|'
-    || odoo_company_id::text AS bucket_key,
+  to_char(order_date, 'YYYY-MM') || '|' || order_type || '|'
+    || COALESCE(odoo_company_id::text, '0') AS bucket_key,
   order_type,
   odoo_company_id,
   COUNT(*) AS count,
-  SUM(COALESCE(price_subtotal_mxn, price_subtotal)) AS sum_subtotal_mxn,
+  SUM(COALESCE(subtotal_mxn, subtotal)) AS sum_subtotal_mxn,
   SUM(qty) AS sum_qty
 FROM odoo_order_lines
-WHERE date_order IS NOT NULL
-GROUP BY to_char(date_order::date,'YYYY-MM'), order_type, odoo_company_id;
+WHERE order_date IS NOT NULL
+GROUP BY to_char(order_date,'YYYY-MM'), order_type, odoo_company_id;
 
 COMMENT ON VIEW v_audit_order_lines_buckets IS
   'Usado por quimibond.sync.audit.audit_order_lines';
 
--- Bucket aggregator for deliveries (used by audit_deliveries from Odoo)
--- Task 1.4 Step 3
 CREATE OR REPLACE VIEW v_audit_deliveries_buckets AS
 SELECT
   to_char(date_done::date, 'YYYY-MM') || '|' || state || '|'
-    || odoo_company_id::text AS bucket_key,
+    || COALESCE(odoo_company_id::text, '0') AS bucket_key,
   COUNT(*) AS count
 FROM odoo_deliveries
 WHERE date_done IS NOT NULL AND state IN ('done','cancel')
@@ -72,12 +78,10 @@ GROUP BY to_char(date_done::date,'YYYY-MM'), state, odoo_company_id;
 COMMENT ON VIEW v_audit_deliveries_buckets IS
   'Usado por quimibond.sync.audit.audit_deliveries';
 
--- Bucket aggregator for manufacturing (used by audit_manufacturing from Odoo)
--- Task 1.5 Step 3
 CREATE OR REPLACE VIEW v_audit_manufacturing_buckets AS
 SELECT
   to_char(date_start::date, 'YYYY-MM') || '|' || state || '|'
-    || odoo_company_id::text AS bucket_key,
+    || COALESCE(odoo_company_id::text, '0') AS bucket_key,
   COUNT(*) AS count,
   SUM(qty_produced) AS sum_qty
 FROM odoo_manufacturing
@@ -87,65 +91,59 @@ GROUP BY to_char(date_start::date,'YYYY-MM'), state, odoo_company_id;
 COMMENT ON VIEW v_audit_manufacturing_buckets IS
   'Usado por quimibond.sync.audit.audit_manufacturing';
 
--- Bucket aggregator for account_balances (used by audit_account_balances from Odoo)
--- Task 1.6 Step 3
+-- Account balances: `period` is text (YYYY-MM); company derived via coa join.
 CREATE OR REPLACE VIEW v_audit_account_balances_buckets AS
 WITH classified AS (
   SELECT
     ab.*,
+    coa.odoo_company_id AS coa_company_id,
     CASE
-      WHEN coa.account_code LIKE '1150%'
+      WHEN coa.code LIKE '1150%'
         THEN 'account_balances.inventory_accounts_balance'
-      WHEN coa.account_code LIKE '5%'
+      WHEN coa.code LIKE '5%'
         THEN 'account_balances.cogs_accounts_balance'
-      WHEN coa.account_code LIKE '4%'
+      WHEN coa.code LIKE '4%'
         THEN 'account_balances.revenue_accounts_balance'
       ELSE NULL
     END AS invariant_key
   FROM odoo_account_balances ab
   JOIN odoo_chart_of_accounts coa
-    ON coa.account_code = ab.account_code
-   AND coa.odoo_company_id = ab.odoo_company_id
+    ON coa.odoo_account_id = ab.odoo_account_id
 )
 SELECT
   invariant_key,
-  to_char(period_end::date, 'YYYY-MM') || '|' || odoo_company_id::text
-    AS bucket_key,
-  period_end::date AS period_end,
-  odoo_company_id,
+  period || '|' || COALESCE(coa_company_id::text, '0') AS bucket_key,
+  period,
+  coa_company_id AS odoo_company_id,
   SUM(balance) AS balance
 FROM classified
 WHERE invariant_key IS NOT NULL
-GROUP BY invariant_key, to_char(period_end::date,'YYYY-MM'),
-         period_end, odoo_company_id;
+GROUP BY invariant_key, period, coa_company_id;
 
 COMMENT ON VIEW v_audit_account_balances_buckets IS
   'Usado por quimibond.sync.audit.audit_account_balances';
 
 -- ============================================================
--- INTERNAL INVARIANT VIEWS (A-O, checked by run_internal_audits)
+-- INTERNAL INVARIANT VIEWS (A-O; D stubbed — schema lacks exchange_rate)
 -- ============================================================
 
--- A. reversal_sign: refunds with inconsistent sign
--- Task 2.1 Step 1
+-- A. reversal_sign: refunds with inconsistent sign between qty and subtotal
 CREATE OR REPLACE VIEW v_audit_invoice_lines_reversal_sign AS
-SELECT il.id AS line_id, il.invoice_id, i.move_type,
+SELECT il.id AS line_id, il.odoo_move_id, il.move_type,
        il.quantity, il.price_subtotal
 FROM odoo_invoice_lines il
-JOIN odoo_invoices i ON il.invoice_id = i.id
-WHERE i.move_type IN ('out_refund','in_refund')
+WHERE il.move_type IN ('out_refund','in_refund')
   AND (
-    (il.quantity > 0 AND il.price_subtotal > 0)  -- debería ser negativo
+    (il.quantity > 0 AND il.price_subtotal > 0)
     OR SIGN(COALESCE(il.quantity,0)) <> SIGN(COALESCE(il.price_subtotal,0))
   );
 
 COMMENT ON VIEW v_audit_invoice_lines_reversal_sign IS
-  'Invariant A: refund lines with wrong sign. Spec: 2026-04-19-sync-audit-design.md';
+  'Invariant A: refund lines with wrong sign.';
 
 -- B. price_recompute: broken price reconstruction
--- Task 2.1 Step 1
 CREATE OR REPLACE VIEW v_audit_invoice_lines_price_recompute AS
-SELECT il.id AS line_id, il.invoice_id,
+SELECT il.id AS line_id, il.odoo_move_id,
        il.price_unit, il.quantity, il.discount, il.price_subtotal,
        ABS(il.price_unit * il.quantity * (1 - COALESCE(il.discount,0)/100.0)
            - il.price_subtotal) AS drift
@@ -157,72 +155,58 @@ WHERE il.price_subtotal IS NOT NULL
 COMMENT ON VIEW v_audit_invoice_lines_price_recompute IS
   'Invariant B: invoice lines where price_unit * qty * (1-discount) != price_subtotal by >0.01.';
 
--- C. fx_present: non-MXN lines missing exchange rate or MXN amount
--- Task 2.1 Step 1
+-- C. fx_present (no exchange_rate column): flag non-MXN lines missing MXN amount
 CREATE OR REPLACE VIEW v_audit_invoice_lines_fx_present AS
-SELECT il.id AS line_id, il.invoice_id, il.currency_code,
-       il.exchange_rate, il.price_subtotal_mxn
+SELECT il.id AS line_id, il.odoo_move_id, il.currency,
+       il.price_subtotal, il.price_subtotal_mxn
 FROM odoo_invoice_lines il
-WHERE il.currency_code IS NOT NULL
-  AND il.currency_code <> 'MXN'
-  AND (il.exchange_rate IS NULL OR il.exchange_rate <= 0
-       OR il.price_subtotal_mxn IS NULL);
+WHERE il.currency IS NOT NULL
+  AND il.currency <> 'MXN'
+  AND il.price_subtotal_mxn IS NULL;
 
 COMMENT ON VIEW v_audit_invoice_lines_fx_present IS
-  'Invariant C: non-MXN invoice lines missing exchange_rate or price_subtotal_mxn.';
+  'Invariant C: non-MXN invoice lines missing price_subtotal_mxn (exchange_rate unavailable in schema).';
 
--- D. fx_sanity: price_subtotal * exchange_rate ≈ price_subtotal_mxn
--- Task 2.1 Step 1
+-- D. fx_sanity — STUBBED: schema lacks exchange_rate column in odoo_invoice_lines.
+-- Returns 0 rows so run_internal_audits always records severity=ok for this key
+-- (kept for inventory stability; re-enable after schema adds exchange_rate).
 CREATE OR REPLACE VIEW v_audit_invoice_lines_fx_sanity AS
-SELECT il.id AS line_id, il.invoice_id, il.currency_code,
-       il.price_subtotal, il.exchange_rate, il.price_subtotal_mxn,
-       ABS(il.price_subtotal * il.exchange_rate - il.price_subtotal_mxn) AS drift
-FROM odoo_invoice_lines il
-WHERE il.currency_code IS NOT NULL
-  AND il.currency_code <> 'MXN'
-  AND il.exchange_rate IS NOT NULL AND il.exchange_rate > 0
-  AND il.price_subtotal_mxn IS NOT NULL
-  AND ABS(il.price_subtotal * il.exchange_rate - il.price_subtotal_mxn)
-      > 0.01 * GREATEST(ABS(il.price_subtotal_mxn), 1);
+SELECT NULL::bigint AS line_id WHERE false;
 
 COMMENT ON VIEW v_audit_invoice_lines_fx_sanity IS
-  'Invariant D: FX conversion drift > 1% between price_subtotal*rate and price_subtotal_mxn.';
+  'Invariant D (STUBBED): would check FX drift but odoo_invoice_lines lacks exchange_rate column. Always empty.';
 
 -- E. orphan_product: order lines referencing non-existent products
--- Task 2.2 Step 1
 CREATE OR REPLACE VIEW v_audit_order_lines_orphan_product AS
-SELECT ol.id AS line_id, ol.order_id, ol.order_type, ol.product_id
+SELECT ol.id AS line_id, ol.odoo_order_id, ol.order_type, ol.odoo_product_id
 FROM odoo_order_lines ol
-LEFT JOIN odoo_products p ON ol.product_id = p.id
-WHERE ol.product_id IS NOT NULL AND p.id IS NULL;
+LEFT JOIN odoo_products p ON ol.odoo_product_id = p.odoo_product_id
+WHERE ol.odoo_product_id IS NOT NULL AND p.odoo_product_id IS NULL;
 
 COMMENT ON VIEW v_audit_order_lines_orphan_product IS
-  'Invariant E: order lines with product_id not in odoo_products.';
+  'Invariant E: order lines with odoo_product_id not in odoo_products.';
 
--- F-sale. orphan_order (sale): sale order lines referencing non-existent sale orders
--- Task 2.2 Step 1
+-- F-sale. orphan sale order
 CREATE OR REPLACE VIEW v_audit_order_lines_orphan_sale AS
-SELECT ol.id AS line_id, ol.order_id
+SELECT ol.id AS line_id, ol.odoo_order_id
 FROM odoo_order_lines ol
-LEFT JOIN odoo_sale_orders so ON ol.order_id = so.id
-WHERE ol.order_type = 'sale' AND so.id IS NULL;
+LEFT JOIN odoo_sale_orders so ON ol.odoo_order_id = so.odoo_order_id
+WHERE ol.order_type = 'sale' AND so.odoo_order_id IS NULL;
 
 COMMENT ON VIEW v_audit_order_lines_orphan_sale IS
-  'Invariant F (sale): sale order lines with order_id not in odoo_sale_orders.';
+  'Invariant F (sale): sale order lines with odoo_order_id not in odoo_sale_orders.';
 
--- F-purchase. orphan_order (purchase): purchase order lines referencing non-existent purchase orders
--- Task 2.2 Step 1
+-- F-purchase. orphan purchase order
 CREATE OR REPLACE VIEW v_audit_order_lines_orphan_purchase AS
-SELECT ol.id AS line_id, ol.order_id
+SELECT ol.id AS line_id, ol.odoo_order_id
 FROM odoo_order_lines ol
-LEFT JOIN odoo_purchase_orders po ON ol.order_id = po.id
-WHERE ol.order_type = 'purchase' AND po.id IS NULL;
+LEFT JOIN odoo_purchase_orders po ON ol.odoo_order_id = po.odoo_order_id
+WHERE ol.order_type = 'purchase' AND po.odoo_order_id IS NULL;
 
 COMMENT ON VIEW v_audit_order_lines_orphan_purchase IS
-  'Invariant F (purchase): purchase order lines with order_id not in odoo_purchase_orders.';
+  'Invariant F (purchase): purchase order lines with odoo_order_id not in odoo_purchase_orders.';
 
--- G. null_standard_price (warn): active products with NULL or zero standard_price
--- Task 2.3
+-- G. null_standard_price (warn)
 CREATE OR REPLACE VIEW v_audit_products_null_standard_price AS
 SELECT id, internal_ref, name
 FROM odoo_products
@@ -232,8 +216,7 @@ WHERE active = true
 COMMENT ON VIEW v_audit_products_null_standard_price IS
   'Invariant G: active products with null or zero standard_price.';
 
--- H. null_uom (error): active products with NULL uom_id
--- Task 2.3
+-- H. null_uom (error)
 CREATE OR REPLACE VIEW v_audit_products_null_uom AS
 SELECT id, internal_ref, name
 FROM odoo_products
@@ -242,8 +225,7 @@ WHERE active = true AND uom_id IS NULL;
 COMMENT ON VIEW v_audit_products_null_uom IS
   'Invariant H: active products with null uom_id.';
 
--- I. duplicate_default_code: active products sharing the same internal_ref
--- Task 2.3
+-- I. duplicate_default_code
 CREATE OR REPLACE VIEW v_audit_products_duplicate_default_code AS
 SELECT internal_ref, COUNT(*) AS dupes, array_agg(id) AS product_ids
 FROM odoo_products
@@ -254,75 +236,71 @@ HAVING COUNT(*) > 1;
 COMMENT ON VIEW v_audit_products_duplicate_default_code IS
   'Invariant I: active products with duplicate internal_ref (default_code).';
 
--- J. trial_balance: periods where sum of balances != 0 (beyond 1.0 tolerance)
--- Task 2.4
+-- J. trial_balance_zero_per_period
+-- balances.period is text; group by period + coa.odoo_company_id
 CREATE OR REPLACE VIEW v_audit_account_balances_trial_balance AS
-SELECT odoo_company_id,
-       to_char(period_end::date, 'YYYY-MM') AS period,
-       SUM(balance) AS total
-FROM odoo_account_balances
-GROUP BY odoo_company_id, to_char(period_end::date,'YYYY-MM')
-HAVING ABS(SUM(balance)) > 1.0;
+SELECT coa.odoo_company_id,
+       ab.period,
+       SUM(ab.balance) AS total
+FROM odoo_account_balances ab
+JOIN odoo_chart_of_accounts coa
+  ON coa.odoo_account_id = ab.odoo_account_id
+GROUP BY coa.odoo_company_id, ab.period
+HAVING ABS(SUM(ab.balance)) > 1.0;
 
 COMMENT ON VIEW v_audit_account_balances_trial_balance IS
   'Invariant J: periods where trial balance is not zero (tolerance 1.0 MXN).';
 
--- K. orphan_account: account_balances rows whose account_code is missing from chart_of_accounts
--- Task 2.4
+-- K. orphan_account (balances whose odoo_account_id has no chart match)
 CREATE OR REPLACE VIEW v_audit_account_balances_orphan_account AS
-SELECT ab.odoo_company_id, ab.account_code, COUNT(*) AS orphan_rows
+SELECT ab.odoo_account_id, ab.account_code, COUNT(*) AS orphan_rows
 FROM odoo_account_balances ab
 LEFT JOIN odoo_chart_of_accounts coa
-  ON coa.account_code = ab.account_code
- AND coa.odoo_company_id = ab.odoo_company_id
-WHERE coa.account_code IS NULL
-GROUP BY ab.odoo_company_id, ab.account_code;
+  ON coa.odoo_account_id = ab.odoo_account_id
+WHERE coa.odoo_account_id IS NULL
+GROUP BY ab.odoo_account_id, ab.account_code;
 
 COMMENT ON VIEW v_audit_account_balances_orphan_account IS
-  'Invariant K: account_balances rows whose account_code is not in odoo_chart_of_accounts.';
+  'Invariant K: account_balances rows whose odoo_account_id is not in odoo_chart_of_accounts.';
 
--- L. company_leak_invoice_lines: invoice lines whose company differs from their header invoice
--- Task 2.4
+-- L. company_leak_invoice_lines
 CREATE OR REPLACE VIEW v_audit_company_leak_invoice_lines AS
 SELECT il.id AS line_id, il.odoo_company_id AS line_company,
        i.odoo_company_id AS header_company
 FROM odoo_invoice_lines il
-JOIN odoo_invoices i ON il.invoice_id = i.id
+JOIN odoo_invoices i ON il.odoo_move_id = i.odoo_invoice_id
 WHERE il.odoo_company_id IS DISTINCT FROM i.odoo_company_id;
 
 COMMENT ON VIEW v_audit_company_leak_invoice_lines IS
   'Invariant L: invoice lines with odoo_company_id != their parent invoice odoo_company_id.';
 
--- M. company_leak_order_lines: order lines whose company differs from their header order
--- Task 2.4
+-- M. company_leak_order_lines
 CREATE OR REPLACE VIEW v_audit_company_leak_order_lines AS
 SELECT ol.id AS line_id, ol.order_type,
        ol.odoo_company_id AS line_company,
        COALESCE(so.odoo_company_id, po.odoo_company_id) AS header_company
 FROM odoo_order_lines ol
 LEFT JOIN odoo_sale_orders so
-  ON ol.order_type = 'sale' AND ol.order_id = so.id
+  ON ol.order_type = 'sale' AND ol.odoo_order_id = so.odoo_order_id
 LEFT JOIN odoo_purchase_orders po
-  ON ol.order_type = 'purchase' AND ol.order_id = po.id
+  ON ol.order_type = 'purchase' AND ol.odoo_order_id = po.odoo_order_id
 WHERE ol.odoo_company_id IS DISTINCT FROM
       COALESCE(so.odoo_company_id, po.odoo_company_id);
 
 COMMENT ON VIEW v_audit_company_leak_order_lines IS
   'Invariant M: order lines with odoo_company_id != their parent order odoo_company_id.';
 
--- N. orphan_partner in deliveries: deliveries with partner_id not found in contacts
--- Task 2.4
+-- N. orphan_partner in deliveries (via odoo_partner_id in contacts)
 CREATE OR REPLACE VIEW v_audit_deliveries_orphan_partner AS
-SELECT d.id AS delivery_id, d.partner_id
+SELECT d.id AS delivery_id, d.odoo_partner_id
 FROM odoo_deliveries d
-LEFT JOIN contacts c ON c.odoo_id = d.partner_id
-WHERE d.partner_id IS NOT NULL AND c.odoo_id IS NULL;
+LEFT JOIN contacts c ON c.odoo_partner_id = d.odoo_partner_id
+WHERE d.odoo_partner_id IS NOT NULL AND c.odoo_partner_id IS NULL;
 
 COMMENT ON VIEW v_audit_deliveries_orphan_partner IS
-  'Invariant N: deliveries with partner_id not found in contacts table.';
+  'Invariant N: deliveries with odoo_partner_id not found in contacts.';
 
--- O. done_without_date: done deliveries missing date_done
--- Task 2.4
+-- O. done_without_date
 CREATE OR REPLACE VIEW v_audit_deliveries_done_without_date AS
 SELECT id, state, date_done
 FROM odoo_deliveries
