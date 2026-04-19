@@ -21,6 +21,10 @@ export interface UnifiedInvoice {
   invoice_date: string | null;
   due_date: string | null;
   days_overdue: number | null;
+  odoo_amount_total_mxn: number | null;
+  odoo_amount_residual_mxn: number | null;
+  salesperson_name: string | null;
+  salesperson_user_id: number | null;
   odoo_currency: string | null;
   moneda_fiscal: string | null;
   partner_name: string | null;
@@ -96,7 +100,7 @@ export async function getUnifiedRevenueAggregates(
 ): Promise<UnifiedRevenueAggregate> {
   const supabase = getServiceClient();
   let q = supabase.from("invoices_unified")
-    .select("match_status,odoo_amount_total,uuid_sat,estado_sat,odoo_state,direction")
+    .select("match_status,odoo_amount_total,odoo_amount_total_mxn,uuid_sat,estado_sat,odoo_state,direction")
     .eq("direction", "issued")
     .in("match_status", ["match_uuid", "match_composite", "odoo_only"])
     .gte("invoice_date", fromDate)
@@ -105,8 +109,8 @@ export async function getUnifiedRevenueAggregates(
   if (opts?.companyId) q = q.eq("company_id", opts.companyId);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as Array<{ match_status: string; odoo_amount_total: number | null; uuid_sat: string | null }>;
-  const revenue = rows.reduce((s, r) => s + (r.odoo_amount_total ?? 0), 0);
+  const rows = (data ?? []) as Array<{ match_status: string; odoo_amount_total: number | null; odoo_amount_total_mxn: number | null; uuid_sat: string | null }>;
+  const revenue = rows.reduce((s, r) => s + (r.odoo_amount_total_mxn ?? r.odoo_amount_total ?? 0), 0);
   const count = rows.length;
   const uuidValidated = rows.filter((r) => r.uuid_sat !== null).length;
   const pctValidated = count > 0 ? (uuidValidated / count) * 100 : 0;
@@ -118,7 +122,7 @@ export async function getUnifiedCashFlowAging(
 ): Promise<UnifiedAgingBucket[]> {
   const supabase = getServiceClient();
   let q = supabase.from("invoices_unified")
-    .select("amount_residual,days_overdue,match_status,estado_sat,odoo_state,direction")
+    .select("amount_residual,odoo_amount_residual_mxn,days_overdue,match_status,estado_sat,odoo_state,direction,payment_state")
     .eq("direction", "issued")
     .in("match_status", ["match_uuid", "match_composite", "odoo_only"])
     .not("estado_sat", "eq", "cancelado")
@@ -126,7 +130,7 @@ export async function getUnifiedCashFlowAging(
   if (opts?.companyId) q = q.eq("company_id", opts.companyId);
   const { data, error } = await q;
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as Array<{ amount_residual: number | null; days_overdue: number | null }>;
+  const rows = (data ?? []) as Array<{ amount_residual: number | null; odoo_amount_residual_mxn: number | null; days_overdue: number | null }>;
   const buckets: Record<UnifiedAgingBucket["bucket"], UnifiedAgingBucket> = {
     "0-30":  { bucket: "0-30",  amount: 0, count: 0 },
     "31-60": { bucket: "31-60", amount: 0, count: 0 },
@@ -135,7 +139,7 @@ export async function getUnifiedCashFlowAging(
   };
   for (const r of rows) {
     const d = r.days_overdue ?? 0;
-    const a = r.amount_residual ?? 0;
+    const a = r.odoo_amount_residual_mxn ?? r.amount_residual ?? 0;
     const key: UnifiedAgingBucket["bucket"] = d <= 30 ? "0-30" : d <= 60 ? "31-60" : d <= 90 ? "61-90" : "90+";
     buckets[key].amount += a;
     buckets[key].count += 1;

@@ -87,7 +87,7 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
   const selfIds = await getSelfCompanyIds();
   const { data } = await sb
     .from("invoices_unified")
-    .select("amount_residual, days_overdue")
+    .select("amount_residual, odoo_amount_residual_mxn, days_overdue")
     .eq("direction", "issued")
     .in("match_status", UNIFIED_MATCH_STATUSES)
     .not("estado_sat", "eq", "cancelado")
@@ -97,6 +97,7 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
 
   const rows = (data ?? []) as Array<{
     amount_residual: number | null;
+    odoo_amount_residual_mxn: number | null;
     days_overdue: number | null;
   }>;
 
@@ -111,7 +112,7 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
       bucket: b.label,
       count: inBucket.length,
       amount_mxn: inBucket.reduce(
-        (acc, r) => acc + (Number(r.amount_residual) || 0),
+        (acc, r) => acc + (Number(r.odoo_amount_residual_mxn ?? r.amount_residual) || 0),
         0
       ),
     };
@@ -228,7 +229,7 @@ async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[
   const { data } = await sb
     .from("invoices_unified")
     .select(
-      "odoo_invoice_id, odoo_ref, company_id, odoo_amount_total, amount_residual, odoo_currency, days_overdue, due_date, invoice_date, payment_state, uuid_sat, estado_sat"
+      "odoo_invoice_id, odoo_ref, company_id, odoo_amount_total, odoo_amount_total_mxn, amount_residual, odoo_amount_residual_mxn, odoo_currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, salesperson_user_id, uuid_sat, estado_sat"
     )
     .eq("direction", "issued")
     .in("match_status", UNIFIED_MATCH_STATUSES)
@@ -236,7 +237,7 @@ async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[
     .in("payment_state", ["not_paid", "partial"])
     .gt("days_overdue", 0)
     .not("company_id", "in", pgInList(selfIds))
-    .order("amount_residual", { ascending: false, nullsFirst: false })
+    .order("odoo_amount_residual_mxn", { ascending: false, nullsFirst: false })
     .limit(limit);
 
   type Raw = {
@@ -244,12 +245,16 @@ async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[
     odoo_ref: string | null;
     company_id: number | null;
     odoo_amount_total: number | null;
+    odoo_amount_total_mxn: number | null;
     amount_residual: number | null;
+    odoo_amount_residual_mxn: number | null;
     odoo_currency: string | null;
     days_overdue: number | null;
     due_date: string | null;
     invoice_date: string | null;
     payment_state: string | null;
+    salesperson_name: string | null;
+    salesperson_user_id: number | null;
     uuid_sat: string | null;
     estado_sat: string | null;
   };
@@ -258,14 +263,14 @@ async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[
     name: row.odoo_ref,
     company_id: row.company_id,
     company_name: null, // invoices_unified doesn't have company_name directly
-    amount_total_mxn: Number(row.odoo_amount_total) || 0,
-    amount_residual_mxn: Number(row.amount_residual) || 0,
+    amount_total_mxn: Number(row.odoo_amount_total_mxn ?? row.odoo_amount_total) || 0,
+    amount_residual_mxn: Number(row.odoo_amount_residual_mxn ?? row.amount_residual) || 0,
     currency: row.odoo_currency,
     days_overdue: row.days_overdue,
     due_date: row.due_date,
     invoice_date: row.invoice_date,
     payment_state: row.payment_state,
-    salesperson_name: null, // invoices_unified has no salesperson field
+    salesperson_name: row.salesperson_name,
     uuid_sat: row.uuid_sat,
     estado_sat: row.estado_sat,
   }));
@@ -396,7 +401,7 @@ async function unifiedGetOverdueInvoicesPage(
   let query = sb
     .from("invoices_unified")
     .select(
-      "odoo_invoice_id, odoo_ref, company_id, odoo_amount_total, amount_residual, odoo_currency, days_overdue, due_date, invoice_date, payment_state, uuid_sat, estado_sat",
+      "odoo_invoice_id, odoo_ref, company_id, odoo_amount_total, odoo_amount_total_mxn, amount_residual, odoo_amount_residual_mxn, odoo_currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, salesperson_user_id, uuid_sat, estado_sat",
       { count: "exact" }
     )
     .eq("direction", "issued")
@@ -412,7 +417,9 @@ async function unifiedGetOverdueInvoicesPage(
     if (next) query = query.lt("invoice_date", next);
   }
   if (params.q) query = query.ilike("odoo_ref", `%${params.q}%`);
-  // salesperson filter is not available in invoices_unified — skip
+  if (params.salesperson && params.salesperson.length > 0) {
+    query = query.in("salesperson_name", params.salesperson);
+  }
 
   if (params.bucket && params.bucket.length > 0) {
     const orParts: string[] = [];
@@ -438,12 +445,16 @@ async function unifiedGetOverdueInvoicesPage(
     odoo_ref: string | null;
     company_id: number | null;
     odoo_amount_total: number | null;
+    odoo_amount_total_mxn: number | null;
     amount_residual: number | null;
+    odoo_amount_residual_mxn: number | null;
     odoo_currency: string | null;
     days_overdue: number | null;
     due_date: string | null;
     invoice_date: string | null;
     payment_state: string | null;
+    salesperson_name: string | null;
+    salesperson_user_id: number | null;
     uuid_sat: string | null;
     estado_sat: string | null;
   };
@@ -452,14 +463,14 @@ async function unifiedGetOverdueInvoicesPage(
     name: row.odoo_ref,
     company_id: row.company_id,
     company_name: null,
-    amount_total_mxn: Number(row.odoo_amount_total) || 0,
-    amount_residual_mxn: Number(row.amount_residual) || 0,
+    amount_total_mxn: Number(row.odoo_amount_total_mxn ?? row.odoo_amount_total) || 0,
+    amount_residual_mxn: Number(row.odoo_amount_residual_mxn ?? row.amount_residual) || 0,
     currency: row.odoo_currency,
     days_overdue: row.days_overdue,
     due_date: row.due_date,
     invoice_date: row.invoice_date,
     payment_state: row.payment_state,
-    salesperson_name: null,
+    salesperson_name: row.salesperson_name,
     uuid_sat: row.uuid_sat,
     estado_sat: row.estado_sat,
   }));
@@ -502,12 +513,27 @@ async function legacyGetOverdueSalespeopleOptions(): Promise<string[]> {
   return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
 }
 
-export async function getOverdueSalespeopleOptions(): Promise<string[]> {
-  if (USE_UNIFIED_LAYER) {
-    // invoices_unified has no salesperson_name — return empty so the facet
-    // renders with no options (hides gracefully in DataTableToolbar)
-    return [];
+async function unifiedGetOverdueSalespeopleOptions(): Promise<string[]> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.from("invoices_unified")
+    .select("salesperson_name")
+    .eq("direction", "issued")
+    .in("match_status", UNIFIED_MATCH_STATUSES)
+    .not("estado_sat", "eq", "cancelado")
+    .in("payment_state", ["not_paid", "partial", "in_payment"])
+    .not("days_overdue", "eq", 0)
+    .not("salesperson_name", "is", null)
+    .limit(5000);
+  if (error) throw new Error(error.message);
+  const names = new Set<string>();
+  for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
+    if (r.salesperson_name) names.add(r.salesperson_name);
   }
+  return [...names].sort();
+}
+
+export async function getOverdueSalespeopleOptions(): Promise<string[]> {
+  if (USE_UNIFIED_LAYER) return unifiedGetOverdueSalespeopleOptions();
   return legacyGetOverdueSalespeopleOptions();
 }
 
