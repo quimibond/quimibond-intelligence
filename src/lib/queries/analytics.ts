@@ -162,8 +162,8 @@ export interface CeiRow {
   cei_delta_vs_prev: number | null;
 }
 
-export async function getCollectionEffectiveness(
-  months = 12
+async function _getCollectionEffectivenessRaw(
+  months: number
 ): Promise<CeiRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
@@ -188,6 +188,18 @@ export async function getCollectionEffectiveness(
     cei_delta_vs_prev:
       r.cei_delta_vs_prev != null ? Number(r.cei_delta_vs_prev) : null,
   }));
+}
+
+const _getCollectionEffectivenessCached = unstable_cache(
+  _getCollectionEffectivenessRaw,
+  ["analytics-collection-effectiveness-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
+
+export async function getCollectionEffectiveness(
+  months = 12
+): Promise<CeiRow[]> {
+  return _getCollectionEffectivenessCached(months);
 }
 
 // ──────────────────────────────────────────────────────────────────────────

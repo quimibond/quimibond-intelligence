@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, joinedCompanyName, pgInList } from "./_helpers";
 import {
@@ -119,10 +120,16 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
   });
 }
 
-export async function getArAging(): Promise<ArAgingBucket[]> {
+async function _getArAgingRaw(): Promise<ArAgingBucket[]> {
   if (USE_UNIFIED_LAYER) return unifiedGetArAging();
   return legacyGetArAging();
 }
+
+export const getArAging = unstable_cache(
+  _getArAgingRaw,
+  ["invoices-ar-aging-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Empresas con cartera vencida (view: cash_flow_aging — ya normalizada)
@@ -276,11 +283,23 @@ async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[
   }));
 }
 
-export async function getOverdueInvoices(
-  limit = 50
+async function _getOverdueInvoicesRaw(
+  limit: number
 ): Promise<OverdueInvoice[]> {
   if (USE_UNIFIED_LAYER) return unifiedGetOverdueInvoices(limit);
   return legacyGetOverdueInvoices(limit);
+}
+
+const _getOverdueInvoicesCached = unstable_cache(
+  _getOverdueInvoicesRaw,
+  ["invoices-overdue-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
+
+export async function getOverdueInvoices(
+  limit = 50
+): Promise<OverdueInvoice[]> {
+  return _getOverdueInvoicesCached(limit);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -532,10 +551,16 @@ async function unifiedGetOverdueSalespeopleOptions(): Promise<string[]> {
   return [...names].sort();
 }
 
-export async function getOverdueSalespeopleOptions(): Promise<string[]> {
+async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
   if (USE_UNIFIED_LAYER) return unifiedGetOverdueSalespeopleOptions();
   return legacyGetOverdueSalespeopleOptions();
 }
+
+export const getOverdueSalespeopleOptions = unstable_cache(
+  _getOverdueSalespeopleOptionsRaw,
+  ["invoices-overdue-salespeople-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Company aging — versión paginada + filtrable
@@ -717,7 +742,7 @@ export async function getPaymentPredictions(
   }));
 }
 
-export async function getPaymentRiskKpis(): Promise<{
+async function _getPaymentRiskKpisRaw(): Promise<{
   abnormalCount: number;
   abnormalPending: number;
   criticalCount: number;
@@ -753,3 +778,9 @@ export async function getPaymentRiskKpis(): Promise<{
     criticalPending,
   };
 }
+
+export const getPaymentRiskKpis = unstable_cache(
+  _getPaymentRiskKpisRaw,
+  ["invoices-payment-risk-kpis-v1"],
+  { revalidate: 60, tags: ["invoices-unified"] }
+);
