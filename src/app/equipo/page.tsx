@@ -17,7 +17,7 @@ import {
   MobileCard,
   EmptyState,
   type DataTableColumn,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";

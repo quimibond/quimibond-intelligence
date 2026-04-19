@@ -28,7 +28,7 @@ import {
   type DataTableColumn,
   type DataViewChartSpec,
   type DataViewMode,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -47,8 +47,8 @@ import {
   type PaymentPredictionRow,
 } from "@/lib/queries/invoices";
 import { getUnifiedRefreshStaleness } from "@/lib/queries/unified";
-import { SatBadge } from "@/components/shared/v2/sat-badge";
-import { RefreshStalenessBadge } from "@/components/shared/v2/refresh-staleness-badge";
+import { SatBadge } from "@/components/patterns/sat-badge";
+import { RefreshStalenessBadge } from "@/components/patterns/refresh-staleness-badge";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { getCfoSnapshot } from "@/lib/queries/finance";
 import {

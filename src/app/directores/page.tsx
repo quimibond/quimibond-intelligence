@@ -17,7 +17,7 @@ import {
   EmptyState,
   Currency,
   DateDisplay,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Badge } from "@/components/ui/badge";

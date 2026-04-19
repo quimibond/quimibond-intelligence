@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useSidebar } from "@/components/layout/sidebar-context";
 import { cn } from "@/lib/utils";
-import { PullToRefresh } from "@/components/shared/v2/pull-to-refresh";
+import { PullToRefresh } from "@/components/patterns/pull-to-refresh";
 
 export function MainContent({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar();

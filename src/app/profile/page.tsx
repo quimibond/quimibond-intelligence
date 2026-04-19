@@ -12,8 +12,8 @@ import {
   Sun,
 } from "lucide-react";
 
-import { PageHeader } from "@/components/shared/v2";
-import { TableDensityToggle } from "@/components/shared/v2/table-density-toggle";
+import { PageHeader } from "@/components/patterns";
+import { TableDensityToggle } from "@/components/patterns/table-density-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

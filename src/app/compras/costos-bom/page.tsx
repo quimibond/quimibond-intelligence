@@ -22,7 +22,7 @@ import {
   Currency,
   EmptyState,
   type DataTableColumn,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";

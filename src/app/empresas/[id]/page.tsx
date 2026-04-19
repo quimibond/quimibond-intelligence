@@ -4,7 +4,7 @@ import { Building2 } from "lucide-react";
 
 import {
   PageHeader,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import {
   Tabs,
   TabsContent,

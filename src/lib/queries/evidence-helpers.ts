@@ -1,5 +1,5 @@
 import type { EvidencePack } from "./evidence";
-import type { TimelineEventType } from "@/components/shared/v2/evidence-timeline";
+import type { TimelineEventType } from "@/components/patterns/evidence-timeline";
 
 export interface BuiltTimelineEvent {
   date: string;

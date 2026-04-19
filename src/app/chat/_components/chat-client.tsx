@@ -4,7 +4,7 @@ import * as React from "react";
 import { Bot, Loader2, Send, Sparkles, User } from "lucide-react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/shared/v2/page-header";
+import { PageHeader } from "@/components/patterns/page-header";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";

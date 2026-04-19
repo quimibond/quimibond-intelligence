@@ -14,7 +14,7 @@ import {
   PageHeader,
   CompanyLink,
   DateDisplay,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getContactDetail } from "@/lib/queries/contacts";

@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import { Archive, Check, Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { ConfirmDialog } from "@/components/shared/v2/confirm-dialog";
+import { ConfirmDialog } from "@/components/patterns/confirm-dialog";
 import { setInsightState } from "../../../actions";
 import type { InsightState } from "@/lib/queries/insights";
 

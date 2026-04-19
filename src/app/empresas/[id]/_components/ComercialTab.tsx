@@ -12,7 +12,7 @@ import {
   StatusBadge,
   makeSortHref,
   type DataTableColumn,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import {

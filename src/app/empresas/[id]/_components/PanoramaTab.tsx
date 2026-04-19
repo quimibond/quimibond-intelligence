@@ -7,8 +7,8 @@ import {
   DateDisplay,
   EmptyState,
   EvidencePackView,
-} from "@/components/shared/v2";
-import { SeverityBadge } from "@/components/shared/v2/severity-badge";
+} from "@/components/patterns";
+import { SeverityBadge } from "@/components/patterns/severity-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { getCompanyEvidencePack } from "@/lib/queries/evidence";

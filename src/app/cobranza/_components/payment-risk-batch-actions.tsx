@@ -3,7 +3,7 @@
 import * as React from "react";
 import { Copy, Hash, Mail } from "lucide-react";
 
-import { BatchActionBar } from "@/components/shared/v2/batch-action-bar";
+import { BatchActionBar } from "@/components/patterns/batch-action-bar";
 
 interface PaymentRiskBatchActionsProps {
   /** Mapa `company_id → nombre` para reconstruir info desde los IDs seleccionados. */

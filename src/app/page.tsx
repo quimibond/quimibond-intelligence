@@ -22,7 +22,7 @@ import {
   Currency,
   DateDisplay,
   SeverityBadge,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 

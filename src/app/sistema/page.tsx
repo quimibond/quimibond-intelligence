@@ -23,7 +23,7 @@ import {
   DateDisplay,
   EmptyState,
   type DataTableColumn,
-} from "@/components/shared/v2";
+} from "@/components/patterns";
 import {
   Tabs,
   TabsContent,
