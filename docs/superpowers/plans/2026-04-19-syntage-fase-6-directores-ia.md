@@ -29,6 +29,34 @@ La tabla `public.reconciliation_issues` (verified via `information_schema.column
 
 Task 2 ya aplicó estas correcciones. El resto del plan se lee con este patching implícito.
 
+### Otras tablas/RPCs reales (verificadas 2026-04-19)
+
+**`partner_blacklist_69b`** NO es una tabla separada. Es un `issue_type` value en `reconciliation_issues` (2 rows actuales). Todas las queries deben ser:
+```sql
+SELECT * FROM public.reconciliation_issues
+WHERE issue_type='partner_blacklist_69b' AND resolved_at IS NULL
+```
+
+**`syntage_tax_status`** columnas reales (1 row actual):
+- `opinion_cumplimiento` (text) — NO `opinion`
+- `fecha_consulta` (timestamptz) — NO `retrieved_at`
+
+**`get_syntage_reconciliation_summary()`** devuelve JSONB con estas keys reales:
+- `by_type` (array of {type, open, resolved_7d, severity}) — NO `by_issue_type` (map)
+- `by_severity` (object {critical, high, medium, low}) — OK como planeado
+- `top_companies`, `resolution_rate_7d`, `recent_critical`, `generated_at`, `invoices_unified_refreshed_at`, `payments_unified_refreshed_at`
+- **NO tiene** `total_open` — hay que computarlo sumando `by_severity` o con query directo
+
+**Issue types vigentes (counts al 2026-04-19):**
+- `sat_only_cfdi_received`: 10,929
+- `sat_only_cfdi_issued`: 9,985
+- `payment_missing_complemento`: 5,552
+- `complemento_missing_payment`: 933
+- `posted_but_sat_uncertified`: 124
+- `cancelled_but_posted`: 97
+- `amount_mismatch`: 19
+- `partner_blacklist_69b`: 2
+
 ---
 
 ## File Structure
