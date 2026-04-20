@@ -917,23 +917,13 @@ async function PriceAnomaliesTable({
   }
   const view = parseViewParam(searchParams, "pa_view");
   const chart: DataViewChartSpec = {
-    type: "composed",
-    xKey: "product_ref",
-    topN: 15,
+    type: "scatter",
+    xKey: "price_vs_avg_pct",
+    yKey: "price_change_pct",
+    sizeKey: "total_spent",
     series: [
-      {
-        dataKey: "price_vs_avg_pct",
-        label: "% vs promedio",
-        kind: "bar",
-        yAxisId: "left",
-      },
-      {
-        dataKey: "price_change_pct",
-        label: "Δ MoM %",
-        kind: "line",
-        yAxisId: "right",
-        color: "var(--chart-5)",
-      },
+      { dataKey: "price_vs_avg_pct", label: "% vs promedio" },
+      { dataKey: "price_change_pct", label: "Δ MoM %" },
     ],
     valueFormat: "percent",
     secondaryValueFormat: "percent",
@@ -946,6 +936,7 @@ async function PriceAnomaliesTable({
       value: 0,
       axis: "y",
     },
+    height: 360,
   };
   return (
     <>
@@ -1108,6 +1099,7 @@ async function TopSuppliersTable({
     type: "bar",
     xKey: "supplier_name",
     topN: 15,
+    layout: "horizontal",
     series: [
       {
         dataKey: "total_spent",
@@ -1116,6 +1108,7 @@ async function TopSuppliersTable({
       },
     ],
     valueFormat: "currency-compact",
+    height: 420,
   };
   return (
     <>
@@ -1298,10 +1291,18 @@ async function RecentPurchasesTable({
       {
         dataKey: "amount_total_mxn",
         label: "Monto",
-        color: "var(--chart-3)",
       },
     ],
     valueFormat: "currency-compact",
+    colorBy: "state",
+    colorMap: {
+      draft: "var(--muted-foreground)",
+      sent: "var(--chart-3)",
+      "to approve": "var(--warning)",
+      purchase: "var(--chart-2)",
+      done: "var(--success)",
+      cancel: "var(--destructive)",
+    },
   };
   return (
     <>
