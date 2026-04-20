@@ -161,7 +161,7 @@ export default async function VentasPage({
           <Suspense
             fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
           >
-            <RevenueChartSection />
+            <RevenueChartSection searchParams={sp} />
           </Suspense>
         </CardContent>
       </Card>
@@ -206,7 +206,13 @@ export default async function VentasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodSelector paramName="rr_period" label="Período" />
+            <Badge
+              variant="outline"
+              className="text-xs font-normal"
+              title="Reorder risk es un snapshot calculado a partir del ciclo de compra histórico de cada cliente. No es filtrable por período."
+            >
+              snapshot actual
+            </Badge>
             <TableViewOptions
               paramPrefix="rr_"
               columns={reorderRiskViewColumns}
@@ -408,14 +414,17 @@ async function SalesKpisSection() {
   );
 }
 
-async function RevenueChartSection() {
-  const data = await getSalesRevenueTrend(12);
+async function RevenueChartSection({ searchParams }: { searchParams?: SearchParams }) {
+  const revPeriod = parsePeriod(searchParams?.rev_period);
+  const hasPeriod = revPeriod.kind === "preset" && revPeriod.preset !== "all";
+  const bounds = hasPeriod ? periodBoundsIso(revPeriod) : null;
+  const data = await getSalesRevenueTrend(12, bounds ?? undefined);
   if (!data || data.length === 0) {
     return (
       <EmptyState
         icon={TrendingUp}
         title="Sin datos de ingresos"
-        description="No hay datos en monthly_revenue_by_company."
+        description="No hay datos de ingresos para el período seleccionado."
         compact
       />
     );
@@ -828,7 +837,26 @@ async function TopCustomersTable({
     defaultSize: 25,
     defaultSort: "-revenue_90d",
   });
-  const { rows, total } = await getTopCustomersPage(params);
+
+  // Apply tc_period if set (manual tc_from/tc_to take precedence)
+  const tcPeriod = parsePeriod(searchParams.tc_period);
+  const useManualRange = params.from || params.to;
+  const effectiveFrom =
+    params.from ??
+    (useManualRange || (tcPeriod.kind === "preset" && tcPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(tcPeriod).from);
+  const effectiveTo =
+    params.to ??
+    (useManualRange || (tcPeriod.kind === "preset" && tcPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(tcPeriod).to);
+
+  const { rows, total } = await getTopCustomersPage({
+    ...params,
+    from: effectiveFrom,
+    to: effectiveTo,
+  });
   const visibleKeys = parseVisibleKeys(searchParams, "tc_");
   const sortHref = makeSortHref({
     pathname: "/ventas",

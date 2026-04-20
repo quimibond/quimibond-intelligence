@@ -182,7 +182,13 @@ export default async function FinanzasPage({
                   <CardTitle className="text-base">Capital de trabajo</CardTitle>
                   <DataSourceBadge source="odoo" />
                 </div>
-                <PeriodSelector paramName="wc_period" label="Período" />
+                <Badge
+                  variant="outline"
+                  className="text-xs font-normal"
+                  title="Working capital es un snapshot calculado a partir de los saldos contables actuales (CxC, CxP, inventario). No es filtrable por período."
+                >
+                  snapshot actual
+                </Badge>
               </CardHeader>
               <CardContent className="pb-4">
                 <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
