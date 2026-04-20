@@ -66,6 +66,7 @@ import {
 import { getPlHistory } from "@/lib/queries/analytics/finance";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
+import { YearSelector } from "@/components/patterns/year-selector";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
@@ -151,8 +152,9 @@ export default async function VentasPage({
 
       <section id="trend" className="scroll-mt-24">
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
           <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
+          <YearSelector paramName="rev_year" label="Año" />
         </CardHeader>
         <CardContent>
           <Suspense
@@ -203,6 +205,7 @@ export default async function VentasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="rr_year" label="Año" />
             <TableViewOptions
               paramPrefix="rr_"
               columns={reorderRiskViewColumns}
@@ -256,6 +259,7 @@ export default async function VentasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="tc_year" label="Año" />
             <TableViewOptions
               paramPrefix="tc_"
               columns={topCustomerViewColumns}
@@ -306,6 +310,7 @@ export default async function VentasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="so_year" label="Año" />
             <TableViewOptions
               paramPrefix="so_"
               columns={saleOrderViewColumns}

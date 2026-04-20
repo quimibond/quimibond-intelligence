@@ -61,6 +61,7 @@ import {
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
+import { YearSelector } from "@/components/patterns/year-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Compras" };
@@ -280,6 +281,7 @@ export default async function ComprasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="pa_year" label="Año" />
             <TableViewOptions
               paramPrefix="pa_"
               columns={priceAnomalyViewColumns}
@@ -328,6 +330,7 @@ export default async function ComprasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="sup_year" label="Año" />
             <TableViewOptions
               paramPrefix="sup_"
               columns={topSupplierViewColumns}
@@ -359,6 +362,7 @@ export default async function ComprasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="po_year" label="Año" />
             <TableViewOptions
               paramPrefix="po_"
               columns={purchaseOrderViewColumns}
