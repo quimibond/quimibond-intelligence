@@ -104,8 +104,7 @@ export function periodBounds(value: PeriodValue): { from: Date; to: Date } {
         case "all":
           return { from: new Date("2014-01-01"), to: new Date(y + 1, 0, 1) };
       }
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      // exhaustive — should never reach here
+      // exhaustive — fallthrough guarded below
       break;
     case "year":
       return {

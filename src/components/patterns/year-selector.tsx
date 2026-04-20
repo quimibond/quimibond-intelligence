@@ -47,6 +47,11 @@ function yearShortLabel(y: YearValue | undefined): string {
 // ──────────────────────────────────────────────────────────────────────────
 // Component
 // ──────────────────────────────────────────────────────────────────────────
+/**
+ * @deprecated Fase 1.8 — use `PeriodSelector` instead (richer filter with
+ * presets + quarter/month granularity). This component will be removed
+ * once the migration settles. See `src/components/patterns/period-selector.tsx`.
+ */
 export interface YearSelectorProps {
   /** URL search param name (default "year"). Use unique prefixed names per section, e.g. "inv_year". */
   paramName?: string;
