@@ -7,6 +7,7 @@ import {
   paginationRange,
   type TableParams,
 } from "../_shared/table-params";
+import { type YearValue, yearBounds } from "../_shared/year-filter";
 
 /**
  * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.
@@ -230,6 +231,7 @@ async function unifiedGetOverdueInvoicesPage(
   params: TableParams & {
     bucket?: string[];
     salesperson?: string[];
+    year?: YearValue;
   }
 ): Promise<OverdueInvoicePage> {
   const sb = getServiceClient();
@@ -254,10 +256,18 @@ async function unifiedGetOverdueInvoicesPage(
     .gt("days_overdue", 0)
     .not("company_id", "in", pgInList(selfIds));
 
-  if (params.from) query = query.gte("invoice_date", params.from);
-  if (params.to) {
-    const next = endOfDay(params.to);
-    if (next) query = query.lt("invoice_date", next);
+  // year overrides manual dateRange params when set
+  if (params.year != null) {
+    const { from, to } = yearBounds(params.year);
+    query = query
+      .gte("invoice_date", from.toISOString().slice(0, 10))
+      .lt("invoice_date", to.toISOString().slice(0, 10));
+  } else {
+    if (params.from) query = query.gte("invoice_date", params.from);
+    if (params.to) {
+      const next = endOfDay(params.to);
+      if (next) query = query.lt("invoice_date", next);
+    }
   }
   if (params.q) query = query.ilike("odoo_ref", `%${params.q}%`);
   if (params.salesperson && params.salesperson.length > 0) {
@@ -325,6 +335,7 @@ export async function getOverdueInvoicesPage(
   params: TableParams & {
     bucket?: string[]; // "1-30" | "31-60" | "61-90" | "91-120" | "120+"
     salesperson?: string[];
+    year?: YearValue;
   }
 ): Promise<OverdueInvoicePage> {
   return unifiedGetOverdueInvoicesPage(params);
@@ -368,7 +379,7 @@ export interface CompanyAgingPage {
 }
 
 export async function getCompanyAgingPage(
-  params: TableParams & { tier?: string[] }
+  params: TableParams & { tier?: string[]; year?: YearValue }
 ): Promise<CompanyAgingPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -450,7 +461,7 @@ const PAYMENT_PREDICTION_SORT_MAP: Record<string, string> = {
 };
 
 export async function getPaymentPredictionsPage(
-  params: TableParams & { risk?: string[]; trend?: string[] }
+  params: TableParams & { risk?: string[]; trend?: string[]; year?: YearValue }
 ): Promise<PaymentPredictionsPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -459,6 +470,9 @@ export async function getPaymentPredictionsPage(
     (params.sort && PAYMENT_PREDICTION_SORT_MAP[params.sort]) ??
     "total_pending";
   const ascending = params.sortDir === "asc";
+
+  // year filter: apply to oldest_due_date when a specific year is selected
+  const yearRange = params.year != null && params.year !== 'all' ? yearBounds(params.year) : null;
 
   let query = sb
     .from("payment_predictions")
@@ -469,6 +483,12 @@ export async function getPaymentPredictionsPage(
     .gt("total_pending", 0)
     .not("payment_risk", "ilike", "NORMAL%")
     .not("company_id", "in", pgInList(selfIds));
+
+  if (yearRange) {
+    query = query
+      .gte("oldest_due_date", yearRange.from.toISOString().slice(0, 10))
+      .lt("oldest_due_date", yearRange.to.toISOString().slice(0, 10));
+  }
 
   if (params.q) query = query.ilike("company_name", `%${params.q}%`);
   if (params.risk && params.risk.length > 0) {
