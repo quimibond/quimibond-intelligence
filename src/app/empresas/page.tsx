@@ -11,6 +11,7 @@ import { Suspense } from "react";
 import { AlertTriangle, Building2, Phone, TrendingDown, Users } from "lucide-react";
 
 import {
+  PageLayout,
   PageHeader,
   StatGrid,
   KpiCard,
@@ -106,7 +107,7 @@ export default async function CompaniesPage({
 }) {
   const sp = await searchParams;
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Empresas"
         subtitle="¿Con quién hago negocio, quién está en riesgo y cómo anda el portfolio?"
@@ -213,7 +214,7 @@ export default async function CompaniesPage({
         <CompaniesTable searchParams={sp} />
       </Suspense>
       </section>
-    </div>
+    </PageLayout>
   );
 }
 

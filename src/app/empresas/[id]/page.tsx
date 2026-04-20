@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { Building2 } from "lucide-react";
 
 import {
+  PageLayout,
   PageHeader,
 } from "@/components/patterns";
 import {
@@ -77,7 +78,7 @@ export default async function CompanyDetailPage({
   // banner claro — análisis comercial no aplica a empresas internas.
   if (company.isSelf) {
     return (
-      <div className="space-y-5 pb-24 md:pb-6">
+      <PageLayout>
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/" },
@@ -104,14 +105,14 @@ export default async function CompanyDetailPage({
             </p>
           </CardContent>
         </Card>
-      </div>
+      </PageLayout>
     );
   }
 
   const activeTab = resolveTab(sp);
 
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       {/* Header con breadcrumbs */}
       <PageHeader
         breadcrumbs={[
@@ -213,7 +214,7 @@ export default async function CompanyDetailPage({
           </Suspense>
         </TabsContent>
       </Tabs>
-    </div>
+    </PageLayout>
   );
 }
 

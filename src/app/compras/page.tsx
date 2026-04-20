@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   KpiCard,
   StatGrid,
   PageHeader,
@@ -97,7 +98,7 @@ export default async function ComprasPage({
 }) {
   const sp = await searchParams;
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Compras"
         subtitle="¿Qué compré, a quién, a qué precio y qué falta por ordenar?"
@@ -377,7 +378,7 @@ export default async function ComprasPage({
         </CardContent>
       </Card>
       </section>
-    </div>
+    </PageLayout>
   );
 }
 
