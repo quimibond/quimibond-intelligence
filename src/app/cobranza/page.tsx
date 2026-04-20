@@ -470,32 +470,34 @@ async function CeiTimeline() {
 
   return (
     <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
-      <div className="rounded-xl border border-border bg-card p-3">
-        <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          CEI último cohort · meta 95%
-        </div>
-        <DataViewChart
-          data={gaugeData as unknown as Record<string, unknown>[]}
-          chart={gaugeChart}
-        />
-        <div className="pt-2 text-center text-[11px] text-muted-foreground">
-          {formatCohortMonth(latest.cohort_month)} ·{" "}
-          <Badge
-            variant={ceiHealthVariant[latest.health_status]}
-            className="text-[10px] uppercase"
-          >
-            {ceiHealthLabel[latest.health_status]}
-          </Badge>
-        </div>
-      </div>
+      <Card>
+        <CardContent className="p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            CEI último cohort · meta 95%
+          </div>
+          <DataViewChart
+            data={gaugeData as unknown as Record<string, unknown>[]}
+            chart={gaugeChart}
+          />
+          <div className="pt-2 text-center text-[11px] text-muted-foreground">
+            {formatCohortMonth(latest.cohort_month)} ·{" "}
+            <Badge
+              variant={ceiHealthVariant[latest.health_status]}
+              className="text-[10px] uppercase"
+            >
+              {ceiHealthLabel[latest.health_status]}
+            </Badge>
+          </div>
+        </CardContent>
+      </Card>
       <div className="space-y-2">
       {useful.map((r: CeiRow) => {
         const pct = Math.min(100, Math.max(0, r.cei_pct));
         const delta = r.cei_delta_vs_prev;
         return (
-          <div
+          <Card
             key={r.cohort_month}
-            className="flex items-center gap-3 rounded-lg border bg-card px-3 py-2"
+            className="flex items-center gap-3 rounded-lg px-3 py-2"
           >
             {/* Mes */}
             <div className="w-14 shrink-0 font-mono text-xs uppercase tabular-nums text-muted-foreground">
@@ -552,7 +554,7 @@ async function CeiTimeline() {
                 pendiente
               </div>
             </div>
-          </div>
+          </Card>
         );
       })}
 
@@ -604,15 +606,17 @@ async function AgingBuckets() {
   };
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
-      <div className="rounded-xl border border-border bg-card p-3">
-        <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Composición cartera vencida
-        </div>
-        <DataViewChart
-          data={buckets as unknown as Record<string, unknown>[]}
-          chart={donutChart}
-        />
-      </div>
+      <Card>
+        <CardContent className="p-3">
+          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Composición cartera vencida
+          </div>
+          <DataViewChart
+            data={buckets as unknown as Record<string, unknown>[]}
+            chart={donutChart}
+          />
+        </CardContent>
+      </Card>
       <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 3 }}>
         {buckets.map((b) => (
           <KpiCard
@@ -1143,9 +1147,9 @@ async function CompanyAgingTable({
             />
           }
           badge={
-            <span className="rounded bg-danger/15 px-2 py-0.5 text-[11px] font-bold text-danger-foreground">
+            <Badge variant="danger" className="font-bold">
               <Currency amount={r.total_receivable} compact />
-            </span>
+            </Badge>
           }
           fields={[
             {
@@ -1428,9 +1432,9 @@ async function OverdueTable({
           }
           subtitle={r.name ?? undefined}
           badge={
-            <span className="rounded bg-danger/15 px-2 py-0.5 text-[11px] font-semibold text-danger-foreground">
+            <Badge variant="danger" className="font-semibold">
               {r.days_overdue ?? 0}d
-            </span>
+            </Badge>
           }
           fields={[
             {

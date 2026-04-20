@@ -4,6 +4,7 @@ import * as React from "react";
 import { Copy, Hash, Mail } from "lucide-react";
 
 import { BatchActionBar } from "@/components/patterns/batch-action-bar";
+import { Badge } from "@/components/ui/badge";
 
 interface PaymentRiskBatchActionsProps {
   /** Mapa `company_id → nombre` para reconstruir info desde los IDs seleccionados. */
@@ -34,9 +35,9 @@ export function PaymentRiskBatchActions({
   return (
     <div className="flex flex-col items-end gap-1">
       {flash ? (
-        <span className="rounded-full bg-success/15 px-2 py-0.5 text-[11px] font-medium text-success-foreground">
+        <Badge variant="success" className="font-medium">
           {flash}
-        </span>
+        </Badge>
       ) : null}
       <BatchActionBar
         actions={[

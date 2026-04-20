@@ -716,15 +716,17 @@ async function BanksSection() {
   return (
     <div className="space-y-4">
       {currencyData.length > 1 ? (
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Composición por moneda (MXN equivalente)
-          </div>
-          <DataViewChart
-            data={currencyData as unknown as Record<string, unknown>[]}
-            chart={donutChart}
-          />
-        </div>
+        <Card>
+          <CardContent className="p-3">
+            <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Composición por moneda (MXN equivalente)
+            </div>
+            <DataViewChart
+              data={currencyData as unknown as Record<string, unknown>[]}
+              chart={donutChart}
+            />
+          </CardContent>
+        </Card>
       ) : null}
       <DataTable
         data={rows}

@@ -610,15 +610,17 @@ async function SingleSourceTable({
   return (
     <>
       {summaryChartRows.length > 1 ? (
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Concentración total · gasto 12m por nivel
-          </div>
-          <DataViewChart
-            data={summaryChartRows as unknown as Record<string, unknown>[]}
-            chart={summaryDonut}
-          />
-        </div>
+        <Card>
+          <CardContent className="p-3">
+            <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Concentración total · gasto 12m por nivel
+            </div>
+            <DataViewChart
+              data={summaryChartRows as unknown as Record<string, unknown>[]}
+              chart={summaryDonut}
+            />
+          </CardContent>
+        </Card>
       ) : null}
       <DataView
         data={rows}

@@ -332,38 +332,42 @@ async function ConcentrationTripwires() {
           <Link
             key={t.company_id}
             href={`/companies/${t.company_id}`}
-            className="block rounded-lg border bg-card p-3 transition-colors active:bg-accent/60"
+            className="block transition-colors active:bg-accent/60"
           >
-            <div className="flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="font-mono text-[10px] font-bold text-muted-foreground">
-                    #{t.rank_in_portfolio}
-                  </span>
-                  <span className="truncate text-sm font-semibold">
-                    {t.company_name}
-                  </span>
+            <Card className="rounded-lg">
+              <CardContent className="p-3">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-[10px] font-bold text-muted-foreground">
+                        #{t.rank_in_portfolio}
+                      </span>
+                      <span className="truncate text-sm font-semibold">
+                        {t.company_name}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 flex items-center gap-2 text-[11px]">
+                      <span className="font-semibold uppercase tracking-wide text-warning">
+                        {t.tripwire ? tripwireLabel[t.tripwire] : ""}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">
+                      {tripwireMessage(t)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <Currency amount={t.rev_12m} compact />
+                    <div className="text-[9px] uppercase text-muted-foreground">
+                      rev 12m
+                    </div>
+                  </div>
+                  <ChevronRight
+                    className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
+                    aria-hidden
+                  />
                 </div>
-                <div className="mt-0.5 flex items-center gap-2 text-[11px]">
-                  <span className="font-semibold uppercase tracking-wide text-warning">
-                    {t.tripwire ? tripwireLabel[t.tripwire] : ""}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-[11px] text-muted-foreground">
-                  {tripwireMessage(t)}
-                </div>
-              </div>
-              <div className="shrink-0 text-right">
-                <Currency amount={t.rev_12m} compact />
-                <div className="text-[9px] uppercase text-muted-foreground">
-                  rev 12m
-                </div>
-              </div>
-              <ChevronRight
-                className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-            </div>
+              </CardContent>
+            </Card>
           </Link>
         ))}
       </CardContent>

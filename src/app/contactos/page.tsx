@@ -29,6 +29,7 @@ import {
   type DataViewMode,
 } from "@/components/patterns";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
   getContactsPage,
@@ -436,15 +437,17 @@ async function ContactsTable({
   return (
     <div className="space-y-3">
       {riskSummary.length > 1 && view === "table" ? (
-        <div className="rounded-xl border border-border bg-card p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Distribución por riesgo · página actual
-          </div>
-          <DataViewChart
-            data={riskSummary as unknown as Record<string, unknown>[]}
-            chart={riskDonut}
-          />
-        </div>
+        <Card>
+          <CardContent className="p-3">
+            <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Distribución por riesgo · página actual
+            </div>
+            <DataViewChart
+              data={riskSummary as unknown as Record<string, unknown>[]}
+              chart={riskDonut}
+            />
+          </CardContent>
+        </Card>
       ) : null}
       <DataView
         data={rows}

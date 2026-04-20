@@ -4,6 +4,7 @@ import * as React from "react";
 import { Monitor, Moon, Sun } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 
 type Theme = "light" | "dark" | "system";
 
@@ -77,9 +78,9 @@ export function ThemePreference() {
     return (
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
         {OPTIONS.map((o) => (
-          <div
+          <Card
             key={o.value}
-            className="h-[90px] rounded-xl border border-border bg-card"
+            className="h-[90px] shadow-none"
           />
         ))}
       </div>

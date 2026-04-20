@@ -780,9 +780,9 @@ async function CompaniesTable({
             }
             badge={
               r.overdue_amount > 0 ? (
-                <span className="rounded bg-danger/15 px-2 py-0.5 text-[11px] font-semibold text-danger-foreground">
+                <Badge variant="danger" className="font-semibold">
                   <Currency amount={r.overdue_amount} compact />
-                </span>
+                </Badge>
               ) : undefined
             }
             fields={[

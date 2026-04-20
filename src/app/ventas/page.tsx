@@ -1015,9 +1015,9 @@ async function SalespeopleTable({
         <MobileCard
           title={`#${r.rank} ${r.name}`}
           badge={
-            <span className="rounded bg-primary/15 px-2 py-0.5 text-[11px] font-semibold">
+            <Badge variant="secondary" className="font-semibold">
               <Currency amount={r.total_amount} compact />
-            </span>
+            </Badge>
           }
           fields={[
             { label: "Pedidos", value: r.order_count },

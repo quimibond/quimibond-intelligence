@@ -310,13 +310,13 @@ async function BacklogTable() {
           subtitle={r.job_title ?? r.department ?? undefined}
           badge={
             r.overdue > 0 ? (
-              <span className="rounded bg-danger/15 px-2 py-0.5 text-[11px] font-bold text-danger-foreground">
+              <Badge variant="danger" className="font-bold">
                 {formatNumber(r.overdue)} vencidas
-              </span>
+              </Badge>
             ) : (
-              <span className="rounded bg-info/15 px-2 py-0.5 text-[11px] font-semibold">
+              <Badge variant="info" className="font-semibold">
                 {formatNumber(r.pending)} pendientes
-              </span>
+              </Badge>
             )
           }
           fields={[

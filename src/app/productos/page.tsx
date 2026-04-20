@@ -1117,9 +1117,9 @@ async function DeadStockTable({
           title={r.product_name ?? r.product_ref ?? "—"}
           subtitle={r.product_ref ?? undefined}
           badge={
-            <span className="rounded bg-warning/15 px-2 py-0.5 text-[11px] font-semibold text-warning-foreground">
+            <Badge variant="warning" className="font-semibold">
               <Currency amount={r.inventory_value} compact />
-            </span>
+            </Badge>
           }
           fields={[
             { label: "Días sin venta", value: r.days_since_last_sale },

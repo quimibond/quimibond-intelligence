@@ -565,9 +565,9 @@ async function CostsTable() {
           title={r.endpoint}
           subtitle={r.model}
           badge={
-            <span className="rounded bg-primary/15 px-2 py-0.5 text-[11px] font-semibold">
+            <Badge variant="secondary" className="font-semibold">
               {formatUsd(r.totalCostUsd)}
-            </span>
+            </Badge>
           }
           fields={[
             { label: "24h", value: formatUsd(r.cost24hUsd) },
