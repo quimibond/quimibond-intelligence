@@ -47,6 +47,7 @@ import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
 import { SyntageHealthPanel } from "@/components/domain/system/SyntageHealthPanel";
 import { SyntageReconciliationPanel } from "@/components/domain/system/SyntageReconciliationPanel";
 import { FiscalHistoricoPanel } from "@/components/domain/fiscal/FiscalHistoricoPanel";
+import { ContabilidadElectronicaPanel } from "@/components/domain/system/ContabilidadElectronicaPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -87,12 +88,13 @@ export default async function SystemPage({
 }) {
   const sp = await searchParams;
 
-  // Support ?tab=historico-fiscal to deep-link into syntage sub-tab
+  // Support ?tab=historico-fiscal or ?tab=contabilidad-electronica to deep-link into syntage sub-tab
   const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
+  const syntageTabs = ["historico-fiscal", "contabilidad-electronica"];
   const outerTab =
-    tabParam === "historico-fiscal" ? "syntage" : (tabParam ?? "sync");
+    tabParam && syntageTabs.includes(tabParam) ? "syntage" : (tabParam ?? "sync");
   const innerSyntageTab =
-    tabParam === "historico-fiscal" ? "historico-fiscal" : "health";
+    tabParam && syntageTabs.includes(tabParam) ? tabParam : "health";
 
   return (
     <PageLayout>
@@ -210,6 +212,7 @@ export default async function SystemPage({
               <TabsTrigger value="health">Health &amp; backfill</TabsTrigger>
               <TabsTrigger value="reconciliation">Reconciliación</TabsTrigger>
               <TabsTrigger value="historico-fiscal">Histórico Fiscal</TabsTrigger>
+              <TabsTrigger value="contabilidad-electronica">Contabilidad Electrónica</TabsTrigger>
             </TabsList>
 
             <TabsContent value="health" className="mt-4">
@@ -248,6 +251,22 @@ export default async function SystemPage({
               <Suspense fallback={<Skeleton className="h-[800px]" />}>
                 <FiscalHistoricoPanel />
               </Suspense>
+            </TabsContent>
+
+            <TabsContent value="contabilidad-electronica" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Contabilidad electrónica SAT</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Catálogo de cuentas y balanzas de comprobación reportados al SAT vía Syntage.
+                  </p>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <Suspense fallback={<Skeleton className="h-[500px]" />}>
+                    <ContabilidadElectronicaPanel />
+                  </Suspense>
+                </CardContent>
+              </Card>
             </TabsContent>
           </Tabs>
         </TabsContent>
