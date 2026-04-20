@@ -48,6 +48,7 @@ import { SyntageHealthPanel } from "@/components/domain/system/SyntageHealthPane
 import { SyntageReconciliationPanel } from "@/components/domain/system/SyntageReconciliationPanel";
 import { FiscalHistoricoPanel } from "@/components/domain/fiscal/FiscalHistoricoPanel";
 import { ContabilidadElectronicaPanel } from "@/components/domain/system/ContabilidadElectronicaPanel";
+import { WebhookEventsPanel } from "@/components/domain/system/WebhookEventsPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -90,7 +91,7 @@ export default async function SystemPage({
 
   // Support ?tab=historico-fiscal or ?tab=contabilidad-electronica to deep-link into syntage sub-tab
   const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
-  const syntageTabs = ["historico-fiscal", "contabilidad-electronica"];
+  const syntageTabs = ["historico-fiscal", "contabilidad-electronica", "webhook-events"];
   const outerTab =
     tabParam && syntageTabs.includes(tabParam) ? "syntage" : (tabParam ?? "sync");
   const innerSyntageTab =
@@ -213,6 +214,7 @@ export default async function SystemPage({
               <TabsTrigger value="reconciliation">Reconciliación</TabsTrigger>
               <TabsTrigger value="historico-fiscal">Histórico Fiscal</TabsTrigger>
               <TabsTrigger value="contabilidad-electronica">Contabilidad Electrónica</TabsTrigger>
+              <TabsTrigger value="webhook-events">Webhooks</TabsTrigger>
             </TabsList>
 
             <TabsContent value="health" className="mt-4">
@@ -264,6 +266,22 @@ export default async function SystemPage({
                 <CardContent className="pb-4">
                   <Suspense fallback={<Skeleton className="h-[500px]" />}>
                     <ContabilidadElectronicaPanel />
+                  </Suspense>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="webhook-events" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Webhooks Syntage</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Audit de eventos recibidos de Syntage. Freshness y distribución por tipo.
+                  </p>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <Suspense fallback={<Skeleton className="h-[500px]" />}>
+                    <WebhookEventsPanel />
                   </Suspense>
                 </CardContent>
               </Card>
