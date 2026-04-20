@@ -60,9 +60,11 @@ DECLARE
   v_count   bigint;
   v_summary jsonb;
 BEGIN
+  -- reversal_sign: data-entry issue in Odoo (refund lines with negative
+  -- price_unit). Not a sync bug, so force severity=warn.
   SELECT COUNT(*) INTO v_count FROM v_audit_invoice_lines_reversal_sign;
   PERFORM _audit_register_invariant(p_run_id, p_date_from, p_date_to,
-    'invoice_lines.reversal_sign', 'invoice_lines', v_count);
+    'invoice_lines.reversal_sign', 'invoice_lines', v_count, 'warn');
 
   SELECT COUNT(*) INTO v_count FROM v_audit_invoice_lines_price_recompute;
   PERFORM _audit_register_invariant(p_run_id, p_date_from, p_date_to,

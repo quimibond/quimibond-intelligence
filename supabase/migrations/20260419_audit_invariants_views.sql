@@ -133,19 +133,29 @@ COMMENT ON VIEW v_audit_account_balances_buckets IS
 -- INTERNAL INVARIANT VIEWS (A-O; D stubbed — schema lacks exchange_rate)
 -- ============================================================
 
--- A. reversal_sign: refunds with inconsistent sign between qty and subtotal
+-- A. reversal_sign (v3): refund lines where SIGN(quantity) != SIGN(price_subtotal).
+-- Odoo convention: refund lines store POSITIVE qty and subtotal; sign is
+-- implied by move_type and applied at aggregation time (see
+-- v_audit_invoice_lines_buckets). A refund line with qty=+5 but
+-- subtotal=-250 means price_unit was captured as negative, which after
+-- the move_type sign flip sums as POSITIVE, inflating net revenue/CMV.
+-- This is a data-entry bug in Odoo (not a sync bug) — forced to 'warn'
+-- severity in run_internal_audits.
 CREATE OR REPLACE VIEW v_audit_invoice_lines_reversal_sign AS
 SELECT il.id AS line_id, il.odoo_move_id, il.move_type,
        il.quantity, il.price_subtotal
 FROM odoo_invoice_lines il
-WHERE il.move_type IN ('out_refund','in_refund')
-  AND (
-    (il.quantity > 0 AND il.price_subtotal > 0)
-    OR SIGN(COALESCE(il.quantity,0)) <> SIGN(COALESCE(il.price_subtotal,0))
-  );
+JOIN odoo_invoices i ON il.odoo_move_id = i.odoo_invoice_id
+WHERE i.move_type IN ('out_refund','in_refund')
+  AND il.quantity IS NOT NULL
+  AND il.price_subtotal IS NOT NULL
+  AND il.quantity <> 0
+  AND il.price_subtotal <> 0
+  AND SIGN(il.quantity) <> SIGN(il.price_subtotal);
 
 COMMENT ON VIEW v_audit_invoice_lines_reversal_sign IS
-  'Invariant A: refund lines with wrong sign.';
+  'Invariant A: refund lines where SIGN(qty) != SIGN(price_subtotal). '
+  'Data-entry issue in Odoo (negative price_unit on refund lines), not sync bug.';
 
 -- B. price_recompute: broken price reconstruction
 CREATE OR REPLACE VIEW v_audit_invoice_lines_price_recompute AS
