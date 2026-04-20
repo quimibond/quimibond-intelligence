@@ -61,6 +61,7 @@ import { CashflowRecommendations } from "./_components/cashflow-recommendations"
 import { CashflowProfiles } from "./_components/cashflow-profiles";
 import { PnlPorCuentaSection } from "./_components/PnlPorCuentaSection";
 import { FxRatesWidget } from "./_components/FxRatesWidget";
+import { TaxRetentionsSection } from "./_components/TaxRetentionsSection";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Finanzas" };
@@ -88,6 +89,7 @@ export default function FinanzasPage() {
           { id: "operativo", label: "Operativo (Odoo)" },
           { id: "pnl-cuenta", label: "P&L por Cuenta" },
           { id: "fiscal", label: "Fiscal SAT" },
+          { id: "tax-retentions", label: "Retenciones" },
           { id: "unificado", label: "Unificado" },
           { id: "fx-rates", label: "FX" },
           { id: "profiles", label: "Perfiles" },
@@ -319,6 +321,9 @@ export default function FinanzasPage() {
             <FiscalRevenueKpiCard />
           </Suspense>
         </div>
+
+        {/* Retenciones fiscales ISR/IVA */}
+        <TaxRetentionsSection />
       </section>
 
       {/* ══════════════════════════════════════════════════════════════
