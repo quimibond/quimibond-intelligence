@@ -9,9 +9,6 @@ import {
   type TableParams,
 } from "../_shared/table-params";
 
-// Feature flag: set USE_UNIFIED_LAYER=false to revert to legacy direct query
-const USE_UNIFIED_LAYER = process.env.USE_UNIFIED_LAYER !== "false";
-
 /**
  * Purchases queries v2 — usa views canónicas:
  * - `cfo_dashboard` — pagos a proveedores 30d, cuentas por pagar
@@ -63,9 +60,9 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
       .gte("date_order", prevStart)
       .lt("date_order", thisStart),
     sb
-      .from("odoo_invoices")
-      .select("amount_residual_mxn")
-      .eq("move_type", "in_invoice")
+      .from("invoices_unified")
+      .select("odoo_amount_residual_mxn,amount_residual")
+      .eq("direction", "received")
       .in("payment_state", ["not_paid", "partial"]),
     sb.from("analytics_finance_cfo_snapshot").select("pagos_prov_30d").maybeSingle(),
     sb
@@ -81,8 +78,9 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
     amount_total_mxn: number | null;
   }>).reduce((a, r) => a + (Number(r.amount_total_mxn) || 0), 0);
   const supplierPayable = ((ap.data ?? []) as Array<{
-    amount_residual_mxn: number | null;
-  }>).reduce((a, r) => a + (Number(r.amount_residual_mxn) || 0), 0);
+    odoo_amount_residual_mxn: number | null;
+    amount_residual: number | null;
+  }>).reduce((a, r) => a + (Number(r.odoo_amount_residual_mxn ?? r.amount_residual) || 0), 0);
 
   const ssRows = (herfindahl.data ?? []) as Array<{
     total_spent_12m: number | null;
@@ -638,38 +636,16 @@ export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Supplier invoices — Layer 3 dispatch (Syntage Fase 5)
+// Supplier invoices — Layer 3 (Syntage Fase 5)
 // ──────────────────────────────────────────────────────────────────────────
 
 /**
- * Legacy: fetch supplier invoices directly from odoo_invoices.
- * Kept for rollback via USE_UNIFIED_LAYER=false.
- */
-async function legacyGetSupplierInvoices(supplierCompanyId: number) {
-  const supabase = getServiceClient();
-  const { data, error } = await supabase
-    .from("odoo_invoices")
-    .select("*")
-    .eq("odoo_partner_id", supplierCompanyId)
-    .in("move_type", ["in_invoice", "in_refund"])
-    .order("invoice_date", { ascending: false })
-    .limit(500);
-  if (error) throw new Error(error.message);
-  return data ?? [];
-}
-
-/**
- * Get supplier invoices for a company.
- * Layer 3: dispatches to getUnifiedInvoicesForCompany(direction='received')
- * unless USE_UNIFIED_LAYER=false.
+ * Get supplier invoices for a company via unified layer.
  */
 export async function getSupplierInvoices(supplierCompanyId: number) {
-  if (USE_UNIFIED_LAYER) {
-    return getUnifiedInvoicesForCompany(supplierCompanyId, {
-      direction: "received",
-    });
-  }
-  return legacyGetSupplierInvoices(supplierCompanyId);
+  return getUnifiedInvoicesForCompany(supplierCompanyId, {
+    direction: "received",
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────
