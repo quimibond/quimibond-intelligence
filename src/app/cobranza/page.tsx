@@ -204,7 +204,13 @@ export default async function CobranzaPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodSelector paramName="pr_period" label="Período" />
+            <Badge
+              variant="outline"
+              className="text-xs font-normal"
+              title="Riesgo de pago es un snapshot calculado a partir del historial de pagos acumulado por empresa. No es filtrable por período."
+            >
+              snapshot actual
+            </Badge>
             <TableViewOptions
               paramPrefix="pr_"
               columns={paymentRiskViewColumns}
@@ -265,7 +271,13 @@ export default async function CobranzaPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodSelector paramName="age_period" label="Período" />
+            <Badge
+              variant="outline"
+              className="text-xs font-normal"
+              title="Esta tabla muestra el estado actual de cartera vencida. No es filtrable por período porque los buckets de aging son un snapshot calculado en tiempo real, no un histórico."
+            >
+              snapshot actual
+            </Badge>
             <TableViewOptions
               paramPrefix="age_"
               columns={companyAgingViewColumns}

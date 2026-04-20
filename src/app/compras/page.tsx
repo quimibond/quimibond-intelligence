@@ -331,7 +331,13 @@ export default async function ComprasPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <PeriodSelector paramName="sup_period" label="Período" />
+            <Badge
+              variant="outline"
+              className="text-xs font-normal"
+              title="Top proveedores muestra el ranking por gasto total en los últimos 12 meses desde tablas precalculadas. No es filtrable por período personalizado."
+            >
+              snapshot actual
+            </Badge>
             <TableViewOptions
               paramPrefix="sup_"
               columns={topSupplierViewColumns}
