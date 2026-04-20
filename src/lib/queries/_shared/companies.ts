@@ -32,6 +32,9 @@ export interface CompanyListRow {
   otd_rate: number | null;
   last_order_date: string | null;
   churn_risk_score: number | null;
+  // SAT fiscal metrics (from company_profile_sat)
+  total_invoiced_sat: number | null;
+  total_invoiced_sat_ytd: number | null;
 }
 
 export async function getCompaniesList(
@@ -58,7 +61,7 @@ export async function getCompaniesList(
 
   const ids = baseRows.map((r) => r.company_id);
 
-  const [pareto, ltv] = await Promise.all([
+  const [pareto, ltv, sat] = await Promise.all([
     sb
       .from("portfolio_concentration")
       .select("company_id, pareto_class, customer_status")
@@ -66,6 +69,10 @@ export async function getCompaniesList(
     sb
       .from("customer_ltv_health")
       .select("company_id, churn_risk_score")
+      .in("company_id", ids),
+    sb
+      .from("company_profile_sat")
+      .select("company_id, total_invoiced_sat, total_invoiced_sat_ytd")
       .in("company_id", ids),
   ]);
 
@@ -100,11 +107,28 @@ export async function getCompaniesList(
     ltvMap.set(l.company_id, l.churn_risk_score);
   }
 
+  const satMap = new Map<
+    number,
+    { total_invoiced_sat: number | null; total_invoiced_sat_ytd: number | null }
+  >();
+  for (const s of (sat.data ?? []) as Array<{
+    company_id: number;
+    total_invoiced_sat: number | null;
+    total_invoiced_sat_ytd: number | null;
+  }>) {
+    satMap.set(s.company_id, {
+      total_invoiced_sat: s.total_invoiced_sat,
+      total_invoiced_sat_ytd: s.total_invoiced_sat_ytd,
+    });
+  }
+
   return baseRows.map((r) => ({
     ...r,
     pareto_class: paretoMap.get(r.company_id)?.pareto_class ?? null,
     customer_status: paretoMap.get(r.company_id)?.customer_status ?? null,
     churn_risk_score: ltvMap.get(r.company_id) ?? null,
+    total_invoiced_sat: satMap.get(r.company_id)?.total_invoiced_sat ?? null,
+    total_invoiced_sat_ytd: satMap.get(r.company_id)?.total_invoiced_sat_ytd ?? null,
   }));
 }
 
@@ -124,6 +148,7 @@ const COMPANIES_SORT_MAP: Record<string, string> = {
   name: "name",
   last_order: "last_order_date",
   otd: "otd_rate",
+  // SAT sort is handled client-side after merge (not a company_profile column)
 };
 
 export async function getCompaniesPage(
@@ -169,7 +194,7 @@ export async function getCompaniesPage(
   if (baseRows.length === 0) return { rows: [], total: count ?? 0 };
 
   const ids = baseRows.map((r) => r.company_id);
-  const [pareto, ltv] = await Promise.all([
+  const [pareto, ltv, sat] = await Promise.all([
     sb
       .from("portfolio_concentration")
       .select("company_id, pareto_class, customer_status")
@@ -177,6 +202,10 @@ export async function getCompaniesPage(
     sb
       .from("customer_ltv_health")
       .select("company_id, churn_risk_score")
+      .in("company_id", ids),
+    sb
+      .from("company_profile_sat")
+      .select("company_id, total_invoiced_sat, total_invoiced_sat_ytd")
       .in("company_id", ids),
   ]);
 
@@ -210,11 +239,28 @@ export async function getCompaniesPage(
     ltvMap.set(l.company_id, l.churn_risk_score);
   }
 
+  const satMap2 = new Map<
+    number,
+    { total_invoiced_sat: number | null; total_invoiced_sat_ytd: number | null }
+  >();
+  for (const s of (sat.data ?? []) as Array<{
+    company_id: number;
+    total_invoiced_sat: number | null;
+    total_invoiced_sat_ytd: number | null;
+  }>) {
+    satMap2.set(s.company_id, {
+      total_invoiced_sat: s.total_invoiced_sat,
+      total_invoiced_sat_ytd: s.total_invoiced_sat_ytd,
+    });
+  }
+
   const rows: CompanyListRow[] = baseRows.map((r) => ({
     ...r,
     pareto_class: paretoMap.get(r.company_id)?.pareto_class ?? null,
     customer_status: paretoMap.get(r.company_id)?.customer_status ?? null,
     churn_risk_score: ltvMap.get(r.company_id) ?? null,
+    total_invoiced_sat: satMap2.get(r.company_id)?.total_invoiced_sat ?? null,
+    total_invoiced_sat_ytd: satMap2.get(r.company_id)?.total_invoiced_sat_ytd ?? null,
   }));
 
   return { rows, total: count ?? rows.length };
@@ -262,6 +308,14 @@ export interface CompanyDetail {
   ltvMxn: number | null;
   churnRiskScore: number | null;
   overdueRiskScore: number | null;
+  // SAT fiscal metrics (from company_profile_sat)
+  totalInvoicedSat: number | null;
+  totalInvoicedSatYtd: number | null;
+  totalInvoicedSatGross: number | null;
+  totalCancelledInvoiced: number | null;
+  totalCreditNotes: number | null;
+  totalReceivedSat: number | null;
+  lastSatInvoiceDate: string | null;
   // Comms
   emailCount: number;
   emails30d: number;
@@ -283,7 +337,7 @@ export async function getCompanyDetail(
 ): Promise<CompanyDetail | null> {
   const sb = getServiceClient();
 
-  const [base, profile, narrative, ltv] = await Promise.all([
+  const [base, profile, narrative, ltv, sat] = await Promise.all([
     sb
       .from("companies")
       .select(
@@ -300,6 +354,11 @@ export async function getCompanyDetail(
     sb
       .from("customer_ltv_health")
       .select("ltv_mxn, revenue_12m, revenue_3m, churn_risk_score, overdue_risk_score")
+      .eq("company_id", id)
+      .maybeSingle(),
+    sb
+      .from("company_profile_sat")
+      .select("total_invoiced_sat, total_invoiced_sat_ytd, total_invoiced_sat_gross, total_cancelled_invoiced, total_credit_notes, total_received_sat, last_sat_invoice_date")
       .eq("company_id", id)
       .maybeSingle(),
   ]);
@@ -358,6 +417,15 @@ export async function getCompanyDetail(
     churn_risk_score: number;
     overdue_risk_score: number;
   }>;
+  const satDetail = (sat.data ?? {}) as Partial<{
+    total_invoiced_sat: number;
+    total_invoiced_sat_ytd: number;
+    total_invoiced_sat_gross: number;
+    total_cancelled_invoiced: number;
+    total_credit_notes: number;
+    total_received_sat: number;
+    last_sat_invoice_date: string;
+  }>;
 
   return {
     id: b.id,
@@ -402,6 +470,13 @@ export async function getCompanyDetail(
     salespeople: n.salespeople ?? null,
     topProducts: n.top_products ?? null,
     isSelf: b.relationship_type === "self",
+    totalInvoicedSat: satDetail.total_invoiced_sat != null ? Number(satDetail.total_invoiced_sat) : null,
+    totalInvoicedSatYtd: satDetail.total_invoiced_sat_ytd != null ? Number(satDetail.total_invoiced_sat_ytd) : null,
+    totalInvoicedSatGross: satDetail.total_invoiced_sat_gross != null ? Number(satDetail.total_invoiced_sat_gross) : null,
+    totalCancelledInvoiced: satDetail.total_cancelled_invoiced != null ? Number(satDetail.total_cancelled_invoiced) : null,
+    totalCreditNotes: satDetail.total_credit_notes != null ? Number(satDetail.total_credit_notes) : null,
+    totalReceivedSat: satDetail.total_received_sat != null ? Number(satDetail.total_received_sat) : null,
+    lastSatInvoiceDate: satDetail.last_sat_invoice_date ?? null,
   };
 }
 
