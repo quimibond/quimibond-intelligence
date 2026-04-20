@@ -60,6 +60,7 @@ import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table"
 import { CashflowRecommendations } from "./_components/cashflow-recommendations";
 import { CashflowProfiles } from "./_components/cashflow-profiles";
 import { PnlPorCuentaSection } from "./_components/PnlPorCuentaSection";
+import { FxRatesWidget } from "./_components/FxRatesWidget";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Finanzas" };
@@ -88,6 +89,7 @@ export default function FinanzasPage() {
           { id: "pnl-cuenta", label: "P&L por Cuenta" },
           { id: "fiscal", label: "Fiscal SAT" },
           { id: "unificado", label: "Unificado" },
+          { id: "fx-rates", label: "FX" },
           { id: "profiles", label: "Perfiles" },
         ]}
       />
@@ -200,6 +202,9 @@ export default function FinanzasPage() {
 
         {/* P&L por Cuenta — trial balance del período más reciente */}
         <PnlPorCuentaSection />
+
+        {/* Tipos de cambio (FX) */}
+        <FxRatesWidget />
 
         {/* Ciclo de capital de trabajo */}
         <div id="cycle" className="scroll-mt-24">
