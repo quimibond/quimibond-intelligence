@@ -22,6 +22,7 @@ import { ComercialTab } from "./_components/ComercialTab";
 import { FinancieroTab } from "./_components/FinancieroTab";
 import { OperativoTab } from "./_components/OperativoTab";
 import { FiscalTab } from "./_components/FiscalTab";
+import { PagosTab } from "./_components/PagosTab";
 
 export const revalidate = 30; // 30s ISR cache · detail pages change faster with user activity
 
@@ -44,6 +45,7 @@ const VALID_TABS = [
   "financiero",
   "operativo",
   "fiscal",
+  "pagos",
 ] as const;
 type TabSlug = (typeof VALID_TABS)[number];
 
@@ -164,6 +166,9 @@ export default async function CompanyDetailPage({
           <TabsTrigger value="fiscal">
             Fiscal
           </TabsTrigger>
+          <TabsTrigger value="pagos">
+            Pagos
+          </TabsTrigger>
         </TabsList>
 
         {/* 1. Panorama — KPIs cross-domain + insights IA + evidence */}
@@ -198,6 +203,13 @@ export default async function CompanyDetailPage({
         <TabsContent value="fiscal" className="mt-4">
           <Suspense fallback={<TabSkeleton />}>
             <FiscalTab companyId={id} />
+          </Suspense>
+        </TabsContent>
+
+        {/* 6. Pagos — historial de cobros y pagos desde odoo_payments */}
+        <TabsContent value="pagos" className="mt-4">
+          <Suspense fallback={<TabSkeleton />}>
+            <PagosTab company={company} />
           </Suspense>
         </TabsContent>
       </Tabs>
