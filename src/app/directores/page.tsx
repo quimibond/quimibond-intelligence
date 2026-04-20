@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   PageHeader,
   StatGrid,
   KpiCard,
@@ -33,7 +34,7 @@ export const metadata = { title: "Directores" };
 
 export default function AgentsPage() {
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Directores IA"
         subtitle="¿Qué agentes están trabajando y qué tan efectivos son?"
@@ -54,7 +55,7 @@ export default function AgentsPage() {
       >
         <AgentsList />
       </Suspense>
-    </div>
+    </PageLayout>
   );
 }
 
