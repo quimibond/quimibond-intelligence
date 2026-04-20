@@ -60,6 +60,7 @@ import {
   type CeiRow,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
 import { PeriodSelector } from "@/components/patterns/period-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
@@ -1387,6 +1388,21 @@ async function OverdueTable({
     defaultSize: 25,
     defaultSort: "-amount",
   });
+
+  // Aplicar inv_period si no hay rango manual (inv_from / inv_to tiene precedencia).
+  const invPeriod = parsePeriod(searchParams.inv_period);
+  const useManualRange = params.from || params.to;
+  const effectiveFrom =
+    params.from ??
+    (useManualRange || (invPeriod.kind === "preset" && invPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(invPeriod).from);
+  const effectiveTo =
+    params.to ??
+    (useManualRange || (invPeriod.kind === "preset" && invPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(invPeriod).to);
+
   const visibleKeys = parseVisibleKeys(searchParams, "inv_");
   const sortHref = makeSortHref({
     pathname: "/cobranza",
@@ -1395,6 +1411,8 @@ async function OverdueTable({
   });
   const { rows, total } = await getOverdueInvoicesPage({
     ...params,
+    from: effectiveFrom,
+    to: effectiveTo,
     bucket: params.facets.bucket,
     salesperson: params.facets.salesperson,
   });
