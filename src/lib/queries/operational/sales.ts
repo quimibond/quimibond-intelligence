@@ -171,9 +171,55 @@ export interface RevenueTrendPoint {
  * sobre `pl_estado_resultados` (antes venía del MV).
  */
 export async function getSalesRevenueTrend(
-  months = 12
+  months = 12,
+  bounds?: { from?: string | null; to?: string | null }
 ): Promise<RevenueTrendPoint[]> {
   const sb = getServiceClient();
+
+  // If explicit date bounds are given, query invoices_unified for that range
+  if (bounds?.from || bounds?.to) {
+    let q = sb
+      .from("invoices_unified")
+      .select("invoice_date, subtotal_fiscal, tipo_cambio_fiscal, moneda_fiscal")
+      .eq("direction", "issued")
+      .eq("tipo_comprobante", "I")
+      .eq("estado_sat", "vigente");
+    if (bounds.from) q = q.gte("invoice_date", bounds.from);
+    if (bounds.to) q = q.lt("invoice_date", bounds.to);
+    const { data: rows } = await q;
+
+    const map = new Map<string, number>();
+    for (const r of (rows ?? []) as Array<{
+      invoice_date: string | null;
+      subtotal_fiscal: number | null;
+      tipo_cambio_fiscal: number | null;
+      moneda_fiscal: string | null;
+    }>) {
+      if (!r.invoice_date) continue;
+      const d = new Date(r.invoice_date);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      const amount =
+        r.moneda_fiscal === "MXN"
+          ? Number(r.subtotal_fiscal ?? 0)
+          : Number(r.subtotal_fiscal ?? 0) * Number(r.tipo_cambio_fiscal ?? 1);
+      map.set(key, (map.get(key) ?? 0) + amount);
+    }
+
+    const sorted = [...map.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([period, revenue]) => ({ period, revenue }));
+
+    return sorted.map((r, i) => {
+      const window = sorted.slice(Math.max(0, i - 2), i + 1);
+      const ma3m =
+        window.length > 0
+          ? window.reduce((s, w) => s + w.revenue, 0) / window.length
+          : 0;
+      return { period: r.period, revenue: r.revenue, ma3m };
+    });
+  }
+
+  // Default path: last N months from P&L view
   // Pedimos `months + 2` para tener contexto para el ma3m del mes más
   // antiguo de la ventana, pero solo devolvemos los últimos `months`.
   const { data } = await sb
@@ -378,10 +424,126 @@ const TOP_CUSTOMER_SORT_MAP: Record<string, string> = {
 };
 
 export async function getTopCustomersPage(
-  params: TableParams
+  params: TableParams & { from?: string | null; to?: string | null }
 ): Promise<TopCustomersPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
+
+  // ── Path B: period-filtered via invoices_unified ──────────────────────────
+  if (params.from || params.to) {
+    let q = sb
+      .from("invoices_unified")
+      .select("company_id, partner_name, subtotal_fiscal, tipo_cambio_fiscal, moneda_fiscal")
+      .eq("direction", "issued")
+      .eq("tipo_comprobante", "I")
+      .eq("estado_sat", "vigente")
+      .not("company_id", "is", null);
+    if (params.from) q = q.gte("invoice_date", params.from);
+    if (params.to) q = q.lt("invoice_date", params.to);
+    if (params.q) q = q.ilike("partner_name", `%${params.q}%`);
+
+    const { data: invRows } = await q;
+
+    // Aggregate in-memory by company_id
+    const byCompany = new Map<
+      number,
+      { id: number; name: string; revenue: number }
+    >();
+    for (const r of (invRows ?? []) as Array<{
+      company_id: number | null;
+      partner_name: string | null;
+      subtotal_fiscal: number | null;
+      tipo_cambio_fiscal: number | null;
+      moneda_fiscal: string | null;
+    }>) {
+      if (r.company_id == null) continue;
+      if (selfIds.includes(r.company_id)) continue;
+      const existing = byCompany.get(r.company_id) ?? {
+        id: r.company_id,
+        name: r.partner_name ?? "",
+        revenue: 0,
+      };
+      const amount =
+        r.moneda_fiscal === "MXN"
+          ? Number(r.subtotal_fiscal ?? 0)
+          : Number(r.subtotal_fiscal ?? 0) * Number(r.tipo_cambio_fiscal ?? 1);
+      existing.revenue += amount;
+      byCompany.set(r.company_id, existing);
+    }
+
+    const sorted = [...byCompany.values()].sort((a, b) => b.revenue - a.revenue);
+    const totalCount = sorted.length;
+    const offset = (params.page ?? 0) * (params.size ?? 25);
+    const slice = sorted.slice(offset, offset + (params.size ?? 25));
+
+    if (slice.length === 0) return { rows: [], total: totalCount };
+
+    const ids = slice.map((r) => r.id);
+    const [marginRes, overheadRes, satRes] = await Promise.all([
+      sb
+        .from("customer_margin_analysis")
+        .select("company_id, margin_12m, margin_pct_12m")
+        .in("company_id", ids),
+      sb.from("overhead_factor_12m").select("overhead_factor_pct").maybeSingle(),
+      sb
+        .from("company_profile_sat")
+        .select("company_id, total_invoiced_sat, total_invoiced_sat_ytd")
+        .in("company_id", ids),
+    ]);
+    const marginMap = new Map<
+      number,
+      { margin_12m: number | null; margin_pct_12m: number | null }
+    >();
+    for (const m of (marginRes.data ?? []) as Array<{
+      company_id: number;
+      margin_12m: number | null;
+      margin_pct_12m: number | null;
+    }>) {
+      marginMap.set(m.company_id, {
+        margin_12m: m.margin_12m,
+        margin_pct_12m: m.margin_pct_12m,
+      });
+    }
+    const overheadFactor = Number(
+      (overheadRes.data as { overhead_factor_pct: number | null } | null)
+        ?.overhead_factor_pct ?? 0,
+    );
+    const satMap = new Map<
+      number,
+      { total_invoiced_sat: number | null; total_invoiced_sat_ytd: number | null }
+    >();
+    for (const s of (satRes.data ?? []) as Array<{
+      company_id: number;
+      total_invoiced_sat: number | null;
+      total_invoiced_sat_ytd: number | null;
+    }>) {
+      satMap.set(s.company_id, {
+        total_invoiced_sat: s.total_invoiced_sat,
+        total_invoiced_sat_ytd: s.total_invoiced_sat_ytd,
+      });
+    }
+
+    const rows: TopCustomerRow[] = slice.map((r) => {
+      const matPct = marginMap.get(r.id)?.margin_pct_12m ?? null;
+      return {
+        company_id: r.id,
+        company_name: r.name,
+        revenue_90d: r.revenue, // In period mode, this represents period revenue
+        total_revenue_lifetime: r.revenue,
+        margin_12m: marginMap.get(r.id)?.margin_12m ?? null,
+        margin_pct_12m: matPct,
+        overhead_factor_pct: overheadFactor,
+        adjusted_margin_pct_12m:
+          matPct != null ? Number((matPct - overheadFactor).toFixed(1)) : null,
+        total_invoiced_sat: satMap.get(r.id)?.total_invoiced_sat ?? null,
+        total_invoiced_sat_ytd: satMap.get(r.id)?.total_invoiced_sat_ytd ?? null,
+      };
+    });
+
+    return { rows, total: totalCount };
+  }
+
+  // ── Path A: default 90d window from company_profile ──────────────────────
   const [start, end] = paginationRange(params.page, params.size);
   const sortCol =
     (params.sort && TOP_CUSTOMER_SORT_MAP[params.sort]) ?? "revenue_90d";
