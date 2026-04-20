@@ -119,6 +119,7 @@ async function getExtractions(supabase: import("@supabase/supabase-js").Supabase
 }
 
 async function getOdooCrossCheck(supabase: import("@supabase/supabase-js").SupabaseClient) {
+  // legitimate raw use: cross-check syntage_invoices ↔ odoo_invoices via cfdi_uuid — this IS the reconciliation layer
   const [{ count: syntageCount }, { count: odooCount }] = await Promise.all([
     supabase.from("syntage_invoices").select("*", { count: "exact", head: true }),
     supabase.from("odoo_invoices").select("*", { count: "exact", head: true }).not("cfdi_uuid", "is", null),
@@ -133,7 +134,7 @@ async function getOdooCrossCheck(supabase: import("@supabase/supabase-js").Supab
   const uuids = (syntageUuids ?? []).map(r => (r.uuid as string).toLowerCase()).filter(Boolean);
 
   let matched = 0;
-  // Supabase .in() caps around 1000; chunk to avoid URL length issues.
+  // legitimate raw use: UUID matching against odoo_invoices.cfdi_uuid — raw needed for cross-source reconciliation
   const chunkSize = 500;
   for (let i = 0; i < uuids.length; i += chunkSize) {
     const chunk = uuids.slice(i, i + chunkSize);
