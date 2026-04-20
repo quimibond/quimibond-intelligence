@@ -487,7 +487,8 @@ async function ReactivacionSection({
 const companyViewColumns = [
   { key: "company", label: "Empresa", alwaysVisible: true },
   { key: "status", label: "Estado" },
-  { key: "revenue", label: "Revenue total" },
+  { key: "ltv_sat", label: "Facturación SAT" },
+  { key: "revenue", label: "Pedidos Odoo (lifetime)" },
   { key: "revenue_90d", label: "Revenue 90d" },
   { key: "trend", label: "Tendencia" },
   { key: "overdue", label: "Vencido" },
@@ -529,16 +530,47 @@ const columns: DataTableColumn<CompanyListRow>[] = [
     hideOnMobile: true,
   },
   {
-    key: "revenue",
-    header: "Revenue total",
-    sortable: true,
-    cell: (r) => <Currency amount={r.total_revenue} compact />,
+    key: "ltv_sat",
+    header: "Facturación SAT",
+    sortable: false,
+    cell: (r) =>
+      r.total_invoiced_sat != null ? (
+        <span
+          className="tabular-nums"
+          title="Subtotal × tipo de cambio, lifetime. CFDIs vigentes. Cuadra con Syntage al centavo."
+        >
+          <Currency amount={r.total_invoiced_sat} compact />
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
     align: "right",
+    summary: (rows) => {
+      const total = rows.reduce((s, r) => s + (r.total_invoiced_sat ?? 0), 0);
+      return total > 0 ? <Currency amount={total} compact /> : <span className="text-muted-foreground">—</span>;
+    },
+  },
+  {
+    key: "revenue",
+    header: "Pedidos Odoo",
+    sortable: true,
+    cell: (r) => (
+      <span
+        className="tabular-nums text-muted-foreground"
+        title="Pedidos confirmados en Odoo (sale orders). Puede diferir de facturación SAT."
+      >
+        <Currency amount={r.total_revenue} compact />
+      </span>
+    ),
+    align: "right",
+    hideOnMobile: true,
     summary: (rows) => (
-      <Currency
-        amount={rows.reduce((s, r) => s + (r.total_revenue ?? 0), 0)}
-        compact
-      />
+      <span className="text-muted-foreground">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.total_revenue ?? 0), 0)}
+          compact
+        />
+      </span>
     ),
   },
   {

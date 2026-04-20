@@ -1,12 +1,13 @@
 import { Suspense } from "react";
-import { AlertTriangle, TrendingUp, Truck } from "lucide-react";
+import { AlertTriangle, FileCheck, TrendingUp, Truck } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
-  KpiCard,
-  StatGrid,
+  Currency,
   DateDisplay,
   EmptyState,
   EvidencePackView,
+  KpiCard,
+  StatGrid,
 } from "@/components/patterns";
 import { SeverityBadge } from "@/components/patterns/severity-badge";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -75,6 +76,88 @@ function PanoramaKpis({ company }: { company: CompanyDetail }) {
             }
           />
         </StatGrid>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// SAT fiscal LTV (from company_profile_sat)
+// ──────────────────────────────────────────────────────────────────────────
+function SatLtvSection({ company }: { company: CompanyDetail }) {
+  const hasSatData = company.totalInvoicedSat != null;
+  if (!hasSatData) return null;
+
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base">LTV fiscal (SAT)</CardTitle>
+          <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+            Syntage
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          CFDIs vigentes, subtotal × tipo de cambio. Cuadra con Syntage al centavo.
+          Distinto de &ldquo;Pedidos Odoo&rdquo; (que son pedidos confirmados en ERP).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-1.5 text-sm">
+        {company.totalInvoicedSat != null && (
+          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
+            <span className="text-muted-foreground">LTV facturado (sin IVA)</span>
+            <Currency amount={company.totalInvoicedSat} compact={false} />
+          </div>
+        )}
+        {company.totalInvoicedSatGross != null && (
+          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
+            <span className="text-muted-foreground">LTV facturado (con IVA)</span>
+            <Currency amount={company.totalInvoicedSatGross} compact={false} />
+          </div>
+        )}
+        {company.totalInvoicedSatYtd != null && (
+          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
+            <span className="text-muted-foreground">Facturado YTD (sin IVA)</span>
+            <Currency amount={company.totalInvoicedSatYtd} compact={false} />
+          </div>
+        )}
+        {company.totalCancelledInvoiced != null && company.totalCancelledInvoiced > 0 && (
+          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
+            <span className="text-muted-foreground">Canceladas (lifetime)</span>
+            <span className="tabular-nums font-medium text-warning-foreground">
+              <Currency amount={company.totalCancelledInvoiced} compact={false} />
+            </span>
+          </div>
+        )}
+        {company.totalCreditNotes != null && company.totalCreditNotes > 0 && (
+          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
+            <span className="text-muted-foreground">Notas de crédito (tipo E)</span>
+            <Currency amount={company.totalCreditNotes} compact={false} />
+          </div>
+        )}
+        {company.isSupplier && company.totalReceivedSat != null && company.totalReceivedSat > 0 && (
+          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
+            <span className="text-muted-foreground">Compra SAT (proveedor)</span>
+            <Currency amount={company.totalReceivedSat} compact={false} />
+          </div>
+        )}
+        {company.totalRevenue > 0 && (
+          <div className="flex items-center justify-between py-1.5 last:border-0">
+            <span className="text-muted-foreground">Pedidos confirmados (Odoo)</span>
+            <span
+              className="tabular-nums text-muted-foreground"
+              title="Pedidos confirmados en ERP. Puede diferir de facturación SAT."
+            >
+              <Currency amount={company.totalRevenue} compact={false} />
+            </span>
+          </div>
+        )}
+        {company.lastSatInvoiceDate && (
+          <div className="flex items-center justify-between py-1.5 last:border-0">
+            <span className="text-muted-foreground">Último CFDI emitido</span>
+            <DateDisplay date={company.lastSatInvoiceDate} relative />
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -234,6 +317,7 @@ export function PanoramaTab({ company }: Props) {
   return (
     <div className="space-y-4">
       <PanoramaKpis company={company} />
+      <SatLtvSection company={company} />
       <Suspense fallback={<Skeleton className="h-32 rounded-xl" />}>
         <FiscalSummarySection companyId={company.id} />
       </Suspense>

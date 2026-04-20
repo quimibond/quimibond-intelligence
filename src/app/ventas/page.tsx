@@ -252,10 +252,10 @@ export default async function VentasPage({
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
             <CardTitle className="text-base">
-              Top clientes (revenue 90d)
+              Top clientes
             </CardTitle>
             <p className="text-xs text-muted-foreground">
-              Ordena por revenue, margen o lifetime. Busca por nombre.
+              Ordenado por facturación SAT (lifetime, subtotal × FX, cuadra con Syntage). Columna &quot;Pedidos Odoo&quot; = pedidos confirmados en ERP.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -669,8 +669,9 @@ async function ReorderRiskTable({
 // ──────────────────────────────────────────────────────────────────────────
 const topCustomerViewColumns = [
   { key: "company", label: "Cliente", alwaysVisible: true },
-  { key: "revenue_90d", label: "Revenue 90d" },
-  { key: "revenue_total", label: "Revenue lifetime", defaultHidden: true },
+  { key: "ltv_sat", label: "Facturación SAT" },
+  { key: "revenue_90d", label: "Pedidos Odoo 90d" },
+  { key: "revenue_total", label: "Pedidos Odoo lifetime", defaultHidden: true },
   { key: "margin_12m", label: "Margen 12m" },
   { key: "margin_pct", label: "Margen material %" },
   { key: "adjusted_margin_pct", label: "Margen real %" },
@@ -686,33 +687,72 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
     ),
   },
   {
+    key: "ltv_sat",
+    header: "Facturación SAT",
+    sortable: false,
+    cell: (r) =>
+      r.total_invoiced_sat != null ? (
+        <span
+          className="tabular-nums font-medium"
+          title="Subtotal × tipo de cambio, lifetime. CFDIs vigentes. Cuadra con Syntage al centavo."
+        >
+          <Currency amount={r.total_invoiced_sat} compact />
+        </span>
+      ) : (
+        <span className="text-muted-foreground">—</span>
+      ),
+    align: "right",
+    summary: (rows) => {
+      const total = rows.reduce((s, r) => s + (r.total_invoiced_sat ?? 0), 0);
+      return total > 0 ? <Currency amount={total} compact /> : <span className="text-muted-foreground">—</span>;
+    },
+  },
+  {
     key: "revenue_90d",
-    header: "Revenue 90d",
+    header: "Pedidos Odoo 90d",
     sortable: true,
-    cell: (r) => <Currency amount={r.revenue_90d} compact />,
+    cell: (r) => (
+      <span
+        className="tabular-nums text-muted-foreground"
+        title="Pedidos confirmados en Odoo, últimos 90 días."
+      >
+        <Currency amount={r.revenue_90d} compact />
+      </span>
+    ),
     align: "right",
     summary: (rows) => (
-      <Currency
-        amount={rows.reduce((s, r) => s + (r.revenue_90d ?? 0), 0)}
-        compact
-      />
+      <span className="text-muted-foreground">
+        <Currency
+          amount={rows.reduce((s, r) => s + (r.revenue_90d ?? 0), 0)}
+          compact
+        />
+      </span>
     ),
   },
   {
     key: "revenue_total",
-    header: "Revenue lifetime",
+    header: "Pedidos Odoo lifetime",
     sortable: true,
     defaultHidden: true,
-    cell: (r) => <Currency amount={r.total_revenue_lifetime} compact />,
+    cell: (r) => (
+      <span
+        className="tabular-nums text-muted-foreground"
+        title="Pedidos confirmados en Odoo, lifetime."
+      >
+        <Currency amount={r.total_revenue_lifetime} compact />
+      </span>
+    ),
     align: "right",
     summary: (rows) => (
-      <Currency
-        amount={rows.reduce(
-          (s, r) => s + (r.total_revenue_lifetime ?? 0),
-          0
-        )}
-        compact
-      />
+      <span className="text-muted-foreground">
+        <Currency
+          amount={rows.reduce(
+            (s, r) => s + (r.total_revenue_lifetime ?? 0),
+            0
+          )}
+          compact
+        />
+      </span>
     ),
   },
   {

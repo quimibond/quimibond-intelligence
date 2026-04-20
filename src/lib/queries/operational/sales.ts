@@ -360,6 +360,9 @@ export interface TopCustomerRow {
   overhead_factor_pct: number;           // Overhead % del revenue (global)
   adjusted_margin_pct_12m: number | null; // material − overhead = margen real estimado
   total_revenue_lifetime: number;
+  // SAT fiscal LTV (cuadra con Syntage al centavo)
+  total_invoiced_sat: number | null;
+  total_invoiced_sat_ytd: number | null;
 }
 
 export interface TopCustomersPage {
@@ -371,6 +374,7 @@ const TOP_CUSTOMER_SORT_MAP: Record<string, string> = {
   revenue_90d: "revenue_90d",
   revenue_total: "total_revenue",
   name: "name",
+  // sat_ltv sort handled client-side (not a company_profile column)
 };
 
 export async function getTopCustomersPage(
@@ -409,12 +413,16 @@ export async function getTopCustomersPage(
   }
 
   const ids = baseRows.map((r) => r.company_id);
-  const [marginRes, overheadRes] = await Promise.all([
+  const [marginRes, overheadRes, satRes] = await Promise.all([
     sb
       .from("customer_margin_analysis")
       .select("company_id, margin_12m, margin_pct_12m")
       .in("company_id", ids),
     sb.from("overhead_factor_12m").select("overhead_factor_pct").maybeSingle(),
+    sb
+      .from("company_profile_sat")
+      .select("company_id, total_invoiced_sat, total_invoiced_sat_ytd")
+      .in("company_id", ids),
   ]);
   const marginMap = new Map<
     number,
@@ -434,6 +442,20 @@ export async function getTopCustomersPage(
     (overheadRes.data as { overhead_factor_pct: number | null } | null)
       ?.overhead_factor_pct ?? 0,
   );
+  const satCustomerMap = new Map<
+    number,
+    { total_invoiced_sat: number | null; total_invoiced_sat_ytd: number | null }
+  >();
+  for (const s of (satRes.data ?? []) as Array<{
+    company_id: number;
+    total_invoiced_sat: number | null;
+    total_invoiced_sat_ytd: number | null;
+  }>) {
+    satCustomerMap.set(s.company_id, {
+      total_invoiced_sat: s.total_invoiced_sat,
+      total_invoiced_sat_ytd: s.total_invoiced_sat_ytd,
+    });
+  }
 
   const rows: TopCustomerRow[] = baseRows.map((r) => {
     const matPct = marginMap.get(r.company_id)?.margin_pct_12m ?? null;
@@ -447,6 +469,8 @@ export async function getTopCustomersPage(
       overhead_factor_pct: overheadFactor,
       adjusted_margin_pct_12m:
         matPct != null ? Number((matPct - overheadFactor).toFixed(1)) : null,
+      total_invoiced_sat: satCustomerMap.get(r.company_id)?.total_invoiced_sat ?? null,
+      total_invoiced_sat_ytd: satCustomerMap.get(r.company_id)?.total_invoiced_sat_ytd ?? null,
     };
   });
 
@@ -474,12 +498,16 @@ export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
   if (baseRows.length === 0) return [];
 
   const ids = baseRows.map((r) => r.company_id);
-  const [marginRes, overheadRes] = await Promise.all([
+  const [marginRes, overheadRes, satResSimple] = await Promise.all([
     sb
       .from("customer_margin_analysis")
       .select("company_id, margin_12m, margin_pct_12m")
       .in("company_id", ids),
     sb.from("overhead_factor_12m").select("overhead_factor_pct").maybeSingle(),
+    sb
+      .from("company_profile_sat")
+      .select("company_id, total_invoiced_sat, total_invoiced_sat_ytd")
+      .in("company_id", ids),
   ]);
   const marginMap = new Map<
     number,
@@ -499,6 +527,20 @@ export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
     (overheadRes.data as { overhead_factor_pct: number | null } | null)
       ?.overhead_factor_pct ?? 0,
   );
+  const satSimpleMap = new Map<
+    number,
+    { total_invoiced_sat: number | null; total_invoiced_sat_ytd: number | null }
+  >();
+  for (const s of (satResSimple.data ?? []) as Array<{
+    company_id: number;
+    total_invoiced_sat: number | null;
+    total_invoiced_sat_ytd: number | null;
+  }>) {
+    satSimpleMap.set(s.company_id, {
+      total_invoiced_sat: s.total_invoiced_sat,
+      total_invoiced_sat_ytd: s.total_invoiced_sat_ytd,
+    });
+  }
 
   return baseRows.map((r) => {
     const matPct = marginMap.get(r.company_id)?.margin_pct_12m ?? null;
@@ -512,6 +554,8 @@ export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
       overhead_factor_pct: overheadFactor,
       adjusted_margin_pct_12m:
         matPct != null ? Number((matPct - overheadFactor).toFixed(1)) : null,
+      total_invoiced_sat: satSimpleMap.get(r.company_id)?.total_invoiced_sat ?? null,
+      total_invoiced_sat_ytd: satSimpleMap.get(r.company_id)?.total_invoiced_sat_ytd ?? null,
     };
   });
 }
