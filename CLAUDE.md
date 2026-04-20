@@ -451,6 +451,11 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 - `odoo_manufacturing`, `odoo_orderpoints`
 - `cfdi_documents` — CFDIs parseados de email XML (tipo I/N/P, con UUID para cruce)
 
+**Puente op↔fiscal (Fase 2.5):**
+- `invoice_bridge_manual` — Reconciliaciones manuales Odoo↔SAT por operador
+- `payment_bridge_manual` — Reconciliaciones manuales de pagos Odoo↔SAT
+- `products_fiscal_map` — Mapping producto Odoo → clave SAT/UNSPSC (seeded top 20 SKUs)
+
 **Metrics:**
 - `health_scores` — Scores calculados por contacto
 - `employee_metrics`, `department_metrics`
@@ -491,6 +496,9 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | `get_employee_dashboard()` | Metricas de empleados |
 | `get_department_comparison()` | Comparacion de departamentos |
 | `cashflow_runway()` | Alerta de cash flow: dias hasta que no alcanza para nomina |
+| `reconcile_invoice_manually()` | Crea entrada en invoice_bridge_manual para link Odoo↔SAT manual |
+| `reconcile_payment_manually()` | Crea entrada en payment_bridge_manual para pago Odoo↔SAT manual |
+| `match_unlinked_invoices_by_composite()` | Diagnóstico: retorna invoices sin UUID match para reconciliación manual |
 
 ---
 
@@ -601,6 +609,12 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | `margin_analysis` | Análisis de márgenes por producto y cliente |
 | `working_capital` | Capital de trabajo: efectivo + CxC - CxP, ratios de liquidez |
 | `cfdi_invoice_match` | Cruce CFDI ↔ factura via UUID (matched/unmatched/no_uuid) |
+| `invoice_bridge` | Puente Odoo↔SAT: 96K filas, match_method, gap flags (is_gap_missing_sat/odoo) |
+| `orders_unified` | Órdenes de venta y compra unificadas con company_id y salesperson/buyer |
+| `order_fulfillment_bridge` | Liga órdenes de venta → entregas (stock.picking) con lead_time y estado |
+| `person_unified` | Union de contacts ∪ odoo_employees ∪ odoo_users deduplicados por email |
+| `products_unified` | (MV) Productos Odoo enriquecidos con sat_revenue_mxn_12m desde syntage |
+| `product_price_history` | (MV) Historial de precios por producto desde orders+invoices (29,779 filas, 3,673 SKUs) |
 
 ### Modelos pendientes
 

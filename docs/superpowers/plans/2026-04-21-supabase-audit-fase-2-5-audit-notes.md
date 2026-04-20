@@ -89,6 +89,79 @@ Las vistas con `def_len` pequeño (< 300) son wrappers triviales sobre otras vis
 
 ---
 
-## Después
+## Después (cierre 2026-04-20)
 
-_Pendiente — se llenará al completar Fase 2.5._
+### Nuevos objetos
+
+- **Tablas (3):** invoice_bridge_manual, payment_bridge_manual, products_fiscal_map
+- **Views (4):** invoice_bridge, orders_unified, order_fulfillment_bridge, person_unified
+- **Materialized views (2):** products_unified, product_price_history (refreshed en cron 2h)
+- **Funciones (4):** reconcile_invoice_manually, reconcile_payment_manually, match_unlinked_invoices_by_composite, trg_backfill_contact_from_employee (trigger fn)
+
+### Verificación de objetos (query post-cierre)
+
+| Objeto | Esperado | Resultado |
+|---|---|---|
+| new_tables (3) | 3 | 3 |
+| new_views (4) | 4 | 4 |
+| new_mvs (2) | 2 | 2 |
+| new_fns (4) | 4 | 4 |
+| dropped_wrappers_remaining | 0 | 0 |
+
+### Bridge op↔fiscal (invoice_bridge)
+
+| Métrica | Valor |
+|---|---|
+| Total filas en bridge | 96,495 |
+| Matched por UUID (uuid_exact) | 15,811 |
+| Gap: missing en SAT | 11,820 |
+| Gap: missing en Odoo | 20,903 |
+
+### Productos
+
+- **products_fiscal_map** seeded: 20 SKUs top-revenue (19 → UNSPSC 11161800 Tela de punto, 1 → 11162201 Tela no tejida). Cobertura ~113M MXN / 70% revenue 12m.
+- **products_unified** total: 6,212 productos; 20 con sat_revenue_mxn_12m > 0 (los 20 con fiscal_map entries).
+
+### Price history
+
+- **product_price_history:** 29,779 filas, 3,673 productos distintos. Rango 2021-07 → 2026-04. Sources: order_sale, order_purchase, invoice_sale, invoice_purchase.
+
+### Personas (person_unified)
+
+| Rol | Count |
+|---|---|
+| external (contacts) | 1,882 |
+| employee | 150 |
+| user | 29 |
+| **Total** | **2,061** |
+
+### Poda Fase D (parcial — Option A)
+
+- 2 wrappers dropeados: `analytics_revenue_fiscal_monthly`, `analytics_revenue_operational_monthly` (0 callers confirmados)
+- 4 wrappers diferidos a Fase 2.5.1: analytics_finance_cfo_snapshot, analytics_finance_income_statement, analytics_finance_working_capital, analytics_finance_cash_position — tienen callers en frontend
+
+### Pendientes Fase 2.5.1 (follow-up)
+
+- Migrar 4 callsites de `analytics_finance_*` a views base (`cash_position`, `cfo_dashboard`, `pl_estado_resultados`, `working_capital`) y luego drop.
+- Task 13 (`monthly_revenue_unified`) — skipped; poca ganancia relativa.
+- Fix addon `_build_cfdi_map` (M2M bug documentado en memoria: asigna UUID del complemento a todas sus facturas cubiertas).
+
+### Commits Fase 2.5 (branch `fase-2-5-unificacion`, 13 commits)
+
+| SHA | Descripción |
+|---|---|
+| `4c006e2` | Task 0: pre-flight baseline snapshot |
+| `5387566` | Task 1: invoice_bridge view + invoice_bridge_manual + payment_bridge_manual |
+| `805aec2` | Task 2: reconcile_invoice_manually() function |
+| `fb8c4d0` | Task 3: match_unlinked_invoices_by_composite() diagnostic function |
+| `6f2e8b8` | Task 4: reconcile_payment_manually() function |
+| `18bdddc` | Task 5: products_fiscal_map table + seed top 20 SKUs |
+| `5a26b72` | Task 6: products_unified MV |
+| `29d698d` | Task 7: product_price_history MV + add to refresh_all_matviews |
+| `5af918d` | Task 8: orders_unified view |
+| `d96fb9e` | Task 9: order_fulfillment_bridge view |
+| `fcb2731` | Task 10: person_unified view |
+| `907cf29` | Task 11: backfill_contact_from_employee trigger + backfill (+139 contacts) |
+| `7299425` | Task 12a: drop 2 unused analytics_* thin wrappers |
+
+Pending merge a main — user deploya manualmente.
