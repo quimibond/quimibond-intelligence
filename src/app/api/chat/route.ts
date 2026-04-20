@@ -13,12 +13,11 @@ import {
 // Allow up to 120s for streaming responses
 export const maxDuration = 120;
 
-// Cache for static context (alerts, briefing, memory) — 5 min TTL
+// Cache for static context (alerts, briefing) — 5 min TTL
 const STATIC_CTX_TTL = 5 * 60 * 1000;
 let staticCtxCache: {
   alerts: string;
   briefing: string;
-  chatMemory: string;
   expiry: number;
 } | null = null;
 
@@ -32,12 +31,12 @@ const ChatRequestSchema = z.object({
 
 async function getStaticContext(
   supabase: ReturnType<typeof getServiceClient>
-): Promise<{ alerts: string; briefing: string; chatMemory: string }> {
+): Promise<{ alerts: string; briefing: string }> {
   if (staticCtxCache && Date.now() < staticCtxCache.expiry) {
     return staticCtxCache;
   }
 
-  const [alertsRes, briefingRes, memoryRes] = await Promise.all([
+  const [alertsRes, briefingRes] = await Promise.all([
     supabase
       .from("agent_insights")
       .select("title, severity, category, assignee_name, description, state, created_at")
@@ -52,13 +51,6 @@ async function getStaticContext(
       .eq("scope", "daily")
       .order("briefing_date", { ascending: false })
       .limit(1),
-
-    supabase
-      .from("chat_memory")
-      .select("question, answer")
-      .eq("thumbs_up", true)
-      .order("times_retrieved", { ascending: false })
-      .limit(3),
   ]);
 
   const alerts =
@@ -76,14 +68,7 @@ async function getStaticContext(
       ? `Fecha: ${briefingRes.data[0].briefing_date}\nEmails procesados: ${briefingRes.data[0].total_emails}\n${briefingRes.data[0].summary_text ?? "Sin resumen disponible."}`
       : "No hay briefing reciente disponible.";
 
-  const chatMemory =
-    memoryRes.data && memoryRes.data.length > 0
-      ? memoryRes.data
-          .map((m) => `Q: ${m.question}\nA: ${m.answer}`)
-          .join("\n\n")
-      : "";
-
-  staticCtxCache = { alerts, briefing, chatMemory, expiry: Date.now() + STATIC_CTX_TTL };
+  staticCtxCache = { alerts, briefing, expiry: Date.now() + STATIC_CTX_TTL };
   return staticCtxCache;
 }
 
@@ -166,7 +151,7 @@ async function gatherContext(
       .limit(10),
   ]);
 
-  const { alerts, briefing, chatMemory } = staticCtx;
+  const { alerts, briefing } = staticCtx;
 
   // Format company narratives (the core intelligence)
   const companies = (narrativesRes.data ?? []).length > 0
@@ -292,7 +277,7 @@ async function gatherContext(
       ).join("\n")
     : "";
 
-  return { contacts, alerts, briefing, facts, chatMemory, semanticEmails, companies, activeInsights, payments, reorders, overdueInvoices, anomalies };
+  return { contacts, alerts, briefing, facts, semanticEmails, companies, activeInsights, payments, reorders, overdueInvoices, anomalies };
 }
 
 interface ContextData {
@@ -300,7 +285,6 @@ interface ContextData {
   alerts: string;
   briefing: string;
   facts: string;
-  chatMemory: string;
   semanticEmails: string;
   companies: string;
   activeInsights: string;
@@ -361,10 +345,6 @@ Reglas:
   }
 
   prompt += `\n\n### Briefing del dia\n${ctx.briefing}`;
-
-  if (ctx.chatMemory) {
-    prompt += `\n\n### Respuestas previas exitosas\n${ctx.chatMemory}`;
-  }
 
   return prompt;
 }
