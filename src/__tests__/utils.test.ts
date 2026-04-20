@@ -154,15 +154,15 @@ describe("sentimentColor", () => {
     expect(sentimentColor(null)).toBe("text-muted-foreground");
   });
 
-  it("returns green for high sentiment", () => {
-    expect(sentimentColor(0.8)).toContain("emerald");
+  it("returns success for high sentiment", () => {
+    expect(sentimentColor(0.8)).toBe("text-success");
   });
 
-  it("returns amber for medium sentiment", () => {
-    expect(sentimentColor(0.4)).toContain("amber");
+  it("returns warning for medium sentiment", () => {
+    expect(sentimentColor(0.4)).toBe("text-warning");
   });
 
-  it("returns red for low sentiment", () => {
-    expect(sentimentColor(0.1)).toContain("red");
+  it("returns danger for low sentiment", () => {
+    expect(sentimentColor(0.1)).toBe("text-danger");
   });
 });

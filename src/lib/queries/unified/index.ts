@@ -163,7 +163,8 @@ export async function getUnifiedReconciliationCounts(
   return { open: rows.length, bySeverity };
 }
 
-async function _getUnifiedRefreshStalenessRaw(): Promise<UnifiedRefreshStaleness> {
+/** Raw (uncached) implementation. Exported for tests; production code should use the cached wrapper. */
+export async function _getUnifiedRefreshStalenessRaw(): Promise<UnifiedRefreshStaleness> {
   const supabase = getServiceClient();
   const { data, error } = await supabase.rpc("get_syntage_reconciliation_summary");
   if (error) throw new Error(error.message);

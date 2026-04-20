@@ -9,7 +9,7 @@ import {
   getUnifiedCashFlowAging,
   getUnifiedInvoicesForCompany,
   getUnifiedReconciliationCounts,
-  getUnifiedRefreshStaleness,
+  _getUnifiedRefreshStalenessRaw as getUnifiedRefreshStaleness,
   isComputableRevenue,
 } from "@/lib/queries/unified";
 import { getServiceClient } from "@/lib/supabase-server";
