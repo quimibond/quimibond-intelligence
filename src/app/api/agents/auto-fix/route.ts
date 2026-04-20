@@ -273,6 +273,7 @@ export async function POST() {  const supabase = getServiceClient();
           // If <30% orphaned, consider resolved
           if (count && total && count / total < 0.3) resolved = true;
         } else if (title.includes("factura") && title.includes("empresa")) {
+          // legitimate raw use: count orphaned odoo_invoices (company_id=null) — only the raw table has unlinked records
           const { count } = await supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null);
           if (count !== null && count < 50) resolved = true;
         } else if (title.includes("orden") && title.includes("empresa")) {

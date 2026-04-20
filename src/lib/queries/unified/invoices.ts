@@ -1,7 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
-import { getSelfCompanyIds, joinedCompanyName, pgInList } from "../_shared/_helpers";
+import { getSelfCompanyIds, pgInList } from "../_shared/_helpers";
 import {
   endOfDay,
   paginationRange,
@@ -10,19 +10,10 @@ import {
 
 /**
  * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.
- * - `odoo_invoices.amount_total_mxn` / `amount_residual_mxn` → para sumas
+ * - `invoices_unified` — fuente canónica (Fase 1 migración)
  * - `cash_flow_aging` (view) — buckets por empresa (ya normalizada)
  * - `payment_predictions` (MV) — riesgo anormal de pago
- *
- * Feature flag: USE_UNIFIED_LAYER (default true)
- * - true  → consulta `invoices_unified` con filtros isComputableRevenue
- * - false → consulta `odoo_invoices` directamente (legacy path)
  */
-
-// ──────────────────────────────────────────────────────────────────────────
-// Feature flag
-// ──────────────────────────────────────────────────────────────────────────
-const USE_UNIFIED_LAYER = process.env.USE_UNIFIED_LAYER !== "false";
 
 // Common unified filter: direction=issued + computable match_status + no cancelado
 const UNIFIED_MATCH_STATUSES = ["match_uuid", "match_composite", "odoo_only"] as const;
@@ -48,40 +39,6 @@ const BUCKET_DEFS: Array<{
   { label: "91-120", min: 91, max: 120, sort: 4 },
   { label: "120+", min: 121, max: null, sort: 5 },
 ];
-
-async function legacyGetArAging(): Promise<ArAgingBucket[]> {
-  const sb = getServiceClient();
-  const selfIds = await getSelfCompanyIds();
-  const { data } = await sb
-    .from("odoo_invoices")
-    .select("amount_residual_mxn, days_overdue")
-    .eq("move_type", "out_invoice")
-    .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0)
-    .not("company_id", "in", pgInList(selfIds));
-
-  const rows = (data ?? []) as Array<{
-    amount_residual_mxn: number | null;
-    days_overdue: number | null;
-  }>;
-
-  return BUCKET_DEFS.map((b) => {
-    const inBucket = rows.filter((r) => {
-      const d = Number(r.days_overdue) || 0;
-      if (d < b.min) return false;
-      if (b.max != null && d > b.max) return false;
-      return true;
-    });
-    return {
-      bucket: b.label,
-      count: inBucket.length,
-      amount_mxn: inBucket.reduce(
-        (acc, r) => acc + (Number(r.amount_residual_mxn) || 0),
-        0
-      ),
-    };
-  });
-}
 
 async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
   const sb = getServiceClient();
@@ -120,13 +77,8 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
   });
 }
 
-async function _getArAgingRaw(): Promise<ArAgingBucket[]> {
-  if (USE_UNIFIED_LAYER) return unifiedGetArAging();
-  return legacyGetArAging();
-}
-
 export const getArAging = unstable_cache(
-  _getArAgingRaw,
+  unifiedGetArAging,
   ["invoices-ar-aging-v1"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
@@ -193,43 +145,6 @@ export interface OverdueInvoice {
   estado_sat: string | null;
 }
 
-/**
- * Facturas vencidas — query directo a odoo_invoices con _mxn (legacy).
- */
-async function legacyGetOverdueInvoices(limit: number): Promise<OverdueInvoice[]> {
-  const sb = getServiceClient();
-  const selfIds = await getSelfCompanyIds();
-  const { data } = await sb
-    .from("odoo_invoices")
-    .select(
-      "id, name, company_id, amount_total_mxn, amount_residual_mxn, currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, companies:company_id(name)"
-    )
-    .eq("move_type", "out_invoice")
-    .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0)
-    .not("company_id", "in", pgInList(selfIds))
-    .order("amount_residual_mxn", { ascending: false, nullsFirst: false })
-    .limit(limit);
-
-  type Raw = Omit<OverdueInvoice, "company_name" | "uuid_sat" | "estado_sat"> & { companies: unknown };
-  return ((data ?? []) as unknown as Raw[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    company_id: row.company_id,
-    company_name: joinedCompanyName(row.companies),
-    amount_total_mxn: Number(row.amount_total_mxn) || 0,
-    amount_residual_mxn: Number(row.amount_residual_mxn) || 0,
-    currency: row.currency,
-    days_overdue: row.days_overdue,
-    due_date: row.due_date,
-    invoice_date: row.invoice_date,
-    payment_state: row.payment_state,
-    salesperson_name: row.salesperson_name,
-    uuid_sat: null,
-    estado_sat: null,
-  }));
-}
-
 async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[]> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -283,15 +198,8 @@ async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[
   }));
 }
 
-async function _getOverdueInvoicesRaw(
-  limit: number
-): Promise<OverdueInvoice[]> {
-  if (USE_UNIFIED_LAYER) return unifiedGetOverdueInvoices(limit);
-  return legacyGetOverdueInvoices(limit);
-}
-
 const _getOverdueInvoicesCached = unstable_cache(
-  _getOverdueInvoicesRaw,
+  unifiedGetOverdueInvoices,
   ["invoices-overdue-v1"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
@@ -310,14 +218,6 @@ export interface OverdueInvoicePage {
   total: number;
 }
 
-const OVERDUE_SORT_MAP: Record<string, string> = {
-  amount: "amount_residual_mxn",
-  days: "days_overdue",
-  due: "due_date",
-  invoice: "invoice_date",
-  name: "name",
-};
-
 const OVERDUE_SORT_MAP_UNIFIED: Record<string, string> = {
   amount: "amount_residual",
   days: "days_overdue",
@@ -325,82 +225,6 @@ const OVERDUE_SORT_MAP_UNIFIED: Record<string, string> = {
   invoice: "invoice_date",
   name: "odoo_ref",
 };
-
-async function legacyGetOverdueInvoicesPage(
-  params: TableParams & {
-    bucket?: string[];
-    salesperson?: string[];
-  }
-): Promise<OverdueInvoicePage> {
-  const sb = getServiceClient();
-  const selfIds = await getSelfCompanyIds();
-
-  const sortCol =
-    (params.sort && OVERDUE_SORT_MAP[params.sort]) ?? "amount_residual_mxn";
-  const ascending = params.sortDir === "asc";
-
-  const [start, end] = paginationRange(params.page, params.size);
-
-  let query = sb
-    .from("odoo_invoices")
-    .select(
-      "id, name, company_id, amount_total_mxn, amount_residual_mxn, currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, companies:company_id(name)",
-      { count: "exact" }
-    )
-    .eq("move_type", "out_invoice")
-    .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0)
-    .not("company_id", "in", pgInList(selfIds));
-
-  if (params.from) query = query.gte("invoice_date", params.from);
-  if (params.to) {
-    const next = endOfDay(params.to);
-    if (next) query = query.lt("invoice_date", next);
-  }
-  if (params.q) query = query.ilike("name", `%${params.q}%`);
-  if (params.salesperson && params.salesperson.length > 0) {
-    query = query.in("salesperson_name", params.salesperson);
-  }
-
-  if (params.bucket && params.bucket.length > 0) {
-    const orParts: string[] = [];
-    for (const b of params.bucket) {
-      if (b === "1-30") orParts.push("and(days_overdue.gte.1,days_overdue.lte.30)");
-      else if (b === "31-60")
-        orParts.push("and(days_overdue.gte.31,days_overdue.lte.60)");
-      else if (b === "61-90")
-        orParts.push("and(days_overdue.gte.61,days_overdue.lte.90)");
-      else if (b === "91-120")
-        orParts.push("and(days_overdue.gte.91,days_overdue.lte.120)");
-      else if (b === "120+") orParts.push("days_overdue.gte.121");
-    }
-    if (orParts.length > 0) query = query.or(orParts.join(","));
-  }
-
-  const { data, count } = await query
-    .order(sortCol, { ascending, nullsFirst: false })
-    .range(start, end);
-
-  type Raw = Omit<OverdueInvoice, "company_name" | "uuid_sat" | "estado_sat"> & { companies: unknown };
-  const rows = ((data ?? []) as unknown as Raw[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    company_id: row.company_id,
-    company_name: joinedCompanyName(row.companies),
-    amount_total_mxn: Number(row.amount_total_mxn) || 0,
-    amount_residual_mxn: Number(row.amount_residual_mxn) || 0,
-    currency: row.currency,
-    days_overdue: row.days_overdue,
-    due_date: row.due_date,
-    invoice_date: row.invoice_date,
-    payment_state: row.payment_state,
-    salesperson_name: row.salesperson_name,
-    uuid_sat: null,
-    estado_sat: null,
-  }));
-
-  return { rows, total: count ?? rows.length };
-}
 
 async function unifiedGetOverdueInvoicesPage(
   params: TableParams & {
@@ -503,35 +327,13 @@ export async function getOverdueInvoicesPage(
     salesperson?: string[];
   }
 ): Promise<OverdueInvoicePage> {
-  if (USE_UNIFIED_LAYER) return unifiedGetOverdueInvoicesPage(params);
-  return legacyGetOverdueInvoicesPage(params);
+  return unifiedGetOverdueInvoicesPage(params);
 }
 
 /**
  * Opciones distinct para el facet "Vendedor" en cobranza.
  * Lightweight: solo nombres únicos entre las facturas vencidas.
- * Note: in unified path, salesperson_name is unavailable — returns empty list
- * so the facet hides itself gracefully.
  */
-async function legacyGetOverdueSalespeopleOptions(): Promise<string[]> {
-  const sb = getServiceClient();
-  const selfIds = await getSelfCompanyIds();
-  const { data } = await sb
-    .from("odoo_invoices")
-    .select("salesperson_name")
-    .eq("move_type", "out_invoice")
-    .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0)
-    .not("company_id", "in", pgInList(selfIds))
-    .not("salesperson_name", "is", null)
-    .limit(2000);
-  const set = new Set<string>();
-  for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
-    if (r.salesperson_name) set.add(r.salesperson_name);
-  }
-  return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
-}
-
 async function unifiedGetOverdueSalespeopleOptions(): Promise<string[]> {
   const supabase = getServiceClient();
   const { data, error } = await supabase.from("invoices_unified")
@@ -551,13 +353,8 @@ async function unifiedGetOverdueSalespeopleOptions(): Promise<string[]> {
   return [...names].sort();
 }
 
-async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
-  if (USE_UNIFIED_LAYER) return unifiedGetOverdueSalespeopleOptions();
-  return legacyGetOverdueSalespeopleOptions();
-}
-
 export const getOverdueSalespeopleOptions = unstable_cache(
-  _getOverdueSalespeopleOptionsRaw,
+  unifiedGetOverdueSalespeopleOptions,
   ["invoices-overdue-salespeople-v1"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );

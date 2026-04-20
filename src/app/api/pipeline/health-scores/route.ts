@@ -33,18 +33,23 @@ export async function POST(request: NextRequest) {
     const today = new Date().toISOString().split("T")[0];
 
     // Load all data in parallel (batch, no N+1)
+    // legitimate raw use: batch pipeline needs row-level data per company for health score calculation;
+    // company_profile has aggregates but scoring algorithm needs individual records for trend/distribution analysis
     const [companiesRes, invoicesRes, ordersRes, deliveriesRes, emailsRes, paymentsRes] = await Promise.all([
       supabase.from("company_profile")
         .select("company_id, name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, pending_amount, overdue_amount, overdue_count, max_days_overdue, total_deliveries, late_deliveries, otd_rate, email_count, last_email_date, contact_count, tier"),
 
+      // legitimate raw use: needs all posted out_invoices with payment/overdue detail for scoring
       supabase.from("odoo_invoices")
         .select("company_id, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue")
         .eq("move_type", "out_invoice").eq("state", "posted"),
 
+      // legitimate raw use: needs all confirmed sale orders with date for recency/trend scoring
       supabase.from("odoo_sale_orders")
         .select("company_id, amount_total_mxn, date_order")
         .in("state", ["sale", "done"]),
 
+      // legitimate raw use: needs all active deliveries with is_late for OTD scoring
       supabase.from("odoo_deliveries")
         .select("company_id, state, is_late")
         .not("state", "in", '("cancel")'),
@@ -54,6 +59,7 @@ export async function POST(request: NextRequest) {
         .not("company_id", "is", null)
         .gte("email_date", new Date(Date.now() - 90 * 86400_000).toISOString()),
 
+      // legitimate raw use: needs inbound payments with amount/date for payment velocity scoring
       supabase.from("odoo_account_payments")
         .select("company_id, amount, date")
         .eq("payment_type", "inbound"),
