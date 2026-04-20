@@ -45,6 +45,7 @@ import {
   type RfmSegmentRow,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { YearSelector } from "@/components/patterns/year-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Empresas" };
@@ -172,6 +173,7 @@ export default async function CompaniesPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector paramName="emp_year" label="Año" />
             <TableViewOptions columns={companyViewColumns} />
             <TableExportButton filename="companies" />
           </div>

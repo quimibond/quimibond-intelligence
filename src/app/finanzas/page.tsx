@@ -54,6 +54,7 @@ import { FiscalRevenueKpiCard } from "@/components/domain/fiscal/FiscalRevenueKp
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
 
+import { YearSelector } from "@/components/patterns/year-selector";
 import { PlHistoryChart } from "./_components/pl-history-chart";
 import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
 import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table";
@@ -168,11 +169,12 @@ export default function FinanzasPage() {
               </CardContent>
             </Card>
             <Card>
-              <CardHeader>
+              <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <CardTitle className="text-base">Capital de trabajo</CardTitle>
                   <DataSourceBadge source="odoo" />
                 </div>
+                <YearSelector paramName="wc_year" label="Año" />
               </CardHeader>
               <CardContent className="pb-4">
                 <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
@@ -186,11 +188,12 @@ export default function FinanzasPage() {
         {/* P&L 12m */}
         <div id="pl" className="scroll-mt-24">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <CardTitle className="text-base">P&amp;L últimos 12 meses</CardTitle>
                 <DataSourceBadge source="odoo" />
               </div>
+              <YearSelector paramName="pl_year" label="Año" />
             </CardHeader>
             <CardContent>
               <Suspense
