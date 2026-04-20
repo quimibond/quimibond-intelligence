@@ -20,13 +20,29 @@ export async function getCompanyPayments(
 ): Promise<CompanyPaymentRow[]> {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("odoo_payments")
+    .from("odoo_account_payments")
     .select(
-      "id, name, payment_type, amount, currency, payment_date, state, payment_category, amount_mxn, synced_at",
+      "id, name, payment_type, amount, currency, date, state, partner_type, amount_signed, synced_at",
     )
     .eq("company_id", companyId)
-    .order("payment_date", { ascending: false, nullsFirst: false })
+    .order("date", { ascending: false, nullsFirst: false })
     .limit(limit);
   if (error) throw new Error(`company payments query failed: ${error.message}`);
-  return (data ?? []) as CompanyPaymentRow[];
+  return (data ?? []).map((r) => ({
+    id: r.id as number,
+    name: (r.name as string | null) ?? null,
+    payment_type: (r.payment_type as string | null) ?? null,
+    amount: (r.amount as number | null) ?? null,
+    currency: (r.currency as string | null) ?? null,
+    payment_date: (r.date as string | null) ?? null,
+    state: (r.state as string | null) ?? null,
+    payment_category:
+      r.partner_type === "customer"
+        ? "customer"
+        : r.partner_type === "supplier"
+          ? "supplier"
+          : null,
+    amount_mxn: (r.amount_signed as number | null) ?? null,
+    synced_at: (r.synced_at as string | null) ?? null,
+  }));
 }

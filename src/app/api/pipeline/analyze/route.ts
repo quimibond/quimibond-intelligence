@@ -271,7 +271,7 @@ Solo hay 5 tipos validos. Si un hecho no encaja en uno de estos, NO lo extraigas
 
 ## Que NO extraer como fact (ruido que ya tenemos en otras tablas)
 - NO extraigas confirmaciones de entrega, guias de envio, numeros de tracking — ya estan en odoo_deliveries.
-- NO extraigas notificaciones de pagos/transferencias recibidas — ya estan en odoo_payments.
+- NO extraigas notificaciones de pagos/transferencias recibidas — ya estan en odoo_account_payments.
 - NO extraigas envio/recepcion de facturas, CFDIs, ordenes de compra como documentos — ya estan en odoo_invoices/cfdi_documents.
 - NO extraigas puestos, departamentos ni organigramas — ya estan en odoo_employees.
 - NO extraigas metadata de stock, inventario en transito, material disponible — ya esta en odoo_products.

@@ -208,7 +208,7 @@ export default async function CompanyDetailPage({
           </Suspense>
         </TabsContent>
 
-        {/* 6. Pagos — historial de cobros y pagos desde odoo_payments */}
+        {/* 6. Pagos — historial de cobros y pagos desde odoo_account_payments */}
         <TabsContent value="pagos" className="mt-4">
           <Suspense fallback={<TabSkeleton />}>
             <PagosTab company={company} />
