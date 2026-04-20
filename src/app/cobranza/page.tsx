@@ -60,7 +60,7 @@ import {
   type CeiRow,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
-import { YearSelector } from "@/components/patterns/year-selector";
+import { PeriodSelector } from "@/components/patterns/period-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Cobranza" };
@@ -203,7 +203,7 @@ export default async function CobranzaPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <YearSelector paramName="pr_year" label="Año" />
+            <PeriodSelector paramName="pr_period" label="Período" />
             <TableViewOptions
               paramPrefix="pr_"
               columns={paymentRiskViewColumns}
@@ -264,7 +264,7 @@ export default async function CobranzaPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <YearSelector paramName="age_year" label="Año" />
+            <PeriodSelector paramName="age_period" label="Período" />
             <TableViewOptions
               paramPrefix="age_"
               columns={companyAgingViewColumns}
@@ -315,7 +315,7 @@ export default async function CobranzaPage({
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <YearSelector paramName="inv_year" label="Año" />
+            <PeriodSelector paramName="inv_period" label="Período" />
             <TableViewOptions
               paramPrefix="inv_"
               columns={overdueInvoicesViewColumns}
