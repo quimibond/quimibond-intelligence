@@ -791,27 +791,18 @@ async function TopCustomersTable({
   });
   const view = parseViewParam(searchParams, "tc_view");
   const chart: DataViewChartSpec = {
-    type: "composed",
-    xKey: "company_name",
-    topN: 15,
+    type: "scatter",
+    xKey: "revenue_90d",
+    yKey: "margin_pct_12m",
+    sizeKey: "total_revenue_lifetime",
     series: [
-      {
-        dataKey: "revenue_90d",
-        label: "Revenue 90d",
-        kind: "bar",
-        yAxisId: "left",
-      },
-      {
-        dataKey: "margin_pct_12m",
-        label: "Margen % 12m",
-        kind: "line",
-        yAxisId: "right",
-        color: "var(--chart-4)",
-      },
+      { dataKey: "revenue_90d", label: "Revenue 90d" },
+      { dataKey: "margin_pct_12m", label: "Margen % 12m" },
     ],
     valueFormat: "currency-compact",
     secondaryValueFormat: "percent",
     rowHrefTemplate: "/empresas/{company_id}",
+    height: 360,
   };
   return (
     <div className="space-y-3">
@@ -992,10 +983,10 @@ async function SalespeopleTable({
     valueFormat: "currency-compact",
     colorBy: "rank_bucket",
     colorMap: {
-      "#1": "var(--chart-4)",
-      "Top 3": "var(--chart-3)",
-      "Top 5": "var(--chart-2)",
-      Resto: "var(--chart-1)",
+      "#1": "var(--success)",
+      "Top 3": "var(--warning)",
+      "Top 5": "var(--chart-3)",
+      Resto: "var(--chart-2)",
     },
     height: Math.max(260, ranked.length * 28 + 40),
   };
@@ -1179,19 +1170,10 @@ async function RecentOrdersTable({
     xKey: "week",
     stacked: true,
     series: [
+      { dataKey: "draft", label: "Borrador", color: "var(--muted-foreground)" },
       { dataKey: "sale", label: "Confirmado", color: "var(--chart-2)" },
-      { dataKey: "done", label: "Hecho", color: "var(--chart-1)" },
       { dataKey: "sent", label: "Enviado", color: "var(--chart-3)" },
-      {
-        dataKey: "draft",
-        label: "Borrador",
-        color: "var(--muted-foreground)",
-      },
-      {
-        dataKey: "cancel",
-        label: "Cancelado",
-        color: "var(--destructive)",
-      },
+      { dataKey: "done", label: "Hecho", color: "var(--success)" },
     ],
     valueFormat: "currency-compact",
   };
