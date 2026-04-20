@@ -49,6 +49,7 @@ import { SyntageReconciliationPanel } from "@/components/domain/system/SyntageRe
 import { FiscalHistoricoPanel } from "@/components/domain/fiscal/FiscalHistoricoPanel";
 import { ContabilidadElectronicaPanel } from "@/components/domain/system/ContabilidadElectronicaPanel";
 import { WebhookEventsPanel } from "@/components/domain/system/WebhookEventsPanel";
+import { SyntageFilesPanel } from "@/components/domain/system/SyntageFilesPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -91,7 +92,7 @@ export default async function SystemPage({
 
   // Support ?tab=historico-fiscal or ?tab=contabilidad-electronica to deep-link into syntage sub-tab
   const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
-  const syntageTabs = ["historico-fiscal", "contabilidad-electronica", "webhook-events"];
+  const syntageTabs = ["historico-fiscal", "contabilidad-electronica", "webhook-events", "files"];
   const outerTab =
     tabParam && syntageTabs.includes(tabParam) ? "syntage" : (tabParam ?? "sync");
   const innerSyntageTab =
@@ -215,6 +216,7 @@ export default async function SystemPage({
               <TabsTrigger value="historico-fiscal">Histórico Fiscal</TabsTrigger>
               <TabsTrigger value="contabilidad-electronica">Contabilidad Electrónica</TabsTrigger>
               <TabsTrigger value="webhook-events">Webhooks</TabsTrigger>
+              <TabsTrigger value="files">Archivos</TabsTrigger>
             </TabsList>
 
             <TabsContent value="health" className="mt-4">
@@ -282,6 +284,22 @@ export default async function SystemPage({
                 <CardContent className="pb-4">
                   <Suspense fallback={<Skeleton className="h-[500px]" />}>
                     <WebhookEventsPanel />
+                  </Suspense>
+                </CardContent>
+              </Card>
+            </TabsContent>
+
+            <TabsContent value="files" className="mt-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Archivos Syntage</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Metadata de XMLs/PDFs registrados por Syntage (16k registros). Fase 4 (download) pendiente.
+                  </p>
+                </CardHeader>
+                <CardContent className="pb-4">
+                  <Suspense fallback={<Skeleton className="h-[500px]" />}>
+                    <SyntageFilesPanel />
                   </Suspense>
                 </CardContent>
               </Card>
