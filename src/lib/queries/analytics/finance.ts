@@ -1,17 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
-// Layer 3 unified helpers — imported for feature-flag dispatch
-// getUnifiedCashFlowAging is available for future callers in this module
-import { getUnifiedCashFlowAging } from "@/lib/queries/unified";
-
-/**
- * Feature flag: when USE_UNIFIED_LAYER !== "false" (default ON),
- * functions that previously queried odoo_invoices directly will
- * dispatch to Layer 3 (invoices_unified) helpers instead.
- * Set USE_UNIFIED_LAYER=false to instantly revert to legacy paths.
- */
-const USE_UNIFIED_LAYER = process.env.USE_UNIFIED_LAYER !== "false";
 
 /**
  * Finance queries v2 — usa las VIEWS canónicas del backend.
@@ -93,49 +82,21 @@ export interface ArZombies {
   totalMxn: number;
 }
 
-async function legacyGetArZombies(): Promise<ArZombies> {
+export async function getArZombies(): Promise<ArZombies> {
+  // Layer 3: query invoices_unified for issued invoices overdue ≥365 days
   const sb = getServiceClient();
   const { data } = await sb
-    .from("odoo_invoices")
-    .select("amount_residual,amount_residual_mxn")
-    .eq("move_type", "out_invoice")
-    .eq("state", "posted")
+    .from("invoices_unified")
+    .select("amount_residual,days_overdue,direction,match_status,estado_sat,payment_state")
+    .eq("direction", "issued")
+    .in("match_status", ["match_uuid", "match_composite", "odoo_only"])
+    .not("estado_sat", "eq", "cancelado")
     .in("payment_state", ["not_paid", "partial"])
-    .gt("amount_residual", 0)
-    .gte("days_overdue", 365);
-  const rows = (data ?? []) as Array<{
-    amount_residual: number | null;
-    amount_residual_mxn: number | null;
-  }>;
-  const totalMxn = rows.reduce(
-    (s, r) => s + (Number(r.amount_residual_mxn ?? r.amount_residual) || 0),
-    0,
-  );
+    .gte("days_overdue", 365)
+    .gt("amount_residual", 0);
+  const rows = (data ?? []) as Array<{ amount_residual: number | null }>;
+  const totalMxn = rows.reduce((s, r) => s + (Number(r.amount_residual) || 0), 0);
   return { count: rows.length, totalMxn };
-}
-
-export async function getArZombies(): Promise<ArZombies> {
-  if (USE_UNIFIED_LAYER) {
-    // Layer 3: query invoices_unified for issued invoices overdue ≥365 days
-    const sb = getServiceClient();
-    const { data, error } = await sb
-      .from("invoices_unified")
-      .select("amount_residual,days_overdue,direction,match_status,estado_sat,payment_state")
-      .eq("direction", "issued")
-      .in("match_status", ["match_uuid", "match_composite", "odoo_only"])
-      .not("estado_sat", "eq", "cancelado")
-      .in("payment_state", ["not_paid", "partial"])
-      .gte("days_overdue", 365)
-      .gt("amount_residual", 0);
-    if (error) {
-      // Graceful fallback: if unified not available yet, use legacy
-      return legacyGetArZombies();
-    }
-    const rows = (data ?? []) as Array<{ amount_residual: number | null }>;
-    const totalMxn = rows.reduce((s, r) => s + (Number(r.amount_residual) || 0), 0);
-    return { count: rows.length, totalMxn };
-  }
-  return legacyGetArZombies();
 }
 
 /** Runway + net position 30d (view: financial_runway) */
