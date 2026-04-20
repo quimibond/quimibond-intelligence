@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   KpiCard,
   StatGrid,
   PageHeader,
@@ -41,7 +42,7 @@ export const metadata = { title: "Equipo" };
 
 export default function EquipoPage() {
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Equipo"
         subtitle="¿Quién tiene backlog, qué insights tiene pendientes y cómo está distribuido?"
@@ -146,7 +147,7 @@ export default function EquipoPage() {
         </CardContent>
       </Card>
       </section>
-    </div>
+    </PageLayout>
   );
 }
 

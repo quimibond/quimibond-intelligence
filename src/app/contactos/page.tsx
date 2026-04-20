@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   KpiCard,
   StatGrid,
   PageHeader,
@@ -233,7 +234,7 @@ export default async function ContactsPage({
 }) {
   const sp = await searchParams;
   return (
-    <div className="space-y-4 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Contactos"
         subtitle="¿Con qué personas trato, cómo está cada relación y quién está en riesgo?"
@@ -294,7 +295,7 @@ export default async function ContactsPage({
           <ContactsTable searchParams={sp} />
         </Suspense>
       </div>
-    </div>
+    </PageLayout>
   );
 }
 

@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   KpiCard,
   StatGrid,
   PageHeader,
@@ -94,7 +95,7 @@ export default async function SystemPage({
     tabParam === "historico-fiscal" ? "historico-fiscal" : "health";
 
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Sistema"
         subtitle="Sync, costos de Claude API, agentes y calidad de datos"
@@ -290,7 +291,7 @@ export default async function SystemPage({
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+    </PageLayout>
   );
 }
 

@@ -12,7 +12,7 @@ import {
   Sun,
 } from "lucide-react";
 
-import { PageHeader } from "@/components/patterns";
+import { PageLayout, PageHeader } from "@/components/patterns";
 import { TableDensityToggle } from "@/components/patterns/table-density-toggle";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -28,7 +28,7 @@ export const metadata = { title: "Perfil" };
 
 export default function ProfilePage() {
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Perfil"
         subtitle="Preferencias, tema, información del sistema y cerrar sesión"
@@ -181,7 +181,7 @@ export default function ProfilePage() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </PageLayout>
   );
 }
 
