@@ -57,13 +57,13 @@ import {
   type TopCustomerRow,
   type SalespersonRow,
   type RecentSaleOrder,
-} from "@/lib/queries/sales";
+} from "@/lib/queries/operational/sales";
 import {
   getCustomerCohorts,
   type CohortMatrix,
 } from "@/lib/queries/analytics";
-import { getPlHistory } from "@/lib/queries/finance";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+import { getPlHistory } from "@/lib/queries/analytics/finance";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";

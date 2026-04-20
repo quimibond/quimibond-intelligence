@@ -17,12 +17,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { getInsightById } from "@/lib/queries/insights";
-import { getCompanyEvidencePack } from "@/lib/queries/evidence";
+import { getInsightById } from "@/lib/queries/intelligence/insights";
+import { getCompanyEvidencePack } from "@/lib/queries/intelligence/evidence";
 import {
   buildTimelineFromEvidencePack,
   extractEvidenceRefs,
-} from "@/lib/queries/evidence-helpers";
+} from "@/lib/queries/intelligence/evidence-helpers";
 import { markInsightSeen } from "../../actions";
 import { InsightActions } from "./_components/insight-actions";
 

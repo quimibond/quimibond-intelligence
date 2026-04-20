@@ -4,9 +4,9 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { SeverityBadge } from "@/components/patterns/severity-badge";
 import { DateDisplay, Currency } from "@/components/patterns";
-import { CompanyReconciliationTab } from "@/components/system/CompanyReconciliationTab";
-import { FiscalCompanyProfileCard } from "@/components/fiscal/FiscalCompanyProfileCard";
-import { getCustomer360 } from "@/lib/queries/customer-360";
+import { CompanyReconciliationTab } from "@/components/domain/system/CompanyReconciliationTab";
+import { FiscalCompanyProfileCard } from "@/components/domain/fiscal/FiscalCompanyProfileCard";
+import { getCustomer360 } from "@/lib/queries/analytics/customer-360";
 
 // Note: Card/CardContent/CardHeader/CardTitle used in FiscalSummary360Section
 

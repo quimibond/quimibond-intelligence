@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { getSelfCompanyIds, pgInList } from "./_helpers";
+import { getSelfCompanyIds, pgInList } from "../_shared/_helpers";
 
 /**
  * Dashboard queries v3 — UNA sola llamada a `get_dashboard_kpis()` RPC.

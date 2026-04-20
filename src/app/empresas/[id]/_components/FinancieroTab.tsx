@@ -18,10 +18,10 @@ import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import {
   getCompanyInvoicesPage,
   type CompanyInvoiceRow,
-} from "@/lib/queries/companies";
-import { getCustomer360 } from "@/lib/queries/customer-360";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
-import type { CompanyDetail } from "@/lib/queries/companies";
+} from "@/lib/queries/_shared/companies";
+import { getCustomer360 } from "@/lib/queries/analytics/customer-360";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import type { CompanyDetail } from "@/lib/queries/_shared/companies";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

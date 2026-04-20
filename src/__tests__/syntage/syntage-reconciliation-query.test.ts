@@ -4,7 +4,7 @@ vi.mock("@/lib/supabase-server", () => ({
   getServiceClient: vi.fn(),
 }));
 
-import { getSyntageReconciliationSummary } from "@/lib/queries/syntage-reconciliation";
+import { getSyntageReconciliationSummary } from "@/lib/queries/fiscal/syntage-reconciliation";
 import { getServiceClient } from "@/lib/supabase-server";
 
 describe("getSyntageReconciliationSummary", () => {

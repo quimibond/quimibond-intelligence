@@ -26,8 +26,8 @@ import {
   isVisibleToCEO,
   type InsightRow,
   type InsightState,
-} from "@/lib/queries/insights";
-import { extractEvidenceRefs } from "@/lib/queries/evidence-helpers";
+} from "@/lib/queries/intelligence/insights";
+import { extractEvidenceRefs } from "@/lib/queries/intelligence/evidence-helpers";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

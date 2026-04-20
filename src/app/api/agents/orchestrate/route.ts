@@ -20,7 +20,7 @@ import { buildFinancieroContextOperativo, buildFinancieroContextEstrategico } fr
 import { advanceMode } from "@/lib/agents/mode-rotation";
 import { buildComplianceContextOperativo, buildComplianceContextEstrategico } from "@/lib/agents/compliance-context";
 import { applyFiscalAnnotation } from "@/lib/agents/fiscal-annotation";
-import { getDirectorBriefing, type DirectorSlug, type DirectorBriefing } from "@/lib/queries/evidence";
+import { getDirectorBriefing, type DirectorSlug, type DirectorBriefing } from "@/lib/queries/intelligence/evidence";
 
 export const maxDuration = 300;
 

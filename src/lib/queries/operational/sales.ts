@@ -1,11 +1,11 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { getSelfCompanyIds, pgInList, resolveCompanyNames } from "./_helpers";
+import { getSelfCompanyIds, pgInList, resolveCompanyNames } from "../_shared/_helpers";
 import {
   endOfDay,
   paginationRange,
   type TableParams,
-} from "./table-params";
+} from "../_shared/table-params";
 
 /**
  * Sales queries v2 — usa views canónicas:

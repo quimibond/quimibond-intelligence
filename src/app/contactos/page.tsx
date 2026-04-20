@@ -33,8 +33,8 @@ import {
   getContactsPage,
   getContactsKpis,
   type ContactListRow,
-} from "@/lib/queries/contacts";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+} from "@/lib/queries/_shared/contacts";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Contactos" };

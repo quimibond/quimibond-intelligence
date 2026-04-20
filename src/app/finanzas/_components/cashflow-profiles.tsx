@@ -29,7 +29,7 @@ import type {
   PartnerPaymentProfile,
   JournalFlowProfile,
   AccountPaymentProfile,
-} from "@/lib/queries/finance";
+} from "@/lib/queries/analytics/finance";
 
 interface CashflowProfilesProps {
   inboundPartners: PartnerPaymentProfile[];

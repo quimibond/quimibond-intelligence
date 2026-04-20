@@ -1,12 +1,12 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
-import { getSelfCompanyIds, joinedCompanyName, pgInList } from "./_helpers";
+import { getSelfCompanyIds, joinedCompanyName, pgInList } from "../_shared/_helpers";
 import {
   endOfDay,
   paginationRange,
   type TableParams,
-} from "./table-params";
+} from "../_shared/table-params";
 
 /**
  * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.

@@ -37,8 +37,8 @@ import {
   getAgentMemory,
   type AgentRunRow,
   type AgentMemoryRow,
-} from "@/lib/queries/system";
-import { getInsights, type InsightRow } from "@/lib/queries/insights";
+} from "@/lib/queries/_shared/system";
+import { getInsights, type InsightRow } from "@/lib/queries/intelligence/insights";
 import { formatNumber } from "@/lib/formatters";
 
 export const dynamic = "force-dynamic";

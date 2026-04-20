@@ -1,5 +1,5 @@
-import { getSyntageReconciliationSummary } from "@/lib/queries/syntage-reconciliation";
-import type { IssueType, Severity } from "@/lib/queries/syntage-reconciliation";
+import { getSyntageReconciliationSummary } from "@/lib/queries/fiscal/syntage-reconciliation";
+import type { IssueType, Severity } from "@/lib/queries/fiscal/syntage-reconciliation";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatNumber } from "@/lib/formatters";

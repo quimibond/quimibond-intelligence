@@ -41,8 +41,8 @@ import {
   getManufacturingAssigneeOptions,
   type DeliveryRow,
   type ManufacturingRow,
-} from "@/lib/queries/operations";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+} from "@/lib/queries/operational/operations";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 
 import { OtdWeeklyChart } from "./_components/otd-weekly-chart";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";

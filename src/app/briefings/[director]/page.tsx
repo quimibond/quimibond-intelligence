@@ -17,7 +17,7 @@ import {
   getDirectorBriefing,
   DIRECTOR_LABELS,
   type DirectorSlug,
-} from "@/lib/queries/evidence";
+} from "@/lib/queries/intelligence/evidence";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

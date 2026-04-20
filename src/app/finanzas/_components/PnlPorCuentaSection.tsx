@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/table";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
-import { getPnlByAccount, getMostRecentPeriod } from "@/lib/queries/pnl";
+import { getPnlByAccount, getMostRecentPeriod } from "@/lib/queries/analytics/pnl";
 
 // ──────────────────────────────────────────────────────────────────────────
 // Inner async table (server component)

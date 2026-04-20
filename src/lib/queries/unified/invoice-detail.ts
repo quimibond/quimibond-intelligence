@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { joinedCompanyName } from "./_helpers";
+import { joinedCompanyName } from "../_shared/_helpers";
 
 /**
  * Single-invoice detail for the InvoiceDetail drill-down.

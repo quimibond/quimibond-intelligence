@@ -39,7 +39,7 @@ import {
   type BomCostSummary,
   type BomDuplicateRow,
   type UomMismatchRow,
-} from "@/lib/queries/products";
+} from "@/lib/queries/analytics/products";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Costos de BOM" };

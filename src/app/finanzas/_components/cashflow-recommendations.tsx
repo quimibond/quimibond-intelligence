@@ -38,7 +38,7 @@ import type {
   CashflowRecommendationAction,
   CashflowTopCompany,
   RecommendationSeverity,
-} from "@/lib/queries/finance";
+} from "@/lib/queries/analytics/finance";
 
 /* -------------------------------------------------------------------------- */
 /*  Variants                                                                  */

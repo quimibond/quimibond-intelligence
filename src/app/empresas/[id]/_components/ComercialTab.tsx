@@ -20,9 +20,9 @@ import {
   getCompanyOrdersPage,
   type CompanyProductRow,
   type CompanyOrderRow,
-} from "@/lib/queries/companies";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
-import type { CompanyDetail } from "@/lib/queries/companies";
+} from "@/lib/queries/_shared/companies";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import type { CompanyDetail } from "@/lib/queries/_shared/companies";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 

@@ -15,7 +15,7 @@ import {
 } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 import { formatCurrencyMXN } from "@/lib/formatters";
-import type { ProjectedCashFlowWeek } from "@/lib/queries/finance";
+import type { ProjectedCashFlowWeek } from "@/lib/queries/analytics/finance";
 
 interface Props {
   weeks: ProjectedCashFlowWeek[];

@@ -38,7 +38,7 @@ import type {
   EvidencePackActivities,
   EvidencePackHistory,
   EvidencePackPredictions,
-} from "@/lib/queries/evidence";
+} from "@/lib/queries/intelligence/evidence";
 
 interface Props {
   pack: EvidencePack;

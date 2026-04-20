@@ -15,8 +15,8 @@ import {
 import {
   getCompanyPayments,
   type CompanyPaymentRow,
-} from "@/lib/queries/payments";
-import type { CompanyDetail } from "@/lib/queries/companies";
+} from "@/lib/queries/_shared/payments";
+import type { CompanyDetail } from "@/lib/queries/_shared/companies";
 
 interface Props {
   company: CompanyDetail;

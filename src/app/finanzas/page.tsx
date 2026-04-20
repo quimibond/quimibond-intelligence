@@ -48,8 +48,8 @@ import {
   getArZombies,
   type BankBalance,
   type PlPoint,
-} from "@/lib/queries/finance";
-import { FiscalRevenueKpiCard } from "@/components/fiscal/FiscalRevenueKpiCard";
+} from "@/lib/queries/analytics/finance";
+import { FiscalRevenueKpiCard } from "@/components/domain/fiscal/FiscalRevenueKpiCard";
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
 

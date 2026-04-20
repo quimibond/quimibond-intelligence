@@ -8,7 +8,7 @@ import { CompanyLink } from "./company-link";
 import { EmptyState } from "./empty-state";
 import { Badge } from "@/components/ui/badge";
 
-import { getInvoiceByName } from "@/lib/queries/invoice-detail";
+import { getInvoiceByName } from "@/lib/queries/unified/invoice-detail";
 import { formatNumber } from "@/lib/formatters";
 
 /**

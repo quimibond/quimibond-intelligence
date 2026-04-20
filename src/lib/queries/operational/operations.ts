@@ -1,11 +1,11 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { joinedCompanyName } from "./_helpers";
+import { joinedCompanyName } from "../_shared/_helpers";
 import {
   endOfDay,
   paginationRange,
   type TableParams,
-} from "./table-params";
+} from "../_shared/table-params";
 
 /**
  * Operations queries v2 — usa views canónicas:

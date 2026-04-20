@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
-import { sanitizeCompanyName } from "@/lib/queries/_helpers";
+import { sanitizeCompanyName } from "@/lib/queries/_shared/_helpers";
 
 interface CompanyLinkProps {
   companyId: string | number;

@@ -30,8 +30,8 @@ import {
   getDashboardKpis,
   getTopAtRiskClients,
   getRevenueTrend,
-} from "@/lib/queries/dashboard";
-import { getInsights, isVisibleToCEO } from "@/lib/queries/insights";
+} from "@/lib/queries/analytics/dashboard";
+import { getInsights, isVisibleToCEO } from "@/lib/queries/intelligence/insights";
 import {
   getActiveTripwires,
   type ConcentrationRow,

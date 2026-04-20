@@ -49,7 +49,7 @@ import {
   type PriceAnomalyRow,
   type RecentPurchaseOrder,
   type TopSupplierRow,
-} from "@/lib/queries/purchases";
+} from "@/lib/queries/operational/purchases";
 import {
   getStockoutQueue,
   getSupplierPriceAlerts,
@@ -58,7 +58,7 @@ import {
   type SupplierPriceRow,
   type PriceFlag,
 } from "@/lib/queries/analytics";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)

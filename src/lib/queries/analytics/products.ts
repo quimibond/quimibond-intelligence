@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { paginationRange, type TableParams } from "./table-params";
+import { paginationRange, type TableParams } from "../_shared/table-params";
 
 /**
  * Products queries v2 — usa views canónicas:

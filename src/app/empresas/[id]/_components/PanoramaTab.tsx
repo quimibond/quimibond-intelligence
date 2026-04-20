@@ -11,9 +11,9 @@ import {
 import { SeverityBadge } from "@/components/patterns/severity-badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
-import { getCompanyEvidencePack } from "@/lib/queries/evidence";
-import { getCustomer360, getCompanyInsights } from "@/lib/queries/customer-360";
-import type { CompanyDetail } from "@/lib/queries/companies";
+import { getCompanyEvidencePack } from "@/lib/queries/intelligence/evidence";
+import { getCustomer360, getCompanyInsights } from "@/lib/queries/analytics/customer-360";
+import type { CompanyDetail } from "@/lib/queries/_shared/companies";
 
 interface Props {
   company: CompanyDetail;

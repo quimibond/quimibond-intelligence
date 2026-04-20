@@ -1,6 +1,6 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
-import { joinedCompanyName } from "./_helpers";
+import { joinedCompanyName } from "../_shared/_helpers";
 
 /** Slugs de agentes legacy/sistema cuyos insights NO deben llegar al CEO.
  *  Se usan SOLO cuando `excludeLegacy=true` (default) — la página

@@ -21,7 +21,7 @@ import { Separator } from "@/components/ui/separator";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { ThemePreference } from "./_components/theme-preference";
-import { getSystemKpis } from "@/lib/queries/system";
+import { getSystemKpis } from "@/lib/queries/_shared/system";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Perfil" };

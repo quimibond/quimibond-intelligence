@@ -37,13 +37,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import {
   getCompaniesPage,
   type CompanyListRow,
-} from "@/lib/queries/companies";
+} from "@/lib/queries/_shared/companies";
 import {
   getRfmSegments,
   getRfmSegmentSummary,
   type RfmSegmentRow,
 } from "@/lib/queries/analytics";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Empresas" };

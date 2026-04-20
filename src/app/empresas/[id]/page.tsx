@@ -15,7 +15,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
-import { getCompanyDetail } from "@/lib/queries/companies";
+import { getCompanyDetail } from "@/lib/queries/_shared/companies";
 
 import { PanoramaTab } from "./_components/PanoramaTab";
 import { ComercialTab } from "./_components/ComercialTab";

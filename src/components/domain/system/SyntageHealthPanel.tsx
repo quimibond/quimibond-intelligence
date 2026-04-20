@@ -1,4 +1,4 @@
-import { getSyntageHealth } from "@/lib/queries/syntage-health";
+import { getSyntageHealth } from "@/lib/queries/fiscal/syntage-health";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { formatNumber } from "@/lib/formatters";

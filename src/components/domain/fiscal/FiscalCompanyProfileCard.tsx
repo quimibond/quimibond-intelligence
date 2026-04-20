@@ -1,4 +1,4 @@
-import { getCompanyFiscalProfile } from "@/lib/queries/fiscal-historical";
+import { getCompanyFiscalProfile } from "@/lib/queries/fiscal/fiscal-historical";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";

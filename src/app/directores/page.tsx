@@ -25,7 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   getAgentEffectiveness,
   type AgentEffectivenessRow,
-} from "@/lib/queries/system";
+} from "@/lib/queries/_shared/system";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

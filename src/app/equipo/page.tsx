@@ -32,7 +32,7 @@ import {
   type DepartmentRow,
   type InsightsByDepartment,
   type EmployeeRow,
-} from "@/lib/queries/team";
+} from "@/lib/queries/operational/team";
 import { formatNumber } from "@/lib/formatters";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 

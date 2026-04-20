@@ -1,4 +1,4 @@
-import { getFiscalRevenueMonthly } from "@/lib/queries/fiscal-historical";
+import { getFiscalRevenueMonthly } from "@/lib/queries/fiscal/fiscal-historical";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import {
   Table,

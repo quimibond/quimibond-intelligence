@@ -2,12 +2,12 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getUnifiedInvoicesForCompany } from "@/lib/queries/unified";
-import { resolveCompanyNames } from "./_helpers";
+import { resolveCompanyNames } from "../_shared/_helpers";
 import {
   endOfDay,
   paginationRange,
   type TableParams,
-} from "./table-params";
+} from "../_shared/table-params";
 
 // Feature flag: set USE_UNIFIED_LAYER=false to revert to legacy direct query
 const USE_UNIFIED_LAYER = process.env.USE_UNIFIED_LAYER !== "false";

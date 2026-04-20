@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   getTopClientsFiscalLifetime,
   getTopSuppliersFiscalLifetime,
-} from "@/lib/queries/fiscal-historical";
+} from "@/lib/queries/fiscal/fiscal-historical";
 import { FiscalRevenueTrendTable } from "./FiscalRevenueTrendTable";
 import { TopClientsFiscalTable } from "./TopClientsFiscalTable";
 import { TopSuppliersFiscalTable } from "./TopSuppliersFiscalTable";

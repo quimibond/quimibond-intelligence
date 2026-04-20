@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
-import type { InsightState } from "@/lib/queries/insights";
+import type { InsightState } from "@/lib/queries/intelligence/insights";
 
 /**
  * Transición de estado de un insight.

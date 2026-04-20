@@ -1,4 +1,4 @@
-import { type TopClientFiscalRow } from "@/lib/queries/fiscal-historical";
+import { type TopSupplierFiscalRow } from "@/lib/queries/fiscal/fiscal-historical";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import {
   Table,
@@ -25,18 +25,18 @@ function YoYBadge({ pct }: { pct: number | null }) {
 }
 
 interface Props {
-  rows: TopClientFiscalRow[];
+  rows: TopSupplierFiscalRow[];
 }
 
 /**
- * Top clients fiscal lifetime table — reusable on /system and /companies/[id].
+ * Top suppliers fiscal lifetime table — reusable on /system and /companies/[id].
  * Pure client-data-driven component (caller fetches rows).
  */
-export function TopClientsFiscalTable({ rows }: Props) {
+export function TopSuppliersFiscalTable({ rows }: Props) {
   if (!rows.length) {
     return (
       <p className="py-6 text-center text-sm text-muted-foreground">
-        Sin datos en syntage_top_clients_fiscal_lifetime.
+        Sin datos en syntage_top_suppliers_fiscal_lifetime.
       </p>
     );
   }
@@ -46,11 +46,11 @@ export function TopClientsFiscalTable({ rows }: Props) {
       <Table>
         <TableHeader>
           <TableRow>
-            <TableHead>Cliente</TableHead>
+            <TableHead>Proveedor</TableHead>
             <TableHead className="text-right">Lifetime</TableHead>
             <TableHead className="text-right">12m</TableHead>
             <TableHead className="hidden text-right sm:table-cell">YoY</TableHead>
-            <TableHead className="hidden text-right md:table-cell">Canc. %</TableHead>
+            <TableHead className="hidden text-right md:table-cell">Retenciones</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -63,17 +63,17 @@ export function TopClientsFiscalTable({ rows }: Props) {
                 )}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatCurrencyMXN(r.lifetime_revenue_mxn, { compact: true })}
+                {formatCurrencyMXN(r.lifetime_spend_mxn, { compact: true })}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {formatCurrencyMXN(r.revenue_12m_mxn, { compact: true })}
+                {formatCurrencyMXN(r.spend_12m_mxn, { compact: true })}
               </TableCell>
               <TableCell className="hidden text-right sm:table-cell">
                 <YoYBadge pct={r.yoy_pct ?? null} />
               </TableCell>
               <TableCell className="hidden text-right tabular-nums text-muted-foreground md:table-cell">
-                {r.cancellation_rate_pct != null
-                  ? `${r.cancellation_rate_pct.toFixed(1)}%`
+                {r.retenciones_lifetime_mxn != null
+                  ? formatCurrencyMXN(r.retenciones_lifetime_mxn, { compact: true })
                   : "—"}
               </TableCell>
             </TableRow>

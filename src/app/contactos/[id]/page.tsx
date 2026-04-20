@@ -17,7 +17,7 @@ import {
 } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { getContactDetail } from "@/lib/queries/contacts";
+import { getContactDetail } from "@/lib/queries/_shared/contacts";
 
 export const dynamic = "force-dynamic";
 

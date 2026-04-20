@@ -45,18 +45,18 @@ import {
   type CompanyAgingRow,
   type OverdueInvoice,
   type PaymentPredictionRow,
-} from "@/lib/queries/invoices";
+} from "@/lib/queries/unified/invoices";
 import { getUnifiedRefreshStaleness } from "@/lib/queries/unified";
 import { SatBadge } from "@/components/patterns/sat-badge";
 import { RefreshStalenessBadge } from "@/components/patterns/refresh-staleness-badge";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
-import { getCfoSnapshot } from "@/lib/queries/finance";
+import { getCfoSnapshot } from "@/lib/queries/analytics/finance";
 import {
   getCollectionEffectiveness,
   type CeiHealth,
   type CeiRow,
 } from "@/lib/queries/analytics";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Cobranza" };

@@ -43,8 +43,8 @@ import {
   type TopMoverRow,
   type DeadStockRow,
   type TopMarginProductRow,
-} from "@/lib/queries/products";
-import { parseTableParams, parseVisibleKeys } from "@/lib/queries/table-params";
+} from "@/lib/queries/analytics/products";
+import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { formatNumber } from "@/lib/formatters";
 
 export const dynamic = "force-dynamic";

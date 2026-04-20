@@ -43,9 +43,9 @@ import {
 } from "@/components/ui/table";
 import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
 
-import { SyntageHealthPanel } from "@/components/system/SyntageHealthPanel";
-import { SyntageReconciliationPanel } from "@/components/system/SyntageReconciliationPanel";
-import { FiscalHistoricoPanel } from "@/components/fiscal/FiscalHistoricoPanel";
+import { SyntageHealthPanel } from "@/components/domain/system/SyntageHealthPanel";
+import { SyntageReconciliationPanel } from "@/components/domain/system/SyntageReconciliationPanel";
+import { FiscalHistoricoPanel } from "@/components/domain/fiscal/FiscalHistoricoPanel";
 import {
   getSystemKpis,
   getSyncFreshness,
@@ -63,8 +63,8 @@ import {
   type DqInvariant,
   type NotificationRow,
   type PipelineLogRow,
-} from "@/lib/queries/system";
-import { parseTableParams } from "@/lib/queries/table-params";
+} from "@/lib/queries/_shared/system";
+import { parseTableParams } from "@/lib/queries/_shared/table-params";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;

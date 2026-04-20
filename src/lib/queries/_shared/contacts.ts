@@ -1,7 +1,7 @@
 import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import { paginationRange, type TableParams } from "./table-params";
-import { CEO_VISIBLE_FILTER } from "./insights";
+import { CEO_VISIBLE_FILTER } from "../intelligence/insights";
 
 /**
  * Contacts queries — personas físicas linkeadas a companies / entities.

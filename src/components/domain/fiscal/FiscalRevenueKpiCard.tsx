@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { TrendingUp } from "lucide-react";
-import { getFiscalRevenueKpi } from "@/lib/queries/fiscal-historical";
+import { getFiscalRevenueKpi } from "@/lib/queries/fiscal/fiscal-historical";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { Card, CardContent } from "@/components/ui/card";
 
