@@ -68,7 +68,7 @@ export async function analyzeAccountFull(
   }, `analyze_${account}`);
 
   // Normalize structure
-  let summary = (result.summary as Record<string, unknown>) ?? result;
+  const summary = (result.summary as Record<string, unknown>) ?? result;
   let kg = (result.knowledge_graph as AccountAnalysis["knowledge_graph"]) ?? null;
 
   if (!kg && "entities" in result) {

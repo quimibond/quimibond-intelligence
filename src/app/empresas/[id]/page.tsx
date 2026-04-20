@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Building2 } from "lucide-react";
 
@@ -98,9 +99,9 @@ export default async function CompanyDetailPage({
               <code className="rounded bg-muted px-1">relationship_type=self</code>{" "}
               — no aplica análisis comercial (revenue, cartera, reorder, etc.). Las
               empresas externas se ven en{" "}
-              <a href="/empresas" className="underline hover:text-primary">
+              <Link href="/empresas" className="underline hover:text-primary">
                 /empresas
-              </a>
+              </Link>
               .
             </p>
           </CardContent>

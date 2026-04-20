@@ -9,7 +9,7 @@ describe("exportCSV", () => {
 
   it("generates correct CSV content", () => {
     let capturedHref = "";
-    let capturedDownload = "";
+    const capturedDownload = "";
 
     // Mock DOM elements
     const mockLink = {

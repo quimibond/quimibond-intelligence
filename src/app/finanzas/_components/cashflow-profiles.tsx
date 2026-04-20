@@ -78,8 +78,8 @@ const FREQUENCY_LABELS: Record<AccountPaymentProfile["frequency"], string> = {
 function toneToBadge(tone: string): "info" | "warning" | "destructive" | "default" | "secondary" {
   if (tone === "danger") return "destructive";
   if (tone === "success") return "default";
-  if (tone === "warning") return "warning" as "warning";
-  if (tone === "info") return "info" as "info";
+  if (tone === "warning") return "warning" as const;
+  if (tone === "info") return "info" as const;
   return "secondary";
 }
 

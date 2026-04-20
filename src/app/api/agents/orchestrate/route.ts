@@ -1077,8 +1077,8 @@ function formatBriefingForAgent(briefing: DirectorBriefing): string {
 }
 
 // ── Context builders ──────────────────────────────────────────────────
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function buildAgentContext(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
   domain: string,
   agentId?: number,

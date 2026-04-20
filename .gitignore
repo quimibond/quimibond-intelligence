@@ -42,3 +42,7 @@ next-env.d.ts
 
 # superpowers brainstorm companion (local mockups, not committed)
 .superpowers/
+
+# claude-flow hook artifacts (auto-generated, per-session — not versioned)
+.claude-flow/
+

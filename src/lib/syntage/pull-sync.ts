@@ -175,7 +175,7 @@ export async function runPullSync(opts: PullSyncOptions): Promise<PullSyncResult
   };
   const cfg = RESOURCE_BATCH_CONFIG[opts.resource];
 
-  let cursor: string | null = opts.cursor ?? null;
+  const cursor: string | null = opts.cursor ?? null;
   let firstUrl: string;
 
   if (cursor) {

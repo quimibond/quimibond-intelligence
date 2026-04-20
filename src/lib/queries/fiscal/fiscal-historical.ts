@@ -39,8 +39,8 @@ export interface TopSupplierFiscalRow {
   company_id: number | null;
 }
 
-export interface CompanyFiscalClientProfile extends TopClientFiscalRow {}
-export interface CompanyFiscalSupplierProfile extends TopSupplierFiscalRow {}
+export type CompanyFiscalClientProfile = TopClientFiscalRow;
+export type CompanyFiscalSupplierProfile = TopSupplierFiscalRow;
 
 export interface CompanyFiscalProfile {
   client: CompanyFiscalClientProfile | null;

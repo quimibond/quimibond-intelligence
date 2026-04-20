@@ -317,7 +317,7 @@ export default function CostosBomPage() {
               Un delta{" "}
               <span className="font-semibold text-danger">positivo</span> (BOM
               &gt; standard) sí es anomalía: probablemente BOM mal capturado.
-              Ver tabla "BOMs sospechosos".
+              Ver tabla &ldquo;BOMs sospechosos&rdquo;.
             </p>
           </div>
         </CardContent>
@@ -490,7 +490,7 @@ export default function CostosBomPage() {
               Detecta dos casos: (A) un mismo componente listado más de una
               vez en el mismo BOM, (B) dos componentes con el mismo{" "}
               <strong>nombre</strong> pero <code>odoo_product_id</code>{" "}
-              diferente (ej. dos SKUs de "HILO POLIESTER ALGODON 22/1" creados
+              diferente (ej. dos SKUs de &ldquo;HILO POLIESTER ALGODON 22/1&rdquo; creados
               para distintos batches o proveedores). Mi rolldown los suma a
               ambos → el costo BOM está sobrecontado por la diferencia.
               Producción debería consolidar uno solo. Detecta duplicados en
