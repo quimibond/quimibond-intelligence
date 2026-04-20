@@ -236,13 +236,25 @@ export interface PlPoint {
   otrosNeto: number;
 }
 
-export async function getPlHistory(months = 12): Promise<PlPoint[]> {
+export async function getPlHistory(
+  months = 12,
+  opts?: { from?: string; to?: string }
+): Promise<PlPoint[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+  let query = sb
     .from("analytics_finance_income_statement")
     .select("*")
-    .order("period", { ascending: false })
-    .limit(months + 5); // buffer para filtrar datos corruptos
+    .order("period", { ascending: false });
+
+  // Filtro de período: `period` es YYYY-MM (e.g. "2026-03").
+  // Comparamos como string — funciona porque el formato es lexicográficamente ordenable.
+  if (opts?.from) query = query.gte("period", opts.from.slice(0, 7));
+  if (opts?.to) query = query.lte("period", opts.to.slice(0, 7));
+
+  // Sin filtro de período usamos límite; con filtro pedimos más para cubrir el rango.
+  const limitVal = opts?.from || opts?.to ? 120 : months + 5;
+  const { data } = await query.limit(limitVal);
+
   const rows = (data ?? []) as Array<{
     period: string | null;
     ingresos: number | null;
@@ -259,8 +271,9 @@ export async function getPlHistory(months = 12): Promise<PlPoint[]> {
     const year = Number(y);
     return year >= 2020 && year <= 2030;
   });
-  return valid
-    .slice(0, months)
+  // Sin filtro explícito de período → limitar a N meses; con filtro → devolver todos los del rango.
+  const sliced = opts?.from || opts?.to ? valid : valid.slice(0, months);
+  return sliced
     .map((r) => ({
       period: r.period as string,
       ingresos: Number(r.ingresos) || 0,

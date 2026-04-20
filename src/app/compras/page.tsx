@@ -60,6 +60,7 @@ import {
   type PriceFlag,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { PeriodSelector } from "@/components/patterns/period-selector";
 
@@ -895,8 +896,26 @@ async function PriceAnomaliesTable({
     defaultSize: 25,
     defaultSort: "-spent",
   });
+
+  // Aplicar pa_period si no hay rango manual (pa_from / pa_to tiene precedencia).
+  // Columna de fecha en purchase_price_intelligence: last_purchase_date.
+  const paPeriod = parsePeriod(searchParams.pa_period);
+  const useManualRange = params.from || params.to;
+  const effectiveFrom =
+    params.from ??
+    (useManualRange || (paPeriod.kind === "preset" && paPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(paPeriod).from);
+  const effectiveTo =
+    params.to ??
+    (useManualRange || (paPeriod.kind === "preset" && paPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(paPeriod).to);
+
   const { rows, total } = await getPriceAnomaliesPage({
     ...params,
+    from: effectiveFrom,
+    to: effectiveTo,
     flag: params.facets.flag,
   });
   const visibleKeys = parseVisibleKeys(searchParams, "pa_");
@@ -1275,8 +1294,26 @@ async function RecentPurchasesTable({
     defaultSize: 25,
     defaultSort: "-date",
   });
+
+  // Aplicar po_period si no hay rango manual (po_from / po_to tiene precedencia).
+  // Columna de fecha en odoo_purchase_orders: date_order.
+  const poPeriod = parsePeriod(searchParams.po_period);
+  const useManualRange = params.from || params.to;
+  const effectiveFrom =
+    params.from ??
+    (useManualRange || (poPeriod.kind === "preset" && poPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(poPeriod).from);
+  const effectiveTo =
+    params.to ??
+    (useManualRange || (poPeriod.kind === "preset" && poPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(poPeriod).to);
+
   const { rows, total } = await getPurchaseOrdersPage({
     ...params,
+    from: effectiveFrom,
+    to: effectiveTo,
     state: params.facets.state,
     buyer: params.facets.buyer,
   });

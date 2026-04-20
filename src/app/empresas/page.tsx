@@ -45,6 +45,7 @@ import {
   type RfmSegmentRow,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
 import { PeriodSelector } from "@/components/patterns/period-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
@@ -690,8 +691,22 @@ async function CompaniesTable({
     defaultSize: 25,
     defaultSort: "-revenue",
   });
+
+  // Aplicar emp_period → filtro por last_order_date (empresa con pedidos en ese período).
+  // Preset "all" → sin filtro (evita scan absurdo desde 2014).
+  const empPeriod = parsePeriod(searchParams.emp_period);
+  let periodFrom: string | undefined;
+  let periodTo: string | undefined;
+  if (!(empPeriod.kind === "preset" && empPeriod.preset === "all")) {
+    const bounds = periodBoundsIso(empPeriod);
+    periodFrom = bounds.from;
+    periodTo = bounds.to;
+  }
+
   const { rows, total } = await getCompaniesPage({
     ...params,
+    from: periodFrom,
+    to: periodTo,
     tier: params.facets.tier,
     risk: params.facets.risk,
   });

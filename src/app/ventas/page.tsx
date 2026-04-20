@@ -65,6 +65,7 @@ import {
 } from "@/lib/queries/analytics";
 import { getPlHistory } from "@/lib/queries/analytics/finance";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { PeriodSelector } from "@/components/patterns/period-selector";
 
@@ -1189,15 +1190,33 @@ async function RecentOrdersTable({
     defaultSize: 25,
     defaultSort: "-date",
   });
+
+  // Aplicar PeriodSelector (so_period) si no hay rango manual en URL.
+  // El rango manual (so_from / so_to de la DateRange toolbar) tiene precedencia.
+  const soPeriod = parsePeriod(searchParams.so_period);
+  const useManualRange = params.from || params.to;
+  const effectiveFrom =
+    params.from ??
+    (useManualRange || (soPeriod.kind === "preset" && soPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(soPeriod).from);
+  const effectiveTo =
+    params.to ??
+    (useManualRange || (soPeriod.kind === "preset" && soPeriod.preset === "all")
+      ? undefined
+      : periodBoundsIso(soPeriod).to);
+
+  const filteredParams = { ...params, from: effectiveFrom, to: effectiveTo };
+
   const [{ rows, total }, timeline] = await Promise.all([
     getSaleOrdersPage({
-      ...params,
+      ...filteredParams,
       state: params.facets.state,
       salesperson: params.facets.salesperson,
     }),
     getSaleOrdersTimeline({
-      from: params.from,
-      to: params.to,
+      from: effectiveFrom,
+      to: effectiveTo,
       q: params.q,
       state: params.facets.state,
       salesperson: params.facets.salesperson,

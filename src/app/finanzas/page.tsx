@@ -55,6 +55,7 @@ import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
 
 import { PeriodSelector } from "@/components/patterns/period-selector";
+import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
 import { PlHistoryChart } from "./_components/pl-history-chart";
 import { ProjectedCashFlowChart } from "./_components/projected-cash-flow-chart";
 import { ProjectedCashFlowTable } from "./_components/projected-cash-flow-table";
@@ -76,7 +77,14 @@ function formatPeriod(period: string) {
   return `${monthLabels[idx] ?? m} ${y?.slice(2) ?? ""}`;
 }
 
-export default function FinanzasPage() {
+type SearchParams = Record<string, string | string[] | undefined>;
+
+export default async function FinanzasPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const sp = searchParams ? await searchParams : {};
   return (
     <PageLayout>
       <PageHeader
@@ -199,7 +207,7 @@ export default function FinanzasPage() {
               <Suspense
                 fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
               >
-                <PlHistorySection />
+                <PlHistorySection searchParams={sp} />
               </Suspense>
             </CardContent>
           </Card>
@@ -616,8 +624,21 @@ async function WorkingCapitalSection() {
 // ──────────────────────────────────────────────────────────────────────────
 // P&L history chart
 // ──────────────────────────────────────────────────────────────────────────
-async function PlHistorySection() {
-  const rows = await getPlHistory(12);
+async function PlHistorySection({
+  searchParams,
+}: {
+  searchParams: SearchParams;
+}) {
+  // Aplicar pl_period → filtro de período en analytics_finance_income_statement.
+  // Preset "all" → sin filtro (deja los últimos 12 meses por defecto).
+  const plPeriod = parsePeriod(searchParams.pl_period);
+  let plOpts: { from?: string; to?: string } | undefined;
+  if (!(plPeriod.kind === "preset" && plPeriod.preset === "all")) {
+    const bounds = periodBoundsIso(plPeriod);
+    plOpts = { from: bounds.from, to: bounds.to };
+  }
+
+  const rows = await getPlHistory(12, plOpts);
   if (!rows || rows.length === 0) {
     return (
       <EmptyState

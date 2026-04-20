@@ -181,6 +181,9 @@ export async function getCompaniesPage(
   if (params.risk && params.risk.length > 0) {
     query = query.in("risk_level", params.risk);
   }
+  // Filtro de período por last_order_date (viene de emp_period via page.tsx).
+  if (params.from) query = query.gte("last_order_date", params.from);
+  if (params.to) query = query.lt("last_order_date", params.to);
 
   const { data, count } = await query
     .order(sortCol, { ascending, nullsFirst: false })
