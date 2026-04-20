@@ -60,12 +60,12 @@ export async function getSalesKpis(): Promise<SalesKpis> {
       .from("analytics_finance_income_statement")
       .select("period, ingresos, utilidad_operativa")
       .order("period", { ascending: false })
-      .limit(24),
+      .limit(24), // intentional: last 24 months for income trend chart
     sb
       .from("monthly_revenue_by_company")
       .select("month, net_revenue, ma_3m")
       .order("month", { ascending: false })
-      .limit(60),
+      .limit(60), // intentional: last 60 months (5yr) for revenue trend chart
     sb
       .from("odoo_sale_orders")
       .select("amount_total_mxn, salesperson_name")
@@ -656,7 +656,7 @@ export async function getSaleOrderSalespeopleOptions(): Promise<string[]> {
     .select("salesperson_name")
     .gte("date_order", since.toISOString().slice(0, 10))
     .not("salesperson_name", "is", null)
-    .limit(3000);
+    .limit(3000); // intentional: enumerate all salesperson names for filter dropdown
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
     if (r.salesperson_name) set.add(r.salesperson_name);

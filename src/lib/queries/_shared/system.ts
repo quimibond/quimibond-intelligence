@@ -547,7 +547,7 @@ export async function getPipelineLogPhaseOptions(): Promise<string[]> {
     .select("phase")
     .not("phase", "is", null)
     .order("created_at", { ascending: false })
-    .limit(2000);
+    .limit(2000); // intentional: enumerate recent phases for filter dropdown
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ phase: string | null }>) {
     if (r.phase) set.add(r.phase);

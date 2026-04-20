@@ -511,10 +511,11 @@ export async function getCompanyInvoicesPage(
   };
   const sortKey = (params.sort && sortMap[params.sort]) ?? "invoice_date";
 
-  let rows = await getUnifiedInvoicesForCompany(companyId, {
+  const { data: rows0 } = await getUnifiedInvoicesForCompany(companyId, {
     direction: "issued",
     includeNonComputable: true,
   });
+  let rows = rows0;
 
   // Apply filters
   if (params.q) {
@@ -565,7 +566,7 @@ export async function getCompanyInvoices(
   companyId: number,
   limit = 20
 ): Promise<CompanyInvoiceRow[]> {
-  const rows = await getUnifiedInvoicesForCompany(companyId, {
+  const { data: rows } = await getUnifiedInvoicesForCompany(companyId, {
     direction: "issued",
     includeNonComputable: true,
   });

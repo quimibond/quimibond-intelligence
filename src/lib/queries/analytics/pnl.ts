@@ -17,7 +17,7 @@ export async function getMostRecentPeriod(): Promise<string | null> {
     .from("odoo_account_balances")
     .select("period")
     .order("period", { ascending: false })
-    .limit(1);
+    .limit(1); // intentional: latest period lookup
   if (error || !data || data.length === 0) return null;
   return data[0].period as string;
 }

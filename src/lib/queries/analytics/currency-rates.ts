@@ -17,7 +17,7 @@ export async function getLatestCurrencyRates(): Promise<CurrencyRateRow[]> {
     .from("odoo_currency_rates")
     .select("currency, rate, rate_date")
     .order("rate_date", { ascending: false })
-    .limit(60);
+    .limit(60); // intentional: recent 60 rows, deduped by currency code below
   if (error) throw new Error(`currency_rates query failed: ${error.message}`);
 
   // Group by currency, take the most recent row per currency code

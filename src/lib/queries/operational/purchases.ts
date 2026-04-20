@@ -464,7 +464,7 @@ const _getPurchaseBuyerOptionsRaw = async (): Promise<string[]> => {
     .select("buyer_name")
     .gte("date_order", since.toISOString().slice(0, 10))
     .not("buyer_name", "is", null)
-    .limit(3000);
+    .limit(3000); // intentional: enumerate all buyer names for filter dropdown
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ buyer_name: string | null }>) {
     if (r.buyer_name) set.add(r.buyer_name);
@@ -643,9 +643,10 @@ export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
  * Get supplier invoices for a company via unified layer.
  */
 export async function getSupplierInvoices(supplierCompanyId: number) {
-  return getUnifiedInvoicesForCompany(supplierCompanyId, {
+  const result = await getUnifiedInvoicesForCompany(supplierCompanyId, {
     direction: "received",
   });
+  return result.data;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

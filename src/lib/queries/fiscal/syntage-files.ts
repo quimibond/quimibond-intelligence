@@ -33,8 +33,8 @@ export async function getSyntageFilesSummary(): Promise<SyntageFilesSummary> {
       .from("syntage_files")
       .select("created_at")
       .order("created_at", { ascending: false })
-      .limit(1),
-    sb.from("syntage_files").select("file_type").limit(5000),
+      .limit(1), // intentional: most recent file timestamp
+    sb.from("syntage_files").select("file_type").limit(5000), // intentional: enumerate all types for distinct count
   ]);
 
   if (totalQ.error)

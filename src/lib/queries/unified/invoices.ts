@@ -344,7 +344,7 @@ async function unifiedGetOverdueSalespeopleOptions(): Promise<string[]> {
     .in("payment_state", ["not_paid", "partial", "in_payment"])
     .not("days_overdue", "eq", 0)
     .not("salesperson_name", "is", null)
-    .limit(5000);
+    .limit(5000); // intentional: enumerate all salesperson names for filter dropdown
   if (error) throw new Error(error.message);
   const names = new Set<string>();
   for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
