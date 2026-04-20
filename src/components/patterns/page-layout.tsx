@@ -6,13 +6,18 @@ interface PageLayoutProps {
   className?: string;
 }
 
+/**
+ * Canonical page wrapper. Use at the top of every page.tsx.
+ *
+ * NOTE: MainContent (src/components/layout/main-content.tsx) already renders
+ * `<main id="main-content">` with responsive padding and sidebar offset.
+ * PageLayout is a content-level `<div>` wrapper that adds consistent vertical
+ * spacing between page sections + mobile tab-bar bottom clearance.
+ */
 export function PageLayout({ children, className }: PageLayoutProps) {
   return (
-    <main
-      id="main-content"
-      className={cn("max-w-7xl mx-auto px-6 py-8 space-y-6", className)}
-    >
+    <div className={cn("space-y-6 pb-24 md:pb-6", className)}>
       {children}
-    </main>
+    </div>
   );
 }

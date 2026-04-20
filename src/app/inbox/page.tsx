@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   PageHeader,
   SeverityBadge,
   DateDisplay,
@@ -62,7 +63,7 @@ export default async function InboxPage({
   const severity = params.severity;
 
   return (
-    <div className="space-y-4 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Inbox"
         subtitle="Alertas accionables priorizadas por los directores IA"
@@ -94,7 +95,7 @@ export default async function InboxPage({
       >
         <InsightsList stateFilter={stateFilter} severity={severity} />
       </Suspense>
-    </div>
+    </PageLayout>
   );
 }
 

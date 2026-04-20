@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 
 import {
+  PageLayout,
   KpiCard,
   StatGrid,
   PageHeader,
@@ -74,7 +75,7 @@ function formatPeriod(period: string) {
 
 export default function FinanzasPage() {
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <PageLayout>
       <PageHeader
         title="Finanzas"
         subtitle="¿Cuánto cash tengo, cuánto me dura, y cómo se está moviendo?"
@@ -358,7 +359,7 @@ export default function FinanzasPage() {
           <CashflowProfilesSection />
         </Suspense>
       </section>
-    </div>
+    </PageLayout>
   );
 }
 
