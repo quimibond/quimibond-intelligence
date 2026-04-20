@@ -9,7 +9,7 @@ import { createClient } from "@supabase/supabase-js";
 import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(request: NextRequest) {
   return POST(request);
