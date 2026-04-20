@@ -215,7 +215,7 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
   const [runway, cfoDash, overdue, payments, payPredictions, cashflow, pl, workingCapital, budget] = await Promise.all([
     // NEW (Fase 7): runway calculation con cash + AR/AP y burn rate 60d
     sb.from("financial_runway").select("*").limit(1),
-    sb.from("cfo_dashboard").select("*").limit(1),
+    sb.from("analytics_finance_cfo_snapshot").select("*").limit(1),
     sb.from("odoo_invoices")
       .select("company_id, name, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue, due_date, invoice_date")
       .eq("move_type", "out_invoice")
@@ -233,9 +233,9 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
       .order("total_pending", { ascending: false })
       .limit(10),
     sb.from("cashflow_projection").select("flow_type, period, gross_amount, net_amount, probability").order("sort_order"),
-    sb.from("pl_estado_resultados").select("*").order("period", { ascending: false }).limit(3),
-    sb.from("working_capital").select("*").limit(1),
-    sb.from("budget_vs_actual").select("*").order("period", { ascending: false }).limit(12),
+    sb.from("analytics_finance_income_statement").select("*").order("period", { ascending: false }).limit(3),
+    sb.from("analytics_finance_working_capital").select("*").limit(1),
+    sb.from("analytics_budget_vs_actual").select("*").order("period", { ascending: false }).limit(12),
   ]);
   return [
     `## RUNWAY ejecutivo (cash + AR 30d - AP 30d / burn rate diario)\n${safeJSON(runway.data?.[0])}`,

@@ -6,6 +6,15 @@
 
 ---
 
+## Migration log
+
+| Date | Event |
+|---|---|
+| 2026-04-19 | Aliases deployed (S1.1 + S1.2) |
+| 2026-04-19 | TS refs migrated legacy → canonical (21 call-sites across 7 files) |
+
+---
+
 ## Summary
 
 Seven legacy views in the `public` schema — `cfo_dashboard`, `pl_estado_resultados`, `monthly_revenue_trend`, `cash_position`, `working_capital`, `cash_flow_aging`, and `budget_vs_actual` — now have canonical `analytics_*` aliases created by migrations `20260419_reorg_r1_analytics_aliases.sql` (S1.1) and `20260419_s1_legacy_view_aliases_v2.sql` (S1.2). The legacy names remain live during a 30-day grace window ending **2026-06-01** to give the frontend team time to migrate all TypeScript/TSX call-sites. During this window no views will be dropped. After the sunset date, once TS references are verified at zero, DROP migrations will be scheduled as a separate sprint. Additionally, 21 `v_audit_*` views (costos-audit DQ layer) and 15 `cashflow_*` views (cashflow v3 operational layer) carry non-canonical prefixes; their reclassification is tracked here for a future sprint.
@@ -16,74 +25,78 @@ Seven legacy views in the `public` schema — `cfo_dashboard`, `pl_estado_result
 
 | Legacy view | Canonical alias | Migration file | TS files referencing legacy (not yet migrated) |
 |---|---|---|---|
-| `cfo_dashboard` | `analytics_finance_cfo_snapshot` | `20260419_reorg_r1_analytics_aliases.sql` | **5 files** — see §TS References |
-| `pl_estado_resultados` | `analytics_finance_income_statement` | `20260419_reorg_r1_analytics_aliases.sql` | **7 files** — see §TS References |
+| `cfo_dashboard` | `analytics_finance_cfo_snapshot` | `20260419_reorg_r1_analytics_aliases.sql` | **0 files — migrated 2026-04-19** |
+| `pl_estado_resultados` | `analytics_finance_income_statement` | `20260419_reorg_r1_analytics_aliases.sql` | **0 files — migrated 2026-04-19** |
 | `monthly_revenue_trend` | `analytics_revenue_operational_monthly` | `20260419_reorg_r1_analytics_aliases.sql` | **0 files** — No references found |
-| `cash_position` | `analytics_finance_cash_position` | `20260419_reorg_r1_analytics_aliases.sql` | **1 file** — see §TS References |
-| `working_capital` | `analytics_finance_working_capital` | `20260419_reorg_r1_analytics_aliases.sql` | **3 files** — see §TS References |
-| `cash_flow_aging` | `analytics_ar_aging` | `20260419_reorg_r1_analytics_aliases.sql` (annotated in `20260419_s1_legacy_view_aliases_v2.sql`) | **3 files** — see §TS References |
-| `budget_vs_actual` | `analytics_budget_vs_actual` | `20260419_s1_legacy_view_aliases_v2.sql` | **2 files** — see §TS References |
+| `cash_position` | `analytics_finance_cash_position` | `20260419_reorg_r1_analytics_aliases.sql` | **0 files — migrated 2026-04-19** |
+| `working_capital` | `analytics_finance_working_capital` | `20260419_reorg_r1_analytics_aliases.sql` | **0 files — migrated 2026-04-19** |
+| `cash_flow_aging` | `analytics_ar_aging` | `20260419_reorg_r1_analytics_aliases.sql` (annotated in `20260419_s1_legacy_view_aliases_v2.sql`) | **0 files — migrated 2026-04-19** |
+| `budget_vs_actual` | `analytics_budget_vs_actual` | `20260419_s1_legacy_view_aliases_v2.sql` | **0 files — migrated 2026-04-19** |
 
 ---
 
 ## TS code references to legacy views
 
-Each entry lists the TS/TSX files that still call the **legacy** view name directly (not via alias). These are the migration targets.
+**Migration complete as of 2026-04-19.** All active `.from("<legacy>")` SQL call-sites have been updated to their canonical `analytics_*` aliases. The files below show the historical state (pre-migration) for audit reference. Remaining occurrences of legacy names in the codebase are prose, comments, or error messages — not SQL view calls.
 
-### `cfo_dashboard` — 5 files
+### `cfo_dashboard` — 0 active SQL refs (migrated 2026-04-19)
 
-```
-src/app/finanzas/page.tsx
-src/lib/agents/director-chat-context.ts
-src/lib/agents/financiero-context.ts
-src/lib/queries/finance.ts
-src/lib/queries/purchases.ts
-```
+Previously in (now using canonical alias):
+- `src/lib/agents/director-chat-context.ts` → `analytics_finance_cfo_snapshot`
+- `src/lib/agents/financiero-context.ts` → `analytics_finance_cfo_snapshot`
+- `src/lib/queries/analytics/finance.ts` → `analytics_finance_cfo_snapshot`
+- `src/lib/queries/operational/purchases.ts` → `analytics_finance_cfo_snapshot`
 
-### `pl_estado_resultados` — 7 files
+Intentionally left as prose/comments (not SQL refs):
+- `src/app/finanzas/page.tsx` — error description string (debugging aid)
+- `src/lib/queries/operational/purchases.ts` — JSDoc comment + inline comment
 
-```
-src/app/finanzas/page.tsx
-src/lib/agents/director-chat-context.ts
-src/lib/agents/financiero-context.ts
-src/lib/queries/finance.ts
-src/lib/queries/sales.ts
-src/app/page.tsx
-src/lib/queries/dashboard.ts
-```
+### `pl_estado_resultados` — 0 active SQL refs (migrated 2026-04-19)
+
+Previously in (now using canonical alias):
+- `src/lib/agents/director-chat-context.ts` → `analytics_finance_income_statement`
+- `src/lib/agents/financiero-context.ts` → `analytics_finance_income_statement`
+- `src/lib/queries/analytics/finance.ts` → `analytics_finance_income_statement`
+- `src/lib/queries/analytics/dashboard.ts` → `analytics_finance_income_statement`
+- `src/lib/queries/operational/sales.ts` → `analytics_finance_income_statement` (2 call-sites)
+
+Intentionally left as prose/comments:
+- `src/app/finanzas/page.tsx` — error description string
+- `src/app/page.tsx` — error description string
+- `src/lib/queries/operational/sales.ts` — JSDoc comments
+- `src/lib/queries/analytics/dashboard.ts` — inline comment
 
 ### `monthly_revenue_trend` — 0 files
 
-No references found. Likely already migrated or unused in frontend. Confirm via full-repo search before drop.
+No references found at any point. View ready for drop.
 
-### `cash_position` — 1 file
+### `cash_position` — 0 active SQL refs (migrated 2026-04-19)
 
-```
-src/lib/queries/finance.ts
-```
+Previously in (now using canonical alias):
+- `src/lib/queries/analytics/finance.ts` → `analytics_finance_cash_position`
 
-### `working_capital` — 3 files
+### `working_capital` — 0 active SQL refs (migrated 2026-04-19)
 
-```
-src/lib/agents/director-chat-context.ts
-src/lib/agents/financiero-context.ts
-src/lib/queries/finance.ts
-```
+Previously in (now using canonical alias):
+- `src/lib/agents/director-chat-context.ts` → `analytics_finance_working_capital`
+- `src/lib/agents/financiero-context.ts` → `analytics_finance_working_capital`
+- `src/lib/queries/analytics/finance.ts` → `analytics_finance_working_capital`
 
-### `cash_flow_aging` — 3 files
+### `cash_flow_aging` — 0 active SQL refs (migrated 2026-04-19)
 
-```
-src/lib/queries/invoices.ts
-src/lib/queries/companies.ts
-src/components/shared/v2/company-link.tsx
-```
+Previously in (now using canonical alias):
+- `src/lib/queries/unified/invoices.ts` → `analytics_ar_aging` (2 call-sites)
 
-### `budget_vs_actual` — 2 files
+Intentionally left as prose/comments:
+- `src/lib/queries/unified/invoices.ts` — JSDoc comments
+- `src/lib/queries/_shared/companies.ts` — JSDoc comment
+- `src/components/patterns/company-link.tsx` — inline comment listing MV names
 
-```
-src/lib/agents/director-chat-context.ts
-src/lib/agents/financiero-context.ts
-```
+### `budget_vs_actual` — 0 active SQL refs (migrated 2026-04-19)
+
+Previously in (now using canonical alias):
+- `src/lib/agents/director-chat-context.ts` → `analytics_budget_vs_actual`
+- `src/lib/agents/financiero-context.ts` → `analytics_budget_vs_actual`
 
 ---
 

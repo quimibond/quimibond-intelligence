@@ -153,7 +153,7 @@ export async function getCompanyAging(
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
   const { data } = await sb
-    .from("cash_flow_aging")
+    .from("analytics_ar_aging")
     .select(
       "company_id, company_name, tier, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, total_revenue"
     )
@@ -590,7 +590,7 @@ export async function getCompanyAgingPage(
   const ascending = params.sortDir === "asc";
 
   let query = sb
-    .from("cash_flow_aging")
+    .from("analytics_ar_aging")
     .select(
       "company_id, company_name, tier, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, total_revenue",
       { count: "exact" }

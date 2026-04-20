@@ -102,7 +102,7 @@ export async function getRevenueTrend(
 ): Promise<MonthlyRevenuePoint[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("pl_estado_resultados")
+    .from("analytics_finance_income_statement")
     .select("period, ingresos")
     .order("period", { ascending: false })
     .limit(months + 5);
