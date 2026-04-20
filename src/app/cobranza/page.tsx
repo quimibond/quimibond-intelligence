@@ -4,7 +4,9 @@ import {
   Calendar,
   FileText,
   Flame,
+  Minus,
   TrendingDown,
+  TrendingUp,
   Users,
 } from "lucide-react";
 
@@ -440,53 +442,47 @@ async function CeiTimeline() {
     );
   }
 
-  // Gauge: usa el cohort más reciente útil (primer elemento) como KPI actual.
+  // KPI: usa el cohort más reciente útil (primer elemento) como KPI actual.
   const latest = useful[0];
   const latestPct = Math.max(0, Math.min(100, latest.cei_pct));
-  const gaugeChart: DataViewChartSpec = {
-    type: "radial",
-    xKey: "label",
-    series: [{ dataKey: "pct", label: "CEI" }],
-    valueFormat: "percent",
-    radialMax: 100,
-    donutCenterLabel: `${latestPct.toFixed(1)}%`,
-    colorBy: "status",
-    colorMap: {
-      healthy: "var(--chart-2)",
-      watch: "var(--chart-3)",
-      at_risk: "var(--chart-4)",
-      degraded: "var(--destructive)",
-      too_recent: "var(--muted-foreground)",
-    },
-    height: 180,
-  };
-  const gaugeData = [
-    {
-      label: formatCohortMonth(latest.cohort_month),
-      pct: latestPct,
-      status: latest.health_status,
-    },
-  ];
+  const sparklineData = [...useful].reverse().map((r) => ({
+    cohort: formatCohortMonth(r.cohort_month),
+    pct: Math.max(0, Math.min(100, r.cei_pct)),
+  }));
 
   return (
     <div className="grid gap-4 lg:grid-cols-[260px_1fr]">
       <Card>
-        <CardContent className="p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            CEI último cohort · meta 95%
+        <CardContent className="p-4">
+          <div className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            CEI último cohort
           </div>
-          <DataViewChart
-            data={gaugeData as unknown as Record<string, unknown>[]}
-            chart={gaugeChart}
-          />
-          <div className="pt-2 text-center text-[11px] text-muted-foreground">
-            {formatCohortMonth(latest.cohort_month)} ·{" "}
-            <Badge
-              variant={ceiHealthVariant[latest.health_status]}
-              className="text-[10px] uppercase"
-            >
+          <div className="mt-1 flex items-baseline gap-2">
+            <span className="text-3xl font-bold tabular-nums">{latestPct.toFixed(1)}%</span>
+            <span className="text-xs text-muted-foreground">meta 95%</span>
+          </div>
+          <div className="mt-2">
+            <Badge variant={ceiHealthVariant[latest.health_status]} className="text-[10px] uppercase">
               {ceiHealthLabel[latest.health_status]}
             </Badge>
+          </div>
+          <div className="mt-1 text-[11px] text-muted-foreground">
+            {formatCohortMonth(latest.cohort_month)}
+          </div>
+          {/* Mini-sparkline of CEI trend across all useful cohorts */}
+          <div className="mt-3">
+            <DataViewChart
+              data={sparklineData as unknown as Record<string, unknown>[]}
+              chart={{
+                type: "line",
+                xKey: "cohort",
+                series: [{ dataKey: "pct", label: "CEI", color: "var(--chart-2)" }],
+                valueFormat: "percent",
+                height: 70,
+                referenceLine: { value: 95, axis: "y", color: "var(--muted-foreground)", label: "meta", strokeDasharray: "3 3" },
+                showYAxis: false,
+              }}
+            />
           </div>
         </CardContent>
       </Card>
@@ -511,6 +507,10 @@ async function CeiTimeline() {
                   className={`h-full ${ceiBarColor(r.health_status)} transition-all`}
                   style={{ width: `${pct}%` }}
                 />
+              </div>
+              {/* 95% target marker */}
+              <div className="pointer-events-none absolute inset-y-0" style={{ left: "95%" }} aria-label="meta 95%">
+                <div className="h-full w-0.5 bg-muted-foreground/60" />
               </div>
               <div className="absolute inset-0 flex items-center px-2">
                 <span className="text-xs font-bold tabular-nums text-foreground mix-blend-difference text-white">
@@ -588,32 +588,46 @@ async function AgingBuckets() {
     "120+": "danger",
   };
   const total = buckets.reduce((s, b) => s + (b.amount_mxn ?? 0), 0);
-  const donutChart: DataViewChartSpec = {
-    type: "donut",
-    xKey: "bucket",
-    series: [{ dataKey: "amount_mxn", label: "Saldo" }],
-    valueFormat: "currency-compact",
-    donutCenterLabel: formatCurrencyMXN(total, { compact: true }),
-    colorBy: "bucket",
-    colorMap: {
-      "1-30": "var(--chart-3)",
-      "31-60": "var(--chart-4)",
-      "61-90": "var(--chart-5)",
-      "91-120": "var(--destructive)",
-      "120+": "var(--destructive)",
+  const agingBarData = [
+    {
+      label: "Cartera vencida",
+      "1-30": buckets.find(b => b.bucket === "1-30")?.amount_mxn ?? 0,
+      "31-60": buckets.find(b => b.bucket === "31-60")?.amount_mxn ?? 0,
+      "61-90": buckets.find(b => b.bucket === "61-90")?.amount_mxn ?? 0,
+      "91-120": buckets.find(b => b.bucket === "91-120")?.amount_mxn ?? 0,
+      "120+": buckets.find(b => b.bucket === "120+")?.amount_mxn ?? 0,
     },
-    height: 220,
+  ];
+  const agingChart: DataViewChartSpec = {
+    type: "bar",
+    xKey: "label",
+    stacked: true,
+    layout: "horizontal",
+    series: [
+      { dataKey: "1-30", label: "1–30 días", color: "var(--chart-2)" },
+      { dataKey: "31-60", label: "31–60 días", color: "var(--warning)" },
+      { dataKey: "61-90", label: "61–90 días", color: "var(--chart-4)" },
+      { dataKey: "91-120", label: "91–120 días", color: "var(--danger)" },
+      { dataKey: "120+", label: "120+ días", color: "var(--destructive)" },
+    ],
+    valueFormat: "currency-compact",
+    height: 90,
   };
   return (
     <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
       <Card>
-        <CardContent className="p-3">
-          <div className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-            Composición cartera vencida
+        <CardContent className="p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+              Composición cartera vencida
+            </span>
+            <span className="text-sm font-semibold tabular-nums">
+              {formatCurrencyMXN(total, { compact: true })}
+            </span>
           </div>
           <DataViewChart
-            data={buckets as unknown as Record<string, unknown>[]}
-            chart={donutChart}
+            data={agingBarData as unknown as Record<string, unknown>[]}
+            chart={agingChart}
           />
         </CardContent>
       </Card>
@@ -698,9 +712,19 @@ const paymentColumns: DataTableColumn<PaymentPredictionRow>[] = [
   {
     key: "trend",
     header: "Tendencia",
-    cell: (r) => (
-      <span className="text-xs">{trendLabel(r.payment_trend)}</span>
-    ),
+    cell: (r) => {
+      if (!r.payment_trend) return <span className="text-muted-foreground">—</span>;
+      const trend = r.payment_trend;
+      const Icon = trend === "mejorando" ? TrendingUp : trend === "empeorando" ? TrendingDown : Minus;
+      const color = trend === "mejorando" ? "text-success" : trend === "empeorando" ? "text-danger" : "text-muted-foreground";
+      const label = trendLabel(trend);
+      return (
+        <span className={`flex items-center gap-1 ${color}`} title={label} aria-label={label}>
+          <Icon className="h-3.5 w-3.5" />
+          <span className="text-xs">{label}</span>
+        </span>
+      );
+    },
     hideOnMobile: true,
   },
   {
@@ -881,7 +905,19 @@ async function PaymentRiskTable({
               truncate
             />
           }
-          subtitle={trendLabel(r.payment_trend)}
+          subtitle={(() => {
+            const trend = r.payment_trend;
+            if (!trend) return "—";
+            const Icon = trend === "mejorando" ? TrendingUp : trend === "empeorando" ? TrendingDown : Minus;
+            const color = trend === "mejorando" ? "text-success" : trend === "empeorando" ? "text-danger" : "text-muted-foreground";
+            const label = trendLabel(trend);
+            return (
+              <span className={`flex items-center gap-1 ${color}`} aria-label={label}>
+                <Icon className="h-3.5 w-3.5" />
+                <span className="text-xs">{label}</span>
+              </span>
+            );
+          })()}
           badge={
             <Badge variant={riskVariant(r.payment_risk)}>
               {riskShortLabel(r.payment_risk)}
@@ -1095,26 +1131,10 @@ async function CompanyAgingTable({
     topN: 15,
     stacked: true,
     series: [
-      {
-        dataKey: "overdue_1_30",
-        label: "1–30 d",
-        color: "var(--warning)",
-      },
-      {
-        dataKey: "overdue_31_60",
-        label: "31–60 d",
-        color: "var(--chart-4)",
-      },
-      {
-        dataKey: "overdue_61_90",
-        label: "61–90 d",
-        color: "var(--chart-5)",
-      },
-      {
-        dataKey: "overdue_90plus",
-        label: "90+ d",
-        color: "var(--danger)",
-      },
+      { dataKey: "overdue_1_30", label: "1–30 d", color: "var(--chart-2)" },
+      { dataKey: "overdue_31_60", label: "31–60 d", color: "var(--warning)" },
+      { dataKey: "overdue_61_90", label: "61–90 d", color: "var(--danger)" },
+      { dataKey: "overdue_90plus", label: "90+ d", color: "var(--destructive)" },
     ],
     valueFormat: "currency-compact",
   };
@@ -1375,32 +1395,32 @@ async function OverdueTable({
     salesperson: params.facets.salesperson,
   });
   const view = parseViewParam(searchParams, "inv_view");
+  const chartRows = rows.map((r) => ({
+    ...r,
+    bucket: bucketFromDays(r.days_overdue),
+  }));
   const chart: DataViewChartSpec = {
-    type: "composed",
+    type: "bar",
     xKey: "name",
     topN: 15,
     series: [
-      {
-        dataKey: "amount_residual_mxn",
-        label: "Saldo",
-        kind: "bar",
-        yAxisId: "left",
-      },
-      {
-        dataKey: "days_overdue",
-        label: "Días vencido",
-        kind: "line",
-        yAxisId: "right",
-        color: "var(--chart-4)",
-      },
+      { dataKey: "amount_residual_mxn", label: "Saldo vencido", color: "var(--chart-1)" },
     ],
     valueFormat: "currency-compact",
-    secondaryValueFormat: "number",
+    colorBy: "bucket",
+    colorMap: {
+      "1-30": "var(--chart-2)",
+      "31-60": "var(--warning)",
+      "61-90": "var(--danger)",
+      "91-120": "var(--destructive)",
+      "120+": "var(--destructive)",
+    },
+    height: 320,
   };
   return (
     <>
     <DataView
-      data={rows}
+      data={chartRows}
       columns={invoiceColumns}
       chart={chart}
       view={view}
