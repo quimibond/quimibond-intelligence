@@ -157,7 +157,12 @@ COMMENT ON VIEW v_audit_invoice_lines_reversal_sign IS
   'Invariant A: refund lines where SIGN(qty) != SIGN(price_subtotal). '
   'Data-entry issue in Odoo (negative price_unit on refund lines), not sync bug.';
 
--- B. price_recompute: broken price reconstruction
+-- B. price_recompute (v2): drift threshold raised to $1. Sub-$1
+-- drifts are inherent rounding noise: push stored price_unit at 2
+-- decimals while Odoo computes price_subtotal at 6-decimal precision.
+-- Only drifts >= $1 flag real precision loss, which came from lines
+-- with massive quantities (qty=4.1M x 0.0335). Push was fixed to use
+-- 6-decimal precision (sync_push.py, 2026-04-20).
 CREATE OR REPLACE VIEW v_audit_invoice_lines_price_recompute AS
 SELECT il.id AS line_id, il.odoo_move_id,
        il.price_unit, il.quantity, il.discount, il.price_subtotal,
@@ -166,10 +171,10 @@ SELECT il.id AS line_id, il.odoo_move_id,
 FROM odoo_invoice_lines il
 WHERE il.price_subtotal IS NOT NULL
   AND ABS(il.price_unit * il.quantity * (1 - COALESCE(il.discount,0)/100.0)
-          - il.price_subtotal) > 0.01;
+          - il.price_subtotal) >= 1.0;
 
 COMMENT ON VIEW v_audit_invoice_lines_price_recompute IS
-  'Invariant B: invoice lines where price_unit * qty * (1-discount) != price_subtotal by >0.01.';
+  'Invariant B: invoice lines where price_unit*qty*(1-discount) drifts $1+ from price_subtotal.';
 
 -- C. fx_present (no exchange_rate column): flag non-MXN lines missing MXN amount
 CREATE OR REPLACE VIEW v_audit_invoice_lines_fx_present AS
