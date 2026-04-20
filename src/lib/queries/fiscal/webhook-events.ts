@@ -42,12 +42,12 @@ export async function getWebhookEventsSummary(): Promise<WebhookEventsSummary> {
       .from("syntage_webhook_events")
       .select("received_at")
       .order("received_at", { ascending: false })
-      .limit(1),
+      .limit(1), // intentional: most recent webhook timestamp
     sb
       .from("syntage_webhook_events")
       .select("event_type")
       .gte("received_at", d30)
-      .limit(5000),
+      .limit(5000), // intentional: enumerate all event types in 30d for count-by-type map
   ]);
 
   if (totalQ.error)

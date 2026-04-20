@@ -103,7 +103,7 @@ async function getExtractions(supabase: import("@supabase/supabase-js").Supabase
     .from("syntage_extractions")
     .select("syntage_id, extractor_type, status, started_at, finished_at, rows_produced, raw_payload")
     .order("created_at", { ascending: false })
-    .limit(20);
+    .limit(20); // intentional: recent 20 extractions for status display
   return (data ?? []).map(r => ({
     id: (r.syntage_id as string).slice(0, 8),
     extractor: r.extractor_type as string,
@@ -129,7 +129,7 @@ async function getOdooCrossCheck(supabase: import("@supabase/supabase-js").Supab
   const { data: syntageUuids } = await supabase
     .from("syntage_invoices")
     .select("uuid")
-    .limit(20000);
+    .limit(20000); // intentional: enumerate all UUIDs for cross-source reconciliation count
 
   const uuids = (syntageUuids ?? []).map(r => (r.uuid as string).toLowerCase()).filter(Boolean);
 
@@ -178,7 +178,7 @@ async function getErrorRate(supabase: import("@supabase/supabase-js").SupabaseCl
       .eq("level", "error")
       .gte("created_at", since)
       .order("created_at", { ascending: false })
-      .limit(5),
+      .limit(5), // intentional: top 5 sample errors for sidebar card
   ]);
   const wc = webhookCount ?? 0;
   const ec = errorCount ?? 0;
@@ -199,7 +199,7 @@ async function getYearlyDistribution(supabase: import("@supabase/supabase-js").S
     .from("syntage_invoices")
     .select("fecha_emision, direction")
     .not("fecha_emision", "is", null)
-    .limit(20000);
+    .limit(20000); // intentional: enumerate all for yearly distribution histogram
 
   const byYear: Record<string, { issued: number; received: number; total: number }> = {};
   for (const row of data ?? []) {

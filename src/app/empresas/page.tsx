@@ -45,6 +45,8 @@ import {
   type RfmSegmentRow,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parseYearParam, type YearValue } from "@/lib/queries/_shared/year-filter";
+import { YearSelector } from "@/components/patterns/year-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Empresas" };
@@ -106,11 +108,13 @@ export default async function CompaniesPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const year = parseYearParam(sp.year);
   return (
     <PageLayout>
       <PageHeader
         title="Empresas"
         subtitle="¿Con quién hago negocio, quién está en riesgo y cómo anda el portfolio?"
+        actions={<YearSelector />}
       />
 
       <SectionNav
@@ -211,7 +215,7 @@ export default async function CompaniesPage({
           </div>
         }
       >
-        <CompaniesTable searchParams={sp} />
+        <CompaniesTable searchParams={sp} year={year} />
       </Suspense>
       </section>
     </PageLayout>
@@ -648,8 +652,10 @@ const columns: DataTableColumn<CompanyListRow>[] = [
 
 async function CompaniesTable({
   searchParams,
+  year,
 }: {
   searchParams: SearchParams;
+  year: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     facetKeys: ["tier", "risk"],
@@ -660,6 +666,7 @@ async function CompaniesTable({
     ...params,
     tier: params.facets.tier,
     risk: params.facets.risk,
+    year,
   });
   const visibleKeys = parseVisibleKeys(searchParams);
   const sortHref = makeSortHref({

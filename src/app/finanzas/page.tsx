@@ -50,6 +50,8 @@ import {
   type BankBalance,
   type PlPoint,
 } from "@/lib/queries/analytics/finance";
+import { YearSelector } from "@/components/patterns/year-selector";
+import { parseYearParam, type YearValue } from "@/lib/queries/_shared/year-filter";
 import { FiscalRevenueKpiCard } from "@/components/domain/fiscal/FiscalRevenueKpiCard";
 import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
 import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
@@ -75,12 +77,20 @@ function formatPeriod(period: string) {
   return `${monthLabels[idx] ?? m} ${y?.slice(2) ?? ""}`;
 }
 
-export default function FinanzasPage() {
+export default async function FinanzasPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const sp = searchParams ? await searchParams : {};
+  const year = parseYearParam(sp.year as string | undefined);
+
   return (
     <PageLayout>
       <PageHeader
         title="Finanzas"
         subtitle="¿Cuánto cash tengo, cuánto me dura, y cómo se está moviendo?"
+        actions={<YearSelector />}
       />
 
       {/* Anchor nav con las 3 secciones + subsecciones */}
@@ -107,8 +117,14 @@ export default function FinanzasPage() {
           <DataSourceBadge source="odoo" coverage="2021+" />
         </div>
 
-        {/* Runway alert */}
+        {/* Runway alert — proyección, siempre desde hoy (ignora year) */}
         <div id="runway" className="scroll-mt-24">
+          <div className="mb-1 flex items-center gap-2">
+            <p className="text-sm font-medium text-muted-foreground">Runway</p>
+            <Badge variant="outline" className="text-xs font-normal">
+              proyección · desde hoy
+            </Badge>
+          </div>
           <Suspense fallback={<Skeleton className="h-24 rounded-xl" />}>
             <RunwaySection />
           </Suspense>
@@ -188,7 +204,13 @@ export default function FinanzasPage() {
           <Card>
             <CardHeader>
               <div className="flex items-center gap-2">
-                <CardTitle className="text-base">P&amp;L últimos 12 meses</CardTitle>
+                <CardTitle className="text-base">
+                  {year != null && year !== 'current' && year !== 'all'
+                    ? `P&L ${year}`
+                    : year === 'all'
+                      ? 'P&L histórico'
+                      : 'P&L últimos 12 meses'}
+                </CardTitle>
                 <DataSourceBadge source="odoo" />
               </div>
             </CardHeader>
@@ -196,7 +218,7 @@ export default function FinanzasPage() {
               <Suspense
                 fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
               >
-                <PlHistorySection />
+                <PlHistorySection year={year} />
               </Suspense>
             </CardContent>
           </Card>
@@ -278,6 +300,9 @@ export default function FinanzasPage() {
                     Flujo de efectivo proyectado · 13 semanas
                   </CardTitle>
                   <DataSourceBadge source="odoo" />
+                  <Badge variant="outline" className="text-xs font-normal">
+                    proyección · desde hoy
+                  </Badge>
                 </div>
                 <p className="text-xs text-muted-foreground">
                   Método directo · AR/SO/AP/PO ponderados por behavior real del
@@ -613,8 +638,9 @@ async function WorkingCapitalSection() {
 // ──────────────────────────────────────────────────────────────────────────
 // P&L history chart
 // ──────────────────────────────────────────────────────────────────────────
-async function PlHistorySection() {
-  const rows = await getPlHistory(12);
+async function PlHistorySection({ year }: { year?: YearValue }) {
+  const months = year === 'all' ? 120 : 12;
+  const rows = await getPlHistory(months, year);
   if (!rows || rows.length === 0) {
     return (
       <EmptyState

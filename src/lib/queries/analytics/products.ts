@@ -223,7 +223,7 @@ export async function getProductCategoryOptions(): Promise<string[]> {
     .from("inventory_velocity")
     .select("category")
     .not("category", "is", null)
-    .limit(5000);
+    .limit(5000); // intentional: enumerate all categories for filter dropdown
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ category: string | null }>) {
     if (r.category) set.add(r.category);

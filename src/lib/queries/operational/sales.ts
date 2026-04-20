@@ -6,6 +6,7 @@ import {
   paginationRange,
   type TableParams,
 } from "../_shared/table-params";
+import { yearBounds, type YearValue } from "../_shared/year-filter";
 
 /**
  * Sales queries v2 — usa views canónicas:
@@ -60,12 +61,12 @@ export async function getSalesKpis(): Promise<SalesKpis> {
       .from("analytics_finance_income_statement")
       .select("period, ingresos, utilidad_operativa")
       .order("period", { ascending: false })
-      .limit(24),
+      .limit(24), // intentional: last 24 months for income trend chart
     sb
       .from("monthly_revenue_by_company")
       .select("month, net_revenue, ma_3m")
       .order("month", { ascending: false })
-      .limit(60),
+      .limit(60), // intentional: last 60 months (5yr) for revenue trend chart
     sb
       .from("odoo_sale_orders")
       .select("amount_total_mxn, salesperson_name")
@@ -242,7 +243,7 @@ const REORDER_SORT_MAP: Record<string, string> = {
 };
 
 export async function getReorderRiskPage(
-  params: TableParams & { status?: string[]; tier?: string[] }
+  params: TableParams & { status?: string[]; tier?: string[]; year?: YearValue }
 ): Promise<ReorderRiskPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -374,7 +375,7 @@ const TOP_CUSTOMER_SORT_MAP: Record<string, string> = {
 };
 
 export async function getTopCustomersPage(
-  params: TableParams
+  params: TableParams & { year?: YearValue }
 ): Promise<TopCustomersPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -383,13 +384,25 @@ export async function getTopCustomersPage(
     (params.sort && TOP_CUSTOMER_SORT_MAP[params.sort]) ?? "revenue_90d";
   const ascending = params.sortDir === "asc";
 
+  // When year is set, filter to companies with last_order_date in that year range.
+  // When year is 'current' or unset, keep the default gt(revenue_90d, 0) filter.
+  const useYearFilter = params.year !== undefined && params.year !== 'current';
+  const bounds = useYearFilter ? yearBounds(params.year) : null;
+
   let query = sb
     .from("company_profile")
     .select("company_id, name, revenue_90d, total_revenue", {
       count: "exact",
     })
-    .gt("revenue_90d", 0)
     .not("company_id", "in", pgInList(selfIds));
+
+  if (bounds) {
+    query = query
+      .gte("last_order_date", bounds.from.toISOString().slice(0, 10))
+      .lt("last_order_date", bounds.to.toISOString().slice(0, 10));
+  } else {
+    query = query.gt("revenue_90d", 0);
+  }
 
   if (params.q) query = query.ilike("name", `%${params.q}%`);
 
@@ -656,7 +669,7 @@ export async function getSaleOrderSalespeopleOptions(): Promise<string[]> {
     .select("salesperson_name")
     .gte("date_order", since.toISOString().slice(0, 10))
     .not("salesperson_name", "is", null)
-    .limit(3000);
+    .limit(3000); // intentional: enumerate all salesperson names for filter dropdown
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
     if (r.salesperson_name) set.add(r.salesperson_name);

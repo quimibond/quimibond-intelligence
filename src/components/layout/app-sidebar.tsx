@@ -24,6 +24,7 @@ import {
   Inbox,
   MessageSquare,
   Package,
+  Receipt,
   Search,
   Settings,
   ShoppingBag,
@@ -83,6 +84,7 @@ const topGroups: NavGroup[] = [
     items: [
       { href: "/ventas", label: "Ventas", icon: TrendingUp },
       { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
+      { href: "/pagos", label: "Pagos", icon: Receipt },
       {
         href: "/compras",
         label: "Compras",

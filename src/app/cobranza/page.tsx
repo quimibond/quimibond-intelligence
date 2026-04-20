@@ -60,6 +60,8 @@ import {
   type CeiRow,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { YearSelector } from "@/components/patterns/year-selector";
+import { parseYearParam, type YearValue } from "@/lib/queries/_shared/year-filter";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Cobranza" };
@@ -96,6 +98,7 @@ export default async function CobranzaPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const year = parseYearParam(sp.year as string | undefined);
   const staleness = await getUnifiedRefreshStaleness();
   return (
     <PageLayout>
@@ -103,7 +106,10 @@ export default async function CobranzaPage({
         title="Cobranza"
         subtitle="¿Quién me debe, cuánto, y quién va a pagar mal?"
         actions={
-          <DataSourceBadge source="unified" coverage="Odoo operativo + SAT validado" refresh="15min" />
+          <div className="flex flex-wrap items-center gap-3">
+            <YearSelector />
+            <DataSourceBadge source="unified" coverage="Odoo operativo + SAT validado" refresh="15min" />
+          </div>
         }
       />
 
@@ -243,7 +249,7 @@ export default async function CobranzaPage({
               </div>
             }
           >
-            <PaymentRiskTable searchParams={sp} />
+            <PaymentRiskTable searchParams={sp} year={year} />
           </Suspense>
         </CardContent>
       </Card>
@@ -294,7 +300,7 @@ export default async function CobranzaPage({
               </div>
             }
           >
-            <CompanyAgingTable searchParams={sp} />
+            <CompanyAgingTable searchParams={sp} year={year} />
           </Suspense>
         </CardContent>
       </Card>
@@ -332,7 +338,7 @@ export default async function CobranzaPage({
               </div>
             }
           >
-            <OverdueTable searchParams={sp} />
+            <OverdueTable searchParams={sp} year={year} />
           </Suspense>
         </CardContent>
       </Card>
@@ -804,8 +810,10 @@ function capitalize(s: string): string {
 
 async function PaymentRiskTable({
   searchParams,
+  year,
 }: {
   searchParams: SearchParams;
+  year?: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "pr_",
@@ -817,6 +825,7 @@ async function PaymentRiskTable({
     ...params,
     risk: params.facets.risk,
     trend: params.facets.trend,
+    year,
   });
   const visibleKeys = parseVisibleKeys(searchParams, "pr_");
   const sortHref = makeSortHref({
@@ -1105,8 +1114,10 @@ const companyColumns: DataTableColumn<CompanyAgingRow>[] = [
 
 async function CompanyAgingTable({
   searchParams,
+  year,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
+  year?: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "age_",
@@ -1117,6 +1128,7 @@ async function CompanyAgingTable({
   const { rows, total } = await getCompanyAgingPage({
     ...params,
     tier: params.facets.tier,
+    year,
   });
   const visibleKeys = parseVisibleKeys(searchParams, "age_");
   const sortHref = makeSortHref({
@@ -1374,8 +1386,10 @@ async function OverdueTableToolbar() {
 
 async function OverdueTable({
   searchParams,
+  year,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
+  year?: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "inv_",
@@ -1393,6 +1407,7 @@ async function OverdueTable({
     ...params,
     bucket: params.facets.bucket,
     salesperson: params.facets.salesperson,
+    year,
   });
   const view = parseViewParam(searchParams, "inv_view");
   const chartRows = rows.map((r) => ({

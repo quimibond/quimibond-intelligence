@@ -60,7 +60,9 @@ import {
   type PriceFlag,
 } from "@/lib/queries/analytics";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parseYearParam, type YearValue } from "@/lib/queries/_shared/year-filter";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
+import { YearSelector } from "@/components/patterns/year-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Compras" };
@@ -97,6 +99,7 @@ export default async function ComprasPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const year = parseYearParam(sp.year);
   return (
     <PageLayout>
       <PageHeader
@@ -104,6 +107,7 @@ export default async function ComprasPage({
         subtitle="¿Qué compré, a quién, a qué precio y qué falta por ordenar?"
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector />
             <DataSourceBadge source="odoo" coverage="2021+" />
             <a
               href="/compras/price-variance"
@@ -373,7 +377,7 @@ export default async function ComprasPage({
           <Suspense
             fallback={<Skeleton className="h-[300px] rounded-xl" />}
           >
-            <RecentPurchasesTable searchParams={sp} />
+            <RecentPurchasesTable searchParams={sp} year={year} />
           </Suspense>
         </CardContent>
       </Card>
@@ -913,23 +917,13 @@ async function PriceAnomaliesTable({
   }
   const view = parseViewParam(searchParams, "pa_view");
   const chart: DataViewChartSpec = {
-    type: "composed",
-    xKey: "product_ref",
-    topN: 15,
+    type: "scatter",
+    xKey: "price_vs_avg_pct",
+    yKey: "price_change_pct",
+    sizeKey: "total_spent",
     series: [
-      {
-        dataKey: "price_vs_avg_pct",
-        label: "% vs promedio",
-        kind: "bar",
-        yAxisId: "left",
-      },
-      {
-        dataKey: "price_change_pct",
-        label: "Δ MoM %",
-        kind: "line",
-        yAxisId: "right",
-        color: "var(--chart-5)",
-      },
+      { dataKey: "price_vs_avg_pct", label: "% vs promedio" },
+      { dataKey: "price_change_pct", label: "Δ MoM %" },
     ],
     valueFormat: "percent",
     secondaryValueFormat: "percent",
@@ -942,6 +936,7 @@ async function PriceAnomaliesTable({
       value: 0,
       axis: "y",
     },
+    height: 360,
   };
   return (
     <>
@@ -1104,6 +1099,7 @@ async function TopSuppliersTable({
     type: "bar",
     xKey: "supplier_name",
     topN: 15,
+    layout: "horizontal",
     series: [
       {
         dataKey: "total_spent",
@@ -1112,6 +1108,7 @@ async function TopSuppliersTable({
       },
     ],
     valueFormat: "currency-compact",
+    height: 420,
   };
   return (
     <>
@@ -1262,8 +1259,10 @@ async function PurchaseOrdersToolbar() {
 
 async function RecentPurchasesTable({
   searchParams,
+  year,
 }: {
   searchParams: Record<string, string | string[] | undefined>;
+  year: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "po_",
@@ -1275,6 +1274,7 @@ async function RecentPurchasesTable({
     ...params,
     state: params.facets.state,
     buyer: params.facets.buyer,
+    year,
   });
   const visibleKeys = parseVisibleKeys(searchParams, "po_");
   const sortHref = makeSortHref({
@@ -1291,10 +1291,18 @@ async function RecentPurchasesTable({
       {
         dataKey: "amount_total_mxn",
         label: "Monto",
-        color: "var(--chart-3)",
       },
     ],
     valueFormat: "currency-compact",
+    colorBy: "state",
+    colorMap: {
+      draft: "var(--muted-foreground)",
+      sent: "var(--chart-3)",
+      "to approve": "var(--warning)",
+      purchase: "var(--chart-2)",
+      done: "var(--success)",
+      cancel: "var(--destructive)",
+    },
   };
   return (
     <>

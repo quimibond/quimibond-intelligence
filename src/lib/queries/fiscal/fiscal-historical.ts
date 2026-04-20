@@ -139,7 +139,7 @@ export async function getCompanyFiscalProfile(
         "rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, revenue_prev_12m_mxn, yoy_pct, cancellation_rate_pct, days_since_last_cfdi, company_id, first_cfdi"
       )
       .eq("company_id", companyId)
-      .limit(1)
+      .limit(1) // intentional: single profile row per company
       .maybeSingle(),
     sb
       .from("syntage_top_suppliers_fiscal_lifetime")
@@ -147,7 +147,7 @@ export async function getCompanyFiscalProfile(
         "rfc, name, lifetime_spend_mxn, spend_12m_mxn, spend_prev_12m_mxn, yoy_pct, retenciones_lifetime_mxn, company_id"
       )
       .eq("company_id", companyId)
-      .limit(1)
+      .limit(1) // intentional: single profile row per company
       .maybeSingle(),
   ]);
 

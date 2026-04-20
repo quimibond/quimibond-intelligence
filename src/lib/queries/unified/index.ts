@@ -1,5 +1,6 @@
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import { YearValue, yearBounds } from "@/lib/queries/_shared/year-filter";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 export type MatchStatus = "match_uuid" | "match_composite" | "ambiguous" | "syntage_only" | "odoo_only";
@@ -78,20 +79,61 @@ export function isComputableRevenue(row: {
   return true;
 }
 
+export interface UnifiedInvoicesResult {
+  data: UnifiedInvoice[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+}
+
 export async function getUnifiedInvoicesForCompany(
   companyId: number,
-  opts?: { direction?: "issued" | "received"; includeNonComputable?: boolean }
-): Promise<UnifiedInvoice[]> {
+  opts?: {
+    direction?: "issued" | "received";
+    includeNonComputable?: boolean;
+    year?: YearValue;
+    page?: number;
+    pageSize?: number;
+    from?: Date;
+    to?: Date;
+  }
+): Promise<UnifiedInvoicesResult> {
+  const { page = 0, pageSize = 500 } = opts ?? {};
+  const offset = page * pageSize;
+
   const supabase = getServiceClient();
-  let q = supabase.from("invoices_unified").select("*").eq("company_id", companyId);
+  let q = supabase
+    .from("invoices_unified")
+    .select("*", { count: "exact" })
+    .eq("company_id", companyId);
+
   if (opts?.direction) q = q.eq("direction", opts.direction);
   if (!opts?.includeNonComputable) {
     q = q.in("match_status", ["match_uuid", "match_composite", "odoo_only"])
          .not("estado_sat", "eq", "cancelado");
   }
-  const { data, error } = await q.order("invoice_date", { ascending: false }).limit(500);
+
+  // Apply date bounds if year or explicit from/to provided
+  if (opts?.year !== undefined || opts?.from || opts?.to) {
+    const bounds = opts?.from && opts?.to
+      ? { from: opts.from, to: opts.to }
+      : yearBounds(opts?.year);
+    q = q
+      .gte("invoice_date", bounds.from.toISOString().slice(0, 10))
+      .lt("invoice_date", bounds.to.toISOString().slice(0, 10));
+  }
+
+  const { data, error, count } = await q
+    .order("invoice_date", { ascending: false })
+    .range(offset, offset + pageSize - 1);
+
   if (error) throw new Error(error.message);
-  return (data ?? []) as UnifiedInvoice[];
+  return {
+    data: (data ?? []) as UnifiedInvoice[],
+    totalCount: count ?? 0,
+    page,
+    pageSize,
+  };
 }
 
 export async function getUnifiedRevenueAggregates(

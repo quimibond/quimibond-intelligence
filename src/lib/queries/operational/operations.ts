@@ -35,7 +35,7 @@ export async function getOperationsKpis(): Promise<OperationsKpis> {
       .from("ops_delivery_health_weekly")
       .select("otd_pct, total_completed, avg_lead_days, week_start")
       .order("week_start", { ascending: false })
-      .limit(4),
+      .limit(4), // intentional: last 4 weeks for ops KPI card
     sb
       .from("odoo_deliveries")
       .select("id", { count: "exact", head: true })
@@ -384,7 +384,7 @@ export async function getManufacturingAssigneeOptions(): Promise<string[]> {
     .from("odoo_manufacturing")
     .select("assigned_user")
     .not("assigned_user", "is", null)
-    .limit(2000);
+    .limit(2000); // intentional: enumerate all users for filter dropdown (bounded by employee count)
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ assigned_user: string | null }>) {
     if (r.assigned_user) set.add(r.assigned_user);

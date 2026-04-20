@@ -8,6 +8,7 @@ import {
   paginationRange,
   type TableParams,
 } from "../_shared/table-params";
+import { yearBounds, type YearValue } from "../_shared/year-filter";
 
 /**
  * Purchases queries v2 — usa views canónicas:
@@ -405,13 +406,18 @@ const PO_SORT_MAP: Record<string, string> = {
 };
 
 export async function getPurchaseOrdersPage(
-  params: TableParams & { state?: string[]; buyer?: string[] }
+  params: TableParams & { state?: string[]; buyer?: string[]; year?: YearValue }
 ): Promise<RecentPurchaseOrderPage> {
   const sb = getServiceClient();
   const [start, end] = paginationRange(params.page, params.size);
 
   const sortCol = (params.sort && PO_SORT_MAP[params.sort]) ?? "date_order";
   const ascending = params.sortDir === "asc";
+
+  // Resolve year bounds to override from/to if year is set and no explicit dateRange is active.
+  const useYearFilter = params.year !== undefined && params.year !== 'current' && !params.from && !params.to;
+  const yearFrom = useYearFilter ? yearBounds(params.year).from.toISOString().slice(0, 10) : null;
+  const yearTo = useYearFilter ? yearBounds(params.year).to.toISOString().slice(0, 10) : null;
 
   let query = sb
     .from("odoo_purchase_orders")
@@ -420,10 +426,14 @@ export async function getPurchaseOrdersPage(
       { count: "exact" }
     );
 
-  if (params.from) query = query.gte("date_order", params.from);
-  if (params.to) {
-    const next = endOfDay(params.to);
+  const effectiveFrom = params.from ?? yearFrom;
+  const effectiveTo = params.to ?? yearTo;
+
+  if (effectiveFrom) query = query.gte("date_order", effectiveFrom);
+  if (effectiveTo) {
+    const next = endOfDay(effectiveTo);
     if (next) query = query.lt("date_order", next);
+    else query = query.lt("date_order", effectiveTo);
   }
   if (params.q) query = query.ilike("name", `%${params.q}%`);
   if (params.state && params.state.length > 0) {
@@ -464,7 +474,7 @@ const _getPurchaseBuyerOptionsRaw = async (): Promise<string[]> => {
     .select("buyer_name")
     .gte("date_order", since.toISOString().slice(0, 10))
     .not("buyer_name", "is", null)
-    .limit(3000);
+    .limit(3000); // intentional: enumerate all buyer names for filter dropdown
   const set = new Set<string>();
   for (const r of (data ?? []) as Array<{ buyer_name: string | null }>) {
     if (r.buyer_name) set.add(r.buyer_name);
@@ -643,9 +653,10 @@ export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
  * Get supplier invoices for a company via unified layer.
  */
 export async function getSupplierInvoices(supplierCompanyId: number) {
-  return getUnifiedInvoicesForCompany(supplierCompanyId, {
+  const result = await getUnifiedInvoicesForCompany(supplierCompanyId, {
     direction: "received",
   });
+  return result.data;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

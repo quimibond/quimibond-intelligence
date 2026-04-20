@@ -737,26 +737,17 @@ async function TopMoversTable({
   });
   const view = parseViewParam(searchParams, "tm_view");
   const chart: DataViewChartSpec = {
-    type: "composed",
-    xKey: "product_ref",
-    topN: 15,
+    type: "scatter",
+    xKey: "qty_sold_90d",
+    yKey: "annual_turnover",
+    sizeKey: "customers_12m",
     series: [
-      {
-        dataKey: "qty_sold_90d",
-        label: "Vendido 90d",
-        kind: "bar",
-        yAxisId: "left",
-      },
-      {
-        dataKey: "annual_turnover",
-        label: "Rotación anual",
-        kind: "line",
-        yAxisId: "right",
-        color: "var(--chart-4)",
-      },
+      { dataKey: "qty_sold_90d", label: "Vendido 90d" },
+      { dataKey: "annual_turnover", label: "Rotación anual" },
     ],
     valueFormat: "number",
     secondaryValueFormat: "decimal-1",
+    height: 360,
   };
   return (
     <>
@@ -887,26 +878,23 @@ async function TopMarginTable({
   const rows = await getTopMarginProducts(15);
   const view = parseViewParam(searchParams, "tmg_view");
   const chart: DataViewChartSpec = {
-    type: "composed",
-    xKey: "product_ref",
-    topN: 15,
+    type: "scatter",
+    xKey: "total_revenue",
+    yKey: "weighted_margin_pct",
+    sizeKey: "customers",
     series: [
-      {
-        dataKey: "total_revenue",
-        label: "Revenue",
-        kind: "bar",
-        yAxisId: "left",
-      },
-      {
-        dataKey: "weighted_margin_pct",
-        label: "Margen %",
-        kind: "line",
-        yAxisId: "right",
-        color: "var(--chart-4)",
-      },
+      { dataKey: "total_revenue", label: "Revenue" },
+      { dataKey: "weighted_margin_pct", label: "Margen %" },
     ],
     valueFormat: "currency-compact",
     secondaryValueFormat: "percent",
+    referenceLine: {
+      value: 0,
+      axis: "y",
+      color: "var(--destructive)",
+      label: "margen 0%",
+    },
+    height: 360,
   };
   return (
     <DataView
@@ -925,20 +913,21 @@ async function TopMarginTable({
           title={r.product_name ?? r.product_ref ?? "—"}
           subtitle={r.product_ref ?? undefined}
           badge={
-            <span
-              className={`rounded px-2 py-0.5 text-[11px] font-bold ${
+            <Badge
+              variant={
                 r.weighted_margin_pct < 0
-                  ? "bg-danger/15 text-danger-foreground"
+                  ? "danger"
                   : r.weighted_margin_pct >= 30
-                    ? "bg-success/15 text-success-foreground"
+                    ? "success"
                     : r.weighted_margin_pct >= 15
-                      ? "bg-warning/15 text-warning-foreground"
-                      : "bg-muted text-muted-foreground"
-              }`}
+                      ? "warning"
+                      : "secondary"
+              }
+              className="text-[11px] font-bold"
             >
               {r.weighted_margin_pct < 0 && "⚠ "}
               {r.weighted_margin_pct.toFixed(1)}%
-            </span>
+            </Badge>
           }
           fields={[
             {

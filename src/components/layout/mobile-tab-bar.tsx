@@ -15,6 +15,7 @@ import {
   Inbox,
   MessageSquare,
   Package,
+  Receipt,
   Settings,
   ShoppingBag,
   Sparkles,
@@ -72,6 +73,7 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
     tabs: [
       { href: "/ventas", label: "Ventas", icon: TrendingUp },
       { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
+      { href: "/pagos", label: "Pagos", icon: Receipt },
     ],
   },
   {
