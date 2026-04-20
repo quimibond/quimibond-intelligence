@@ -36,7 +36,7 @@ export interface CfoSnapshot {
 
 async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
   const sb = getServiceClient();
-  const { data } = await sb.from("analytics_finance_cfo_snapshot").select("*").maybeSingle();
+  const { data } = await sb.from("cfo_dashboard").select("*").maybeSingle();
   if (!data) return null;
   const d = data as {
     efectivo_mxn: number | null;
@@ -151,7 +151,7 @@ export interface WorkingCapital {
 
 export async function getWorkingCapital(): Promise<WorkingCapital | null> {
   const sb = getServiceClient();
-  const { data } = await sb.from("analytics_finance_working_capital").select("*").maybeSingle();
+  const { data } = await sb.from("working_capital").select("*").maybeSingle();
   if (!data) return null;
   const d = data as {
     efectivo_disponible: number | null;
@@ -191,7 +191,7 @@ export interface BankBalance {
 export async function getCashPosition(): Promise<BankBalance[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("analytics_finance_cash_position")
+    .from("cash_position")
     .select("banco, tipo, moneda, cuenta, saldo, saldo_mxn")
     .order("saldo_mxn", { ascending: false });
   return ((data ?? []) as Array<{
@@ -242,7 +242,7 @@ export async function getPlHistory(
 ): Promise<PlPoint[]> {
   const sb = getServiceClient();
   let query = sb
-    .from("analytics_finance_income_statement")
+    .from("pl_estado_resultados")
     .select("*")
     .order("period", { ascending: false });
 

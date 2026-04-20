@@ -64,7 +64,7 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
       .select("odoo_amount_residual_mxn,amount_residual")
       .eq("direction", "received")
       .in("payment_state", ["not_paid", "partial"]),
-    sb.from("analytics_finance_cfo_snapshot").select("pagos_prov_30d").maybeSingle(),
+    sb.from("cfo_dashboard").select("pagos_prov_30d").maybeSingle(),
     sb
       .from("supplier_concentration_herfindahl")
       .select("total_spent_12m")

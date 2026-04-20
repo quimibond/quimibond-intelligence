@@ -635,7 +635,7 @@ async function PlHistorySection({
 }: {
   searchParams: SearchParams;
 }) {
-  // Aplicar pl_period → filtro de período en analytics_finance_income_statement.
+  // Aplicar pl_period → filtro de período en pl_estado_resultados.
   // Preset "all" → sin filtro (deja los últimos 12 meses por defecto).
   const plPeriod = parsePeriod(searchParams.pl_period);
   let plOpts: { from?: string; to?: string } | undefined;

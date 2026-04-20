@@ -115,9 +115,9 @@ export async function buildFinancieroContextEstrategico(
   profileSection: string
 ): Promise<string> {
   const [cfoDash, plReport, workingCap, bankBalances, anomalies, validationCoverage, revenueFiscalTrend, taxReturns12m] = await Promise.all([
-    sb.from("analytics_finance_cfo_snapshot").select("*").limit(1),
-    sb.from("analytics_finance_income_statement").select("*").order("period", { ascending: false }).limit(6),
-    sb.from("analytics_finance_working_capital").select("*").limit(1),
+    sb.from("cfo_dashboard").select("*").limit(1),
+    sb.from("pl_estado_resultados").select("*").order("period", { ascending: false }).limit(6),
+    sb.from("working_capital").select("*").limit(1),
     sb.from("odoo_bank_balances").select("name, journal_type, currency, current_balance").order("current_balance", { ascending: false }),
     sb.from("accounting_anomalies")
       .select("anomaly_type, severity, description, company_name, amount")

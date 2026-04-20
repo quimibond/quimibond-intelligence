@@ -57,7 +57,7 @@ export async function getSalesKpis(): Promise<SalesKpis> {
   const selfIds = await getSelfCompanyIds();
   const [pl, monthlyRev, salesOrders] = await Promise.all([
     sb
-      .from("analytics_finance_income_statement")
+      .from("pl_estado_resultados")
       .select("period, ingresos, utilidad_operativa")
       .order("period", { ascending: false })
       .limit(24),
@@ -223,7 +223,7 @@ export async function getSalesRevenueTrend(
   // Pedimos `months + 2` para tener contexto para el ma3m del mes más
   // antiguo de la ventana, pero solo devolvemos los últimos `months`.
   const { data } = await sb
-    .from("analytics_finance_income_statement")
+    .from("pl_estado_resultados")
     .select("period, ingresos")
     .order("period", { ascending: false })
     .limit(months + 2);
