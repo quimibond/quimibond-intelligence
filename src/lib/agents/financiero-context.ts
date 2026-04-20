@@ -114,7 +114,7 @@ export async function buildFinancieroContextEstrategico(
   sb: SupabaseClient,
   profileSection: string
 ): Promise<string> {
-  const [cfoDash, plReport, workingCap, bankBalances, anomalies, budgetVsActual, validationCoverage, revenueFiscalTrend, taxReturns12m] = await Promise.all([
+  const [cfoDash, plReport, workingCap, bankBalances, anomalies, validationCoverage, revenueFiscalTrend, taxReturns12m] = await Promise.all([
     sb.from("analytics_finance_cfo_snapshot").select("*").limit(1),
     sb.from("analytics_finance_income_statement").select("*").order("period", { ascending: false }).limit(6),
     sb.from("analytics_finance_working_capital").select("*").limit(1),
@@ -123,10 +123,6 @@ export async function buildFinancieroContextEstrategico(
       .select("anomaly_type, severity, description, company_name, amount")
       .order("amount", { ascending: false })
       .limit(15),
-    sb.from("analytics_budget_vs_actual")
-      .select("*")
-      .order("period", { ascending: false })
-      .limit(30),
     // Fase 6 · cobertura de validación SAT (ratio validated/posted por mes)
     Promise.resolve(sb.rpc("syntage_validation_coverage_by_month", { p_months: 6 }))
       .then((r: { data: unknown }) => r)
@@ -164,9 +160,6 @@ ${safeJSON(plReport.data)}
 
 ## SALDOS BANCARIOS (solo cuentas con movimiento)
 ${safeJSON(activeBanks)}
-
-## PRESUPUESTO VS REAL (desvíos por cuenta contable)
-${safeJSON(budgetVsActual.data)}
 
 ## ANOMALIAS CONTABLES
 ${safeJSON(anomalies.data)}

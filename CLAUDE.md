@@ -450,7 +450,6 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 - `odoo_deliveries`, `odoo_crm_leads`, `odoo_activities`
 - `odoo_manufacturing`, `odoo_orderpoints`
 - `cfdi_documents` — CFDIs parseados de email XML (tipo I/N/P, con UUID para cruce)
-- `budgets` — Presupuestos mensuales por cuenta contable (entrada manual)
 
 **Metrics:**
 - `health_scores` — Scores calculados por contacto
@@ -601,7 +600,6 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | `monthly_revenue_trend` | Tendencia de revenue mensual con MoM% |
 | `margin_analysis` | Análisis de márgenes por producto y cliente |
 | `working_capital` | Capital de trabajo: efectivo + CxC - CxP, ratios de liquidez |
-| `budget_vs_actual` | Presupuesto vs real por cuenta contable y periodo |
 | `cfdi_invoice_match` | Cruce CFDI ↔ factura via UUID (matched/unmatched/no_uuid) |
 
 ### Modelos pendientes

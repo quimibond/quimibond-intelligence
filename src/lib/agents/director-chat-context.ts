@@ -212,7 +212,7 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildFinanciero(sb: SupabaseClient): Promise<string> {
-  const [runway, cfoDash, overdue, payments, payPredictions, cashflow, pl, workingCapital, budget] = await Promise.all([
+  const [runway, cfoDash, overdue, payments, payPredictions, cashflow, pl, workingCapital] = await Promise.all([
     // NEW (Fase 7): runway calculation con cash + AR/AP y burn rate 60d
     sb.from("financial_runway").select("*").limit(1),
     sb.from("analytics_finance_cfo_snapshot").select("*").limit(1),
@@ -235,7 +235,6 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
     sb.from("cashflow_projection").select("flow_type, period, gross_amount, net_amount, probability").order("sort_order"),
     sb.from("analytics_finance_income_statement").select("*").order("period", { ascending: false }).limit(3),
     sb.from("analytics_finance_working_capital").select("*").limit(1),
-    sb.from("analytics_budget_vs_actual").select("*").order("period", { ascending: false }).limit(12),
   ]);
   return [
     `## RUNWAY ejecutivo (cash + AR 30d - AP 30d / burn rate diario)\n${safeJSON(runway.data?.[0])}`,
@@ -243,7 +242,6 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
     `## Cash flow proyectado\n${safeJSON(cashflow.data)}`,
     `## Working capital\n${safeJSON(workingCapital.data?.[0])}`,
     `## P&L estado de resultados (ultimos periodos)\n${safeJSON(pl.data)}`,
-    `## Presupuesto vs real (ultimos 12 periodos)\n${safeJSON(budget.data)}`,
     `## Facturas vencidas (clientes)\n${safeJSON(overdue.data)}`,
     `## Clientes con patron de pago anormal\n${safeJSON(payPredictions.data)}`,
     `## Pagos recibidos recientes\n${safeJSON(payments.data)}`,
