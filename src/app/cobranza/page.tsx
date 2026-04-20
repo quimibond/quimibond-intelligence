@@ -478,7 +478,7 @@ async function CeiTimeline() {
                 xKey: "cohort",
                 series: [{ dataKey: "pct", label: "CEI", color: "var(--chart-2)" }],
                 valueFormat: "percent",
-                height: 70,
+                height: 110,
                 referenceLine: { value: 95, axis: "y", color: "var(--muted-foreground)", label: "meta", strokeDasharray: "3 3" },
                 showYAxis: false,
               }}
@@ -493,7 +493,7 @@ async function CeiTimeline() {
         return (
           <Card
             key={r.cohort_month}
-            className="flex items-center gap-3 rounded-lg px-3 py-2"
+            className="flex-row items-center gap-3 rounded-lg px-3 py-2"
           >
             {/* Mes */}
             <div className="w-14 shrink-0 font-mono text-xs uppercase tabular-nums text-muted-foreground">
@@ -611,10 +611,10 @@ async function AgingBuckets() {
       { dataKey: "120+", label: "120+ días", color: "var(--destructive)" },
     ],
     valueFormat: "currency-compact",
-    height: 90,
+    height: 140,
   };
   return (
-    <div className="grid gap-4 lg:grid-cols-[280px_1fr]">
+    <div className="space-y-4">
       <Card>
         <CardContent className="p-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -631,7 +631,7 @@ async function AgingBuckets() {
           />
         </CardContent>
       </Card>
-      <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 3 }}>
+      <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 5 }}>
         {buckets.map((b) => (
           <KpiCard
             key={b.bucket}
