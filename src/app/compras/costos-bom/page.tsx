@@ -272,6 +272,11 @@ export default function CostosBomPage() {
         ]}
         title="Costos reales de BOM"
         subtitle="real_unit_cost derivado de BOMs activos — materia prima sumada por ingrediente"
+        actions={
+          <Badge variant="outline" className="text-xs">
+            snapshot actual
+          </Badge>
+        }
       />
 
       <SectionNav

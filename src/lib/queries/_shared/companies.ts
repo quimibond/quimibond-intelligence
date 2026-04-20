@@ -3,6 +3,7 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "./_helpers";
 import { paginationRange, type TableParams } from "./table-params";
 import { getUnifiedInvoicesForCompany } from "@/lib/queries/unified";
+import { yearBounds, type YearValue } from "./year-filter";
 
 /**
  * Companies queries v2 — usa views canónicas:
@@ -130,6 +131,7 @@ export async function getCompaniesPage(
   params: TableParams & {
     tier?: string[];
     risk?: string[];
+    year?: YearValue;
   }
 ): Promise<CompaniesPage> {
   const sb = getServiceClient();
@@ -140,6 +142,10 @@ export async function getCompaniesPage(
     (params.sort && COMPANIES_SORT_MAP[params.sort]) ?? "total_revenue";
   const ascending = params.sortDir === "asc";
 
+  // When year is set, filter to companies with last_order_date in that year.
+  const useYearFilter = params.year !== undefined && params.year !== 'current';
+  const bounds = useYearFilter ? yearBounds(params.year) : null;
+
   let query = sb
     .from("company_profile")
     .select(
@@ -149,6 +155,11 @@ export async function getCompaniesPage(
     .gt("total_revenue", 0)
     .not("company_id", "in", pgInList(selfIds));
 
+  if (bounds) {
+    query = query
+      .gte("last_order_date", bounds.from.toISOString().slice(0, 10))
+      .lt("last_order_date", bounds.to.toISOString().slice(0, 10));
+  }
   if (params.q) query = query.ilike("name", `%${params.q}%`);
   if (params.tier && params.tier.length > 0) {
     query = query.in("tier", params.tier);

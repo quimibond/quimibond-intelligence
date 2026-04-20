@@ -65,10 +65,12 @@ import {
 } from "@/lib/queries/analytics";
 import { getPlHistory } from "@/lib/queries/analytics/finance";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
+import { parseYearParam, type YearValue } from "@/lib/queries/_shared/year-filter";
 import { formatCurrencyMXN } from "@/lib/formatters";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
+import { YearSelector } from "@/components/patterns/year-selector";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Ventas" };
@@ -105,6 +107,7 @@ export default async function VentasPage({
   searchParams: Promise<SearchParams>;
 }) {
   const sp = await searchParams;
+  const year = parseYearParam(sp.year);
   return (
     <PageLayout>
       <PageHeader
@@ -112,6 +115,7 @@ export default async function VentasPage({
         subtitle="¿Cómo van las ventas, quién compra y quién dejó de comprar?"
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <YearSelector />
             <DataSourceBadge source="odoo" coverage="2021+" />
             <a
               href="/ventas/cohorts"
@@ -238,7 +242,7 @@ export default async function VentasPage({
           <Suspense
             fallback={<Skeleton className="h-[300px] rounded-xl" />}
           >
-            <ReorderRiskTable searchParams={sp} />
+            <ReorderRiskTable searchParams={sp} year={year} />
           </Suspense>
         </CardContent>
       </Card>
@@ -249,7 +253,7 @@ export default async function VentasPage({
         <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
           <div>
             <CardTitle className="text-base">
-              Top clientes (revenue 90d)
+              Top clientes{year === "current" || year === new Date().getFullYear() ? " (revenue 90d)" : ` (activos ${year === "all" ? "histórico" : year})`}
             </CardTitle>
             <p className="text-xs text-muted-foreground">
               Ordena por revenue, margen o lifetime. Busca por nombre.
@@ -271,7 +275,7 @@ export default async function VentasPage({
           <Suspense
             fallback={<Skeleton className="h-[300px] rounded-xl" />}
           >
-            <TopCustomersTable searchParams={sp} />
+            <TopCustomersTable searchParams={sp} year={year} />
           </Suspense>
         </CardContent>
       </Card>
@@ -539,8 +543,10 @@ const reorderColumns: DataTableColumn<ReorderRiskRow>[] = [
 
 async function ReorderRiskTable({
   searchParams,
+  year,
 }: {
   searchParams: SearchParams;
+  year: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "rr_",
@@ -552,6 +558,7 @@ async function ReorderRiskTable({
     ...params,
     status: params.facets.status,
     tier: params.facets.tier,
+    year,
   });
   const visibleKeys = parseVisibleKeys(searchParams, "rr_");
   const sortHref = makeSortHref({
@@ -774,15 +781,17 @@ const customerColumns: DataTableColumn<TopCustomerRow>[] = [
 
 async function TopCustomersTable({
   searchParams,
+  year,
 }: {
   searchParams: SearchParams;
+  year: YearValue;
 }) {
   const params = parseTableParams(searchParams, {
     prefix: "tc_",
     defaultSize: 25,
     defaultSort: "-revenue_90d",
   });
-  const { rows, total } = await getTopCustomersPage(params);
+  const { rows, total } = await getTopCustomersPage({ ...params, year });
   const visibleKeys = parseVisibleKeys(searchParams, "tc_");
   const sortHref = makeSortHref({
     pathname: "/ventas",

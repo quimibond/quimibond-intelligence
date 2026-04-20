@@ -6,6 +6,7 @@ import {
   paginationRange,
   type TableParams,
 } from "../_shared/table-params";
+import { yearBounds, type YearValue } from "../_shared/year-filter";
 
 /**
  * Sales queries v2 — usa views canónicas:
@@ -242,7 +243,7 @@ const REORDER_SORT_MAP: Record<string, string> = {
 };
 
 export async function getReorderRiskPage(
-  params: TableParams & { status?: string[]; tier?: string[] }
+  params: TableParams & { status?: string[]; tier?: string[]; year?: YearValue }
 ): Promise<ReorderRiskPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -374,7 +375,7 @@ const TOP_CUSTOMER_SORT_MAP: Record<string, string> = {
 };
 
 export async function getTopCustomersPage(
-  params: TableParams
+  params: TableParams & { year?: YearValue }
 ): Promise<TopCustomersPage> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
@@ -383,13 +384,25 @@ export async function getTopCustomersPage(
     (params.sort && TOP_CUSTOMER_SORT_MAP[params.sort]) ?? "revenue_90d";
   const ascending = params.sortDir === "asc";
 
+  // When year is set, filter to companies with last_order_date in that year range.
+  // When year is 'current' or unset, keep the default gt(revenue_90d, 0) filter.
+  const useYearFilter = params.year !== undefined && params.year !== 'current';
+  const bounds = useYearFilter ? yearBounds(params.year) : null;
+
   let query = sb
     .from("company_profile")
     .select("company_id, name, revenue_90d, total_revenue", {
       count: "exact",
     })
-    .gt("revenue_90d", 0)
     .not("company_id", "in", pgInList(selfIds));
+
+  if (bounds) {
+    query = query
+      .gte("last_order_date", bounds.from.toISOString().slice(0, 10))
+      .lt("last_order_date", bounds.to.toISOString().slice(0, 10));
+  } else {
+    query = query.gt("revenue_90d", 0);
+  }
 
   if (params.q) query = query.ilike("name", `%${params.q}%`);
 
