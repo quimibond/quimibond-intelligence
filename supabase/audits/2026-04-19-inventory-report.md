@@ -108,3 +108,60 @@ This means every BASE TABLE in the public schema has been accessed via at least 
 | MEDIUM | Reclassify 21 `v_audit_*` views to `dq_*` prefix |
 | MEDIUM | Evaluate 15 `cashflow_*` views — migrate to `analytics_cashflow_*` or keep as internal layer |
 | LOW | Re-run never-read scan in 30 days to capture actual dead tables |
+
+---
+
+## S3 · Data utilization audit (2026-04-19)
+
+### Candidates probed
+
+Row counts and freshness queried live against project `tozqezmivpblmcubmnpi`. TS refs = number of `.from("<table>")` call sites in `src/**/*.{ts,tsx}` (excluding write-only inserts and comment mentions).
+
+| Table | Rows | Last record | TS refs | Notes |
+|---|---|---|---|---|
+| `syntage_webhook_events` | 42,924 | active | 3 | read in syntage health + idempotency — in use |
+| `odoo_payments` | 26,839 | — | 0 | **ZERO reads** — proxy payment table; 26k rows fully dark |
+| `odoo_account_payments` | 17,853 | — | 4 | read in financiero-context + briefing + health-scores |
+| `syntage_files` | 16,097 | 2026-04-17 | 1 | admin handler only — not surfaced in UI |
+| `pipeline_logs` | 12,870 | active | many | actively read + written — in use |
+| `odoo_account_balances` | 11,030 | 2026-04-19 | 0 | **ZERO reads** — only a comment in finanzas/page.tsx; fresh hourly |
+| `odoo_activities` | 5,617 | — | 3 | read in orchestrate + director-chat + companies query |
+| `odoo_manufacturing` | 4,650 | 2026-04-19 | 3 | read in operations queries + orchestrate |
+| `odoo_deliveries` | 2,192 | — | many | actively used |
+| `odoo_chart_of_accounts` | 1,640 | 2026-04-19 | 0 | **ZERO reads** — 1,640 CoA entries, fresh, never consumed |
+| `odoo_employees` | 164 | 2026-04-19 | 2 | read in team queries |
+| `syntage_tax_retentions` | 78 | 2026-04-17 | 1 | tax-retention handler only — not surfaced in UI |
+| `odoo_currency_rates` | 70 | 2026-04-19 | 0 | **ZERO reads** — FX rates synced hourly, never queried |
+| `odoo_orderpoints` | 57 | 2026-04-19 | 2 | agent context + orchestrate only — no frontend panel |
+| `syntage_electronic_accounting` | 35 | 2026-04-17 | 1 | electronic-accounting handler only |
+| `odoo_departments` | 26 | 2026-04-19 | 1 | count only in team query — no detail panel |
+| `odoo_bank_balances` | 22 | 2026-04-19 | 1 | financiero-context only — not on any page |
+| `odoo_crm_leads` | 20 | — | 3 | read in orchestrate + director-chat + reconcile |
+
+### Zero-read tables (highest priority gaps)
+
+| Table | Rows | Freshness | Assessment |
+|---|---|---|---|
+| `odoo_payments` | 26,839 | — | Proxy payment data — large and dark |
+| `odoo_account_balances` | 11,030 | hourly | Monthly P&L balances — rich, fresh, zero UI |
+| `odoo_chart_of_accounts` | 1,640 | hourly | Full CoA — needed for account drill-down |
+| `odoo_currency_rates` | 70 | hourly | FX rates — small but relevant for multi-currency |
+
+### Integrating (priority order)
+
+1. **`odoo_account_balances`** → **`/finanzas` tab "P&L por Cuenta"** — 11,030 monthly balance rows synced hourly, structured by account/period. The finanzas page already references this table in a comment as a known future data source. Integrate as a drill-down table within the income-statement panel: group by `account_type`, show period-over-period comparison. Immediate and high-value for CFO/CEO.
+
+2. **`odoo_payments`** → **`/companies/[id]` tab "Pagos"** — 26,839 rows of proxy payment history, zero frontend reads. The company detail page already has invoices and deliveries tabs; a payments tab using this table closes the AR/AP loop for the relationship view. Filter by `odoo_partner_id` → `company_id`, show `payment_date`, `amount`, `payment_type`.
+
+3. **`odoo_chart_of_accounts`** → **`/finanzas` tab "Plan de Cuentas"** — 1,640 CoA entries fresh hourly. Enables account-level drill-down from P&L lines and budget vs actual view; without it, `odoo_account_balances` can't be labeled meaningfully. Add a simple filterable table (code, name, account_type, internal_group). Low UI complexity.
+
+4. **`odoo_currency_rates`** → **`/sistema` or `/finanzas` FX widget** — 70 rows of daily rates (MXN/USD/EUR). Small table, low integration cost. Surface as a compact FX panel showing last rate per currency pair + change. Useful context for multi-currency invoice and payment amounts displayed across the platform.
+
+### Reporting (not integrating this sprint)
+
+- **`syntage_files`** (16,097 rows) — Read only from Syntage admin handler; surfacing requires a file browser UI with download links — redesign effort, defer.
+- **`syntage_electronic_accounting`** (35 rows) — Consumed by accounting handler; thin data currently, revisit when more periods accumulate.
+- **`syntage_tax_retentions`** (78 rows) — Specialized fiscal table; already has a handler; needs a dedicated retenciones panel that is out of this sprint scope.
+- **`odoo_orderpoints`** (57 rows) — Read by agents; no frontend panel. Value is real (stockout detection) but already covered by agent insights; a dedicated panel is a separate sprint.
+- **`odoo_bank_balances`** (22 rows) — Read by financiero-context agent; `analytics_finance_cash_position` view already exposes this to the CFO dashboard. Not a gap.
+- **`odoo_departments`** (26 rows) — Count used in team queries; full detail already visible via `/departments` page backed by other queries. Not a gap.
