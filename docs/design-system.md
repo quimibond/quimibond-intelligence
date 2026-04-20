@@ -135,3 +135,35 @@ import { KpiCard } from "@/components/patterns";
   source="unified"
 />
 ```
+
+### Sección con header + action
+```tsx
+import { SectionHeader } from "@/components/patterns";
+import { Button } from "@/components/ui/button";
+
+<SectionHeader
+  title="Top clientes"
+  description="Por facturación YTD"
+  action={<Button variant="outline" size="sm">Ver todos</Button>}
+/>
+```
+
+### Loading states
+```tsx
+import { LoadingCard, LoadingTable, LoadingList } from "@/components/patterns";
+
+// KPIs cargando
+<Suspense fallback={<LoadingCard />}>
+  <KpisPanel />
+</Suspense>
+
+// Tabla densa cargando
+<Suspense fallback={<LoadingTable rows={8} columns={5} />}>
+  <InvoicesTable />
+</Suspense>
+
+// Lista de contactos / personas
+<Suspense fallback={<LoadingList items={6} />}>
+  <ContactsList />
+</Suspense>
+```

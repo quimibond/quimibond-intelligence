@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/skeleton";
+import { cn } from "@/lib/utils";
 
 interface LoadingCardProps {
   className?: string;
@@ -8,7 +9,7 @@ export function LoadingCard({ className }: LoadingCardProps) {
   return (
     <div
       data-testid="loading-card"
-      className={`rounded-lg border border-border bg-card p-6 space-y-3 ${className ?? ""}`}
+      className={cn("rounded-lg border border-border bg-card p-6 space-y-3", className)}
     >
       <Skeleton className="h-4 w-1/3" />
       <Skeleton className="h-8 w-2/3" />

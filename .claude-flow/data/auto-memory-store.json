@@ -1,0 +1,289 @@
+[
+  {
+    "id": "mem-MEMORY----cashflow-v3-session--projec",
+    "key": "-cashflow-v3-session-project-cashflow-v3-session-m",
+    "content": "- [Syntage SAT integration](project_syntage_integration.md) — Fases 1-2 completas (webhook + backfill). Fase 3 pendiente (Layer 3 canónico). Decisiones arquitectónicas cerradas, gotchas resueltos.",
+    "summary": "- [Cashflow v3 session](project_cashflow_v3_session.md) — Estado del trabajo de cashflow profiles v3, bugs arreglados, y roadmap pendiente",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229344
+  },
+  {
+    "id": "mem-project_cashflow_v3_session----",
+    "key": "-",
+    "content": "name: Cashflow v3 session 2026-04-15/16\ndescription: Estado completo del trabajo de cashflow profiles v3 y lo que queda pendiente — para continuar en próximas sesiones\ntype: project\noriginSessionId: 65e967d9-dc9c-494c-a86d-de226c892bfe\n---",
+    "summary": "---",
+    "namespace": "project_cashflow_v3_session",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_cashflow_v3_session.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229344
+  },
+  {
+    "id": "mem-project_cashflow_v3_session-completado--sesi-n-2026-04-15-",
+    "key": "completado-sesi-n-2026-04-15-16-",
+    "content": "**Frontend (quimibond-intelligence/main):**\n- 3 materialized views: partner_payment_profile (1020), journal_flow_profile (15), account_payment_profile (342)\n- refresh_cashflow_profiles() RPC para cron semanal\n- UI /finanzas#profiles con 3 cards de validación\n- cashflow_ar_predicted v3 → partner profiles + snap_to_day_of_month()\n- cashflow_ap_predicted v3 → outbound partner profiles\n- cashflow_payroll/opex/tax_monthly v3 → account_payment_profile\n- SO/PO backlog v3 → partner profiles + filtro >12",
+    "summary": "Completado (sesión 2026-04-15/16)",
+    "namespace": "project_cashflow_v3_session",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_cashflow_v3_session.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229344
+  },
+  {
+    "id": "mem-project_cashflow_v3_session-pendiente---ordenado-por-impac",
+    "key": "pendiente-ordenado-por-impacto",
+    "content": "**Tier 1 (alto impacto, alcanzable):**\n1. Push account.move.line daily en qb19 (2h) — habilita timing exacto de ISR día 17, IMSS último del mes, nómina quincenal real\n2. FX rate consistency — unificar cfo_dashboard y working_capital al mismo rate source (COALESCE current_balance_mxn everywhere)\n3. Backtesting semanal — snapshot projected_cash_flow_weekly cada lunes vs actual, calcular MAPE por categoría\n4. BELSUEÑO perfil — $2.66M en 42 facturas abiertas sin payment profile (investigar si paga b",
+    "summary": "Pendiente — ordenado por impacto",
+    "namespace": "project_cashflow_v3_session",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_cashflow_v3_session.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229344
+  },
+  {
+    "id": "mem-project_cashflow_v3_session-n-meros-reales-post-v3",
+    "key": "n-meros-reales-post-v3",
+    "content": "- Cash efectivo: $3.66M MXN (operativo + tránsito)\n- AP overdue: $20.7M, AR overdue: $7.6M\n- Payroll: $1.81M/mes, OpEx: $2.75M/mes, Tax: $965K/mes\n- Burn: $1.07M/semana, Runway: 3.4 semanas\n- SO backlog (12m): $19.5M, PO backlog (12m): $41.8M\n- 190/375 facturas AR usan partner_profile (66% del monto)\n- 72/73 proveedores AP con perfil (99.7% del monto)",
+    "summary": "Números reales post-v3",
+    "namespace": "project_cashflow_v3_session",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_cashflow_v3_session.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229344
+  },
+  {
+    "id": "mem-project_migracion_odoo19----",
+    "key": "-",
+    "content": "name: Migracion Odoo 19 noviembre 2025\ndescription: Quimibond migro a Odoo 19 en noviembre 2025, causando multiples issues contables\ntype: project\n---\n\nQuimibond migro a Odoo 19 en noviembre 2025.\n\n**Why:** Upgrade de version anterior de Odoo a Odoo 19 en Odoo.sh.\n\n**How to apply:** Muchos hallazgos de la auditoria se explican por la migracion, no por errores contables:\n- CAPA residual $7.09M en Nov-Dic = migracion interrumpio flujo de valoracion\n- 17 categorias sin account_stock_variation_id = ",
+    "summary": "---",
+    "namespace": "project_migracion_odoo19",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_migracion_odoo19.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229346
+  },
+  {
+    "id": "mem-project_syntage_integration----",
+    "key": "-",
+    "content": "name: Syntage SAT integration (Quimibond)\ndescription: Estado de la integración Syntage + roadmap de fases pendientes (spec/plan + decisiones de arquitectura ya cerradas)\ntype: project\noriginSessionId: 1d1a1d3c-b84a-4b5e-92f0-232ae835fb56\n---",
+    "summary": "---",
+    "namespace": "project_syntage_integration",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_syntage_integration.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229347
+  },
+  {
+    "id": "mem-project_syntage_integration-estado-a-2026-04-17",
+    "key": "estado-a-2026-04-17",
+    "content": "### Completado\n- **Fase 1 (Plumbing)**: 11 tablas `syntage_*` en Supabase (7 datos + 3 plumbing + 1 entity_map), 9 migraciones + drop-FK 20260417, 10 event handlers, webhook endpoint `/api/syntage/webhook`, `/api/syntage/backfill` admin, `/api/syntage/health`. 45 tests. Spec en `docs/superpowers/specs/2026-04-16-syntage-integration-design.md`. Plan en `docs/superpowers/plans/2026-04-16-syntage-fase-1-plumbing.md`.\n- **Fase 2 (Onboarding)**: entidad Quimibond (RFC `PNT920218IW5` → `odoo_company_i",
+    "summary": "Estado a 2026-04-17",
+    "namespace": "project_syntage_integration",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj/memory/project_syntage_integration.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229347
+  },
+  {
+    "id": "mem-MEMORY-project-overview",
+    "key": "project-overview",
+    "content": "- Multi-tenant community self-governance platform (network state infrastructure)\n- Tech stack: React + TypeScript + Vite, Tailwind CSS v4, Supabase, TanStack Query, Recharts, SheetJS, date-fns\n- 5 primitives: Identity, Treasury, Governance, Census, Federation + Ingestion layer\n- Beachhead vertical: Residential condominiums in Mexico",
+    "summary": "Project Overview",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-CIVITAS-civitas-code/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229349
+  },
+  {
+    "id": "mem-MEMORY-key-patterns",
+    "key": "key-patterns",
+    "content": "- Supabase typed client: Use `(supabase.from('table') as any)` for insert/update/delete to workaround strict generated types\n- All hooks use `useCommunityContext()` which returns `{ communityId }` (not `community.id`)\n- Custom UI components (no Radix) — Dialog, Tabs, etc. are all custom implementations in `src/shared/components/ui/`\n- Badge component has custom `success` and `warning` variants\n- Spanish-language UI labels throughout",
+    "summary": "Key Patterns",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-CIVITAS-civitas-code/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229349
+  },
+  {
+    "id": "mem-MEMORY-architecture",
+    "key": "architecture",
+    "content": "- `src/core/identity/` - Auth, members, roles, invitations\n- `src/core/treasury/` - Financial dashboard (read layer), transactions, budgets\n- `src/core/governance/` - Proposals, voting, delegations, minutes\n- `src/ingestion/` - CSV/Excel import pipeline with column mapping, category mapping, dedup\n- `src/verticals/residential/` - Units, maintenance requests\n- `src/federation/` & `src/census/` - Placeholder types only",
+    "summary": "Architecture",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-CIVITAS-civitas-code/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229349
+  },
+  {
+    "id": "mem-MEMORY-common-issues",
+    "key": "common-issues",
+    "content": "- Recharts Tooltip `formatter` type: Use `(value) => ...` not `(value: number) => ...`\n- tsconfig has `noUnusedLocals: false`, `noUnusedParameters: false` for dev velocity\n- File adapter pattern: `csvAdapter` and `excelAdapter` implement `FileAdapter` interface",
+    "summary": "Common Issues",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-CIVITAS-civitas-code/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229349
+  },
+  {
+    "id": "mem-MEMORY-build",
+    "key": "build",
+    "content": "- `npm run build` = `tsc -b && vite build`\n- Bundle: ~1.2MB (380KB gzip) — recharts + xlsx are the big deps\n- Supabase migrations in `supabase/migrations/001-007`",
+    "summary": "Build",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-CIVITAS-civitas-code/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229349
+  },
+  {
+    "id": "mem-MEMORY-project-overview",
+    "key": "project-overview",
+    "content": "Budget 2026 system for Quimibond (Productora de No Tejidos). Odoo 19 JSON-RPC integration.\nArchitecture: Extractors → Processors → Generators → Excel output with openpyxl.",
+    "summary": "Project Overview",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-key-data",
+    "key": "key-data",
+    "content": "- Ventas presupuesto 2026: $297M (vs historical ~$165M avg)\n- MP $160M (54%), MO $44.8M, CIF $28.3M, Gastos $10.7M\n- Margen bruto 21.4%, Margen operativo 17.8%\n- 70 cuentas contables en presupuesto, 252 en Odoo\n- Escenario PESIMISTA (solo línea): $189M ventas, $33.5M UO\n- Escenario OPTIMISTA (todos): $297M ventas, $52.9M UO",
+    "summary": "Key Data",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-excel-structure--18-hojas-",
+    "key": "excel-structure-18-hojas-",
+    "content": "INDICE, VENTAS(121), TIPOS_CAMBIO(4 monedas), BOM_EXPLOSION(895),\nLISTA_PRECIOS_MP(107), MP_REQUERIDA(891), MO_DETALLE(1934), CIF_GASTOS(6325),\nRESUMEN_PRODUCTO(92), RESUMEN_GENERAL, RESUMEN_POR_ESCENARIO,\nEDR_CONSOLIDADO, EDR_PESIMISTA, EDR_OPTIMISTA,\nEDR_POR_CUENTA_CONTABLE(559), RESUMEN_CUENTAS_CONTABLES(70),\nEDR_INDUSTRIAL, EDR_CONFECCION",
+    "summary": "Excel Structure (18 hojas)",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-escenarios",
+    "key": "escenarios",
+    "content": "- LÍNEA/CLIENTE NORMAL: 84 productos, $213M, 28% margen\n- NUEVO CLIENTE/PROYECTOS: 8 productos, $84M, -23% margen\n- PESIMISTA = solo LÍNEA, OPTIMISTA = TODOS (= consolidado)",
+    "summary": "Escenarios",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-currency-fix--critical-",
+    "key": "currency-fix-critical-",
+    "content": "- 21 products confección labeled DIVISA=\"USD\" but prices already in MXN\n- Fix: `src/extractors/ventas.py` auto-corrects USD→MXN on load\n- TIPOS_CAMBIO: monthly TC (MONEDA, CODIGO, ENE...DIC, PROMEDIO)\n- VENTAS: VALOR_MES = QTY × PU × INDEX(TC_mes) formulas\n- LISTA_PRECIOS_MP: VLOOKUP references TIPOS_CAMBIO!B:O (PROMEDIO col)",
+    "summary": "Currency Fix (Critical)",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-percentages-convention",
+    "key": "percentages-convention",
+    "content": "- ALL percentages stored as DECIMALS (0.21 not 21) for Excel 0.00% format\n- Affected: edr.py, resumenes.py, cuentas_contables.py, hoja_resumen_escenario.py",
+    "summary": "Percentages Convention",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-bugs-fixed--13-total-",
+    "key": "bugs-fixed-13-total-",
+    "content": "1-7: BOM self-refs, MO grouping, CIF classification, EDR ventas, gastos proration, RESUMEN_CUENTAS, DIVISA USD\n8. LISTA_PRECIOS_MP VLOOKUP B:C → B:O (PROMEDIO)\n9. BOM QTY_TOTAL column Y → Z\n10. Percentages *100 with 0.00% format → decimals\n11. RESUMEN_CUENTAS $0 for 401.01 → shows VENTAS for income accounts\n12. INDICE missing escenario sheets → added\n13. INDICE created at end for working hyperlinks",
+    "summary": "Bugs Fixed (13 total)",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "mem-MEMORY-technical-notes",
+    "key": "technical-notes",
+    "content": "- venv at `./venv/bin/python3`\n- Config: `config/settings.py`, `config/odoo_config.py`\n- Output: `data/output/ARCHIVO_MAESTRO_OPTIMIZADO_*.xlsx`\n- Tests: `tests/` (24 tests, all pass)\n- Odoo connection: `src/odoo/connection.py` with `execute_kw` method",
+    "summary": "Technical Notes",
+    "namespace": "core",
+    "type": "semantic",
+    "metadata": {
+      "sourceFile": "/Users/jj/.claude/projects/-Users-jj-Desktop-presupuesto-final-2026/memory/MEMORY.md",
+      "bootstrapped": true
+    },
+    "createdAt": 1776455229352
+  },
+  {
+    "id": "insight-1776630289427-2r6w",
+    "key": "frequent-edit-unknown",
+    "content": "File unknown was edited 419 times this session — likely a hot path worth monitoring.",
+    "summary": "Frequently edited: unknown (419x)",
+    "namespace": "insights",
+    "type": "procedural",
+    "metadata": {
+      "sourceFile": "unknown",
+      "editCount": 419,
+      "autoGenerated": true
+    },
+    "createdAt": 1776630289427
+  }
+]
