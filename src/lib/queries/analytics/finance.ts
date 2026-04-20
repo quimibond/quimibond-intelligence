@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import { type YearValue, yearBounds, resolveYear } from "@/lib/queries/_shared/year-filter";
 
 /**
  * Finance queries v2 — usa las VIEWS canónicas del backend.
@@ -236,13 +237,38 @@ export interface PlPoint {
   otrosNeto: number;
 }
 
-export async function getPlHistory(months = 12): Promise<PlPoint[]> {
+export async function getPlHistory(months = 12, year?: YearValue): Promise<PlPoint[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+
+  // When a specific year is selected, fetch all months of that year.
+  // 'all' → fetch all historical data (large limit).
+  // undefined / 'current' → rolling N months (original behavior).
+  let query = sb
     .from("analytics_finance_income_statement")
     .select("*")
-    .order("period", { ascending: false })
-    .limit(months + 5); // buffer para filtrar datos corruptos
+    .order("period", { ascending: false });
+
+  if (year != null && year !== 'current') {
+    if (year === 'all') {
+      query = query.limit(120); // up to 10 years
+    } else {
+      // Specific year: filter by period prefix "YYYY-"
+      const resolved = resolveYear(year);
+      if (typeof resolved === 'number') {
+        const yStr = String(resolved);
+        query = query
+          .gte("period", `${yStr}-01`)
+          .lte("period", `${yStr}-12`)
+          .limit(12);
+      } else {
+        query = query.limit(months + 5);
+      }
+    }
+  } else {
+    query = query.limit(months + 5); // buffer para filtrar datos corruptos
+  }
+
+  const { data } = await query;
   const rows = (data ?? []) as Array<{
     period: string | null;
     ingresos: number | null;
@@ -256,11 +282,16 @@ export async function getPlHistory(months = 12): Promise<PlPoint[]> {
   const valid = rows.filter((r) => {
     if (!r.period) return false;
     const [y] = r.period.split("-");
-    const year = Number(y);
-    return year >= 2020 && year <= 2030;
+    const rowYear = Number(y);
+    return rowYear >= 2020 && rowYear <= 2030;
   });
-  return valid
-    .slice(0, months)
+
+  // For rolling mode (no specific year), cap to the requested months
+  const sliced = (year == null || year === 'current' || year === 'all')
+    ? (year === 'all' ? valid : valid.slice(0, months))
+    : valid;
+
+  return sliced
     .map((r) => ({
       period: r.period as string,
       ingresos: Number(r.ingresos) || 0,
