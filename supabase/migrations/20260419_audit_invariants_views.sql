@@ -23,12 +23,17 @@
 -- AUXILIARY BUCKET VIEWS (used by Odoo-side audit_* methods)
 -- ============================================================
 
+-- Bug fix: previous GROUP BY included `il.invoice_date` (daily) alongside
+-- the YYYY-MM bucket_key, producing one row per day instead of one per
+-- (month, move_type, company). The Odoo audit dict-keyed by bucket_key
+-- silently collapsed them to whichever row came last → appeared as if
+-- Supabase had only ~17% of the real line count.
 CREATE OR REPLACE VIEW v_audit_invoice_lines_buckets AS
 SELECT
   to_char(il.invoice_date, 'YYYY-MM') || '|' || il.move_type || '|'
     || COALESCE(il.odoo_company_id::text, '0') AS bucket_key,
-  il.invoice_date AS date_from,
-  il.invoice_date AS date_to,
+  MIN(il.invoice_date) AS date_from,
+  MAX(il.invoice_date) AS date_to,
   il.move_type,
   il.odoo_company_id,
   COUNT(*) AS count,
@@ -44,7 +49,7 @@ FROM odoo_invoice_lines il
 JOIN odoo_invoices i ON il.odoo_move_id = i.odoo_invoice_id
 WHERE i.state = 'posted'
   AND il.invoice_date IS NOT NULL
-GROUP BY to_char(il.invoice_date,'YYYY-MM'), il.invoice_date, il.move_type,
+GROUP BY to_char(il.invoice_date,'YYYY-MM'), il.move_type,
          il.odoo_company_id;
 
 COMMENT ON VIEW v_audit_invoice_lines_buckets IS
