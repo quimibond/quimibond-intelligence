@@ -78,6 +78,68 @@
 | match_emails_to_contacts_by_email | _(ninguno)_ |
 | match_emails_to_contacts_by_email | batch_size integer |
 
-## Después (cierre de Fase 2)
+## Después (cierre de Fase 2 — 2026-04-20)
 
-_Se llenará al final (Task 16)._
+### 1. Row counts / table existence
+
+| tbl | exists | rows |
+|-----|--------|-----:|
+| budgets | **false** (dropped) | — |
+| chat_memory | **false** (dropped) | — |
+| revenue_metrics | **false** (dropped) | — |
+| employee_metrics | **false** (dropped) | — |
+| agent_insights_archive_pre_fase6 | **false** (dropped) | — |
+| odoo_payments | true (GATED — pending deploy) | — |
+| odoo_account_payments | true | 17,856 |
+
+Note: `odoo_payments` still exists — Task 13 (DROP TABLE) is gated until user deploys frontend + qb19 to prod so the cron stops writing to it.
+
+### 2. Duplicados actuales en `odoo_invoices.cfdi_uuid`
+
+**0 duplicados.** UNIQUE partial index `uq_odoo_invoices_cfdi_uuid` rechaza duplicados futuros.
+
+(5,321 rows con UUID bogus archivadas a `odoo_invoices_archive_dup_cfdi_uuid_2026_04_20`; `cfdi_uuid` NULeado en live. Root cause: `_build_cfdi_map` asigna UUID del complemento de pago a todas las facturas cubiertas — ver `project_cfdi_uuid_bug_2026_04_20.md`.)
+
+### 3. Triggers objetivo — post consolidación
+
+| event_object_table | trigger_name | action_timing | event_manipulation |
+|--------------------|--------------|---------------|--------------------|
+| odoo_bank_balances | trg_set_updated_at | BEFORE | UPDATE |
+| odoo_invoice_lines | trg_resolve_invoice_line_company | BEFORE | INSERT |
+| odoo_invoice_lines | trg_resolve_invoice_line_company | BEFORE | UPDATE |
+| odoo_invoice_lines | trg_touch_synced_at | BEFORE | UPDATE |
+| odoo_order_lines | trg_resolve_order_line_company | BEFORE | INSERT |
+| odoo_order_lines | trg_resolve_order_line_company | BEFORE | UPDATE |
+| odoo_products | trg_set_updated_at | BEFORE | UPDATE |
+| odoo_users | trg_set_updated_at | BEFORE | UPDATE |
+
+Antes: 16 filas (6 duplicados/redundantes). Después: 8 filas. Eliminados: `trg_touch_updated_at` (×3), `trg_auto_link_invoice_line_company`, `trg_link_invoice_line_company`, `trg_resolve_order_company`.
+
+### 4. Firmas de funciones — post dedup
+
+| proname | args |
+|---------|------|
+| get_contact_health_history | p_contact_id bigint, p_days integer |
+| get_volume_trend | p_days integer |
+| match_emails_to_companies_by_domain | batch_size integer |
+| match_emails_to_contacts_by_email | batch_size integer |
+
+Antes: 8 filas (4 funciones × 2 firmas). Después: 4 filas (1 firma canónica por función). Firmas eliminadas: sin parámetros de `get_volume_trend`, `match_emails_*`; `p_contact_email text` de `get_contact_health_history`.
+
+### 5. Extra cleanup summary
+
+- Legacy tables dropped: **5** (budgets, chat_memory, revenue_metrics, employee_metrics, agent_insights_archive_pre_fase6)
+- Legacy views dropped: **2** (budget_vs_actual, analytics_budget_vs_actual)
+- Legacy functions dropped: **6** (populate_revenue_metrics, calculate_employee_metrics, get_employee_dashboard, touch_updated_at, auto_link_invoice_line_company, auto_resolve_order_line_company)
+- CFDI archive rows: **5,321** (preservadas en `odoo_invoices_archive_dup_cfdi_uuid_2026_04_20` para forensics)
+- Migrations applied to prod Supabase: 12
+- Frontend commits on `fase-2-limpieza`: 13 (pre-deploy)
+- qb19 commits on `fase-2-limpieza`: 2 (pre-deploy)
+
+Extra query confirma: `legacy_tables_remaining=0`, `legacy_views_remaining=0`, `legacy_functions_remaining=0`, `cfdi_archive_rows=5321` — todo como esperado.
+
+### 6. Pendientes tras Fase 2
+
+- **Task 13 (DROP odoo_payments)** — GATED. Bloqueado hasta que usuario deploya frontend + qb19 a prod (cron del addon sigue escribiendo hasta que se actualice)
+- **Addon fix `_build_cfdi_map`** — documentado en `project_cfdi_uuid_bug_2026_04_20.md`; raíz: itera `doc.invoice_ids` en complemento de pago P → asigna UUID del pago a todas las facturas cubiertas
+- **Bug pre-existente en `match_emails_*` fns** — bodies referencian columnas `from_address`/`from_email` que no existen en tabla emails (columna real: `sender`)
