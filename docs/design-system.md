@@ -46,7 +46,7 @@ Controlado vía `data-table-density` en `<html>` (persistido en localStorage).
 ## Catálogo de componentes (`@/components/patterns`)
 
 ### Layout
-- `<PageLayout>` — wrapper canónico de toda page. `max-w-7xl mx-auto px-6 py-8 space-y-6`.
+- `<PageLayout>` — wrapper canónico de contenido de page. Renderiza un `<div>` con `space-y-6 pb-24 md:pb-6` (spacing entre secciones + clearance del mobile tab bar). El `<main id="main-content">` lo aporta `MainContent` — no duplicar.
 - `<PageHeader>` — título + breadcrumbs + DataSourceBadge + actions.
 - `<SectionHeader>` — título interno de sección + description + action.
 
