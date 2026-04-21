@@ -362,3 +362,56 @@ DROP FUNCTION IF EXISTS canonical_invoices_upsert_from_sat();
 -- 04c inverse: direction can't cleanly revert without knowing prior distribution
 -- (use Task 3 rollback + re-run populate if needed).
 ```
+
+### Task 6 / Populate canonical_payments + canonical_payment_allocations
+
+**Migration:** `supabase/migrations/20260422_sp2_06_canonical_payments_populate.sql`
+
+**Bug found during apply — Step 6b syntax error:**
+Plan's UPDATE used `JOIN odoo_account_payments oap ON oap.id = cp.odoo_payment_id` inside the FROM clause, which causes "invalid reference to FROM-clause entry for table cp" in PostgreSQL (can't JOIN on the UPDATE target table). Fixed by moving `oap` into the FROM comma list with `cp.odoo_payment_id = oap.id` in the WHERE.
+
+**Bug found during apply — Step 6e wrong jsonb key names:**
+Plan specified `d->>'uuid'`, `d->>'importe_pagado'`, `d->>'saldo_anterior'`, `d->>'num_parcialidad'`. Actual `syntage_invoice_payments.doctos_relacionados` keys are:
+- `uuid_docto` (not `uuid`)
+- `imp_pagado` (not `importe_pagado`)
+- `imp_saldo_ant` (not `saldo_anterior`)
+- `imp_saldo_insoluto` (same)
+- `parcialidad` (not `num_parcialidad`)
+- `moneda_dr` key absent in most rows (allocations get NULL currency — acceptable)
+
+6e was re-run via execute_sql with corrected key names. Allocation cache UPDATE also re-run.
+
+**Verification table:**
+
+| Metric | Expected | Actual | Status |
+|---|---|---|---|
+| total | ~43,374 | 43,374 | PASS |
+| dual (odoo+sat) | ~0 | 0 | PASS (num_op bridge dead) |
+| odoo_only | ~17,863 | 17,863 | PASS |
+| sat_only | ~25,511 | 25,511 | PASS |
+| allocations | ≥15,000 | 25,511 | PASS |
+| distinct_invoices_allocated | — | 23,609 | PASS |
+| payments_with_allocations_cached | ~25,511 | 25,511 | PASS |
+
+**Integrity checks (all = 0):**
+- odoo_record_without_payment_id: 0 ✓
+- sat_record_without_uuid: 0 ✓
+- orphaned_allocations: 0 ✓
+
+**Direction distribution:**
+- sent: 22,338 (Odoo outbound + SAT received)
+- received: 21,036 (Odoo inbound + SAT issued)
+- NULL: 0 ✓
+
+**Completeness score distribution:**
+- 0.500: 43,374 (all rows — 100% single-source, dual=0 as expected)
+- NULL: 0 ✓
+
+**Note — 1:1 allocation ratio:** Each SAT complement has exactly 1 docto_relacionado entry (25,511 SAT complements → 25,511 allocations). This is valid; multi-parcialidad payments would produce multiple rows but are 0 in this dataset.
+
+**Rollback Task 6:**
+```sql
+DELETE FROM canonical_payment_allocations;
+DELETE FROM canonical_payments;
+```
+```
