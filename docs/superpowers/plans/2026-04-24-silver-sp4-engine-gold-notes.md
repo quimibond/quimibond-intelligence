@@ -31,3 +31,27 @@ Running log of findings per task. Append one section per completed task.
 | facts | 31,830 |
 
 Matches plan expectations: invoices=88462 ✓, mxn_resolved=0 ✓, open_issues≈103400 ✓.
+
+## Task 2 — canonical_sale_orders (completed 2026-04-21)
+
+Migration `1041_silver_sp4_canonical_sale_orders.sql` applied. Pattern B thin MV over `odoo_sale_orders` with LEFT JOINs to `canonical_companies` (by `odoo_partner_id`) and `canonical_contacts` (by `odoo_user_id`). 5 indexes created (pk, company, salesperson, state_date, overdue partial).
+
+### Step 3 — Counts
+
+| Metric | Value | Notes |
+|---|---|---|
+| total_rows | 12,364 | Matches plan reference exactly ✓ |
+| with_company | 12,217 | 98.8% — exceeds ≥95% threshold ✓ |
+| with_salesperson | 8,560 | 69.2% — exceeds ≥60% threshold ✓ |
+| overdue | 12,089 | See note below |
+| active_states | 12,364 | All rows are state='sale' |
+
+**Note on `overdue` / `active_states`:** Bronze `odoo_sale_orders` contains only `state = 'sale'` rows — no `done`, `draft`, or `cancel` states exist in the current Bronze snapshot. This means `active_states = total_rows`. The `is_commitment_overdue` flag is 12,089 because Bronze contains historical sale orders (many dating back years) with past `commitment_date` values; 249 rows either have no `commitment_date` (NULL) or a future date. The CASE logic is correct — this is a characteristic of the Bronze data, not a bug.
+
+### Step 4 — Customer coverage (last 365 days, is_customer = true)
+
+| state | n | total_mxn |
+|---|---|---|
+| sale | 2,216 | 181,755,643 |
+
+Only `sale` state present (see note above). 2,216 active customer orders in the past 365 days totaling ~$182M MXN. Consistent with expectations for an active trading company.
