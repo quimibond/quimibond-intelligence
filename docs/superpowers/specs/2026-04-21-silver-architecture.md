@@ -16,7 +16,7 @@ Esta spec define la arquitectura **Medallion-Lite + MDM + 4-Pattern Canonical + 
 
 Los **4 patterns** fijan la forma de cada entidad: dual-source canonical (A), single-source thin wrapper (B), MDM golden record (C), evidence attached (D). Cada campo de cada tabla canónica tiene (i) una fuente autoritativa declarada, (ii) un tipo explícito, (iii) una regla de supervivencia cuando hay multi-fuente, (iv) un flag de diff cuando aplica. El CEO consume el Inbox, los agentes consumen canonical_* (nunca Bronze), el frontend lee canonical_* en cada página.
 
-La **migración ocurre en 5 sub-proyectos en 5-6 semanas**: SP1 design+prune (Week 1, se elimina el backlog decorativo antes de construir), SP2 Cat A reconciliation core (Weeks 2-3, canonical_invoices/payments/credit_notes/tax_events), SP3 Cat C MDM (Weeks 3-4, canonical_companies/contacts/products/employees con matcher), SP4 Cat B + D + engine (Weeks 4-5, wrappers + evidence + reconciliation engine + CEO Inbox), SP5 frontend + agents (Weeks 5-6, rewire completo y cleanup final). Reconstrucción **en paralelo al sistema vivo**: Bronze sigue poblándose durante toda la migración; Silver se construye al lado; cutover de consumers ocurre en SP5 con feature flags.
+La **migración ocurre en 6 sub-proyectos en 5-6 semanas**: SP0 addon CFDI UUID fix (pre-kickoff, BLOCKING), SP1 design+prune (Week 1, se elimina el backlog decorativo antes de construir), SP2 Cat A reconciliation core (Weeks 2-3, canonical_invoices/payments/credit_notes/tax_events), SP3 Cat C MDM (Weeks 3-4, canonical_companies/contacts/products/employees con matcher), SP4 Cat B + D + engine (Weeks 4-5, wrappers + evidence + reconciliation engine + CEO Inbox), SP5 frontend + agents (Weeks 5-6, rewire completo y cleanup final). Reconstrucción **en paralelo al sistema vivo**: Bronze sigue poblándose durante toda la migración; Silver se construye al lado; cutover de consumers ocurre en SP5 con feature flags.
 
 **Outcomes medibles al cierre**: (1) cero consumers frontend o agente apuntando a `odoo_*` / `syntage_*` directamente; (2) `reconciliation_issues` trending-down semana a semana porque la mayoría resuelve automáticamente por reglas declaradas; (3) un CEO Inbox de ~50 items accionables reemplaza los 44k+ issues opacos actuales; (4) nueva integración (banco, portal proveedor) = añadir columnas + reglas, sin rearquitectura; (5) cada campo expuesto en UI tiene su authority traceable back a fuente + fecha.
 
@@ -95,6 +95,7 @@ Siete principios rigen cada decisión del diseño. Cuando hay conflicto entre pr
 **Reglas.**
 - Cualquier columna en Gold debe ser derivable desde Silver en SQL puro.
 - Gold tiene permission mode distinto (SELECT para anon en ciertos rows) pero nunca se exponen filas crudas de Bronze a anon.
+- **Gold layer schemas son derivados per-consumer y se formalizan en SP5.** Los 8 targets listados arriba son los targets aprobados; no se expanden antes de SP5. Silver canonical_* es el API estable; Gold es optimización de lectura sobre Silver. (User decision 2026-04-21.)
 
 ### 3.4 Reconciliation engine
 
@@ -340,7 +341,9 @@ CREATE TABLE canonical_invoices (
   -- === MXN ===
   amount_total_mxn_odoo numeric(14,2),                     -- from odoo_invoices.amount_total_mxn
   amount_total_mxn_sat numeric(14,2),                      -- from syntage_invoices.total_mxn (subtotal × tipo_cambio)
-  amount_total_mxn_resolved numeric(14,2),                 -- survivorship: P3 (SAT for fiscal reports, Odoo for ops dashboards) — mantener ambas + flag
+  amount_total_mxn_ops numeric(14,2),                       -- Odoo-primary; use for ops dashboards (cashflow, margin analysis)
+  amount_total_mxn_fiscal numeric(14,2),                    -- SAT-primary; use for fiscal reports (company_360, DIOT, compliance)
+  amount_total_mxn_resolved numeric(14,2),                  -- alias = amount_total_mxn_ops (Odoo default); fiscal queries call _fiscal explicitly (user decision 2026-04-21)
   amount_total_mxn_diff_abs numeric(14,2)
     GENERATED ALWAYS AS (
       CASE WHEN amount_total_mxn_odoo IS NOT NULL AND amount_total_mxn_sat IS NOT NULL
@@ -480,7 +483,7 @@ CREATE INDEX ON canonical_invoices (historical_pre_odoo) WHERE historical_pre_od
 |---|---|---|
 | `amount_total_resolved` | manual_override IF invoice_bridge_manual.linked_amount ELSE sat IF fecha_timbrado IS NOT NULL ELSE odoo | SAT post-timbre (P3 fiscal) |
 | `amount_residual_resolved` | manual_override ELSE SAT (fiscal_due_amount) IF fecha_timbrado IS NOT NULL ELSE Odoo | SAT post-timbre |
-| `amount_total_mxn_resolved` | para dashboards ops: Odoo; para reportes fiscales: SAT. Exponer ambas + flag `amount_total_mxn_diff_abs`; el query-time decide (user decision TBD — recomendado SAT para `gold_company_360`, Odoo para `gold_cashflow`) | (Ver §17 Risks) |
+| `amount_total_mxn_resolved` | **Odoo-primary for ops dashboards** (`gold_cashflow`, `canonical_sale_orders` join); **SAT-primary for fiscal reports** (`gold_company_360`, `gold_revenue_monthly`, DIOT/compliance views). Implementar como dos columnas alias: `amount_total_mxn_ops` = Odoo value, `amount_total_mxn_fiscal` = SAT value. `amount_total_mxn_resolved` = `amount_total_mxn_ops` para uso general; consumers fiscales llaman explícitamente `amount_total_mxn_fiscal`. `amount_total_mxn_diff_abs` siempre visible. (User decision 2026-04-21.) | Odoo (ops default); SAT (fiscal explicit) |
 | `due_date_resolved` | manual_override ELSE Odoo (P3 operativo) | Odoo |
 | `tipo_cambio` (al contexto) | para ese CFDI específico: SAT (frozen); para book-keeping diario: Odoo | SAT per-invoice |
 | `estado_sat` | SAT absoluta (P3 fiscal) | SAT |
@@ -1608,6 +1611,8 @@ CREATE INDEX ON mdm_manual_overrides (is_active) WHERE is_active = true;
 
 ## 7. MDM Matcher service
 
+**Reglas de supervivencia por defecto — CONSERVATIVE (user decision 2026-04-21).** Las reglas de resolución por defecto son conservadoras: **Odoo es fuente primaria para campos operativos** (state, payment_state, salesperson, order linkage, commitment_date, margen, journal bancario); **SAT es fuente primaria para campos fiscales** (uuid, amount_total, rfc, estado_sat, fecha_timbrado, metodo_pago, forma_pago, uso_cfdi, tipoCambio CFDI, claveProdServ, opinion_cumplimiento, 69B). Los edge cases resuelven a Odoo salvo que exista una regla SAT explícita declarada en este documento. Estas reglas se revisan tras 30 días en producción (post-SP2 cutover).
+
 ### 7.1 Deterministic rules (por entity type)
 
 **Company.**
@@ -1758,6 +1763,8 @@ CREATE INDEX ON manual_notes (pinned) WHERE pinned = true;
 ---
 
 ## 9. Reconciliation engine
+
+**Survivorship defaults aplicadas por el engine.** Consistent with §7: el engine aplica **Odoo como fuente autoritativa para campos operativos** y **SAT como fuente autoritativa para campos fiscales**. Cuando un invariante detecta conflicto entre fuentes, la resolución automática (`auto_resolve=true`) sigue estas defaults; si el campo es edge case sin regla explícita, el issue queda en `needs_review=true` para resolución manual. Revisable después de 30 días en producción. (User decision 2026-04-21.)
 
 ### 9.1 Extensión de `audit_tolerances` + `reconciliation_issues`
 
@@ -1959,9 +1966,26 @@ LIMIT 50;
 
 ---
 
-## 11. Migration plan (5 sub-projects)
+## 11. Migration plan (6 sub-projects)
 
 **Approach: Parallel rebuild con frontend preserved weeks 2-5** (user decision D2=A firmada). Bronze sigue corriendo durante toda la migración. Silver se construye al lado. Cutover via feature flags en SP5.
+
+### SP0 (Pre-kickoff, BLOCKING): Addon CFDI UUID Fix
+
+**Objetivo.** Corregir el bug `_build_cfdi_map` en el addon qb19 antes de iniciar cualquier trabajo Silver. Sin este fix, canonical_invoices hereda 13,775 rows con `cfdi_uuid IS NULL` y cada invariante `invoice.posted_without_uuid` emitirá alertas críticas eternas.
+
+**Deliverables.**
+1. Patch en `addons/quimibond_intelligence/models/sync_push.py` → `_build_cfdi_map` filtra `move_type IN ('out_invoice','in_invoice','out_refund','in_refund')` antes de asignar UUID.
+2. Deploy a producción vía `odoo-update quimibond_intelligence`.
+3. Verificar: `SELECT COUNT(*) FROM odoo_invoices WHERE cfdi_uuid IS NOT NULL AND move_type = 'entry'` = 0.
+
+**DoD.**
+- [ ] Patch mergeado en rama `quimibond` (Odoo.sh).
+- [ ] Count de UUIDs contaminados = 0 en odoo_invoices.
+- [ ] SP1 no inicia hasta completar DoD.
+
+**Dependencies.** None (addon change independiente de Silver).
+**Duration.** 1-2 días (parche ya especificado en §14.1).
 
 ### SP1 (Week 1): Design + Audit + Prune
 
@@ -2003,7 +2027,7 @@ LIMIT 50;
 - [ ] Invariants run end-to-end con >0 auto-resolutions en first 24h.
 - [ ] `reconciliation_issues.priority_score` populado.
 
-**Dependencies.** SP1 done. Addon _build_cfdi_map fix (§14) opcional but strongly preferred — sin él, 13,775 rows con UUID NULL contaminan invariantes.
+**Dependencies.** SP0 done (addon _build_cfdi_map fix — **mandatory blocker**, §14.1). SP1 done.
 **Risks.** invoices_unified MV (258MB) → canonical_invoices table con triggers: write amplification. Mitigación: batch incremental triggers + fallback full nightly rebuild.
 **Duration.** 10-12 días.
 
@@ -2138,9 +2162,9 @@ Cada item: **reason** + **evidence** (referencia a audit 07 section o to queries
 | `odoo_schema_catalog` (3,820 rows) | Dead-pixel; odoo-agent disabled | Spec 07 §1.A |
 | `odoo_uoms` (76 rows) | Dead-pixel; no converter usage | Spec 07 §1.A |
 | `odoo_snapshots` | Replaced by canonical_* | Spec 07 findings |
-| `agent_tickets` (1,958 rows) | 100% pending, worker never runs | Spec 07 §6.6 — DECIDE or fix worker |
-| `notification_queue` (780 rows) | 100% pending | Spec 07 §1.C |
-| `health_scores` (51,152 rows) | 100% contact_id NULL | Spec 07 §1.C |
+| `agent_tickets` (1,958 rows) | 100% pending, worker never runs — **DROP CONFIRMED** (user approved 2026-04-21). No replacement: agent system replaced by reconciliation engine + CEO Inbox. | Spec 07 §6.6 |
+| `notification_queue` (780 rows) | 100% pending — **DROP CONFIRMED** (user approved 2026-04-21). No replacement: notifications surface via CEO Inbox (`gold_ceo_inbox`). | Spec 07 §1.C |
+| `health_scores` (51,152 rows) | 100% contact_id NULL — **DROP CONFIRMED** (user approved 2026-04-21). No replacement: health scoring will derive from canonical_companies/contacts fields in SP5 if needed. | Spec 07 §1.C |
 | `unified_refresh_queue` | 0 rows ever; reconsider or drop | Spec 07 §1.C |
 | `reconciliation_summary_daily` | Stale; 2 rows total | Spec 07 §1.C |
 | `invoice_bridge_manual`, `payment_bridge_manual`, `products_fiscal_map` | Migrate to `mdm_manual_overrides` in SP2-3 | — |
@@ -2153,7 +2177,7 @@ Cada item: **reason** + **evidence** (referencia a audit 07 section o to queries
 | `/emails` standalone page | Merged into /companies/[id] and /contacts/[id] tabs | Remove top-nav |
 | Any "agent status" decorative dashboards sin acción | — | Folded en `/system` page |
 
-**SP1 audit step:** Claude examines `src/app/` routes + analytics events + user-facing navigation to classify. Drop only con explicit user signoff.
+**SP1 audit step (gated):** Claude examines `src/app/` routes + analytics events + user-facing navigation to classify pages. No frontend page is dropped until the SP1 concrete audit is complete AND user gives explicit signoff per page. The table above is a *candidate list*, not an execution list. (User decision 2026-04-21: confirmed that SP5 drops are gated on concrete SP1 audit before execution.)
 
 ### 12.5 API routes to drop
 
@@ -2252,7 +2276,7 @@ Para que la arquitectura Silver tenga datos limpios, hay correcciones que deben 
 **Issue.** `_push_invoices` itera M2M `doc.invoice_ids` en complemento de pago P y asigna UUID del complemento a TODAS las facturas cubiertas. Causó 1,547 UUIDs duplicados / 5,321 rows contaminadas.
 **Root cause.** En lugar de iterar por `invoice_ids`, el addon debe usar `tax_cash_basis_rec_id` or lookup directo por move_type = out_invoice/in_invoice excluyendo entry type.
 **Required fix.** Patch en `addons/quimibond_intelligence/models/sync_push.py` función `_build_cfdi_map` para filtrar `move_type IN ('out_invoice','in_invoice','out_refund','in_refund')` antes de asignar UUID.
-**Priority.** **Blocker de SP2**. Sin esto, canonical_invoices tiene 13,775 rows post-2021 con `cfdi_uuid IS NULL` en Odoo y UUID SAT separado — trigger de `invoice.posted_without_uuid` invariante quedan críticas eternas.
+**Priority.** **SP0 BLOCKER — must land before SP1 kickoff**. Sin esto, canonical_invoices tiene 13,775 rows post-2021 con `cfdi_uuid IS NULL` en Odoo y UUID SAT separado — trigger de `invoice.posted_without_uuid` invariante quedan críticas eternas. SP1 no inicia hasta que este PR esté mergeado y sincronizado en producción. (User decision 2026-04-21.)
 
 ### 14.2 `_push_account_balances` missing `equity_unaffected`
 
@@ -2342,8 +2366,8 @@ Features derived from canonical_*: unusual payment gap, unusual margin drop, unu
 | **Migration breaks prod** (consumers of legacy MVs) | High | SP5 feature-flagged cutover per page; legacy MVs renamed `_deprecated` for 1 week before drop. |
 | **canonical_invoices write amplification** (table + triggers vs MV refresh) | Medium | Batched triggers with debounce via `unified_refresh_queue`; nightly full rebuild as safety net. |
 | **Matcher false positives** (company name fuzzy link) | High | Confidence threshold 0.85 for auto, 0.60-0.85 queue; `mdm_candidate_matches` review UI; `source_links.superseded_at` audit. |
-| **User decision TBD: `amount_total_mxn_resolved`** | Medium | Expose both `_odoo` and `_sat` and `_resolved` (= Odoo for now, documented). Review after 30 days of usage. |
-| **Addon _build_cfdi_map not fixed before SP2** | Critical | SP2 is gated on this addon PR. Escalate to user. |
+| **`amount_total_mxn` dual-column pattern** | Low | Resolved (user decision 2026-04-21): `_ops` = Odoo, `_fiscal` = SAT, `_resolved` = ops alias. Diff flag always visible. Review after 30 days production usage. |
+| **Addon _build_cfdi_map not fixed before SP1** | Critical | Now SP0 (blocking pre-SP1 kickoff per user decision 2026-04-21). SP1 does not start until this PR is merged and synced to prod. §14.1 has the exact patch. |
 | **pg_trgm performance on 9k entities + 2k companies** | Medium | Index `canonical_companies USING gin (canonical_name gin_trgm_ops)`; batch processing (500 rows at a time); nightly runs. |
 | **Frontend typecheck failures on migration** | Medium | Generate TypeScript types from canonical schema via `supabase gen types`; run tsc in CI; migrate queries one directory at a time. |
 | **Reconciliation engine overload** (31 invariantes × 129k invoices) | Medium | `auto_resolve` closes obvious cases; archive issues >90d resolved; pg_cron staggered schedules. |
@@ -2364,6 +2388,7 @@ Features derived from canonical_*: unusual payment gap, unusual margin drop, unu
 - [x] Each Pattern C (MDM) entity shows example source_links resolution (in §5.5 example row).
 - [x] Each multi-source field declared survivorship rule (per §5 subsection).
 - [x] Every `TBD` in Truth Map resolved with user decision OR explicit flag for review (user decisions firmadas in §5.1/5.5/5.6 amount_mxn, shadow, manual lock).
+- [x] User decisions 2026-04-21 applied: SP0 addon blocker (§11/§14.1), amount_total_mxn dual-column (§5.1), agent_tickets/notification_queue/health_scores drop confirmed (§12.3), frontend drops gated on SP1 audit (§12.4), Gold targets frozen for SP5 (§3.3), survivorship defaults conservative Odoo=ops/SAT=fiscal (§7/§9).
 - [x] All types explicit (numeric(14,2), timestamptz, text, bigint, integer, boolean, jsonb).
 - [x] No "similar to above"; Pattern D schema for each of 4 evidence tables.
 - [x] Indexes declared per-table.
