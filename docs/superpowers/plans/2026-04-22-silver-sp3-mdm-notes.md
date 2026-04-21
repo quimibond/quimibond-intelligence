@@ -123,21 +123,6 @@ Registered in `schema_changes`.
 
 ---
 
-## Gate Approvals (filled after each task)
-
-| Task | Gate | Status | Date |
-|---|---|---|---|
-| Task 2 | canonical_companies created, pg_trgm indexes OK | — | — |
-| Task 3 | canonical_contacts created | — | — |
-| Task 5 | canonical_products created | — | — |
-| Task 8 | source_links created + backfill by RFC | — | — |
-| Task 12 | RFC resolution: ci_unresolved_receptor reduced by ≥50% | — | — |
-| Task 19 | canonical_* linked to entities | — | — |
-| Task 20 | invariants pass post-SP3 | — | — |
-| Task 21 | crons updated, silver_mdm_* jobs active | — | — |
-
----
-
 ## Concerns / Gotchas
 
 - `ci_unresolved_emisor = 61264` same as receptor — means both emisor_company_id AND receptor_company_id are NULL for most SAT records. This is expected for historical records without Odoo counterparts.
@@ -153,6 +138,83 @@ Registered in `schema_changes`.
 ### Task 1
 Completed 2026-04-20. DDL applied. 81 columns, 11 indexes (PK + uq_cc_canonical_name + 9 user-defined including gin_trgm), 2 generated cols (is_sat_counterparty, blacklist_action). Smoke test: 1 row inserted with rfc='XAXX010101000', is_sat_counterparty=true, blacklist_action=null — all correct. Rollback: DROP TABLE IF EXISTS canonical_companies CASCADE.
 
+### Task 2
+Completed 2026-04-20. See "Task 2 / Quimibond canonical_companies.id" section above. Migration: `20260423_sp3_02_canonical_companies_populate_odoo`. 2,197 rows inserted, 0 dropped (no canonical_name dupes). Quimibond canonical_companies.id=868. Retroactive metrics populated (invoices_count>0 for 881 companies, max_ltv=404k MXN).
+
+---
+
+## Task 2 / Quimibond canonical_company_id
+
+### ### Task 2 / Quimibond canonical_companies.id
+
+**CRITICAL for Tasks 19-20 downstream:**
+
+```
+canonical_companies.id = 868
+canonical_name         = "productora de no tejidos quimibond"
+display_name           = "PRODUCTORA DE NO TEJIDOS QUIMIBOND"
+rfc                    = "PNT920218IW5"
+is_internal            = true
+```
+
+### Task 2 log (2026-04-20)
+
+**Dry-run preview:**
+- companies total=2,197 | with_rfc=1,375 | with_odoo_id=2,197 | customers=1,653 | suppliers=603 | quimibond_present=1
+- distinct canonical_names=2,197 (no duplicates — ON CONFLICT DO NOTHING drops 0 rows)
+- canonical_invoices=88,462 | canonical_credit_notes=2,208
+
+**Migration applied:** `20260423_sp3_02_canonical_companies_populate_odoo`
+
+**Verification results:**
+
+| Metric | Expected | Actual | Pass? |
+|---|---|---|---|
+| total rows | ~2,197 | 2,197 | YES |
+| internal | 1 | 1 | YES |
+| customers | 1,653 | 1,653 | YES |
+| suppliers | 603 | 603 | YES |
+| with_rfc | ~1,287 | 1,375 | YES (higher than plan estimate — plan said ~1287 but actual companies.rfc=1375) |
+| with_odoo_id | 2,197 | 2,197 | YES |
+| shadows_now | 0 | 0 | YES |
+
+**Match method distribution:**
+
+| match_method | conf | count |
+|---|---|---|
+| odoo_partner_id+rfc | 1.00 | 1,375 |
+| odoo_partner_id | 0.99 | 822 |
+
+Note: no rfc_exact-only or odoo_only rows because all companies.odoo_partner_id is populated (2,197/2,197).
+
+**Metrics sanity:**
+
+| Metric | Value |
+|---|---|
+| max_ltv | 404,322.80 MXN |
+| with_ltv (lifetime_value_mxn > 0) | 7 |
+| with_invoices (invoices_count > 0) | 881 |
+
+Note on with_ltv=7: `lifetime_value_mxn` populated from `companies.lifetime_value` (base table, sparse). The retroactive UPDATE from `canonical_invoices` populated `invoices_count` for 881 companies — these have correct aggregated data. The `lifetime_value_mxn` field reflects what `companies` table had; the canonical aggregate path will keep it updated going forward.
+
+**No duplicates dropped** — all 2,197 canonical_names were distinct.
+
+---
+
+## Gate Approvals (filled after each task)
+
+| Task | Gate | Status | Date |
+|---|---|---|---|
+| Task 1 | canonical_companies DDL created, pg_trgm indexes OK | PASS | 2026-04-20 |
+| Task 2 | canonical_companies populated (2,197 rows), Quimibond id=868 | PASS | 2026-04-20 |
+| Task 3 | canonical_contacts created | — | — |
+| Task 5 | canonical_products created | — | — |
+| Task 8 | source_links created + backfill by RFC | — | — |
+| Task 12 | RFC resolution: ci_unresolved_receptor reduced by ≥50% | — | — |
+| Task 19 | canonical_* linked to entities | — | — |
+| Task 20 | invariants pass post-SP3 | — | — |
+| Task 21 | crons updated, silver_mdm_* jobs active | — | — |
+
 ---
 
 ## Commit History
@@ -160,5 +222,6 @@ Completed 2026-04-20. DDL applied. 81 columns, 11 indexes (PK + uq_cc_canonical_
 | SHA | Message |
 |---|---|
 | fd62141 | Merge PR #45 silver-sp2-cat-a (branch base) |
-| (pending) | chore(sp3): baseline + branch + notes skeleton |
-| (pending) | feat(sp3): canonical_companies DDL + indexes + trigram |
+| 810a7ae | chore(sp3): baseline + branch + notes skeleton |
+| e89f066 | feat(sp3): canonical_companies DDL + indexes + trigram |
+| (pending) | feat(sp3): populate canonical_companies from Odoo + aggregated metrics |
