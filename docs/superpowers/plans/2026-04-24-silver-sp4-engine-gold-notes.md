@@ -96,3 +96,21 @@ Migration `1043_silver_sp4_canonical_order_lines.sql` applied. Pattern B thin MV
 - Product coverage: sale 96.2%, purchase 91.7% — both exceed ≥90% threshold ✓.
 - `pending_invoicing` and `pending_delivery` are correctly 0 for purchase rows: the CASE predicate restricts both flags to `order_type = 'sale'` only.
 - 3,217 sale lines with unresolved invoicing (~15.3% of sale rows) and 3,176 with unresolved delivery (~15.1%) — reasonable for an active trading company with open orders.
+
+## Task 5 — canonical_deliveries (completed 2026-04-21)
+
+Migration `1044_silver_sp4_canonical_deliveries.sql` applied. Pattern B thin MV over `odoo_deliveries` with LEFT JOIN to `canonical_companies` (by `odoo_partner_id`). 5 indexes created (pk, company, type_state, sched, partial late).
+
+### Verify counts
+
+| total | with_company | late_count | done_count | with_done_date |
+|---|---|---|---|---|
+| 25,187 | 24,882 | 276 | 20,949 | 20,949 |
+
+**Notes:**
+
+- Total 25,187 rows — matches plan reference ~25,187 exactly ✓.
+- Company coverage: 24,882 / 25,187 = 98.8% ✓ (305 rows without canonical_company_id — unlinked partners).
+- 276 late deliveries (1.1% of total) — `is_late = true` partial index active.
+- 20,949 done rows (83.2%), all with `date_done` populated — 100% date coverage for completed deliveries ✓.
+- `refreshed_at` uses `now()` at MV creation time; will be stale until next `REFRESH MATERIALIZED VIEW CONCURRENTLY canonical_deliveries` (wired to nightly pg_cron in SP4 engine).
