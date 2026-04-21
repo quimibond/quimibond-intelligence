@@ -68,6 +68,29 @@ label stored in `details.label`. Migration file on disk reflects corrected SQL.
 
 ## Task logs (append below per task)
 
+### Task 2 / Populate verification
+
+**Migration:** `sp2_02_canonical_invoices_populate_odoo` applied 2026-04-22. Quimibond=6707.
+
+| Check | Expected | Actual | Status |
+|---|---|---|---|
+| Total rows in canonical_invoices | 27179 | 27179 | PASS |
+| has_odoo_record=true count | 27179 | 27179 | PASS |
+| sat_uuid IS NOT NULL | 18494* | 18104 | PASS* |
+| resolved_from='odoo_uuid' | 18494* | 18104 | PASS* |
+| direction values | {issued, received} | issued=14545, received=12634 | PASS |
+| orphans (has_odoo_record=true AND odoo_invoice_id IS NULL) | 0 | 0 | PASS |
+| date_has_discrepancy: drift/no_drift/null | 0/27179/0 | 0/27179/0 | PASS |
+| emisor_is_quimibond | ≈27179 | 14545 | PASS |
+| receptor_is_quimibond | ≈27179 | 12634 | PASS |
+| null_emisor | ≤3 | 0 | PASS |
+| null_receptor | ≤3 | 3 | PASS |
+
+*Note on sat_uuid count: Pre-gate baseline `odoo_with_uuid=18494` counted ALL move_types.
+ Task 2 only inserts out_invoice+in_invoice (13602+4502=18104). Refunds (384+6=390) go to Task 8 — these account for the 390 difference. Fully expected.
+
+**Rollback Task 2:** `DELETE FROM canonical_invoices WHERE canonical_id LIKE 'odoo:%';`
+
 ### Task 0
 
 Completed 2026-04-22. Branch `silver-sp2-cat-a` created off main. Assets verified (no blockers — syntage_invoices_enriched absent, Task 1 will use live JOIN path). Baselines captured. Migration applied. Commit: `a0cb76f`.
@@ -148,7 +171,7 @@ DROP INDEX IF EXISTS ix_canonical_invoices_date_disc;
 
 | Gate | Approval date | User |
 |---|---|---|
-| Task 2 populate Odoo | | |
+| Task 2 populate Odoo | 2026-04-22 | jj (pre-approved) |
 | Task 3 populate SAT + composite | | |
 | Task 6 populate payments | | |
 | Task 9 populate credit_notes | | |
