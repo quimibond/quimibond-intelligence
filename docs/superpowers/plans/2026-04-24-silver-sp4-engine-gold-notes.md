@@ -439,4 +439,49 @@ All top 50 rows are `invoice.posted_without_uuid / critical` ordered by impact_m
 
 - `assignee_name` / `assignee_email` will be NULL on all rows until SP5 implements the routing job that sets `assignee_canonical_contact_id` per invariant ownership rules.
 - `action_cta` is NULL across all rows — invariant bodies do not yet write this field; deferred to SP5 or invariant-level enrichment.
+
+## Task 21 — gold_company_360 + gold_revenue_monthly (completed 2026-04-21)
+
+Migration `1061_silver_sp4_gold_company_revenue.sql`. Two gold views created.
+
+### gold_company_360 — Top 10 customers by LTV
+
+| display_name | lifetime_value_mxn | revenue_ytd_mxn | overdue_amount_mxn | open_company_issues_count | sales_orders_12m |
+|---|---|---|---|---|---|
+| CONTITECH MEXICANA | 620,000,688 | 12,411,790 | NULL | 0 | 76 |
+| SHAWMUT LLC | 110,791,650 | 8,059,630 | NULL | 0 | 63 |
+| FXI INC | 80,981,127 | 3,111,279 | NULL | 0 | 49 |
+| TQ-1 DE MEXICO | 78,590,591 | 4,637,086 | NULL | 0 | 40 |
+| SERFIMEX CAPITAL | 77,787,554 | NULL | NULL | 0 | 0 |
+| BLANCOS MILENIUM | 70,814,757 | 3,600,142 | NULL | 0 | 49 |
+| PIELES SINTETICAS | 61,647,912 | 437,915 | NULL | 0 | 8 |
+| ENTRETELAS BRINCO | 57,958,622 | NULL | NULL | 0 | 1 |
+| WORLD EMBLEM OF MEXICO | 48,974,653 | 1,490,887 | NULL | 0 | 7 |
+| PROYECCIONES DE LA MODA | 39,437,243 | 365,064 | NULL | 0 | 18 |
+
+`overdue_amount_mxn` is NULL for all top 10 — field sourced from canonical_companies enrichment (SP4 backfill). `open_company_issues_count` = 0 across top 10 (no company-type reconciliation_issues currently open for these entities).
+
+### gold_revenue_monthly — YTD 2026
+
+| Period | total_mxn | invoices | companies |
+|---|---|---|---|
+| 2026-01 | 11,269,358 | 179 | 104 |
+| 2026-02 | 15,309,522 | 186 | 96 |
+| 2026-03 | 29,492,624 | 215 | 120 |
+| 2026-04 | 8,852,782 | 114 | 75 |
+
+YTD total: ~MXN 64,924,286 across 694 invoices. April is partial (2026-04-21 cutoff).
+
+### Source pattern distribution
+
+| source_pattern | months | total_mxn |
+|---|---|---|
+| dual_source | 7,020 | 862,775,938 |
+| odoo_only | 297 | 28,167,580 |
+
+96.8% of revenue MXN is `dual_source` (Odoo + SAT both present). `sat_only` = 0 rows — expected, since canonical_invoices direction='issued' always has Odoo side. `odoo_only` rows (297 company-months, ~3.2% of MXN) are pre-SAT or unmatched invoices.
+
+### gold_company_360 row count
+
+4,360 rows (matches canonical_companies count + 1 net new since pre-flight baseline of 4,359).
 - Commit `41600e0` is base; Task 20 commit to follow.
