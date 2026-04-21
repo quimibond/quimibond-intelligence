@@ -327,3 +327,66 @@ Migration `1050_silver_sp4_canonical_chart_of_accounts.sql` applied. Pattern B l
 **Key entity match counts (Tier 2 pre-computed):** company_matches=1,853 unique entities; person_matches=569; product_matches=93. Total 2,515 unique entities mapped — 700 unique pairs backfilled to source_links (1 row per entity_id→canonical pair, not per fact row).
 
 **Audit record:** written to `audit_runs` with `invariant_key='sp4.facts_migration'`, `bucket_key='sp4_task_15'`.
+
+## Task 16 — Register 22 new invariants + remap legacy NULL invariant_key (completed 2026-04-21)
+
+Migration `1055_silver_sp4_new_invariants_catalog.sql` applied.
+
+### Pre-flight state
+
+- `audit_tolerances`: 16 rows, all enabled=true.
+- `reconciliation_issues` open with NULL `invariant_key`: 30,973 rows across 8 distinct `issue_type` values:
+
+| issue_type | count |
+|---|---|
+| complemento_missing_payment | 15,512 |
+| sat_only_cfdi_received | 10,918 |
+| sat_only_cfdi_issued | 3,550 |
+| payment_missing_complemento | 731 |
+| posted_but_sat_uncertified | 148 |
+| cancelled_but_posted | 97 |
+| amount_mismatch | 15 |
+| partner_blacklist_69b | 2 |
+
+### Remap applied
+
+All 8 `issue_type` variants mapped cleanly via the remap rules — no rows fell to `legacy.unclassified`:
+
+| issue_type (source) | invariant_key (target) |
+|---|---|
+| complemento_missing_payment | payment.complement_without_payment |
+| sat_only_cfdi_received | payment.complement_without_payment |
+| sat_only_cfdi_issued | payment.complement_without_payment |
+| payment_missing_complemento | payment.registered_without_complement |
+| posted_but_sat_uncertified | invoice.posted_without_uuid |
+| cancelled_but_posted | invoice.state_mismatch_posted_cancelled |
+| amount_mismatch | invoice.amount_mismatch |
+| partner_blacklist_69b | tax.blacklist_69b_definitive_active |
+
+### Verify results (post-migration)
+
+| Check | Expected | Actual | Pass |
+|---|---|---|---|
+| `COUNT(*) FROM audit_tolerances` | ≥ 39 | 39 | ✓ |
+| `COUNT(*) WHERE enabled` | 16 | 16 | ✓ |
+| `COUNT(*) open issues WHERE invariant_key IS NULL` | 0 | 0 | ✓ |
+
+### Post-migration open issues by invariant_key
+
+| invariant_key | count |
+|---|---|
+| payment.complement_without_payment | 55,233 |
+| payment.registered_without_complement | 18,296 |
+| invoice.pending_operationalization | 14,701 |
+| invoice.posted_without_uuid | 9,025 |
+| invoice.missing_sat_timbrado | 5,924 |
+| invoice.state_mismatch_posted_cancelled | 176 |
+| invoice.date_drift | 19 |
+| invoice.amount_mismatch | 15 |
+| invoice.credit_note_orphan | 9 |
+| tax.blacklist_69b_definitive_active | 2 |
+
+**Notes:**
+- `abs_tolerance`/`pct_tolerance` are NOT NULL with defaults (0.01/0.001) — spec NULL values substituted with column defaults; semantically-meaningful numeric bounds retained where spec specified them (e.g. `payment.amount_mismatch` abs=0.01, `tax.retention_accounting_drift` pct=0.05, `delivery.late_active` not used as threshold).
+- `legacy.unclassified` sentinel row inserted with zero rows assigned — all open NULL `invariant_key` issues mapped cleanly.
+- `schema_changes` row inserted: `SEED / audit_tolerances / silver-sp4-task-16`.
