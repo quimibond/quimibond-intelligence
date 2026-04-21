@@ -70,7 +70,12 @@ label stored in `details.label`. Migration file on disk reflects corrected SQL.
 
 ### Task 0
 
-Completed 2026-04-22. Branch `silver-sp2-cat-a` created off main. Assets verified (no blockers — syntage_invoices_enriched absent, Task 1 will use live JOIN path). Baselines captured. Migration applied. Commit: see git log.
+Completed 2026-04-22. Branch `silver-sp2-cat-a` created off main. Assets verified (no blockers — syntage_invoices_enriched absent, Task 1 will use live JOIN path). Baselines captured. Migration applied. Commit: `a0cb76f`.
+
+Post-review clarifications (verified 2026-04-22 via reviewers):
+- `schema_changes.triggered_by` and `schema_changes.success` columns DO exist (row inserted successfully with both populated).
+- `pg_cron` functions live in schema `cron` (not `pg_catalog`). The Task 0 Step 2 query read `extnamespace` which returns where the extension CONFIG lives, not where the functions live. `cron.schedule(...)` syntax in Task 15 is correct.
+- Plan's `audit_runs` INSERT values `severity='info'`/`source='silver_sp2'` violate CHECK constraints — use `'ok'`/`'supabase'` + store intent label in `details.label` for ALL subsequent SP2 migrations that touch `audit_runs`.
 
 ## Gate approvals
 
