@@ -369,9 +369,99 @@ All others per categorization table above.
 
 ---
 
-## Drops ejecutados
+## Drops ejecutados (Tasks 4-8, 2026-04-22)
 
-_(populated in Tasks 4-8)_
+### Batch 0 — Pre-flight (verifications)
+
+| Item | Finding | Decision |
+|---|---|---|
+| `odoo_snapshots` kind | `relkind='r'` → TABLE (not MV) | Moved to table batch; SKIPPED (snapshot_changes dep + 2 DB fns) |
+| `action_items` writers | ACTIVE: orchestrate/route.ts:589 (INSERT), pipeline/analyze:441 (INSERT), pipeline/reconcile:65+101+155+190 (UPDATE), sidebar-badges:27 (SELECT) | SKIP — reclassify MIGRATE FIRST (SP5) |
+| `syntage_webhook_events` callers | ACTIVE: idempotency.ts:33 (read-for-idempotency), webhook-events.ts (multi queries), syntage/health/route.ts | SKIP — KEEP (active webhook audit log) |
+| `cashflow_journal_classification` dep | `cashflow_current_cash` VIEW joins it for bucket classification (KEEP dep chain) | SKIP — KEEP (active lookup, 10 seeded rows) |
+| `invoice_bridge` fn body | `reconcile_invoice_manually` writes to `invoice_bridge_manual`, NOT the view — safe to drop view | DROP cleared |
+| `analytics_supplier_360` | Already absent from pg_views (pre-dropped) | IF EXISTS handles silently |
+| `refresh_all_matviews` state | 34 MVs hardcoded; `refresh_all_analytics_robust` auto-discovers → only `refresh_all_matviews` needs update | Updated in Batch 2 |
+
+### Batch 1 — Views drop | Commit `6c5f43c`
+
+Migration: `supabase/migrations/20260422_sp1_01_drop_views_batch.sql`
+
+| View | Notes |
+|---|---|
+| `analytics_supplier_360` | Already absent — IF EXISTS no-op |
+| `unified_payment_allocations` | Dropped |
+| `orders_unified` | Dropped |
+| `order_fulfillment_bridge` | Dropped |
+| `person_unified` | Dropped |
+| `balance_sheet` | Dropped |
+| `monthly_revenue_trend` | Dropped (view, 0 callers; monthly_revenue_by_company MV kept) |
+| `invoice_bridge` | Dropped (dep-order: before unified_invoices) |
+| `unified_invoices` | Dropped |
+
+Smoke test: `SELECT count(*) = 0` ✓
+
+### Batch 2 — MVs drop + refresh_all_matviews update | Commit `5439799`
+
+Migration: `supabase/migrations/20260422_sp1_02_drop_mvs_batch.sql`
+
+| MV | Notes |
+|---|---|
+| `syntage_invoices_enriched` | Dropped |
+| `products_unified` | Dropped |
+| `product_price_history` | Dropped |
+| `cross_director_signals` | Dropped |
+| `product_seasonality` | Dropped |
+
+`refresh_all_matviews` updated: 34 → 29 MVs (5 dropped removed from body).
+`refresh_all_analytics_robust` auto-discovers — no update needed.
+Smoke test: count = 0 ✓; `refresh_all_matviews()` executes without error ✓
+
+### Batch 3 — Tables drop | Commit `b2cc293`
+
+Migration: `supabase/migrations/20260422_sp1_03_drop_tables_batch.sql`
+
+| Table | Notes |
+|---|---|
+| `unified_refresh_queue` | Dropped |
+| `odoo_schema_catalog` | Dropped |
+| `odoo_uoms` | Dropped |
+| `odoo_invoices_archive_pre_dedup` | Dropped |
+| `director_analysis_runs` | Dropped |
+| `action_items` | SKIPPED — active writers (reclassify → MIGRATE FIRST SP5) |
+| `syntage_webhook_events` | SKIPPED — active callers (reclassify → KEEP) |
+| `odoo_snapshots` | SKIPPED — snapshot_changes dep + 2 DB fns (reclassify → KEEP) |
+| `cashflow_journal_classification` | SKIPPED — cashflow_current_cash dep (reclassify → KEEP) |
+
+Smoke test: count = 0 ✓
+
+### Batch 4 — Frontend cleanup | Commit `111e016`
+
+Grep for dropped-object references in `src/`, `app/`, `vercel.json`:
+- Only hit: `refresh-views/route.ts:10` — stale comment mentioning `product_seasonality`
+- Updated comment to reflect SP1 drops and auto-discovery behavior
+- No live callers of any dropped view/MV/table found in frontend
+- `/api/pipeline/reconcile` and `/api/pipeline/embeddings` are ACTIVE crons with no dropped-object references → NOT dropped (plan's "2 API routes" = 0 actual drops needed)
+
+### Batch 5 — refresh_all_matviews verify (Task 8) | No separate commit
+
+`SELECT public.refresh_all_matviews()` → returns successfully, no error ✓
+
+---
+
+## Concerns para usuario
+
+1. **`action_items` (4,312 rows)** — Plan D2 said DROP but has ACTIVE writers. Must:
+   - Remove INSERT from `orchestrate/route.ts:589` and `pipeline/analyze/route.ts:441`
+   - Remove UPDATE from `pipeline/reconcile/route.ts` (x4)
+   - Remove SELECT from `sidebar-badges.tsx:27` and `daily-digest/route.ts`
+   - Then DROP table. → Defer to SP5.
+
+2. **`syntage_webhook_events` (83K rows)** — Plan D2 said DROP but has active callers (`idempotency.ts`, `webhook-events.ts`, `syntage/health/route.ts`). Reclassify as KEEP permanently (not just defer) — this is the webhook audit trail and idempotency layer.
+
+3. **`odoo_snapshots`** — Plan said DROP but `snapshot_changes` view depends on it + 2 DB fns. Need to evaluate if `take_daily_snapshot` is still being called (cron `/api/pipeline/snapshot` is active). If yes, this is KEEP permanently.
+
+4. **`cashflow_journal_classification`** — Plan D2 said DROP but `cashflow_current_cash` (KEEP view) LEFT JOINs it for bucket classification. This is a 10-row seeded lookup table that feeds the cash position view. → KEEP permanently.
 
 ---
 
