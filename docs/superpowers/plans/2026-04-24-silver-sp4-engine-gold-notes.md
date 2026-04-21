@@ -401,3 +401,42 @@ All 8 `issue_type` variants mapped cleanly via the remap rules — no rows fell 
   - `tax.retention_accounting_drift` body hard-codes pct threshold 0.0005 (0.05%) but `audit_tolerances.pct_tolerance=0.05` (5%, default) — tolerance not yet read from catalog. Engine-reads-catalog refactor deferred.
   - `payment.allocation_under` gates on `direction='issued'` (outbound only) — deliberate business choice; not in spec text.
 - Commit `2ae389b`.
+
+## Task 20 — gold_ceo_inbox + gold_reconciliation_health (completed 2026-04-21)
+
+Migration `1060_silver_sp4_gold_inbox_health.sql`. Two gold views created.
+
+### gold_ceo_inbox — Top 5 snapshot
+
+| # | invariant_key | severity | impact_mxn | action_cta | canonical_entity_type |
+|---|---|---|---|---|---|
+| 1 | invoice.posted_without_uuid | critical | 10,774,296 | NULL | invoice |
+| 2 | invoice.posted_without_uuid | critical | 4,363,010 | NULL | invoice |
+| 3 | invoice.posted_without_uuid | critical | 3,382,954 | NULL | invoice |
+| 4 | invoice.posted_without_uuid | critical | 2,665,912 | NULL | invoice |
+| 5 | invoice.posted_without_uuid | critical | 2,311,880 | NULL | invoice |
+
+All top 50 rows are `invoice.posted_without_uuid / critical` ordered by impact_mxn descending. `action_cta` is NULL — not yet populated by invariant body (future SP5 work).
+
+### gold_reconciliation_health — Main metrics
+
+| Metric | Value |
+|---|---|
+| total_open | 116,217 |
+| total_open_impact_mxn | MXN 4,408,113,075 |
+| critical_open | 12,432 |
+| high_open | 59,245 |
+| auto_resolved_24h | 112 |
+| new_24h | 85,379 |
+
+30d trend: 15 daily×severity buckets present (detection run happened today 2026-04-21). Sample: critical 8,882 still open; medium 28,224 still open + 188 closed.
+
+### Assignee coverage
+
+50 / 50 inbox rows, 0 with assignee (expected — `assignee_canonical_contact_id` not yet populated on `reconciliation_issues`). SP5 routing job will backfill.
+
+### Notes
+
+- `assignee_name` / `assignee_email` will be NULL on all rows until SP5 implements the routing job that sets `assignee_canonical_contact_id` per invariant ownership rules.
+- `action_cta` is NULL across all rows — invariant bodies do not yet write this field; deferred to SP5 or invariant-level enrichment.
+- Commit `41600e0` is base; Task 20 commit to follow.
