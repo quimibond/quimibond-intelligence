@@ -126,6 +126,24 @@ pending_operationalization     — sat_uuid NOT NULL AND odoo_id IS NULL AND tim
 
 **Rollback Task 1:** `DROP TABLE IF EXISTS canonical_invoices CASCADE;`
 
+### Task 1b / date_has_discrepancy trigger (post-review patch)
+
+**Why:** Code-quality reviewer identified correctness gap — Task 15 `invoice.date_drift` invariant gates on `WHERE ci.date_has_discrepancy`. Without auto-populate, that column stays NULL → NULL evaluates unknown → invariant silently returns 0 issues. Tasks 2/3/4 populate SQL doesn't set it explicitly.
+
+**Fix:** Migration `sp2_01b_date_has_discrepancy_trigger` adds BEFORE INSERT OR UPDATE trigger `trg_canonical_invoices_date_discrepancy` that computes `date_has_discrepancy` from `NEW.invoice_date` + `NEW.fecha_timbrado::date` (cast is fine inside trigger; IMMUTABLE restriction only applies to generated columns). Also adds partial index `ix_canonical_invoices_date_disc WHERE date_has_discrepancy=true` for Task 15 performance parity with `amount_total_has_discrepancy`.
+
+**Smoke verified:**
+- Insert with 9-day drift → `date_has_discrepancy=true` ✓
+- Insert with 1-day drift → `date_has_discrepancy=false` ✓
+- No changes needed to Tasks 2/3/4 — trigger fires transparently on every INSERT and UPDATE.
+
+**Rollback Task 1b:**
+```sql
+DROP TRIGGER IF EXISTS trg_canonical_invoices_date_discrepancy ON canonical_invoices;
+DROP FUNCTION IF EXISTS compute_canonical_invoices_date_discrepancy();
+DROP INDEX IF EXISTS ix_canonical_invoices_date_disc;
+```
+
 ## Gate approvals
 
 | Gate | Approval date | User |
