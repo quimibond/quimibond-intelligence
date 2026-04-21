@@ -239,3 +239,19 @@ Migration `1049_silver_sp4_canonical_account_balances.sql` applied. Pattern B li
 - No `equity` or `other` bucket rows in the latest period. Equity accounts either have no movement for 2026-04 or their `account_type` value in `odoo_chart_of_accounts` does not match the `equity%` pattern — consistent with the known `equity_unaffected` gap (§14.2).
 - **Asset ≠ Liability + Equity gap confirmed:** Asset total = -4,287,560 vs Liability total = 1,610,962. Equity bucket is absent from the latest period, which is the primary source of the imbalance. This is the documented `equity_unaffected` gap: Odoo's `equity_unaffected` account type (retained earnings / prior-period equity) does not match any of the `equity%` LIKE patterns and falls through to either NULL (if COA join misses) or `other`. The P&L accounts (income/expense) appearing here are YTD period slices, not balance-sheet closing balances, so the accounting equation does not close at the period-view level — this is expected.
 - `schema_changes` row inserted: `CREATE_VIEW / canonical_account_balances / silver-sp4-task-10`.
+
+## Task 11 — canonical_chart_of_accounts VIEW (completed 2026-04-21)
+
+Migration `1050_silver_sp4_canonical_chart_of_accounts.sql` applied. Pattern B live VIEW over `odoo_chart_of_accounts` (1,640 rows). Adds `tree_level` (hyphen-count + 1) and `level_1_code` (SPLIT_PART on `-`) computed columns.
+
+### Verify query results
+
+| tree_level | rows | dep_count | active_count |
+|---|---|---|---|
+| 1 | 1,640 | 0 | 1,525 |
+
+**Notes:**
+- **Single tree_level=1 for all rows:** Bronze `odoo_chart_of_accounts` uses dot-notation codes (e.g., `101.01.01`, `102.01.0001`) — not hyphen-delimited. Since no `-` characters appear in any `code`, the hyphen-count formula `LENGTH(code) - LENGTH(REPLACE(code, '-', '')) + 1` correctly yields 1 for every row. The view spec uses `-` as the separator; this is the correct formula per spec — the Bronze data characteristic is the explanation. The `level_1_code` column similarly returns the full code (no split occurs). Future consumers needing dot-level hierarchy should use `SPLIT_PART(code, '.', 1)` which yields 91 distinct level-1 prefixes.
+- **368 rows with empty code:** 1,640 total − 1,272 with_code = 368 rows have `code = ''`. These are system/multi-company accounts added by Odoo modules without a SAT chart code. `tree_level` = 1 and `level_1_code` = `''` for these rows — consistent and non-breaking.
+- **0 deprecated, 1,525 active:** No accounts are marked deprecated; 115 rows have `active = false` (hidden accounts in Odoo UI).
+- `schema_changes` row inserted: `CREATE_VIEW / canonical_chart_of_accounts / silver-sp4-task-11`.
