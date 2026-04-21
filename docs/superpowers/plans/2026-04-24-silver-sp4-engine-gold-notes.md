@@ -177,4 +177,37 @@ Migration `1047_silver_sp4_canonical_bank_balances.sql` applied. Pattern B live 
 
 Total: 22 rows. Net liquid position: MXN 2,525,088 (cash + debt). 0 stale rows (sync current). The single `debt` row is a credit-card journal with negative balance. The 8 `other` rows are zero-balance accounts (bank/cash journals with `current_balance_mxn = 0` fall through to `other` since the `cash` branch requires `> 0`).
 
+## Task 9 — canonical_fx_rates VIEW + usd_to_mxn(date) (completed 2026-04-21)
+
+Migration `1048_silver_sp4_canonical_fx_rates.sql` applied. Pattern B thin VIEW over `odoo_currency_rates` with `is_stale` flag (>3 days old) and `recency_rank` window function partitioned by currency. Previous zero-arg `usd_to_mxn()` dropped (CASCADE); replaced by `usd_to_mxn(p_date date DEFAULT CURRENT_DATE)` which queries the view.
+
+**Pre-flight caveat check:** Existing `usd_to_mxn()` was a simple scalar querying `odoo_currency_rates` directly with a 19.5 MXN fallback. No dependents found (`pg_depend` returned empty). DROP CASCADE was safe.
+
+**Verify query results (2026-04-21):**
+
+### Query 1 — per-currency rows
+
+| currency | rows | latest_rows |
+|---|---|---|
+| EUR | 35 | 1 |
+| USD | 36 | 1 |
+
+USD and EUR both present with `latest_rows = 1` (recency_rank partition correct).
+
+### Query 2 — usd_to_mxn(CURRENT_DATE)
+
+| usd_today |
+|---|
+| 17.272300 |
+
+### Query 3 — usd_to_mxn(DATE '2025-01-15')
+
+| usd_2025_01_15 |
+|---|
+| NULL |
+
+NULL is expected and correct: `odoo_currency_rates` only contains data from 2026-03-16 onward (USD earliest) and 2026-02-25 (EUR earliest). There is no FX data for 2025-01-15 in Bronze. Historical back-fill is a separate data-quality concern, not a bug in the view or function logic.
+
+**Zero-arg backward compatibility:** `usd_to_mxn()` (no args) still works via the DEFAULT — callers using the old zero-arg form will get the CURRENT_DATE rate seamlessly.
+
 - `schema_changes` row inserted: `CREATE_VIEW / canonical_bank_balances / silver-sp4-task-8`.
