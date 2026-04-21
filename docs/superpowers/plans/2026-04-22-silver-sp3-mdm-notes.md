@@ -402,3 +402,48 @@ HAVING COUNT(*) > 1 LIMIT 5;
 ```
 
 No duplicate emails. UNIQUE constraint fully enforced.
+
+---
+
+## SP3 Cierre (2026-04-23)
+
+| DoD | Target | Actual | Status |
+|---|---|---|---|
+| canonical_companies total | ≥2,200 | 4,359 | PASS |
+| canonical_companies shadows | ≥500 | 2,162 | PASS |
+| canonical_contacts primary_email UNIQUE conflicts | 0 | 0 | PASS |
+| canonical_products total | — | 6,004 | PASS |
+| source_links active | >10,000 | 172,283 | PASS |
+| canonical_invoices unresolved receptor (SAT) | 0 | 0 | PASS |
+| canonical_invoices FKs validated | 3 | 3 | PASS |
+| canonical_payments FK validated | 1 | 1 | PASS |
+| canonical_credit_notes FKs validated | 2 | 2 | PASS |
+| pg_cron silver_sp3_* | 1 | 1 | PASS |
+| total cron jobs silver_* | 4 | 4 | PASS |
+
+**Quimibond canonical_companies.id:** 868 (rfc=PNT920218IW5, is_internal=true)
+
+**Branch commit history (silver-sp3-mdm):**
+- 0f56c39 feat(sp3): pg_cron 2h matcher + Bronze auto-match triggers
+- c278b42 feat(sp3): canonical_payments + canonical_credit_notes FK rename + backfill
+- e106850 feat(sp3): canonical_invoices FK rename + backfill + matcher updates
+- 08236ba feat(sp3): mdm_merge_companies + mdm_link_invoice + mdm_revoke_override
+- b307376 feat(sp3): matcher_invoice_quick + matcher_all_pending
+- 45a945f feat(sp3): matcher_contact + matcher_product
+- 2ba6137 fix(sp3): matcher_company deterministic tie-break (prefer is_internal over shadow)
+- 5742dbd feat(sp3): matcher_company + matcher_company_if_new_rfc
+- 4476298 feat(sp3): extend mdm_manual_overrides per §6.4
+- 0936e8a feat(sp3): source_links auto-insert triggers on canonical_*
+- f0b9e0f feat(sp3): populate source_links retroactively (172k links)
+- 22f96cd feat(sp3): source_links DDL
+- 6a428c2 feat(sp3): canonical_employees view
+- 436b6a7 feat(sp3): incremental trigger for canonical_products
+- 03f0ee4 feat(sp3): populate canonical_products (+ fiscal_map + syntage aggregate)
+- 04db277 feat(sp3): canonical_products DDL
+- a2b4bba feat(sp3): incremental triggers for canonical_contacts
+- 671151c feat(sp3): populate canonical_contacts from odoo_users+employees+contacts
+- 1e071c3 feat(sp3): canonical_contacts DDL + trigram
+- 928c900 feat(sp3): shadow canonical_companies for SAT-only RFCs + blacklist aggregate
+- 48eef01 feat(sp3): populate canonical_companies from Odoo + aggregated metrics
+- e89f066 feat(sp3): canonical_companies DDL + indexes + trigram
+- 810a7ae chore(sp3): baseline + branch + notes skeleton

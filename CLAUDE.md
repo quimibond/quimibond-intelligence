@@ -441,7 +441,49 @@ Pattern A dual-source canonical layer for reconciliation Odoo↔SAT.
 
 **16 active invariantes:** invoice.{amount_mismatch, state_mismatch_posted_cancelled, state_mismatch_cancel_vigente, date_drift, pending_operationalization, missing_sat_timbrado, posted_without_uuid, credit_note_orphan}, payment.{registered_without_complement, complement_without_payment}, plus 6 additional registered by tasks.
 
-**SP3 next:** canonical_companies / canonical_contacts / canonical_products + MDM matcher. Pattern A tables use `emisor_company_id`/`receptor_company_id`/`counterparty_company_id` pointing to `companies.id` (placeholder); SP3 renames + adds FK.
+**SP3 done (2026-04-23):** canonical_companies (4,359 rows / 2,162 shadows) + canonical_contacts (2,063) + canonical_products (6,004) + MDM matchers + FK backfill. Pattern A tables FKs validated (6). See section below.
+
+**SP4 next:** Pattern B MVs (orders/deliveries/inventory), evidence layer, 31-invariant engine cutover, gold views.
+
+### Silver MDM (SP3 — 2026-04-23)
+
+Pattern C master data management layer:
+
+| Tabla | Rows | Purpose |
+|---|---|---|
+| `canonical_companies` | ~4,359 (2,197 Odoo + ~2,162 shadows) | Golden company record. Quimibond self = id=868 |
+| `canonical_contacts` | ~2,063 | Golden contact (email UNIQUE case-insensitive) |
+| `canonical_products` | ~6,004 | Golden product (internal_ref UNIQUE) |
+| `canonical_employees` | ~179 | View over canonical_contacts for internal_* types |
+| `source_links` | ~172k+ | Traceability: {canonical_entity, source, source_id} links |
+| `mdm_manual_overrides` | extended | action/source_link_id/payload/expires_at/is_active/revoke_reason per §6.4 |
+
+**Matcher functions (pg_cron 2h + Bronze triggers):**
+- `matcher_company(rfc, name, domain, autocreate_shadow)` — deterministic tie-break (prefer is_internal > !shadow > lowest id)
+- `matcher_contact(email, name, domain)` — email exact > domain
+- `matcher_product(internal_ref, name)` — ref exact > fuzzy name
+- `matcher_all_pending()` — pg_cron silver_sp3_matcher_all_pending (HH:35 /2h)
+- `matcher_company_if_new_rfc(e_rfc, e_name, r_rfc, r_name)` — Bronze trigger on syntage_invoices
+- `matcher_invoice_quick(uuid)` — fast FK resolution for newly-stamped invoices
+
+**Manual override functions:**
+- `mdm_merge_companies(a, b, user, note)` — merge two canonical_companies, re-point FKs
+- `mdm_link_invoice(canonical_id, sat_uuid, odoo_id, user, note)` — manual SAT↔Odoo link
+- `mdm_revoke_override(override_id, user, reason)` — reverse manual override
+
+**FK structure (post-SP3):**
+- canonical_invoices: `emisor_canonical_company_id`, `receptor_canonical_company_id` → canonical_companies; `salesperson_contact_id` → canonical_contacts.
+- canonical_payments: `counterparty_canonical_company_id` → canonical_companies.
+- canonical_credit_notes: `emisor_canonical_company_id`, `receptor_canonical_company_id` → canonical_companies.
+
+**Bronze auto-match triggers:**
+- `trg_cc_from_odoo` on `companies` INSERT/UPDATE → auto-create canonical_companies
+- `trg_sat_invoice_matcher` on `syntage_invoices` INSERT → shadow RFC creation via matcher_company_if_new_rfc
+- Plus the 3 canonical_contacts triggers from Task 6 (odoo_users, odoo_employees, contacts)
+- Plus the canonical_products trigger from Task 9 (odoo_products)
+- Plus the 3 source_links triggers from Task 13 (canonical_companies/contacts/products)
+
+**SP4 next:** Pattern B MVs (orders/deliveries/inventory), evidence layer (email_signals/ai_extracted_facts/attachments/manual_notes), 31-invariante engine cutover, gold views.
 
 **Known dead bridges in current data (future data-quality work):**
 - `odoo_account_payments.ref` 100% empty → num_operacion match = 0 rows
