@@ -293,3 +293,34 @@ DROP INDEX IF EXISTS ix_canonical_invoices_date_disc;
 ## Rollbacks executed
 
 (None yet)
+
+### Task 3b / has_sat_record correction patch
+
+**Why:** Code-quality reviewer identified silent-alert-suppression risk. 3,795 rows had `has_sat_record=true` (seeded from Task 2 cfdi_uuid) but no actual SAT payload in syntage_invoices tipo='I'. Task 15's `invoice.missing_sat_timbrado` invariant would evaluate these as "SAT arrived" and never fire medium-severity alerts.
+
+**Breakdown of the 3,795:**
+- ~3,433 rows: cfdi_uuid_odoo does NOT exist anywhere in syntage_invoices (historical SAT gap pre-Syntage sync).
+- ~362 rows: cfdi_uuid_odoo matches a tipo='P' complemento in syntage (unusual but legit — CFDI Odoo received was a payment complement, not ingreso).
+
+**Patch applied via execute_sql (apply_migration path unavailable post-T3 timeout precedent):**
+
+Migration file: `supabase/migrations/20260422_sp2_03b_correct_has_sat_record.sql`
+
+Verification post-patch:
+- remaining_bad_flag: 0 ✓
+- dual count: 25,004 → 21,209 (−3,795) ✓
+- odoo_only count: 2,175 → 5,970 (+3,795) ✓
+- completeness_score fix: all 5,970 odoo_only rows now have 0.333 (was incorrectly 0.667) ✓
+
+**Remaining DoD post-patch:** UUID post-2021 coverage unchanged (95.27% — the flag fix does not affect sat_uuid presence).
+
+**Rollback Task 3b:**
+```sql
+UPDATE canonical_invoices
+SET has_sat_record=true,
+    sources_present = ARRAY(SELECT DISTINCT unnest(sources_present || ARRAY['sat'])),
+    completeness_score = 0.667,
+    sources_missing = '{email}'
+WHERE cfdi_uuid_odoo IS NOT NULL AND has_sat_record=false AND tipo_comprobante_sat IS NULL
+  AND NOT EXISTS (SELECT 1 FROM syntage_invoices si WHERE si.uuid=cfdi_uuid_odoo AND si.tipo_comprobante='I');
+```
