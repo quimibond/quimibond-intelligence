@@ -524,3 +524,19 @@ Migration `1063_silver_sp4_close_audit.sql` applied. Closing `post_sp4_snapshot`
 - cron_jobs_sp4: `silver_sp4_reconcile_daily` active @ `30 6 * * *`
 - reconciliation_issues_open_by_severity: critical=12,432 / high=59,238 / medium=39,142 / low=5,397
 - gold_ceo_inbox_rows: 50
+
+## Task 24 — PR opened (completed 2026-04-21)
+
+- PR: https://github.com/quimibond/quimibond-intelligence/pull/47
+- Title: "Silver SP4: Pattern B + Evidence + 31-invariant engine + 8 Gold views"
+- 29 commits, 26 files changed, +7,189 lines.
+- Awaits user `gh pr merge --merge --delete-branch`.
+
+### Trailing follow-ups logged in PR body
+
+- 114 residual NULL invariant_keys (post-Task-16 drift).
+- canonical_invoices.amount_residual_mxn_resolved backfill (gold_cashflow.total_receivable_mxn=0 until then).
+- reconciliation_issues.assignee_canonical_contact_id routing job.
+- qb19 addon §14.2 / §14.3 / §14.4 fixes.
+- Frontend + agents rewire (SP5 scope).
+- Legacy MV/view drops per spec §12.
