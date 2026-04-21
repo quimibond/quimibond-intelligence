@@ -27,6 +27,7 @@
 --   source_links_kg_entity:       700 rows
 
 -- Step 1: Build staging table with JOIN-based 3-tier resolution
+DROP TABLE IF EXISTS _sp4_staging;
 CREATE TABLE _sp4_staging (
   fact_id bigint,
   entity_id bigint,
