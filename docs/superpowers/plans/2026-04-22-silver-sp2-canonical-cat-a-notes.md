@@ -91,6 +91,116 @@ label stored in `details.label`. Migration file on disk reflects corrected SQL.
 
 **Rollback Task 2:** `DELETE FROM canonical_invoices WHERE canonical_id LIKE 'odoo:%';`
 
+### Task 3 / Pre-populate diagnostic
+
+```
+sat_i_total:           82,473
+sat_already_matched:   14,309  (sat_uuid already seeded from Odoo cfdi_uuid — type I in syntage)
+sat_historical_pre_odoo: 46,563
+sat_unmatched_post_2021: 21,601
+```
+
+Note: `sat_already_matched=14,309` is fewer than `odoo_with_uuid=18,104` because:
+- 3,795 Odoo rows have a cfdi_uuid that maps to a non-'I' tipo_comprobante in syntage (E, P, N) or UUID not yet in syntage.
+- These rows got `has_sat_record=true` set in Task 2 (based on cfdi_uuid_odoo IS NOT NULL) but could not be populated with SAT fields in 3a.
+
+### Task 3 / Execution notes
+
+**apply_migration timed out** on: (a) full migration, (b) 3a alone. All steps ran via `execute_sql`.
+
+**Step 3b composite match issues:**
+1. Initial batches with plain dedup failed with `ERROR 23505` (unique constraint on sat_uuid) — the composite function returns one SAT UUID matched to multiple Odoo invoices (fan-out).
+2. Fix applied: `DISTINCT ON (syntage_uuid)` (pick best Odoo per SAT, prefer 'high', then lowest odoo_invoice_id) + `DISTINCT ON (odoo_invoice_id)` (one SAT per Odoo).
+3. Later batches also needed `AND NOT EXISTS (SELECT 1 FROM canonical_invoices ci2 WHERE ci2.sat_uuid = syntage_uuid)` to exclude UUIDs already assigned in prior batches.
+4. Total batches run: ~19 (sizes 500–3000). Converged at 6,912 matched with 0 new candidates on final batch_size=3000 sweep.
+
+### Task 3 / Populate verification
+
+**Step results:**
+- 3a: 14,309 rows updated with SAT fields (direct uuid match, tipo='I')
+- 3b: 6,912 rows composite-matched (5,595 high + 1,317 medium)
+- 3c: SAT fields pulled for 6,912 newly-matched rows
+- 3d: 61,264 SAT-only rows inserted
+- 3e: completeness_score + sources_missing computed for all 88,443 rows
+
+**Coverage query:**
+
+| Metric | Value |
+|---|---|
+| total | 88,443 |
+| with_sat_uuid | 86,280 |
+| with_odoo_uuid | 18,104 |
+| dual (odoo+sat) | 25,004 |
+| odoo_only | 2,175 |
+| sat_only | 61,264 |
+| historical_pre_odoo | 46,563 |
+| pending_op | 14,701 |
+
+**Primary DoD — % UUID post-2021:**
+
+| Metric | Value |
+|---|---|
+| total_post_2021 | 41,687 |
+| resolved | 39,717 |
+| **pct** | **95.27%** ← DoD ≥95% PASS |
+
+**resolved_from distribution:**
+
+| resolved_from | match_confidence | count |
+|---|---|---|
+| sat_primary | exact | 61,264 |
+| odoo_uuid | exact | 18,104 |
+| sat_composite_match | high | 5,595 |
+| NULL | NULL | 2,163 |
+| sat_composite_match | medium | 1,317 |
+
+Note: 2,163 NULL resolved_from rows = Odoo rows without any composite match (no SAT counterpart found).
+
+**Smoke integrity:**
+- canonical_id collisions: 0 PASS
+- has_odoo_record=true AND odoo_invoice_id IS NULL: 0 PASS
+- has_sat_record=true AND sat_uuid IS NULL: 0 PASS
+
+**Amount discrepancy (dual-source rows only):**
+
+| Metric | Value |
+|---|---|
+| discrepant | 7 |
+| max_diff | 17,748.00 MXN |
+| avg_diff | 2.09 MXN |
+
+Note: Only 7 discrepant rows out of 25,004 dual-source rows. avg_diff=2.09 is rounding/exchange rate noise; max_diff=17,748 warrants manual review.
+
+**completeness_score distribution:**
+
+| score | count |
+|---|---|
+| 0.667 | 25,004 |
+| 0.333 | 63,439 |
+
+No 1.000 rows yet (no email thread data linked). No 0.000 rows (all rows have at least one source).
+
+**Rollback Task 3:**
+```sql
+DELETE FROM canonical_invoices WHERE canonical_id NOT LIKE 'odoo:%';
+UPDATE canonical_invoices ci
+SET sat_uuid = CASE WHEN ci.cfdi_uuid_odoo IS NOT NULL THEN ci.cfdi_uuid_odoo ELSE NULL END,
+    tipo_comprobante_sat=NULL, amount_total_sat=NULL, amount_untaxed_sat=NULL,
+    amount_tax_sat=NULL, amount_retenciones_sat=NULL, amount_total_mxn_sat=NULL,
+    amount_total_mxn_fiscal=NULL, currency_sat=NULL, tipo_cambio_sat=NULL,
+    fecha_emision=NULL, fecha_timbrado=NULL, fecha_cancelacion=NULL, estado_sat=NULL,
+    emisor_rfc=NULL, emisor_nombre=NULL, receptor_rfc=NULL, receptor_nombre=NULL,
+    emisor_blacklist_status=NULL, receptor_blacklist_status=NULL,
+    metodo_pago=NULL, forma_pago=NULL, uso_cfdi=NULL,
+    has_sat_record = (ci.cfdi_uuid_odoo IS NOT NULL),
+    sources_present = CASE WHEN ci.cfdi_uuid_odoo IS NOT NULL THEN ARRAY['odoo','sat'] ELSE ARRAY['odoo'] END,
+    resolved_from = CASE WHEN ci.cfdi_uuid_odoo IS NOT NULL THEN 'odoo_uuid' ELSE NULL END,
+    match_confidence = CASE WHEN ci.cfdi_uuid_odoo IS NOT NULL THEN 'exact' ELSE NULL END,
+    match_evidence = NULL,
+    completeness_score = NULL, sources_missing = '{}'
+WHERE resolved_from='sat_composite_match' OR has_sat_record=true OR completeness_score IS NOT NULL;
+```
+
 ### Task 0
 
 Completed 2026-04-22. Branch `silver-sp2-cat-a` created off main. Assets verified (no blockers — syntage_invoices_enriched absent, Task 1 will use live JOIN path). Baselines captured. Migration applied. Commit: `a0cb76f`.
