@@ -1,14 +1,14 @@
 /**
  * Refresh materialized views — keeps analytics fresh for dashboard.
  *
- * Llama a refresh_all_analytics_robust() que refresca las 26 materialized
- * views (23 originales + 3 nuevas de Fase 7: customer_ltv_health,
- * supplier_concentration_herfindahl, ops_delivery_health_weekly).
+ * Llama a refresh_all_analytics_robust() que auto-descubre todas las MVs
+ * en pg_matviews (actualmente 34 totales en public schema; SP1 dropo 5 que
+ * tenian 0 callers: products_unified, product_price_history,
+ * cross_director_signals, product_seasonality, syntage_invoices_enriched).
  *
- * A diferencia del legacy refresh_all_analytics() que cascadeaba cualquier
- * error (y tenia al sistema con matviews stale hace dias por un bug en
- * product_seasonality), el robust wrapper aisla cada REFRESH en su propio
- * try/catch y loggea per-matview a pipeline_logs con phase='refresh_matview'.
+ * refresh_all_analytics_robust() aisla cada REFRESH en su propio try/catch
+ * y loggea per-matview a pipeline_logs con phase='refresh_matview'.
+ * A diferencia del legacy refresh_all_matviews(), no cascadea errores.
  *
  * Cron: cada 6h. Si una matview individual falla, el resto sigue.
  */
