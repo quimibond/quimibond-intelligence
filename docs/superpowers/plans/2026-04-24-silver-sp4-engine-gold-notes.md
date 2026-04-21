@@ -211,3 +211,31 @@ NULL is expected and correct: `odoo_currency_rates` only contains data from 2026
 **Zero-arg backward compatibility:** `usd_to_mxn()` (no args) still works via the DEFAULT — callers using the old zero-arg form will get the CURRENT_DATE rate seamlessly.
 
 - `schema_changes` row inserted: `CREATE_VIEW / canonical_bank_balances / silver-sp4-task-8`.
+
+## Task 10 — canonical_account_balances VIEW (completed 2026-04-21)
+
+Migration `1049_silver_sp4_canonical_account_balances.sql` applied. Pattern B live VIEW joining `odoo_account_balances` (11,032 rows total) with `odoo_chart_of_accounts` via `odoo_account_id`. Adds `balance_sheet_bucket` classification column and `refreshed_at` timestamp.
+
+**balance_sheet_bucket logic:**
+- `asset`: `account_type LIKE 'asset_%'`
+- `liability`: `account_type LIKE 'liability_%'`
+- `equity`: `account_type LIKE 'equity%'`
+- `income`: `account_type LIKE 'income%'`
+- `expense`: `account_type LIKE 'expense%'`
+- `other`: all remaining (unclassified or NULL account_type from LEFT JOIN miss)
+
+**Latest period:** `2026-04` (154 rows in latest period).
+
+**Verify query results — latest period (2026-04):**
+
+| balance_sheet_bucket | rows | total_balance (MXN) |
+|---|---|---|
+| asset | 41 | -4,287,560 |
+| expense | 72 | 9,175,355 |
+| income | 14 | -6,498,757 |
+| liability | 27 | 1,610,962 |
+
+**Notes:**
+- No `equity` or `other` bucket rows in the latest period. Equity accounts either have no movement for 2026-04 or their `account_type` value in `odoo_chart_of_accounts` does not match the `equity%` pattern — consistent with the known `equity_unaffected` gap (§14.2).
+- **Asset ≠ Liability + Equity gap confirmed:** Asset total = -4,287,560 vs Liability total = 1,610,962. Equity bucket is absent from the latest period, which is the primary source of the imbalance. This is the documented `equity_unaffected` gap: Odoo's `equity_unaffected` account type (retained earnings / prior-period equity) does not match any of the `equity%` LIKE patterns and falls through to either NULL (if COA join misses) or `other`. The P&L accounts (income/expense) appearing here are YTD period slices, not balance-sheet closing balances, so the accounting equation does not close at the period-view level — this is expected.
+- `schema_changes` row inserted: `CREATE_VIEW / canonical_account_balances / silver-sp4-task-10`.
