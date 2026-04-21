@@ -2,6 +2,7 @@
 --
 -- Silver SP4 — Task 11: canonical_chart_of_accounts VIEW
 -- Spec §5.18; Plan Task 11.
+-- Fix (2026-04-21): use '.' (dot) separator, not '-' — Quimibond Odoo CoA uses dotted codes (e.g., 101.01.01).
 
 BEGIN;
 
@@ -18,8 +19,8 @@ SELECT
   coa.deprecated,
   coa.active,
   coa.odoo_company_id,
-  LENGTH(coa.code) - LENGTH(REPLACE(coa.code, '-', '')) + 1 AS tree_level,
-  SPLIT_PART(coa.code, '-', 1)        AS level_1_code,
+  LENGTH(coa.code) - LENGTH(REPLACE(coa.code, '.', '')) + 1 AS tree_level,
+  SPLIT_PART(coa.code, '.', 1)        AS level_1_code,
   coa.synced_at
 FROM odoo_chart_of_accounts coa;
 

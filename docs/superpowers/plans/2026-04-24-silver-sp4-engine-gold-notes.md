@@ -255,3 +255,9 @@ Migration `1050_silver_sp4_canonical_chart_of_accounts.sql` applied. Pattern B l
 - **368 rows with empty code:** 1,640 total − 1,272 with_code = 368 rows have `code = ''`. These are system/multi-company accounts added by Odoo modules without a SAT chart code. `tree_level` = 1 and `level_1_code` = `''` for these rows — consistent and non-breaking.
 - **0 deprecated, 1,525 active:** No accounts are marked deprecated; 115 rows have `active = false` (hidden accounts in Odoo UI).
 - `schema_changes` row inserted: `CREATE_VIEW / canonical_chart_of_accounts / silver-sp4-task-11`.
+
+### Task 11 fix — separator (appended 2026-04-21):
+- Plan SQL used `-` but Quimibond uses `.` in CoA codes. Fixed in migration to use `.`.
+- Follow-up for Task 22: `gold_pl_statement` uses the same SPLIT_PART pattern; also needs `-` → `.` before that task ships.
+- Post-fix tree_level distribution: level 1 = 400 rows, level 2 = 11 rows, level 3 = 1,228 rows, level 4 = 1 row.
+- Top level_1_code: 601 (148 rows), 102 (104 rows), 603 (84 rows), 216 (60 rows), 602 (56 rows).
