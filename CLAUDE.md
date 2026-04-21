@@ -421,6 +421,32 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 
 > **2026-04-22 (SP1):** 18 objetos dropeados (8 views + 5 MVs + 5 tables). Ver `docs/superpowers/plans/2026-04-21-silver-sp1-audit-notes.md`. SP2+ construye `canonical_*` tables como sucesores.
 
+### Silver Canonical Tables (SP2 — 2026-04-22)
+
+Pattern A dual-source canonical layer for reconciliation Odoo↔SAT.
+
+| Tabla | Rows | Purpose |
+|---|---|---|
+| `canonical_invoices` | ~88k | Golden invoice record; SP3 MDM adds canonical_companies FK |
+| `canonical_payments` | ~43k | Golden payment (Odoo bank + SAT complementos) |
+| `canonical_payment_allocations` | ~25k | Payment→invoice links (SAT doctos_relacionados) |
+| `canonical_credit_notes` | ~2.2k | Egresos (E / out_refund / in_refund) |
+| `canonical_tax_events` | ~400 | Retentions + returns + electronic_accounting (Odoo match SP4) |
+| `mdm_manual_overrides` | 20 | Unified bridge table; replaces invoice_bridge_manual, payment_bridge_manual, products_fiscal_map |
+
+**Reconciliation runtime:**
+- `run_reconciliation(key text DEFAULT NULL)` — runs enabled invariantes
+- `compute_priority_scores()` — updates `reconciliation_issues.priority_score`
+- pg_cron: `silver_sp2_reconcile_hourly` (HH:05), `silver_sp2_reconcile_2h` (HH:15 /2h), `silver_sp2_refresh_canonical_nightly` (03:30)
+
+**16 active invariantes:** invoice.{amount_mismatch, state_mismatch_posted_cancelled, state_mismatch_cancel_vigente, date_drift, pending_operationalization, missing_sat_timbrado, posted_without_uuid, credit_note_orphan}, payment.{registered_without_complement, complement_without_payment}, plus 6 additional registered by tasks.
+
+**SP3 next:** canonical_companies / canonical_contacts / canonical_products + MDM matcher. Pattern A tables use `emisor_company_id`/`receptor_company_id`/`counterparty_company_id` pointing to `companies.id` (placeholder); SP3 renames + adds FK.
+
+**Known dead bridges in current data (future data-quality work):**
+- `odoo_account_payments.ref` 100% empty → num_operacion match = 0 rows
+- `odoo_chart_of_accounts` ISR retenido uses `113.%` and `213.%` prefixes (not `216%` as plan assumed)
+
 ### Tablas principales
 
 **Core:**

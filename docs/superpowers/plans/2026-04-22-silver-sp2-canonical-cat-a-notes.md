@@ -449,3 +449,26 @@ DELETE FROM canonical_payment_allocations;
 DELETE FROM canonical_payments;
 ```
 ```
+
+## SP2 Cierre (2026-04-22)
+
+**DoD results vs targets:**
+| DoD | Target | Actual | Status |
+|---|---|---|---|
+| canonical_invoices non-historical | ≥97,000 | 41,899 | MISS (explained: historical_pre_odoo=true for ~46k pre-Odoo SAT-only rows; non-historical = Odoo-originated only) |
+| canonical_invoices uuid post-2021 | ≥95% | 95.28% | PASS |
+| canonical_invoices orphans | 0 | 0 | PASS |
+| canonical_payments | ≥17,800 | 43,374 | PASS |
+| canonical_payment_allocations | ≥15,000 | 25,511 | PASS |
+| canonical_credit_notes | ≥2,500 | 2,207 | NEAR (explained by algebra: 582+2009-384=2207; no data loss) |
+| canonical_tax_events | ≥100 | 398 | PASS |
+| active_invariants | 10 | 16 | PASS+ (tasks registered 6 additional beyond plan) |
+| open_issues w/priority | >0 | 103,397 | PASS |
+| active cron jobs | 3 | 3 | PASS |
+
+**Notes on DoD deviations:**
+- `ci_non_historical` miss: The 97,000 target assumed all 88k+ rows would be non-historical. In reality, ~46k rows have `historical_pre_odoo=true` (SAT-only invoices with no Odoo counterpart, pre-dating Odoo adoption). This is correct behavior, not a data loss. Total canonical_invoices (88,462) exceeds the intended scope.
+- `ccn_total` near-miss: algebraically explained (582 Odoo + 2009 SAT - 384 overlap = 2207). No data loss.
+- `active_invariants=16` exceeds plan's 10: additional invariants registered by individual tasks are a net positive.
+
+**Commits on branch silver-sp2-cat-a (in order):** a0cb76f (T0) → 40168d4 (T0 clarifications) → 28c0ec1 (T1) → 057262f (T1b) → aa60def (T2) → c73e243 (T3) → 157f9b1 (T3b) → 6269920 (T4+T4b) → 03003e5 (T4c) → 9a46598 (T5) → b398107 (T6) → 8d9c234 (T7) → a74bd78 (T8) → 6db6a39 (T9) → 6c1bbb4 (T10) → f3bc483 (T11) → 7fa13ab (T12) → 796cfa7 (T13) → 104dc3b (T14) → fd742f9 (T15a) → 4428efc (T15b) → eda1a5d (T15c) → T16 final (see git log)
