@@ -77,3 +77,22 @@ Migration `1042_silver_sp4_canonical_purchase_orders.sql` applied. Pattern B thi
 | done | 83 |
 
 **Note on states:** Bronze `odoo_purchase_orders` contains only `purchase` and `done` states — no `draft` or `cancel` rows in the current Bronze snapshot. This means `active_states = total_rows`. The MV logic and Bronze data are consistent.
+
+## Task 4 — canonical_order_lines (completed 2026-04-21)
+
+Migration `1043_silver_sp4_canonical_order_lines.sql` applied. Pattern B thin MV over `odoo_order_lines` with LEFT JOINs to `canonical_companies` (by `odoo_partner_id`) and `canonical_products` (by `odoo_product_id`). 3 derived columns: `qty_pending_invoice`, `has_pending_invoicing`, `has_pending_delivery`. 7 indexes created (pk, company, product, order, type_state, 2 partial pending).
+
+### Step 3 — Counts by order_type
+
+| order_type | rows | with_product | pending_invoicing | pending_delivery |
+|---|---|---|---|---|
+| sale | 21,003 | 20,205 | 3,217 | 3,176 |
+| purchase | 11,095 | 10,180 | 0 | 0 |
+| **total** | **32,098** | **30,385** | **3,217** | **3,176** |
+
+**Notes:**
+
+- Total 32,098 rows — matches plan reference ~32,083 ✓ (delta of 15 is normal Bronze churn).
+- Product coverage: sale 96.2%, purchase 91.7% — both exceed ≥90% threshold ✓.
+- `pending_invoicing` and `pending_delivery` are correctly 0 for purchase rows: the CASE predicate restricts both flags to `order_type = 'sale'` only.
+- 3,217 sale lines with unresolved invoicing (~15.3% of sale rows) and 3,176 with unresolved delivery (~15.1%) — reasonable for an active trading company with open orders.
