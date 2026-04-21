@@ -343,3 +343,62 @@ Inserted row with `primary_email='SMOKE@example.com'` — success. Second insert
 | Task | Gate | Status | Date |
 |---|---|---|---|
 | Task 4 | canonical_contacts DDL, 47 cols, 9 indexes, UNIQUE enforced | PASS | 2026-04-20 |
+| Task 5 | canonical_contacts populated: 2,063 rows, 0 duplicates | PASS | 2026-04-20 |
+
+---
+
+## Task 5 — Populate canonical_contacts
+
+### Pre-gate diagnostic
+
+| Metric | Value |
+|---|---|
+| users_with_email | 40 |
+| employees_with_email | 150 |
+| contacts_with_email | 2,037 |
+| distinct_emails_total | 2,063 |
+
+### ON CONFLICT syntax
+
+Used expression form `ON CONFLICT ((LOWER(primary_email)))` — applied without error. No fallback needed.
+
+### Results
+
+**contact_type breakdown:**
+
+| contact_type | count |
+|---|---|
+| external_customer | 1,541 |
+| external_supplier | 230 |
+| internal_employee | 139 |
+| external_unresolved | 113 |
+| internal_user | 40 |
+| **Total** | **2,063** |
+
+**Summary counts:**
+
+| Metric | Value |
+|---|---|
+| total | 2,063 |
+| with_company | 1,808 |
+| emp_and_user_merged | 11 |
+| with_employee | 150 |
+| with_user | 40 |
+
+Notes:
+- total = distinct_emails_total (2,063) — perfect dedup, no over-count
+- 11 employees shared email with a user row (DO UPDATE merged employee data onto user row)
+- 139 net-new `internal_employee` rows (150 employees − 11 merged)
+- 1,808/1,884 external contacts resolved to a canonical_company (96%)
+
+### Smoke test
+
+```sql
+SELECT LOWER(primary_email) AS lower_email, COUNT(*)
+FROM canonical_contacts
+GROUP BY LOWER(primary_email)
+HAVING COUNT(*) > 1 LIMIT 5;
+-- Result: 0 rows (PASS)
+```
+
+No duplicate emails. UNIQUE constraint fully enforced.
