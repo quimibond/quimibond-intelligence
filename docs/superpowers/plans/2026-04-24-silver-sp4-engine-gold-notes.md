@@ -390,3 +390,14 @@ All 8 `issue_type` variants mapped cleanly via the remap rules — no rows fell 
 - `abs_tolerance`/`pct_tolerance` are NOT NULL with defaults (0.01/0.001) — spec NULL values substituted with column defaults; semantically-meaningful numeric bounds retained where spec specified them (e.g. `payment.amount_mismatch` abs=0.01, `tax.retention_accounting_drift` pct=0.05, `delivery.late_active` not used as threshold).
 - `legacy.unclassified` sentinel row inserted with zero rows assigned — all open NULL `invariant_key` issues mapped cleanly.
 - `schema_changes` row inserted: `SEED / audit_tolerances / silver-sp4-task-16`.
+
+## Task 17 — run_reconciliation part 1 (completed 2026-04-21)
+
+- Created `_sp4_run_extra(p_key text) RETURNS jsonb` with 10 invariant IF blocks: invoice.amount_diff_post_fx, invoice.uuid_mismatch_rfc, invoice.without_order, payment.amount_mismatch, payment.date_mismatch, payment.allocation_over, payment.allocation_under, tax.retention_accounting_drift, tax.return_payment_missing, tax.accounting_sat_drift. Each gates on `enabled=true` in `audit_tolerances` AND uses `WHERE NOT EXISTS` for idempotency.
+- **SP2 wrapper adaptation:** SP2 `run_reconciliation` returned `TABLE(invariant_key, new_issues, auto_resolved)` — neither void nor jsonb. Implementer adapted with `SELECT json_agg(r) INTO v_sp2 FROM run_reconciliation_sp2(p_key) r` to aggregate table rows into jsonb.
+- Renamed old `run_reconciliation` → `run_reconciliation_sp2`; new `run_reconciliation(text) RETURNS jsonb` wraps both.
+- Smoke test `SELECT run_reconciliation();` returns `{"sp2":[10 invariant rows], "sp4":{"part":1,"log":[]}}` — SP4 log empty as expected (new invariants still disabled).
+- **Follow-ups noted by reviewer:**
+  - `tax.retention_accounting_drift` body hard-codes pct threshold 0.0005 (0.05%) but `audit_tolerances.pct_tolerance=0.05` (5%, default) — tolerance not yet read from catalog. Engine-reads-catalog refactor deferred.
+  - `payment.allocation_under` gates on `direction='issued'` (outbound only) — deliberate business choice; not in spec text.
+- Commit `2ae389b`.
