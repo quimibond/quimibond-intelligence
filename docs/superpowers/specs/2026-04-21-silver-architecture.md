@@ -1785,7 +1785,7 @@ ALTER TABLE reconciliation_issues ADD COLUMN IF NOT EXISTS invariant_key text;  
 
 ### 9.2 Invariant catalog
 
-Listado de invariantes (reglas de reconciliación) que el engine ejecuta. Cada una se registra en `audit_tolerances` + SQL declarativo en `audit_invariants.md` file. **Total: 38.**
+Listado de invariantes (reglas de reconciliación) que el engine ejecuta. Cada una se registra en `audit_tolerances` + SQL declarativo en `audit_invariants.md` file. **Total: 31 activas** (10 invoice + 6 payment + 4 tax + 5 fulfillment + 6 finance + 3 line-level + 2 inventory + 2 MDM, menos 7 solapamientos entre buckets); arquitectura soporta expansión a ~50 sin cambios estructurales.
 
 #### Invoice invariants (10)
 | key | entity | severity | tolerance | auto_resolve | descripción |
@@ -2041,13 +2041,13 @@ LIMIT 50;
 2. `canonical_purchase_orders`, `canonical_sale_orders` replace order_unified.
 3. Evidence tables: `email_signals`, `ai_extracted_facts`, `attachments`, `manual_notes`.
 4. Migration script: `facts` → `ai_extracted_facts` (preserve ids, extend schema).
-5. Full 38 invariantes registered; all auto-resolve jobs running.
+5. Full 31 invariantes registered; all auto-resolve jobs running.
 6. `gold_ceo_inbox` view + API endpoints `/api/inbox/top`, `/api/inbox/resolve`.
 7. `gold_company_360`, `gold_revenue_monthly`, `gold_pl_statement`, `gold_balance_sheet`, `gold_cashflow`, `gold_product_performance`, `gold_reconciliation_health`.
 
 **DoD.**
 - [ ] 16 canonical tables + 7 gold views live.
-- [ ] 38 invariantes registered + enabled.
+- [ ] 31 invariantes registered + enabled.
 - [ ] `reconciliation_issues` open count trending down WoW.
 - [ ] `gold_ceo_inbox` returns < 60 rows consistent with business reality.
 
@@ -2346,7 +2346,7 @@ Features derived from canonical_*: unusual payment gap, unusual margin drop, unu
 | **Addon _build_cfdi_map not fixed before SP2** | Critical | SP2 is gated on this addon PR. Escalate to user. |
 | **pg_trgm performance on 9k entities + 2k companies** | Medium | Index `canonical_companies USING gin (canonical_name gin_trgm_ops)`; batch processing (500 rows at a time); nightly runs. |
 | **Frontend typecheck failures on migration** | Medium | Generate TypeScript types from canonical schema via `supabase gen types`; run tsc in CI; migrate queries one directory at a time. |
-| **Reconciliation engine overload** (38 invariantes × 129k invoices) | Medium | `auto_resolve` closes obvious cases; archive issues >90d resolved; pg_cron staggered schedules. |
+| **Reconciliation engine overload** (31 invariantes × 129k invoices) | Medium | `auto_resolve` closes obvious cases; archive issues >90d resolved; pg_cron staggered schedules. |
 | **Historical pre-Odoo (30,404 SAT-only)** distorts company_profile | Low | `historical_pre_odoo` flag filter in gold views; user decision firmada visible-in-same-table. |
 | **Shadow companies over-create** (every email with new RFC makes shadow) | Medium | Shadow creation only on confirmed CFDI ingest, not email mention. Email mention → `entities` + `email_signals`, not shadow. |
 | **Evidence tables grow unbounded** | Low | Purge policy: `email_signals` >180d archive; `ai_extracted_facts` expired=true after 90d no updates. |
@@ -2367,7 +2367,7 @@ Features derived from canonical_*: unusual payment gap, unusual margin drop, unu
 - [x] All types explicit (numeric(14,2), timestamptz, text, bigint, integer, boolean, jsonb).
 - [x] No "similar to above"; Pattern D schema for each of 4 evidence tables.
 - [x] Indexes declared per-table.
-- [x] 38 invariantes enumeradas con severity + tolerance + auto_resolve.
+- [x] 31 invariantes enumeradas con severity + tolerance + auto_resolve.
 - [x] 5 sub-projects with deliverables + DoD + dependencies + duration.
 - [x] Drop list with reason + evidence + replacement for each item.
 - [x] API contracts for frontend + agents + CEO Inbox.
