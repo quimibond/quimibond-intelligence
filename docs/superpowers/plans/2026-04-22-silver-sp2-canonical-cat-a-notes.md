@@ -294,6 +294,40 @@ DROP INDEX IF EXISTS ix_canonical_invoices_date_disc;
 
 (None yet)
 
+### Task 13 / Simplified (Odoo match deferred)
+
+Pre-gate diagnostics revealed two blockers for Odoo reconciliation:
+1. ISR account prefix `216%` in plan is wrong. Actual Quimibond ISR accounts:
+   - 113.02.01 ISR Withheld (asset, retained by clients)
+   - 113.08.0001 I.S.R. RETENIDO POR INVERSIONES
+   - 213.03 ISR por pagar (liability)
+   Selecting correct aggregate requires business-rule decision — deferred to SP4 finance engine.
+2. odoo_account_payments.ref is 100% empty (17,863 rows). tax_return.numero_operacion
+   match would produce 0 rows.
+
+SP2 scope adjusted: install 3 incremental triggers (retention/return/ea) without
+any Odoo match logic. `has_odoo_match` stays false on all 398 rows. SP4 resolves.
+
+**Migration:** `sp2_13_canonical_tax_events_triggers` applied 2026-04-22.
+
+**Verification:**
+- Functions: 3 (`canonical_tax_events_upsert_ea`, `canonical_tax_events_upsert_retention`, `canonical_tax_events_upsert_return`) ✓
+- Triggers: 4 (`trg_cte_ea`, `trg_cte_retention`, `trg_cte_return` + pre-existing `trg_cte_updated_at`) ✓
+
+**Smoke (ROLLBACK'd):**
+- INSERT retention smoke row → canonical_id=`retention:00000000-smoke-t13-ret-000000000000`, event_type=`retention`, tipo_retencion=`ISR`, monto_total_retenido=`100.00` ✓
+- Note: smoke required `direction='received'` NOT NULL column on `syntage_tax_retentions` (not in task spec — found via constraint error, corrected inline).
+
+**Rollback Task 13:**
+```sql
+DROP TRIGGER IF EXISTS trg_cte_retention ON syntage_tax_retentions;
+DROP TRIGGER IF EXISTS trg_cte_return ON syntage_tax_returns;
+DROP TRIGGER IF EXISTS trg_cte_ea ON syntage_electronic_accounting;
+DROP FUNCTION IF EXISTS canonical_tax_events_upsert_retention();
+DROP FUNCTION IF EXISTS canonical_tax_events_upsert_return();
+DROP FUNCTION IF EXISTS canonical_tax_events_upsert_ea();
+```
+
 ### Task 3b / has_sat_record correction patch
 
 **Why:** Code-quality reviewer identified silent-alert-suppression risk. 3,795 rows had `has_sat_record=true` (seeded from Task 2 cfdi_uuid) but no actual SAT payload in syntage_invoices tipo='I'. Task 15's `invoice.missing_sat_timbrado` invariant would evaluate these as "SAT arrived" and never fire medium-severity alerts.
