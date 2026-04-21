@@ -300,3 +300,46 @@ Note: all blacklisted shadows are historical (last_flagged 2014-2021). Most acti
 ```sql
 DELETE FROM canonical_companies WHERE has_shadow_flag = true;
 ```
+
+---
+
+## Task 4 — canonical_contacts DDL
+
+**Completed:** 2026-04-20
+**Migration:** `20260423_sp3_04_canonical_contacts_ddl`
+
+### Verification results
+
+| Metric | Expected | Actual | Pass? |
+|---|---|---|---|
+| column_count | ~42 | 47 | YES (47 incl. id, created_at, updated_at, review_reason, etc.) |
+| index_count (PK + user) | 9 | 9 | YES |
+| trigram index (gin_trgm_ops) | 1 | 1 (ix_cct_name_trgm) | YES |
+| unique email (case-insensitive) | enforced | enforced | YES |
+| self-referential FK (manager) | present | present | YES |
+| FK to canonical_companies | present | present | YES |
+| updated_at trigger | active | active | YES |
+
+### Index list
+
+| Index | Type | Notes |
+|---|---|---|
+| canonical_contacts_pkey | btree UNIQUE | PK on id |
+| uq_cct_primary_email | btree UNIQUE | LOWER(primary_email) — case-insensitive |
+| ix_cct_company | btree | canonical_company_id |
+| ix_cct_contact_type | btree | contact_type |
+| ix_cct_odoo_employee | btree partial | odoo_employee_id WHERE NOT NULL |
+| ix_cct_odoo_user | btree partial | odoo_user_id WHERE NOT NULL |
+| ix_cct_manual_override | btree partial | has_manual_override WHERE true |
+| ix_cct_needs_review | btree partial | needs_review WHERE true |
+| ix_cct_name_trgm | GIN | canonical_name gin_trgm_ops |
+
+### Smoke test
+
+Inserted row with `primary_email='SMOKE@example.com'` — success. Second insert with `primary_email='smoke@example.com'` raised `unique_violation` as expected (case-insensitive UNIQUE enforced via `LOWER(primary_email)` index). Row cleaned up. **PASS.**
+
+### Gate approval
+
+| Task | Gate | Status | Date |
+|---|---|---|---|
+| Task 4 | canonical_contacts DDL, 47 cols, 9 indexes, UNIQUE enforced | PASS | 2026-04-20 |
