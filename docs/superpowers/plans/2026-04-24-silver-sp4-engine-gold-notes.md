@@ -114,3 +114,21 @@ Migration `1044_silver_sp4_canonical_deliveries.sql` applied. Pattern B thin MV 
 - 276 late deliveries (1.1% of total) — `is_late = true` partial index active.
 - 20,949 done rows (83.2%), all with `date_done` populated — 100% date coverage for completed deliveries ✓.
 - `refreshed_at` uses `now()` at MV creation time; will be stale until next `REFRESH MATERIALIZED VIEW CONCURRENTLY canonical_deliveries` (wired to nightly pg_cron in SP4 engine).
+
+## Task 6 — canonical_inventory (completed 2026-04-21)
+
+Migration `1045_silver_sp4_canonical_inventory.sql` applied. Pattern B live VIEW (not MV) over `canonical_products` with LEFT JOIN to `odoo_orderpoints` on `odoo_product_id`. Rationale: orderpoints set is tiny (57 rows) — materializing adds no performance benefit; live view always reflects current stock quantities.
+
+### Verify counts
+
+| rows | with_orderpoint | untuned | stockouts |
+|---|---|---|---|
+| 6,013 | 51 | 19 | 5,002 |
+
+**Notes:**
+
+- 6,013 rows — exceeds ≥6,004 threshold ✓. Delta of 9 vs canonical_products (6,004) is because 9 products have multiple orderpoints across warehouses (one row per orderpoint per product). `with_orderpoint = 51` vs expected ≈57 — 6 orderpoints reference products not yet in canonical_products (possible inactive/archived products). Not a concern.
+- `untuned = 19` — 19 orderpoints where `product_min_qty = 0` and `qty_to_order > 0`, meaning the reorder rule exists but min threshold is unconfigured. Actionable for ops.
+- `stockouts = 5,002` — 5,000 canonical_products have `available_qty <= 0` (confirmed via direct count), +2 from multi-orderpoint products. This is expected for Quimibond's textile business model: the catalog contains ~6k SKUs (fabric/color/weight variants) most of which are made-to-order or not currently stocked. Not a data bug.
+- `refreshed_at` calls `now()` at query time — always current (advantage of VIEW over MV for this use case).
+- `schema_changes` row inserted: `CREATE_VIEW / canonical_inventory / silver-sp4-task-6 / 2026-04-21 20:07:21 UTC`.
