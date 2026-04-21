@@ -55,3 +55,25 @@ Migration `1041_silver_sp4_canonical_sale_orders.sql` applied. Pattern B thin MV
 | sale | 2,216 | 181,755,643 |
 
 Only `sale` state present (see note above). 2,216 active customer orders in the past 365 days totaling ~$182M MXN. Consistent with expectations for an active trading company.
+
+## Task 3 — canonical_purchase_orders (completed 2026-04-21)
+
+Migration `1042_silver_sp4_canonical_purchase_orders.sql` applied. Pattern B thin MV over `odoo_purchase_orders` with LEFT JOINs to `canonical_companies` (by `odoo_partner_id`) and `canonical_contacts` (by `odoo_user_id`). 4 indexes created (pk, company, buyer, state_date).
+
+### Step 3 — Counts
+
+| Metric | Value | Notes |
+|---|---|---|
+| total_rows | 5,673 | Matches plan reference exactly ✓ |
+| with_company | 5,652 | 99.6% — exceeds ≥5400 threshold ✓ |
+| with_buyer | 5,012 | 88.3% — buyer contact linked |
+| active_states | 5,673 | All rows are `purchase` or `done` ✓ |
+
+### State breakdown
+
+| state | n |
+|---|---|
+| purchase | 5,590 |
+| done | 83 |
+
+**Note on states:** Bronze `odoo_purchase_orders` contains only `purchase` and `done` states — no `draft` or `cancel` rows in the current Bronze snapshot. This means `active_states = total_rows`. The MV logic and Bronze data are consistent.
