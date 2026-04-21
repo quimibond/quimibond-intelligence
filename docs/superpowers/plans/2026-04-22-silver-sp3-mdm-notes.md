@@ -207,7 +207,7 @@ Note on with_ltv=7: `lifetime_value_mxn` populated from `companies.lifetime_valu
 |---|---|---|---|
 | Task 1 | canonical_companies DDL created, pg_trgm indexes OK | PASS | 2026-04-20 |
 | Task 2 | canonical_companies populated (2,197 rows), Quimibond id=868 | PASS | 2026-04-20 |
-| Task 3 | canonical_contacts created | — | — |
+| Task 3 | shadows=2,162, still_unmatched=0, blacklisted=8 | PASS | 2026-04-20 |
 | Task 5 | canonical_products created | — | — |
 | Task 8 | source_links created + backfill by RFC | — | — |
 | Task 12 | RFC resolution: ci_unresolved_receptor reduced by ≥50% | — | — |
@@ -224,4 +224,79 @@ Note on with_ltv=7: `lifetime_value_mxn` populated from `companies.lifetime_valu
 | fd62141 | Merge PR #45 silver-sp2-cat-a (branch base) |
 | 810a7ae | chore(sp3): baseline + branch + notes skeleton |
 | e89f066 | feat(sp3): canonical_companies DDL + indexes + trigram |
-| (pending) | feat(sp3): populate canonical_companies from Odoo + aggregated metrics |
+| 48eef01 | feat(sp3): populate canonical_companies from Odoo + aggregated metrics |
+| (pending) | feat(sp3): shadow canonical_companies for SAT-only RFCs + blacklist aggregate |
+
+---
+
+## Task 3 — Shadow canonical_companies + Blacklist aggregate
+
+### Pre-gate diagnostic (2026-04-20)
+
+| Metric | Value |
+|---|---|
+| sat_rfcs_total | 3,357 |
+| already_matched | 1,195 |
+| need_shadow | 2,162 |
+
+Note: `need_shadow=2162` is above the 500-2000 estimate in the plan. Still within reason — reflects the breadth of SAT counterparties Quimibond has transacted with.
+
+### Migrations applied
+
+1. `20260423_sp3_03_canonical_companies_shadows` — main INSERT (2,058 rows) + blacklist UPDATE
+2. `20260423_sp3_03b_canonical_companies_shadows_fix104` — supplemental INSERT for 104 RFC-variant shadows skipped by `ON CONFLICT (canonical_name) DO NOTHING`
+
+### Why 104 rows needed a fix
+
+The main INSERT uses `LOWER(COALESCE(nombre, rfc))` as `canonical_name`. 104 SAT RFCs share a display name with an already-inserted shadow (RFC typo variants — same person/company, different RFC). Examples:
+- `PARB510616P90` vs `PARB510615B90` → both map to "beatriz maria del carmen patiño rodriguez"
+- `CTE8404129SA` vs `CTE84041295A` → both map to "cobian textil, s.a. de c.v."
+- `DOML6611181FS`, `DOML661118IF3`, `DOML661118OF5`, `DOML6611121FS` → 4 RFC variants of "luis dominguez martinez"
+
+Fix: use `LOWER(nombre || ' [' || rfc || ']')` as `canonical_name` for the 104, preserving original `display_name`. These are tagged with `review_reason = ARRAY['sat_only_shadow','rfc_variant_name_conflict']` so MDM review can decide if they are truly distinct entities or should be merged.
+
+### Verification results (post-fix)
+
+| Metric | Expected | Actual | Pass? |
+|---|---|---|---|
+| total canonical_companies | 2197 + 2162 = 4359 | 4,359 | YES |
+| shadows | 2,162 | 2,162 | YES |
+| still_unmatched | 0 | 0 | YES |
+| blacklisted (presumed + definitive) | variable | 8 | YES |
+
+### Coverage verification
+
+| Metric | Value |
+|---|---|
+| distinct_receptors in canonical_invoices | 1,540 |
+| distinct_emisors in canonical_invoices | 1,842 |
+| cc_with_rfc (canonical_companies) | 3,433 |
+| still_unmatched | 0 |
+
+### Blacklist distribution
+
+| Level | Count |
+|---|---|
+| definitive | 5 |
+| presumed | 3 |
+
+Total blacklisted companies: 8
+
+### Blacklisted shadows (top 6, ordered by last_flagged_at DESC)
+
+| canonical_name | rfc | level | cfdis_flagged | last_flagged |
+|---|---|---|---|---|
+| oublier sa de cv | OUB141001CN9 | presumed | 40 | 2021-10-15 |
+| distribuidora y comercializadora ableon | DCA1703073A3 | definitive | 2 | 2018-09-28 |
+| operaciones internacionales napnet | OIN140605828 | definitive | 1 | 2016-09-20 |
+| maxumus distribuidor, s.a. de c.v. | MDI1311214D0 | definitive | 18 | 2015-02-26 |
+| producciones sasa, s.a. de c.v. | PSA080624R16 | definitive | 16 | 2014-09-23 |
+| manufacturas aken, s.a. de c.v. | MAK101125861 | definitive | 1 | 2014-03-27 |
+
+Note: all blacklisted shadows are historical (last_flagged 2014-2021). Most active blacklist flag is "oublier sa de cv" (OUB141001CN9, presumed, 40 CFDIs, last 2021). This company appears on SAT's EFO presumed list and should trigger a compliance review.
+
+### Rollback plan
+
+```sql
+DELETE FROM canonical_companies WHERE has_shadow_flag = true;
+```
