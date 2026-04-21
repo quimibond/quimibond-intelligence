@@ -261,3 +261,26 @@ Migration `1050_silver_sp4_canonical_chart_of_accounts.sql` applied. Pattern B l
 - Follow-up for Task 22: `gold_pl_statement` uses the same SPLIT_PART pattern; also needs `-` → `.` before that task ships.
 - Post-fix tree_level distribution: level 1 = 400 rows, level 2 = 11 rows, level 3 = 1,228 rows, level 4 = 1 row.
 - Top level_1_code: 601 (148 rows), 102 (104 rows), 603 (84 rows), 216 (60 rows), 602 (56 rows).
+
+## Task 12 — canonical_crm_leads + refresh_all_matviews (completed 2026-04-21)
+
+- VIEW canonical_crm_leads created — 20 rows; `with_company=0` (leads have NULL odoo_partner_id) and `with_assignee=1` (weak display_name join to canonical_contacts — SP5 refinement).
+- `refresh_all_matviews()` re-implemented with defensive FOREACH loop: iterates `v_mvs` array, skips missing, tries CONCURRENTLY first then falls back to non-concurrent, returns `jsonb` result log. Return type changed from `void` → `jsonb` (DROP FUNCTION IF EXISTS applied before CREATE OR REPLACE).
+- **Pre-flight inventory:** old function hard-coded 29 legacy MV refreshes. All 29 preserved in new `v_mvs` (including `real_sale_price` — not in plan's array, caught during implementation).
+- 5 SP4 MVs (canonical_sale_orders, canonical_purchase_orders, canonical_order_lines, canonical_deliveries, canonical_manufacturing) added to array. All CONCURRENTLY-capable (unique PK indexes present).
+
+## Task 13 — Evidence tables (completed 2026-04-21)
+
+- 3 tables created: `email_signals` (10 cols, 5 indexes), `attachments` (13 cols, 4 indexes), `manual_notes` (9 cols, 3 indexes).
+- Polymorphic FK pattern `(canonical_entity_type text, canonical_entity_id text)` — text because canonical entities mix bigint and text PKs.
+- FKs: email_signals.email_id → emails(id) ON DELETE CASCADE; email_signals.thread_id → threads(id) ON DELETE SET NULL; attachments.email_id → emails(id) ON DELETE SET NULL.
+- Trigger `trg_manual_notes_updated_at` (BEFORE UPDATE FOR EACH ROW) confirmed firing via smoke test (updated_at > created_at after UPDATE).
+- 3 schema_changes rows (one per table), all guarded by composite (triggered_by, table_name) WHERE NOT EXISTS.
+
+## Task 14 — ai_extracted_facts schema (completed 2026-04-21)
+
+- Table created empty. 21 columns, 6 indexes (including 3 partial: `hash_uidx UNIQUE WHERE fact_hash IS NOT NULL`, `legacy_idx WHERE legacy_facts_id IS NOT NULL`, `not_expired_idx WHERE expired=false AND superseded_by IS NULL`).
+- Self-FK `superseded_by REFERENCES ai_extracted_facts(id)` — supersede chain in-place.
+- `legacy_facts_id` column reserved for Task 15 migration (trace to original facts.id).
+- Data migration is Task 15 (GATE).
+- Reviewer noted a forward-hardening opportunity: add `CHECK (confidence BETWEEN 0 AND 1)` and a CHECK that `verified=true` implies `verification_source + verified_at` non-null. Deferred to SP5 data-quality pass; not SP4 scope.
