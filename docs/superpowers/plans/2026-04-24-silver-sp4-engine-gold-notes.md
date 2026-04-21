@@ -157,3 +157,24 @@ Migration `1046_silver_sp4_canonical_manufacturing.sql` applied. Pattern B thin 
 - 54 `confirmed` orders with avg cycle 12.44 days — these are open work orders scheduled but not yet started; the cycle clock started at `date_start` so this reflects elapsed wait time.
 - `yield_pct` and `cycle_time_days` are NULL for all non-`done` states (qty_produced = 0 / date_finished IS NULL respectively) — expected, not a data gap.
 - `schema_changes` row inserted: `CREATE_MV / canonical_manufacturing / silver-sp4-task-7`.
+
+## Task 8 — canonical_bank_balances (completed 2026-04-21)
+
+Migration `1047_silver_sp4_canonical_bank_balances.sql` applied. Pattern B live VIEW over `odoo_bank_balances` (22 rows — too small to materialize). Adds 2 derived columns: `is_stale` (true when `now() - updated_at > 48h`) and `classification` (cash / debt / other).
+
+**Classification logic:**
+- `debt`: `journal_type = 'credit_card'` OR `current_balance_mxn < 0`
+- `cash`: `journal_type IN ('bank','cash')` AND `current_balance_mxn > 0`
+- `other`: all remaining (zero-balance accounts, unclassified journal types)
+
+**Verify query results (2026-04-21):**
+
+| classification | count | total_mxn | stale |
+|---|---|---|---|
+| cash | 13 | 2,580,897 | 0 |
+| debt | 1 | -55,809 | 0 |
+| other | 8 | 0 | 0 |
+
+Total: 22 rows. Net liquid position: MXN 2,525,088 (cash + debt). 0 stale rows (sync current). The single `debt` row is a credit-card journal with negative balance. The 8 `other` rows are zero-balance accounts (bank/cash journals with `current_balance_mxn = 0` fall through to `other` since the `cash` branch requires `> 0`).
+
+- `schema_changes` row inserted: `CREATE_VIEW / canonical_bank_balances / silver-sp4-task-8`.
