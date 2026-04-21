@@ -284,3 +284,46 @@ Migration `1050_silver_sp4_canonical_chart_of_accounts.sql` applied. Pattern B l
 - `legacy_facts_id` column reserved for Task 15 migration (trace to original facts.id).
 - Data migration is Task 15 (GATE).
 - Reviewer noted a forward-hardening opportunity: add `CHECK (confidence BETWEEN 0 AND 1)` and a CHECK that `verified=true` implies `verification_source + verified_at` non-null. Deferred to SP5 data-quality pass; not SP4 scope.
+
+## Task 15 — facts → ai_extracted_facts migration (completed 2026-04-21, Option B)
+
+**Strategy:** 3-tier resolution per fact. User approved Option B (Tier 2 exact canonical_name match + source_links backfill).
+
+**Pre-migration investigation:**
+- `entities.entity_type` confirmed: person (4080), company (3628), product (1669), machine (19), raw_material (11), location (1). Machine/raw_material/location fallback to Tier 3 (entity_kg) — correct.
+- `source_links` UNIQUE index shape confirmed: `uq_sl_entity_source_active (canonical_entity_type, source, source_id) WHERE superseded_at IS NULL` — matches ON CONFLICT clause exactly.
+- `ai_extracted_facts` partial UNIQUE index: `(fact_hash) WHERE fact_hash IS NOT NULL` — `ON CONFLICT (fact_hash) WHERE fact_hash IS NOT NULL DO NOTHING` syntax required.
+
+**Implementation note:** Plan's CTE with correlated subqueries timed out on 31k rows. Rewrote using JOIN-based approach with `DISTINCT ON` per entity (pre-computed t2_company/t2_person/t2_product CTEs) + permanent staging table `_sp4_staging`, then dropped staging after completion.
+
+**Resolution tier breakdown:**
+
+| Tier | Count | % |
+|---|---|---|
+| tier1_source_links | 0 | 0.0% — none populated pre-migration |
+| tier2_exact_canonical_name | 12,869 | 40.4% |
+| tier3_entity_kg_fallback | 18,980 | 59.6% |
+| **Total** | **31,849** | **100%** |
+
+**Post-migration counts:**
+
+| Metric | Pre | Post |
+|---|---|---|
+| facts (source) | 31,849 | 31,849 |
+| ai_extracted_facts | 0 | 31,849 |
+| source_links_kg_entity | 0 | 700 |
+
+**Target distribution (ai_extracted_facts):**
+
+| canonical_entity_type | count |
+|---|---|
+| entity_kg | 18,980 |
+| company | 7,763 |
+| contact | 4,995 |
+| product | 111 |
+
+**Source_links backfill:** 700 unique entity→canonical pairs written (from 12,869 Tier-2 fact rows). These are now Tier-1 resolvable for future re-runs or SP5 data-quality agent passes.
+
+**Key entity match counts (Tier 2 pre-computed):** company_matches=1,853 unique entities; person_matches=569; product_matches=93. Total 2,515 unique entities mapped — 700 unique pairs backfilled to source_links (1 row per entity_id→canonical pair, not per fact row).
+
+**Audit record:** written to `audit_runs` with `invariant_key='sp4.facts_migration'`, `bucket_key='sp4_task_15'`.
