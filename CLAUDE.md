@@ -419,6 +419,8 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 
 ## Base de datos (Supabase)
 
+> **2026-04-22 (SP1):** 18 objetos dropeados (8 views + 5 MVs + 5 tables). Ver `docs/superpowers/plans/2026-04-21-silver-sp1-audit-notes.md`. SP2+ construye `canonical_*` tables como sucesores.
+
 ### Tablas principales
 
 **Core:**
@@ -605,16 +607,9 @@ Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo 
 | `payment_analysis` | Pagos con empresa, banco, método, conciliación |
 | `cfo_dashboard` | Resumen ejecutivo: efectivo, deuda tarjetas, CxC, CxP, 30d metrics |
 | `cash_flow_aging` | Aging de cartera por empresa (1-30, 31-60, 61-90, 90+) |
-| `monthly_revenue_trend` | Tendencia de revenue mensual con MoM% |
 | `margin_analysis` | Análisis de márgenes por producto y cliente |
 | `working_capital` | Capital de trabajo: efectivo + CxC - CxP, ratios de liquidez |
 | `cfdi_invoice_match` | Cruce CFDI ↔ factura via UUID (matched/unmatched/no_uuid) |
-| `invoice_bridge` | Puente Odoo↔SAT: 96K filas, match_method, gap flags (is_gap_missing_sat/odoo) |
-| `orders_unified` | Órdenes de venta y compra unificadas con company_id y salesperson/buyer |
-| `order_fulfillment_bridge` | Liga órdenes de venta → entregas (stock.picking) con lead_time y estado |
-| `person_unified` | Union de contacts ∪ odoo_employees ∪ odoo_users deduplicados por email |
-| `products_unified` | (MV) Productos Odoo enriquecidos con sat_revenue_mxn_12m desde syntage |
-| `product_price_history` | (MV) Historial de precios por producto desde orders+invoices (29,779 filas, 3,673 SKUs) |
 
 ### Modelos pendientes
 

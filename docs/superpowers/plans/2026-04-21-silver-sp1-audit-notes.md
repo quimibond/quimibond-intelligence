@@ -465,6 +465,63 @@ Grep for dropped-object references in `src/`, `app/`, `vercel.json`:
 
 ---
 
-## Después
+## Después (cierre 2026-04-22)
 
-_(populated in Task 9)_
+### Counts post-SP1
+
+| Objeto | Antes | Después | Delta |
+|---|---|---|---|
+| Views (public) | 77 | 69 | -8 |
+| Materialized Views (public) | 39 | 34 | -5 |
+| Tables (public) | 77 | 72 | -5 |
+| Functions (public) | 312 | 312 | 0 |
+
+vs baseline: views -8, MVs -5 (net; Batch 2 dropped 5 MVs), tables -5. Functions unchanged.
+
+Note: MV count shows 34 (not 29 as expected from refresh_all_matviews update) because pg_matviews counts all MVs including those managed by refresh_all_analytics_robust and other fns. The refresh_all_matviews fn was updated from 34→29 hardcoded entries; the 5 dropped MVs no longer exist so the actual refresh list is correct.
+
+### Drops ejecutados (18 total)
+
+#### Views (8) — commit 6c5f43c
+- analytics_supplier_360, unified_payment_allocations, orders_unified,
+- order_fulfillment_bridge, person_unified, balance_sheet,
+- invoice_bridge, unified_invoices
+- (monthly_revenue_trend also dropped in Batch 1 as view, 0 callers)
+
+#### Materialized views (5) — commit 5439799
+- syntage_invoices_enriched, products_unified, product_price_history,
+- cross_director_signals, product_seasonality
+
+refresh_all_matviews: 34 → 29 MVs (hardcoded list updated)
+
+#### Tables (5) — commit b2cc293
+- unified_refresh_queue, odoo_schema_catalog, odoo_uoms,
+- odoo_invoices_archive_pre_dedup, director_analysis_runs
+
+#### Frontend cleanup — commit 111e016
+- Minimal: stale comment in refresh-views route updated
+- 0 live callers of dropped objects confirmed
+
+### Overrides aplicados (user confirmed)
+
+4 items reclasificados de DROP a KEEP/SP5 por evidencia de uso activo:
+- `action_items` → MIGRATE FIRST a SP5 (6 writers activos en pipeline)
+- `syntage_webhook_events` → KEEP permanente (idempotency layer del webhook)
+- `odoo_snapshots` → KEEP permanente (snapshot_changes view + 2 fns + cron diario)
+- `cashflow_journal_classification` → KEEP permanente (LEFT JOIN en cashflow_current_cash)
+
+### Items KEEP reconfirmed
+
+- odoo_invoices_archive_dup_cfdi_uuid_2026_04_20 (archive Fase 2, trail forensic)
+- agent_tickets, notification_queue, health_scores → SP5 MIGRATE FIRST (writers active, usuario aprobó deferir)
+
+### Estado del base para SP2
+
+- Branch `silver-sp1-audit-prune` listo para merge a main
+- 8 commits (Task 0 + audit + 4 drop batches + audit-notes + Task 9 close)
+- 0 frontend breakage (grep pre-merge confirmó 0 callers de objetos dropeados)
+- refresh_all_matviews saludable (29 MVs en lista hardcoded)
+
+### Snapshot audit_runs
+
+Migration `sp1_99_final` aplicada: `success=true`. Snapshot guardado en `audit_runs` con invariant_key=`sp1_final`.
