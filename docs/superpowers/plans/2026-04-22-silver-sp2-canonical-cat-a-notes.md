@@ -77,6 +77,55 @@ Post-review clarifications (verified 2026-04-22 via reviewers):
 - `pg_cron` functions live in schema `cron` (not `pg_catalog`). The Task 0 Step 2 query read `extnamespace` which returns where the extension CONFIG lives, not where the functions live. `cron.schedule(...)` syntax in Task 15 is correct.
 - Plan's `audit_runs` INSERT values `severity='info'`/`source='silver_sp2'` violate CHECK constraints — use `'ok'`/`'supabase'` + store intent label in `details.label` for ALL subsequent SP2 migrations that touch `audit_runs`.
 
+### Task 1 / DDL verification
+
+**Migration:** `sp2_01_canonical_invoices_ddl` applied 2026-04-22. Commit: see below.
+
+**Deviation from spec — `date_has_discrepancy`:**
+The spec defined `date_has_discrepancy` as a GENERATED ALWAYS AS STORED column using `fecha_timbrado::date`. PostgreSQL's `date(timestamptz)` function is `STABLE` (timezone-dependent), not `IMMUTABLE`, so the expression is rejected in generated columns. Fixed: `date_has_discrepancy` is now a regular `boolean` column (nullable, no default) populated by Task 2/3 populate functions. All other 8 generated columns remain as specified.
+
+**Column count:** 96 columns (≥60 required — ✓)
+
+**Key fields present:** `canonical_id` (PK, text), `sat_uuid` (text), `odoo_invoice_id` (bigint), `amount_total_has_discrepancy` (boolean, generated), `historical_pre_odoo` (boolean, generated), `pending_operationalization` (boolean, generated), `resolved_from` (text), `match_confidence` (text), `completeness_score` (numeric(4,3)) — all ✓
+
+**Indexes (14 total = PK + 13 user-defined):**
+
+```
+canonical_invoices_pkey                — UNIQUE btree (canonical_id)
+ix_canonical_invoices_amount_disc      — btree (amount_total_has_discrepancy) WHERE true
+ix_canonical_invoices_direction_date   — btree (direction, invoice_date DESC)
+ix_canonical_invoices_emisor           — btree (emisor_company_id)
+ix_canonical_invoices_fecha_timbrado   — btree (fecha_timbrado)
+ix_canonical_invoices_historical       — btree (historical_pre_odoo) WHERE true
+ix_canonical_invoices_invoice_date     — btree (invoice_date)
+ix_canonical_invoices_needs_review     — btree (needs_review) WHERE true
+ix_canonical_invoices_pending_op       — btree (pending_operationalization) WHERE true
+ix_canonical_invoices_receptor         — btree (receptor_company_id)
+ix_canonical_invoices_resolved_from    — btree (resolved_from)
+ix_canonical_invoices_state_mismatch   — btree (state_mismatch) WHERE true
+uq_canonical_invoices_odoo_id          — UNIQUE btree (odoo_invoice_id) WHERE NOT NULL
+uq_canonical_invoices_sat_uuid         — UNIQUE btree (sat_uuid) WHERE NOT NULL
+```
+
+**Generated columns (8 — spec expected 9; see deviation above):**
+
+```
+amount_total_diff_abs          — CASE WHEN both odoo/sat not null THEN ABS(odoo-sat) END
+amount_total_has_discrepancy   — both not null AND ABS > 0.50
+amount_total_mxn_diff_abs      — CASE WHEN both mxn not null THEN ABS(odoo-sat) END
+amount_total_mxn_diff_pct      — CASE WHEN both mxn not null AND sat<>0 THEN ROUND(100*ABS/sat,4) END
+state_mismatch                 — (cancel/vigente) OR (posted/cancelado)
+blacklist_action               — 'block'|'warning'|NULL from blacklist statuses
+historical_pre_odoo            — odoo_id IS NULL AND timbrado NOT NULL AND timbrado < 2021-01-01
+pending_operationalization     — sat_uuid NOT NULL AND odoo_id IS NULL AND timbrado >= 2021-01-01
+```
+
+**Smoke test result:**
+- INSERT `('smoke:test','issued',false,false)` returned: `historical_pre_odoo=false, pending_operationalization=false, state_mismatch=null, blacklist_action=null` ✓ (coherent — no fecha_timbrado/sat_uuid/state values)
+- Post-ROLLBACK SELECT: count=0 ✓
+
+**Rollback Task 1:** `DROP TABLE IF EXISTS canonical_invoices CASCADE;`
+
 ## Gate approvals
 
 | Gate | Approval date | User |
