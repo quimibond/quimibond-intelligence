@@ -148,9 +148,17 @@ Registered in `schema_changes`.
 
 ---
 
+## Task logs
+
+### Task 1
+Completed 2026-04-20. DDL applied. 81 columns, 11 indexes (PK + uq_cc_canonical_name + 9 user-defined including gin_trgm), 2 generated cols (is_sat_counterparty, blacklist_action). Smoke test: 1 row inserted with rfc='XAXX010101000', is_sat_counterparty=true, blacklist_action=null — all correct. Rollback: DROP TABLE IF EXISTS canonical_companies CASCADE.
+
+---
+
 ## Commit History
 
 | SHA | Message |
 |---|---|
 | fd62141 | Merge PR #45 silver-sp2-cat-a (branch base) |
 | (pending) | chore(sp3): baseline + branch + notes skeleton |
+| (pending) | feat(sp3): canonical_companies DDL + indexes + trigram |
