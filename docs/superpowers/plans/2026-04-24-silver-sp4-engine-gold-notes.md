@@ -2,11 +2,12 @@
 
 Running log of findings per task. Append one section per completed task.
 
-## Task 1 — Pre-flight (completed 2026-04-24)
+## Task 1 — Pre-flight (completed 2026-04-21)
 
 - Baseline `audit_runs` row inserted with `details->>'label' = 'pre_sp4_baseline'`.
 - Branch cut from main @ 8f3c620 (post-SP3 merge).
 - migrations dir verified writable.
+- Migration patched for idempotency (WHERE NOT EXISTS guards on both INSERTs).
 
 ### Verified baseline counts (from audit_runs row, run_at 2026-04-21 19:41:09 UTC)
 
@@ -14,10 +15,19 @@ Running log of findings per task. Append one section per completed task.
 |---|---|
 | canonical_invoices | 88,462 |
 | canonical_invoices_with_mxn_resolved | 0 |
-| reconciliation_issues_open | 103,401 |
 | canonical_payments | 43,380 |
+| canonical_payment_allocations | 25,511 |
+| canonical_credit_notes | 2,208 |
+| canonical_tax_events | 398 |
 | canonical_companies | 4,359 |
+| canonical_companies_with_ltv | 7 |
+| canonical_contacts | 2,064 |
+| canonical_products | 6,005 |
 | source_links | 172,285 |
+| mdm_manual_overrides | 20 |
+| reconciliation_issues_open | 103,401 |
+| reconciliation_issues_open_with_invariant_key | 72,427 |
+| audit_tolerances_enabled | 16 |
 | facts | 31,830 |
 
 Matches plan expectations: invoices=88462 ✓, mxn_resolved=0 ✓, open_issues≈103400 ✓.

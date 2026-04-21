@@ -3,6 +3,7 @@
 -- Silver SP4 — Task 1: baseline audit_run + cron inventory snapshot
 -- Spec: docs/superpowers/specs/2026-04-21-silver-architecture.md §11 SP4
 -- Plan: docs/superpowers/plans/2026-04-24-silver-sp4-engine-gold.md
+-- Idempotent: WHERE NOT EXISTS guards on both INSERTs (re-apply safe).
 
 BEGIN;
 
@@ -46,10 +47,16 @@ SELECT
                                                 'schedule', schedule,
                                                 'active', active))
                                        FROM cron.job)
-  );
+  )
+WHERE NOT EXISTS (
+  SELECT 1 FROM audit_runs WHERE details->>'label' = 'pre_sp4_baseline'
+);
 
 INSERT INTO schema_changes (change_type, table_name, description, sql_executed, triggered_by, success)
-VALUES ('SEED', 'audit_runs', 'SP4 pre-flight baseline snapshot',
-        'supabase/migrations/1040_silver_sp4_preflight.sql', 'silver-sp4-task-1', true);
+SELECT 'SEED', 'audit_runs', 'SP4 pre-flight baseline snapshot',
+       'supabase/migrations/1040_silver_sp4_preflight.sql', 'silver-sp4-task-1', true
+WHERE NOT EXISTS (
+  SELECT 1 FROM schema_changes WHERE triggered_by = 'silver-sp4-task-1'
+);
 
 COMMIT;
