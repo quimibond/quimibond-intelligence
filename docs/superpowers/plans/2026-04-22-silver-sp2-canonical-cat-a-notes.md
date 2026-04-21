@@ -324,3 +324,41 @@ SET has_sat_record=true,
 WHERE cfdi_uuid_odoo IS NOT NULL AND has_sat_record=false AND tipo_comprobante_sat IS NULL
   AND NOT EXISTS (SELECT 1 FROM syntage_invoices si WHERE si.uuid=cfdi_uuid_odoo AND si.tipo_comprobante='I');
 ```
+
+### Task 4 + 4b + 4c / Triggers + direction fix
+
+**Main migration:** `sp2_04_canonical_invoices_trigger` (commit `6269920`) — Odoo+SAT incremental triggers with symmetric sat_uuid collision check. Quimibond=6707.
+
+**Plan bug found — Spanish direction CASE labels (04b + 04c):**
+
+Plan's SAT trigger and Task 3 Step 3d populate used:
+```
+CASE si.direction WHEN 'emitida' THEN 'issued' WHEN 'recibida' THEN 'received' ELSE 'internal' END
+```
+
+Actual `syntage_invoices.direction` is ENGLISH natively ('issued'/'received'). The Spanish WHEN labels NEVER match → all SAT-side INSERTs fell through to `direction='internal'`.
+
+- **04b:** Trigger fix — pass `NEW.direction` directly. Migration applied via MCP.
+- **04c:** Retroactive fix for 61,264 rows from Task 3 populate that landed with `direction='internal'`. UPDATE from syntage_invoices.direction.
+
+**Post-04c verification:**
+- Before: issued=14,545, received=12,634, internal=61,264
+- After:  issued=44,076, received=44,367, internal=0 ✓
+- Total unchanged: 88,443 ✓
+
+**Smoke tests (Task 4 triggers):**
+- Smoke 1 (Odoo UPDATE → source_hashes.odoo_write_date bumped): PASS
+- Smoke 2 (novel SAT UUID → canonical row with has_sat_record=true): PASS (post-04b direction='issued')
+- Smoke 3 (existing sat_uuid → consolidation, COUNT unchanged): PASS
+- Performance: 2.9ms per INSERT (well under 10ms target)
+
+**Rollback Task 4+4b+4c:**
+```sql
+-- Revert trigger functions + direction
+DROP TRIGGER IF EXISTS trg_canonical_invoices_from_odoo ON odoo_invoices;
+DROP TRIGGER IF EXISTS trg_canonical_invoices_from_sat ON syntage_invoices;
+DROP FUNCTION IF EXISTS canonical_invoices_upsert_from_odoo();
+DROP FUNCTION IF EXISTS canonical_invoices_upsert_from_sat();
+-- 04c inverse: direction can't cleanly revert without knowing prior distribution
+-- (use Task 3 rollback + re-run populate if needed).
+```
