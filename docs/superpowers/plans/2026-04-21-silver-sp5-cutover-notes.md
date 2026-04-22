@@ -36,3 +36,15 @@ Notes on values:
 - `reconciliation_issues_open_null_assignee = 116230` — equals total open issues; assignee column exists but is unpopulated (Task 20 work).
 - `reconciliation_issues_open_null_invariant_key = 114` — matches SP4 snapshot (was 114 in post_sp4_snapshot).
 - `canonical_invoices_with_open_residual = 669` — uses `amount_residual_mxn_odoo > 0` (plan intended bare `amount_residual` which doesn't exist).
+
+## Task 2 — Types regeneration (completed 2026-04-21)
+
+- `src/lib/database.types.ts` regenerated: 12,742 lines, 453,144 bytes.
+- canonical_* tables present: 20 entries (canonical_companies, canonical_contacts, canonical_credit_notes, canonical_invoices, canonical_payment_allocations, canonical_payments, canonical_products, canonical_tax_events, canonical_account_balances, canonical_bank_balances, canonical_chart_of_accounts, canonical_crm_leads, canonical_deliveries, canonical_employees, canonical_fx_rates, canonical_inventory, canonical_manufacturing, canonical_order_lines, canonical_purchase_orders, canonical_sale_orders).
+- gold_* views present: 8 entries (gold_balance_sheet, gold_cashflow, gold_ceo_inbox, gold_company_360, gold_pl_statement, gold_product_performance, gold_reconciliation_health, gold_revenue_monthly).
+- `canonical_invoices` in Tables (line 1915); `gold_ceo_inbox` in Views (line 9770).
+- grep counts: `canonical_` = 367 hits, `gold_` = 15 hits, `canonical_invoices` = 1 entry (key appears once per table, as expected in MCP-generated format — not the 3x CLI format).
+- Types test: 2 passing.
+- Pre-existing type errors surfaced: NONE — all lint output was `Warning:` (unused vars only). Build fails at prerender of `/equipo` due to missing `supabaseKey` env var in local build env (pre-existing runtime issue, not a type error).
+- Note: `npm run build` OOMs without `NODE_OPTIONS=--max-old-space-size=8192`; default Node heap is insufficient for this codebase. Not caused by new types file.
+- Commit: d2049fe
