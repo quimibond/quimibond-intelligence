@@ -35,12 +35,12 @@ export async function getSystemKpis(): Promise<SystemKpis> {
   const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
 
   const [sync, cost, quality, notif, runs] = await Promise.all([
-    sb.from("odoo_sync_freshness").select("status"),
+    sb.from("odoo_sync_freshness").select("status"), // SP5-EXCEPTION: /sistema diagnostic
     sb.from("claude_cost_summary").select("*"),
     sb.from("data_quality_scorecard").select("severity"),
-    sb.from("notification_queue").select("status"),
+    sb.from("notification_queue").select("status"), // SP5-EXCEPTION: /sistema diagnostic
     sb
-      .from("agent_runs")
+      .from("agent_runs") // SP5-VERIFIED: agent_runs retained (not in §12 drop list)
       .select("status")
       .gte("started_at", since24h),
   ]);
@@ -158,7 +158,7 @@ export interface SyncFreshnessRow {
 export async function getSyncFreshness(): Promise<SyncFreshnessRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("odoo_sync_freshness")
+    .from("odoo_sync_freshness") // SP5-EXCEPTION: /sistema diagnostic
     .select("table_name, row_count, status, hours_ago, last_sync")
     .order("hours_ago", { ascending: false, nullsFirst: false });
   return ((data ?? []) as Array<{
@@ -468,7 +468,7 @@ export async function getNotifications(
 ): Promise<NotificationRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("notification_queue")
+    .from("notification_queue") // SP5-EXCEPTION: /sistema diagnostic — will be dropped T29
     .select(
       "id, channel, status, priority, recipient_name, title, body, created_at, sent_at, error_message"
     )
@@ -493,7 +493,7 @@ export async function getPipelineLogs(
 ): Promise<PipelineLogRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("pipeline_logs")
+    .from("pipeline_logs") // SP5-EXCEPTION: /sistema diagnostic
     .select("id, level, phase, message, created_at")
     .order("created_at", { ascending: false })
     .limit(limit);
@@ -517,7 +517,7 @@ export async function getPipelineLogsPage(
   const ascending = params.sortDir === "asc";
 
   let query = sb
-    .from("pipeline_logs")
+    .from("pipeline_logs") // SP5-EXCEPTION: /sistema diagnostic
     .select("id, level, phase, message, created_at", { count: "exact" });
 
   if (params.q) query = query.ilike("message", `%${params.q}%`);
@@ -543,7 +543,7 @@ export async function getPipelineLogsPage(
 export async function getPipelineLogPhaseOptions(): Promise<string[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("pipeline_logs")
+    .from("pipeline_logs") // SP5-EXCEPTION: /sistema diagnostic
     .select("phase")
     .not("phase", "is", null)
     .order("created_at", { ascending: false })
