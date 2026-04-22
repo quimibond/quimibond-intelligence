@@ -149,15 +149,10 @@ export async function POST(request: NextRequest) {
     const scope = new URL(request.url).searchParams.get("scope") ?? "daily";
     const todayDate = today; // yyyy-mm-dd
     const yesterdayDate = new Date(Date.now() - 86400_000).toISOString().split("T")[0];
+    // SP5 T29: reconciliation_summary_daily dropped — fiscalLine will be empty
     const [todaySnap, yesterdaySnap] = await Promise.all([
-      supabase.from("reconciliation_summary_daily")
-        .select("total_open, severity_counts, tax_status_opinion")
-        .eq("snapshot_date", todayDate)
-        .maybeSingle(),
-      supabase.from("reconciliation_summary_daily")
-        .select("total_open, severity_counts, tax_status_opinion")
-        .eq("snapshot_date", yesterdayDate)
-        .maybeSingle(),
+      Promise.resolve({ data: null as null }),
+      Promise.resolve({ data: null as null }),
     ]);
     const fiscalLine = buildFiscalOneLiner(
       (todaySnap.data as ReconciliationSnapshot | null),
