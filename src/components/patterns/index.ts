@@ -33,6 +33,7 @@ export { Currency } from "./currency";
 export { DateDisplay } from "./date-display";
 export { SeverityBadge, type Severity } from "./severity-badge";
 export { StatusBadge, type Status } from "./status-badge";
+export type { StatusBadgeProps, StatusBadgeDensity, StatusBadgeVariant } from "./status-badge";
 export { TrendIndicator } from "./trend-indicator";
 export { MetricRow } from "./metric-row";
 export { EmptyState } from "./empty-state";
