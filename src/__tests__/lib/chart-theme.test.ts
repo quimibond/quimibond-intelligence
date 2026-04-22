@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CHART_PALETTE } from "@/lib/chart-theme";
+import { CHART_PALETTE, resolveSeriesColor } from "@/lib/chart-theme";
 
 describe("CHART_PALETTE", () => {
   it("exposes semantic traffic-light keys as CSS var references", () => {
@@ -22,5 +22,32 @@ describe("CHART_PALETTE", () => {
     expect(CHART_PALETTE.series).toHaveLength(5);
     expect(CHART_PALETTE.series[0]).toBe("var(--chart-1)");
     expect(CHART_PALETTE.series[4]).toBe("var(--chart-5)");
+  });
+});
+
+describe("resolveSeriesColor", () => {
+  it("returns series[0] = var(--chart-1) for index 0", () => {
+    expect(resolveSeriesColor(0)).toBe("var(--chart-1)");
+  });
+
+  it("returns series[2] = var(--chart-3) for index 2", () => {
+    expect(resolveSeriesColor(2)).toBe("var(--chart-3)");
+  });
+
+  it("wraps via modulo: index 5 returns series[0]", () => {
+    expect(resolveSeriesColor(5)).toBe("var(--chart-1)");
+  });
+
+  it("wraps via modulo: index 7 returns series[2]", () => {
+    expect(resolveSeriesColor(7)).toBe("var(--chart-3)");
+  });
+
+  it("with semantic override 'positive' returns var(--status-ok) regardless of index", () => {
+    expect(resolveSeriesColor(3, "positive")).toBe("var(--status-ok)");
+    expect(resolveSeriesColor(0, "positive")).toBe("var(--status-ok)");
+  });
+
+  it("with semantic override 'negative' returns var(--status-critical)", () => {
+    expect(resolveSeriesColor(1, "negative")).toBe("var(--status-critical)");
   });
 });
