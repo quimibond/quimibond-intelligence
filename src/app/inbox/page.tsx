@@ -28,6 +28,11 @@ import {
   type InsightRow,
   type InsightState,
 } from "@/lib/queries/intelligence/insights";
+import {
+  listInbox,
+  type InboxRow,
+  type ListInboxOptions,
+} from "@/lib/queries/intelligence/inbox";
 import { extractEvidenceRefs } from "@/lib/queries/intelligence/evidence-helpers";
 
 export const dynamic = "force-dynamic";
@@ -94,6 +99,19 @@ export default async function InboxPage({
         key={`${state}-${severity ?? "all"}`}
       >
         <InsightsList stateFilter={stateFilter} severity={severity} />
+      </Suspense>
+
+      {/* Reconciliation issues from gold_ceo_inbox (SP5 silver layer) */}
+      <Suspense
+        fallback={
+          <div className="space-y-2">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 rounded-xl" />
+            ))}
+          </div>
+        }
+      >
+        <ReconciliationIssuesList severity={severity} />
       </Suspense>
     </PageLayout>
   );
@@ -322,3 +340,79 @@ function InsightListItem({ insight: i }: { insight: InsightRow }) {
     </Link>
   );
 }
+
+// ─── Reconciliation Issues (gold_ceo_inbox / SP5 silver layer) ────────────────
+
+async function ReconciliationIssuesList({ severity }: { severity?: string }) {
+  const items = await listInbox({
+    limit: 20,
+    severity: severity as ListInboxOptions["severity"],
+  });
+
+  if (items.length === 0) return null;
+
+  return (
+    <section className="space-y-2">
+      <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Alertas de Reconciliación
+      </h2>
+      <div className="flex flex-col gap-2">
+        {items.map((item) => (
+          <ReconciliationIssueItem key={item.issue_id} item={item} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ReconciliationIssueItem({ item }: { item: InboxRow }) {
+  return (
+    <Card className="gap-1 py-3">
+      <div className="flex items-start justify-between gap-2 px-4">
+        <div className="min-w-0 flex-1">
+          <div className="mb-1 flex flex-wrap items-center gap-2">
+            <SeverityBadge level={item.severity ?? "medium"} />
+            {item.issue_type && (
+              <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                {item.issue_type}
+              </span>
+            )}
+          </div>
+          <div className="truncate text-sm font-semibold">
+            {item.description ?? item.invariant_key ?? "—"}
+          </div>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground">
+            {item.canonical_entity_type && (
+              <span className="uppercase">{item.canonical_entity_type}</span>
+            )}
+            {item.impact_mxn != null && item.impact_mxn > 0 && (
+              <>
+                <span>·</span>
+                <span>
+                  {new Intl.NumberFormat("es-MX", {
+                    style: "currency",
+                    currency: "MXN",
+                    maximumFractionDigits: 0,
+                  }).format(item.impact_mxn)}
+                </span>
+              </>
+            )}
+            {item.age_days != null && (
+              <>
+                <span>·</span>
+                <span>{item.age_days}d</span>
+              </>
+            )}
+            {item.assignee_name && (
+              <>
+                <span>·</span>
+                <span>{item.assignee_name}</span>
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+

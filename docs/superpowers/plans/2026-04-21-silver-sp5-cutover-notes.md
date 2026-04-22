@@ -568,3 +568,90 @@ Result: 0 matches on all banned Bronze + §12 drop-list patterns.
 - Static generation: fails on `/equipo` — pre-existing missing SUPABASE_SERVICE_KEY (same as all prior tasks)
 
 ### Commit: ed61c67
+
+## Task 11 — unified/ folder rewire (completed 2026-04-21)
+
+Rewired all three files: `invoices.ts` (22KB), `invoice-detail.ts` (5KB), `index.ts` (7.6KB).
+
+### Inventory
+
+**invoices.ts** — functions rewired:
+- `getArAging` → `ar_aging_detail` MV (KEEP-listed, replaced non-existent `analytics_ar_aging`)
+- `getCompanyAging` / `getCompanyAgingPage` → `cash_flow_aging` view (KEEP-listed, same schema as old `analytics_ar_aging`)
+- `getOverdueInvoices` / `getOverdueInvoicesPage` / `getOverdueSalespeopleOptions` → `canonical_invoices`
+- `getPaymentPredictions` / `getPaymentPredictionsPage` / `getPaymentRiskKpis` → `payment_predictions` (KEEP MV, unchanged)
+- New: `listInvoices`, `listAllocations`, `invoicesReceivableAging` (canonical-native functions)
+
+**invoice-detail.ts** — functions rewired:
+- `getCfdiLinkByUuid` → `email_cfdi_links` (base table, unchanged)
+- `fetchInvoiceDetail` → `canonical_invoices` + `listAllocations` + SP5-EXCEPTION odoo_invoice_lines
+- `getInvoiceDetail` → alias for fetchInvoiceDetail
+- `getInvoiceByName` → `canonical_invoices.odoo_name` (was `odoo_invoices.name`)
+
+**index.ts** — functions rewired:
+- `getUnifiedInvoicesForCompany` → `canonical_invoices` (company FK OR'd)
+- `getUnifiedRevenueAggregates` → `canonical_invoices` (match_confidence, amount_total_mxn_resolved)
+- `getUnifiedCashFlowAging` → `canonical_invoices` (days computed from due_date_odoo)
+- `getUnifiedReconciliationCounts` → `reconciliation_issues` (base table, unchanged)
+- `getUnifiedRefreshStaleness` → unchanged RPC
+
+### Schema drift discovered (beyond T1-T10)
+
+- **`analytics_ar_aging` does NOT exist** in Supabase — replaced with `cash_flow_aging` view (KEEP-listed, identical schema including `overdue_1_30`, `total_receivable` etc).
+- **`canonical_invoices.invoice_date`** is plain `invoice_date` (date), NOT `invoice_date_odoo` as drift memo claimed. `invoice_date_odoo` column does not exist.
+- **`canonical_invoices` has no `salesperson_name`** column — only `salesperson_user_id` (int) and `salesperson_contact_id` (bigint). Back-compat field returned as null with SP6 TODO.
+- **`canonical_payment_allocations` FK**: `invoice_canonical_id` (confirmed), `payment_canonical_id`. No dedicated date column — uses `created_at` for ordering.
+
+### SP5-EXCEPTIONs
+
+1. `odoo_invoice_lines` in `invoice-detail.ts` — `canonical_invoice_lines` not shipped in SP4. Future SP6.
+
+### Test results
+
+- `npm run test -- src/__tests__/silver-sp5/unified-invoices.test.ts`: 4 passed, 4 skipped (no env)
+- Grep gate: 0 matches for §12 banned table reads in unified/
+
+### Build
+
+- Pre-existing `/equipo` prerender failure (missing SUPABASE_SERVICE_KEY in build env) — unrelated to T11.
+- No TypeScript errors from unified/ files.
+
+### Commit: 22ee1a2
+
+## Task 12 — Rewire /inbox to gold_ceo_inbox + evidence layer (completed 2026-04-21)
+
+### Summary
+
+Created `src/lib/queries/intelligence/inbox.ts` with `listInbox` and `fetchInboxItem` backed by `gold_ceo_inbox` and the four evidence tables. Rewired both inbox pages to import and use the new helpers.
+
+### Schema verified (pg_attribute)
+
+`gold_ceo_inbox` confirmed 17 columns: `issue_id` (uuid), `issue_type`, `invariant_key`, `severity`, `priority_score`, `impact_mxn`, `age_days`, `description`, `canonical_entity_type`, `canonical_entity_id`, `action_cta`, `assignee_canonical_contact_id` (bigint — confirmed present), `assignee_name`, `assignee_email`, `metadata`, `detected_at`.
+
+Evidence tables confirmed: `email_signals`, `ai_extracted_facts`, `manual_notes`, `attachments` — all have `canonical_entity_type` + `canonical_entity_id` as `text` columns.
+
+### Deviations from plan
+
+1. **`createSupabaseServerClient` does not exist** — project uses `getServiceClient` from `@/lib/supabase-server`. Used that instead.
+2. **Existing inbox pages already clean** — `inbox/page.tsx` used `agent_insights` via `getInsights` (not a banned table). `gold_ceo_inbox` items (reconciliation issues) are a distinct data set. Added as a secondary `ReconciliationIssuesList` section rather than replacing the agent_insights feed (which would have destroyed CEO insight triage).
+3. **Insight detail page UUID routing** — `gold_ceo_inbox` uses UUID `issue_id`; `agent_insights` uses numeric `id`. Added UUID regex branch in `generateMetadata` and the page body so both can coexist on the same route.
+4. **`ListInboxOptions` type** — needed explicit export from `inbox.ts` to avoid TypeScript error when used as a type argument in the page before the alias was declared.
+
+### Files created/modified
+
+- `src/lib/queries/intelligence/inbox.ts` — new (listInbox + fetchInboxItem)
+- `src/app/inbox/page.tsx` — added `listInbox` import + `ReconciliationIssuesList` section
+- `src/app/inbox/insight/[id]/page.tsx` — added `fetchInboxItem` import + UUID branch for reconciliation issue detail
+- `src/__tests__/silver-sp5/inbox.test.ts` — new (6 static + 3 integration tests)
+
+### Test results
+
+- `npm run test -- src/__tests__/silver-sp5/inbox.test.ts`: 6 passed, 3 skipped (no env)
+- Grep gate: all `.from()` calls in inbox files are canonical/evidence tables or `agent_insights` (base table, not banned)
+
+### Build
+
+- Pre-existing `/equipo` prerender failure (missing SUPABASE_SERVICE_KEY in build env) — unrelated to T12.
+- No TypeScript errors from inbox files.
+
+### Commit: (see below)
