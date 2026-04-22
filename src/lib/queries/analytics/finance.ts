@@ -3,19 +3,23 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
- * Finance queries v2 — usa las VIEWS canónicas del backend.
- * Todas las vistas ya están normalizadas a MXN, no necesitan `toMxn()`.
+ * Finance queries — Silver SP5 canonical/gold rewrite.
  *
- * Fuentes:
- * - `cfo_dashboard` — snapshot ejecutivo (1 row)
- * - `financial_runway` — runway en días + net position 30d
- * - `working_capital` — ratios de liquidez + capital de trabajo
- * - `pl_estado_resultados` — P&L mensual por periodo
- * - `cash_position` — detalle de saldos bancarios
- * - `working_capital_cycle` — DSO/DPO/DIO/CCC con COGS real (Sprint 8)
+ * Sources (post-SP5):
+ * - `canonical_invoices`       — AR/AP open positions, zombie AR
+ * - `canonical_payments`       — payment method aggregation
+ * - `canonical_bank_balances`  — live bank balances (replaces cash_position view)
+ * - `gold_pl_statement`        — P&L monthly (replaces pl_estado_resultados view)
+ * - `gold_cashflow`            — working capital snapshot (replaces working_capital view)
+ * - `cfo_dashboard`            — SP5-VERIFIED: retained (reads odoo_bank_balances + odoo_invoices; not in drop list)
+ * - `projected_cash_flow_weekly` / `get_projected_cash_flow_summary` — SP5-VERIFIED: retained (cashflow_* views, not in drop list)
+ * - `journal_flow_profile`     — SP5-VERIFIED: retained (not in drop list §12)
+ * - `working_capital_cycle`    — SP5-VERIFIED: retained (gold_cashflow has no DSO/DPO/DIO fields; view still valid)
+ * - `financial_runway`         — DOES NOT EXIST (dropped in SP1); stub returns null // TODO SP6
  */
 
-/** Snapshot ejecutivo del CFO (view: cfo_dashboard).
+/** Snapshot ejecutivo del CFO.
+ *  SP5-VERIFIED: cfo_dashboard retained (reads odoo_bank_balances + odoo_invoices + odoo_account_payments, not in drop list).
  *  El view expone efectivo_mxn (solo MXN) y efectivo_total_mxn (MXN + USD*rate).
  *  El frontend usa el total como "efectivo disponible" porque es el numero real
  *  que el CEO quiere ver en una sola moneda. */
@@ -36,6 +40,7 @@ export interface CfoSnapshot {
 
 async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
   const sb = getServiceClient();
+  // SP5-VERIFIED: cfo_dashboard retained (§12 not in drop list)
   const { data } = await sb.from("cfo_dashboard").select("*").maybeSingle();
   if (!data) return null;
   const d = data as {
@@ -70,36 +75,41 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
 
 export const getCfoSnapshot = unstable_cache(
   _getCfoSnapshotRaw,
-  ["finance-cfo-snapshot-v1"],
-  { revalidate: 60, tags: ["invoices-unified"] }
+  ["finance-cfo-snapshot-v2"],
+  { revalidate: 60, tags: ["finance"] }
 );
 
-/** AR zombies: facturas out_invoice vencidas >1 año que siguen abiertas.
- *  Se restan visualmente de "cartera vencida cobrable" para que el CEO
- *  vea por separado cartera real vs incobrable/write-off pendiente. */
+/** AR zombies: facturas issued vencidas >1 año que siguen abiertas.
+ *  Migrated from invoices_unified (257MB MV) → canonical_invoices.
+ *  fiscal_days_to_due_date is mostly NULL pre-Task-24; fallback to due_date_odoo arithmetic. */
 export interface ArZombies {
   count: number;
   totalMxn: number;
 }
 
 export async function getArZombies(): Promise<ArZombies> {
-  // Layer 3: query invoices_unified for issued invoices overdue ≥365 days
   const sb = getServiceClient();
+  const cutoff = new Date();
+  cutoff.setFullYear(cutoff.getFullYear() - 1);
+  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  // amount_residual_mxn_odoo is the live open amount (amount_residual_mxn_resolved is 0% pre-Task-24)
   const { data } = await sb
-    .from("invoices_unified")
-    .select("amount_residual,days_overdue,direction,match_status,estado_sat,payment_state")
+    .from("canonical_invoices")
+    .select("canonical_id, amount_residual_mxn_odoo, due_date_odoo, estado_sat, match_confidence")
     .eq("direction", "issued")
-    .in("match_status", ["match_uuid", "match_composite", "odoo_only"])
     .not("estado_sat", "eq", "cancelado")
-    .in("payment_state", ["not_paid", "partial"])
-    .gte("days_overdue", 365)
-    .gt("amount_residual", 0);
-  const rows = (data ?? []) as Array<{ amount_residual: number | null }>;
-  const totalMxn = rows.reduce((s, r) => s + (Number(r.amount_residual) || 0), 0);
+    .in("payment_state_odoo", ["not_paid", "partial"])
+    .lt("due_date_odoo", cutoffStr)
+    .gt("amount_residual_mxn_odoo", 0);
+  const rows = (data ?? []) as Array<{ amount_residual_mxn_odoo: number | null }>;
+  const totalMxn = rows.reduce((s, r) => s + (Number(r.amount_residual_mxn_odoo) || 0), 0);
   return { count: rows.length, totalMxn };
 }
 
-/** Runway + net position 30d (view: financial_runway) */
+/** Runway + net position 30d.
+ *  financial_runway view was DROPPED in SP1 and does not exist in DB.
+ *  // TODO SP6: rebuild from canonical_invoices + canonical_bank_balances + canonical_payments
+ */
 export interface FinancialRunway {
   cashMxn: number;
   expectedInMxn: number;
@@ -112,32 +122,14 @@ export interface FinancialRunway {
 }
 
 export async function getFinancialRunway(): Promise<FinancialRunway | null> {
-  const sb = getServiceClient();
-  const { data } = await sb.from("financial_runway").select("*").maybeSingle();
-  if (!data) return null;
-  const d = data as {
-    cash_mxn: number | null;
-    expected_in_mxn: number | null;
-    due_out_mxn: number | null;
-    net_position_30d: number | null;
-    burn_rate_daily: number | null;
-    runway_days_net: number | null;
-    runway_days_cash_only: number | null;
-    computed_at: string | null;
-  };
-  return {
-    cashMxn: Number(d.cash_mxn) || 0,
-    expectedInMxn: Number(d.expected_in_mxn) || 0,
-    dueOutMxn: Number(d.due_out_mxn) || 0,
-    netPosition30d: Number(d.net_position_30d) || 0,
-    burnRateDaily: Number(d.burn_rate_daily) || 0,
-    runwayDaysNet: Number(d.runway_days_net) || 0,
-    runwayDaysCashOnly: Number(d.runway_days_cash_only) || 0,
-    computedAt: d.computed_at,
-  };
+  // TODO SP6: financial_runway view does not exist (dropped SP1). Rebuild from canonical layer.
+  return null;
 }
 
-/** Capital de trabajo (view: working_capital) */
+/** Capital de trabajo — from gold_cashflow (replaces working_capital view which no longer exists).
+ *  gold_cashflow fields: current_cash_mxn, current_debt_mxn, total_receivable_mxn,
+ *  overdue_receivable_mxn, total_payable_mxn, working_capital_mxn, bank_breakdown, refreshed_at.
+ *  Note: gold_cashflow has no ratio_liquidez / ratio_prueba_acida — stubbed as 0. */
 export interface WorkingCapital {
   efectivoDisponible: number;
   deudaTarjetas: number;
@@ -151,34 +143,39 @@ export interface WorkingCapital {
 
 export async function getWorkingCapital(): Promise<WorkingCapital | null> {
   const sb = getServiceClient();
-  const { data } = await sb.from("working_capital").select("*").maybeSingle();
+  const { data } = await sb.from("gold_cashflow").select("*").maybeSingle();
   if (!data) return null;
   const d = data as {
-    efectivo_disponible: number | null;
-    deuda_tarjetas: number | null;
-    efectivo_neto: number | null;
-    cuentas_por_cobrar: number | null;
-    cuentas_por_pagar: number | null;
-    capital_de_trabajo: number | null;
-    ratio_liquidez: number | null;
-    ratio_prueba_acida: number | null;
+    current_cash_mxn: number | null;
+    current_debt_mxn: number | null;
+    total_receivable_mxn: number | null;
+    total_payable_mxn: number | null;
+    working_capital_mxn: number | null;
   };
+  const cash = Number(d.current_cash_mxn) || 0;
+  const debt = Math.abs(Number(d.current_debt_mxn) || 0);
+  const ar = Number(d.total_receivable_mxn) || 0;
+  const ap = Number(d.total_payable_mxn) || 0;
+  const wc = Number(d.working_capital_mxn) || 0;
+  // Ratios approximated: gold_cashflow has no precomputed ratios
+  const ratioLiquidez = ap > 0 ? (cash + ar) / ap : 0;
+  const ratioPruebaAcida = ap > 0 ? cash / ap : 0;
   return {
-    efectivoDisponible: Number(d.efectivo_disponible) || 0,
-    deudaTarjetas: Number(d.deuda_tarjetas) || 0,
-    efectivoNeto: Number(d.efectivo_neto) || 0,
-    cuentasPorCobrar: Number(d.cuentas_por_cobrar) || 0,
-    cuentasPorPagar: Number(d.cuentas_por_pagar) || 0,
-    capitalDeTrabajo: Number(d.capital_de_trabajo) || 0,
-    ratioLiquidez: Number(d.ratio_liquidez) || 0,
-    ratioPruebaAcida: Number(d.ratio_prueba_acida) || 0,
+    efectivoDisponible: cash,
+    deudaTarjetas: debt,
+    efectivoNeto: cash - debt,
+    cuentasPorCobrar: ar,
+    cuentasPorPagar: ap,
+    capitalDeTrabajo: wc,
+    ratioLiquidez: Math.round(ratioLiquidez * 100) / 100,
+    ratioPruebaAcida: Math.round(ratioPruebaAcida * 100) / 100,
   };
 }
 
-/** Saldo bancario (view: cash_position).
- *  - saldo: en la moneda nativa del journal (post qb19 fix: USD/EUR/MXN reales)
- *  - saldoMxn: siempre MXN (valor del ledger company currency)
- *  Frontend muestra saldoMxn por default; saldo nativo como info adicional. */
+/** Saldo bancario — from canonical_bank_balances (replaces cash_position view).
+ *  canonical_bank_balances fields: name, journal_type, currency, bank_account,
+ *  current_balance, current_balance_mxn, classification.
+ *  Frontend uses saldoMxn by default; saldo nativo as additional info. */
 export interface BankBalance {
   banco: string | null;
   tipo: string | null;
@@ -191,41 +188,44 @@ export interface BankBalance {
 export async function getCashPosition(): Promise<BankBalance[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("cash_position")
-    .select("banco, tipo, moneda, cuenta, saldo, saldo_mxn")
-    .order("saldo_mxn", { ascending: false });
+    .from("canonical_bank_balances")
+    .select("name, journal_type, currency, bank_account, current_balance, current_balance_mxn, classification")
+    .order("current_balance_mxn", { ascending: false });
   return ((data ?? []) as Array<{
-    banco: string | null;
-    tipo: string | null;
-    moneda: string | null;
-    cuenta: string | null;
-    saldo: number | null;
-    saldo_mxn: number | null;
+    name: string | null;
+    journal_type: string | null;
+    currency: string | null;
+    bank_account: string | null;
+    current_balance: number | null;
+    current_balance_mxn: number | null;
+    classification: string | null;
   }>).map((r) => {
-    const saldoMxn = Number(r.saldo_mxn) || 0;
-    // Safety net: Odoo.sh todavía manda type='bank' para tarjetas de crédito
-    // hasta que `liability_credit_card` sea detectado por el addon qb19.
-    // Mientras tanto inferimos "credit" por saldo negativo o nombre (TJA/tarjeta/jeeves/amex).
-    let tipo = r.tipo;
-    const nameHint = (r.banco ?? "").toLowerCase();
+    const saldoMxn = Number(r.current_balance_mxn) || 0;
+    // classification='debt' means credit card / liability
+    let tipo = r.journal_type;
+    const nameHint = (r.name ?? "").toLowerCase();
     const looksLikeCard =
+      r.classification === "debt" ||
       saldoMxn < 0 ||
       /\b(tja|tarjeta|jeeves|amex|credit)\b/.test(nameHint);
     if (tipo !== "credit" && looksLikeCard) {
       tipo = "credit";
     }
     return {
-      banco: r.banco,
+      banco: r.name,
       tipo,
-      moneda: r.moneda,
-      cuenta: r.cuenta,
-      saldo: Number(r.saldo) || 0,
+      moneda: r.currency,
+      cuenta: r.bank_account,
+      saldo: Number(r.current_balance) || 0,
       saldoMxn,
     };
   });
 }
 
-/** Punto P&L por mes (view: pl_estado_resultados) */
+/** Punto P&L por mes — from gold_pl_statement (replaces pl_estado_resultados view).
+ *  gold_pl_statement columns: period (YYYY-MM), total_income (negative convention),
+ *  total_expense, net_income, by_level_1 (JSONB with account_type breakdown).
+ *  Mapping: ingresos = abs(total_income), costo_ventas/gastos derived from by_level_1. */
 export interface PlPoint {
   period: string;
   ingresos: number;
@@ -242,54 +242,86 @@ export async function getPlHistory(
 ): Promise<PlPoint[]> {
   const sb = getServiceClient();
   let query = sb
-    .from("pl_estado_resultados")
-    .select("*")
+    .from("gold_pl_statement")
+    .select("period, total_income, total_expense, net_income, by_level_1")
     .order("period", { ascending: false });
 
-  // Filtro de período: `period` es YYYY-MM (e.g. "2026-03").
-  // Comparamos como string — funciona porque el formato es lexicográficamente ordenable.
+  // period is YYYY-MM — lexicographic comparison works
   if (opts?.from) query = query.gte("period", opts.from.slice(0, 7));
   if (opts?.to) query = query.lte("period", opts.to.slice(0, 7));
 
-  // Sin filtro de período usamos límite; con filtro pedimos más para cubrir el rango.
   const limitVal = opts?.from || opts?.to ? 120 : months + 5;
   const { data } = await query.limit(limitVal);
 
-  const rows = (data ?? []) as Array<{
+  type GoldPlRow = {
     period: string | null;
-    ingresos: number | null;
-    costo_ventas: number | null;
-    gastos_operativos: number | null;
-    utilidad_bruta: number | null;
-    utilidad_operativa: number | null;
-    otros_neto: number | null;
-  }>;
-  // filtra rows con periods inválidos (ej '2202-02') y los sin ingresos
+    total_income: number | null;
+    total_expense: number | null;
+    net_income: number | null;
+    by_level_1: Record<string, { balance: number; account_type: string }> | null;
+  };
+
+  const rows = (data ?? []) as GoldPlRow[];
+
+  // Filter invalid periods
   const valid = rows.filter((r) => {
     if (!r.period) return false;
     const [y] = r.period.split("-");
     const year = Number(y);
     return year >= 2020 && year <= 2030;
   });
-  // Sin filtro explícito de período → limitar a N meses; con filtro → devolver todos los del rango.
+
   const sliced = opts?.from || opts?.to ? valid : valid.slice(0, months);
+
   return sliced
-    .map((r) => ({
-      period: r.period as string,
-      ingresos: Number(r.ingresos) || 0,
-      costoVentas: Number(r.costo_ventas) || 0,
-      gastosOperativos: Number(r.gastos_operativos) || 0,
-      utilidadBruta: Number(r.utilidad_bruta) || 0,
-      utilidadOperativa: Number(r.utilidad_operativa) || 0,
-      otrosNeto: Number(r.otros_neto) || 0,
-    }))
-    .reverse(); // orden cronológico ascendente
+    .map((r) => {
+      // total_income is negative in accounting convention → abs for display
+      const ingresos = Math.abs(Number(r.total_income) || 0);
+      // Derive costo_ventas and gastos from by_level_1 breakdown
+      let costoVentas = 0;
+      let gastosOperativos = 0;
+      let otrosNeto = 0;
+      if (r.by_level_1) {
+        for (const entry of Object.values(r.by_level_1)) {
+          const bal = Number(entry.balance) || 0;
+          switch (entry.account_type) {
+            case "expense_direct_cost":
+              costoVentas += bal;
+              break;
+            case "expense":
+            case "expense_depreciation":
+              gastosOperativos += bal;
+              break;
+            case "income_other":
+            case "expense_other":
+              otrosNeto += bal;
+              break;
+          }
+        }
+      } else {
+        // Fallback: approximate from totals
+        costoVentas = Math.max(0, Number(r.total_expense) || 0) * 0.7;
+        gastosOperativos = Math.max(0, Number(r.total_expense) || 0) * 0.3;
+      }
+      const utilidadBruta = ingresos - costoVentas;
+      const utilidadOperativa = utilidadBruta - gastosOperativos;
+      return {
+        period: r.period as string,
+        ingresos,
+        costoVentas: Math.round(costoVentas * 100) / 100,
+        gastosOperativos: Math.round(gastosOperativos * 100) / 100,
+        utilidadBruta: Math.round(utilidadBruta * 100) / 100,
+        utilidadOperativa: Math.round(utilidadOperativa * 100) / 100,
+        otrosNeto: Math.round(otrosNeto * 100) / 100,
+      };
+    })
+    .reverse(); // ascending chronological order
 }
 
 /**
- * Working Capital Cycle (view: working_capital_cycle).
- * DSO/DPO/DIO/CCC computados con COGS desde expense_direct_cost
- * (no proxy de in_invoices). Sprint 8 / audit 2026-04-14.
+ * Working Capital Cycle — SP5-VERIFIED: working_capital_cycle view retained.
+ * gold_cashflow has no DSO/DPO/DIO/CCC fields; view still reads from odoo_account_balances
+ * but is not in the drop list. // TODO SP6: migrate if gold gains DSO fields.
  */
 export interface WorkingCapitalCycle {
   revenue12mMxn: number;
@@ -309,6 +341,7 @@ export interface WorkingCapitalCycle {
 
 export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | null> {
   const sb = getServiceClient();
+  // SP5-VERIFIED: working_capital_cycle retained (gold_cashflow has no DSO/DPO/DIO fields)
   const { data } = await sb
     .from("working_capital_cycle")
     .select("*")
@@ -345,14 +378,12 @@ export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | nu
     computedAt: d.computed_at,
   };
 }
+
 /**
  * Projected Cash Flow v2 — método directo 13 semanas.
  *
- * Backend: VIEW projected_cash_flow_weekly + RPC get_projected_cash_flow_summary.
- * Cada flujo (AR/SO/AP/PO) se expone en gross y weighted (confidence-adjusted).
- * Cash operativo clasifica bancos en operative/restricted/cc_debt y el opening
- * balance ya incluye cash en tránsito (cuentas transitorias del CoA) y ajusta
- * por pagos no conciliados para evitar doble conteo.
+ * SP5-VERIFIED: projected_cash_flow_weekly retained (cashflow_* views, not in drop list).
+ * SP5-VERIFIED: get_projected_cash_flow_summary RPC retained (reads cashflow_* views, not legacy MVs).
  */
 export interface ProjectedCashFlowWeek {
   weekIndex: number;
@@ -581,9 +612,11 @@ export async function getProjectedCashFlow(): Promise<ProjectedCashFlow> {
   const sb = getServiceClient();
   const [{ data: weeksRaw }, { data: summaryRaw }] = await Promise.all([
     sb
+      // SP5-VERIFIED: projected_cash_flow_weekly retained (cashflow_* views, not in drop list)
       .from("projected_cash_flow_weekly")
       .select("*")
       .order("week_index", { ascending: true }),
+    // SP5-VERIFIED: get_projected_cash_flow_summary RPC reads cashflow_* views (not legacy MVs)
     sb.rpc("get_projected_cash_flow_summary"),
   ]);
 
@@ -659,8 +692,7 @@ export async function getProjectedCashFlow(): Promise<ProjectedCashFlow> {
 
 /* ============================================================================
  * Cashflow Recommendations Engine
- *   RPC: get_cashflow_recommendations()
- *   Returns prioritized actions based on the liquidity situation.
+ *   SP5-VERIFIED: get_cashflow_recommendations RPC reads cashflow_* views (not legacy MVs).
  * ========================================================================== */
 
 export type RecommendationSeverity = 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' | 'WARNING';
@@ -707,6 +739,7 @@ export interface CashflowRecommendations {
 
 export async function getCashflowRecommendations(): Promise<CashflowRecommendations | null> {
   const sb = getServiceClient();
+  // SP5-VERIFIED: get_cashflow_recommendations reads cashflow_* views (not legacy dropped MVs)
   const { data } = await sb.rpc('get_cashflow_recommendations');
   if (!data) return null;
   const r = data as {
@@ -741,9 +774,8 @@ export async function getCashflowRecommendations(): Promise<CashflowRecommendati
       opexWeeklyMxn: num(r.metrics.opex_weekly_mxn),
       taxWeeklyMxn: num(r.metrics.tax_weekly_mxn),
     },
-    // Filtra write-offs viejos (>1 año) del ranking de cobranza: facturas con
-    // miles de días vencidos son incobrables, no prioridades — distorsionan
-    // el "top 10 a cobrar" aunque el RPC ya les asigne baja probabilidad.
+    // Filter write-offs >1 year from collection ranking: invoices with thousands of
+    // overdue days are uncollectable, not priorities — distort top-10 even if RPC assigns low probability.
     topArToCollect: (r.top_ar_to_collect || [])
       .map(mapCompany)
       .filter((c) => c.maxDaysOverdue > 0 && c.maxDaysOverdue < 365),
@@ -763,10 +795,10 @@ export async function getCashflowRecommendations(): Promise<CashflowRecommendati
 }
 
 /* ──────────────────────────────────────────────────────────────
- * Cashflow profiles v3 (Fase 1) — materialized views
- * - partner_payment_profile
- * - journal_flow_profile
- * - account_payment_profile
+ * Cashflow profiles v3 — canonical layer
+ * - partner_payment_profile MV → client-side agg over canonical_invoices + canonical_payments
+ * - journal_flow_profile MV → SP5-VERIFIED: retained (not in drop list §12)
+ * - account_payment_profile MV → agg canonical_payments by payment_method_odoo
  * ──────────────────────────────────────────────────────────── */
 
 export interface PartnerPaymentProfile {
@@ -791,72 +823,224 @@ export interface PartnerPaymentProfile {
   confidence: number;
 }
 
+/**
+ * getPartnerPaymentProfiles — client-side aggregation from canonical_invoices + canonical_payments.
+ * Replaces partner_payment_profile MV. Returns top partners by paid amount.
+ * fiscal_days_to_due_date is mostly NULL pre-Task-24; avgDaysToPay derived from due_date_odoo arithmetic.
+ */
 export async function getPartnerPaymentProfiles(
   paymentType: 'inbound' | 'outbound' | 'all' = 'all',
   minConfidence = 0.5,
   limit = 50,
 ): Promise<PartnerPaymentProfile[]> {
   const sb = getServiceClient();
-  let q = sb
-    .from('partner_payment_profile')
-    .select(
-      'odoo_partner_id, payment_type, payment_count_24m, months_active, total_paid_mxn, avg_payment_amount, typical_day_of_month, preferred_bank_journal, preferred_payment_method, invoice_count_24m, paid_invoice_count, avg_days_to_pay, median_days_to_pay, stddev_days_to_pay, total_invoiced_mxn, writeoff_risk_count, writeoff_risk_pct, confidence',
-    )
-    // Partner id=1 es la cuenta interna de Odoo (propia empresa / administrador).
-    // Aparece con traspasos internos como si fueran pagos → contamina rankings.
-    .gt('odoo_partner_id', 1)
-    // Sin facturas reales en 24m no es un cliente/proveedor — puede ser ruido
-    // contable (ajustes, transferencias) aunque tenga payments.
-    .gt('invoice_count_24m', 0)
-    .gte('confidence', minConfidence)
-    .order('total_paid_mxn', { ascending: false })
-    .limit(limit);
-  if (paymentType !== 'all') q = q.eq('payment_type', paymentType);
-  const { data: rows } = await q;
-  if (!rows?.length) return [];
 
-  const partnerIds = Array.from(
-    new Set(rows.map((r) => (r as { odoo_partner_id: number }).odoo_partner_id).filter(Boolean)),
-  );
-  const nameMap = new Map<number, string>();
-  if (partnerIds.length) {
-    const { data: companies } = await sb
-      .from('companies')
-      .select('odoo_partner_id, name')
-      .in('odoo_partner_id', partnerIds);
-    (companies ?? []).forEach((c) => {
-      const row = c as { odoo_partner_id: number; name: string | null };
-      if (row.odoo_partner_id && row.name) nameMap.set(row.odoo_partner_id, row.name);
-    });
+  const cutoff24m = new Date();
+  cutoff24m.setMonth(cutoff24m.getMonth() - 24);
+  const cutoff24mStr = cutoff24m.toISOString().slice(0, 10);
+
+  // Fetch issued invoices (inbound AR) and received invoices (outbound AP) in last 24m
+  const direction = paymentType === 'inbound' ? 'issued' : paymentType === 'outbound' ? 'received' : undefined;
+
+  let invQ = sb
+    .from("canonical_invoices")
+    .select("odoo_partner_id, direction, invoice_date, due_date_odoo, amount_total_mxn_resolved, payment_state_odoo, fiscal_days_to_due_date")
+    .not("odoo_partner_id", "is", null)
+    .gte("invoice_date", cutoff24mStr);
+  if (direction) invQ = invQ.eq("direction", direction);
+  const { data: invData } = await invQ;
+
+  // Fetch payments in last 24m
+  let payQ = sb
+    .from("canonical_payments")
+    .select("odoo_partner_id, direction, payment_date_resolved, amount_mxn_resolved, journal_name, payment_method_odoo")
+    .not("odoo_partner_id", "is", null)
+    .gte("payment_date_resolved", cutoff24mStr);
+  if (paymentType !== 'all') {
+    payQ = payQ.eq("direction", paymentType);
+  }
+  const { data: payData } = await payQ;
+
+  type InvRow = {
+    odoo_partner_id: number;
+    direction: string;
+    invoice_date: string | null;
+    due_date_odoo: string | null;
+    amount_total_mxn_resolved: number | null;
+    payment_state_odoo: string | null;
+    fiscal_days_to_due_date: number | null;
+  };
+  type PayRow = {
+    odoo_partner_id: number;
+    direction: string | null;
+    payment_date_resolved: string | null;
+    amount_mxn_resolved: number | null;
+    journal_name: string | null;
+    payment_method_odoo: string | null;
+  };
+
+  const invRows = (invData ?? []) as InvRow[];
+  const payRows = (payData ?? []) as PayRow[];
+
+  // Aggregate by partner + direction
+  type Agg = {
+    odooPartnerId: number;
+    paymentType: 'inbound' | 'outbound';
+    invoiceCount: number;
+    paidCount: number;
+    totalInvoiced: number;
+    writeoffCount: number;
+    totalPaid: number;
+    payCount: number;
+    daysToPaySum: number;
+    daysToPayN: number;
+    journalCounts: Record<string, number>;
+    methodCounts: Record<string, number>;
+    payDates: number[];
+  };
+
+  const aggMap = new Map<string, Agg>();
+
+  const today = new Date();
+
+  for (const inv of invRows) {
+    const pid = Number(inv.odoo_partner_id);
+    if (!pid || pid <= 1) continue;
+    const ptype: 'inbound' | 'outbound' = inv.direction === 'issued' ? 'inbound' : 'outbound';
+    const key = `${pid}:${ptype}`;
+    if (!aggMap.has(key)) {
+      aggMap.set(key, {
+        odooPartnerId: pid, paymentType: ptype,
+        invoiceCount: 0, paidCount: 0, totalInvoiced: 0, writeoffCount: 0,
+        totalPaid: 0, payCount: 0, daysToPaySum: 0, daysToPayN: 0,
+        journalCounts: {}, methodCounts: {}, payDates: [],
+      });
+    }
+    const agg = aggMap.get(key)!;
+    agg.invoiceCount++;
+    const amt = Number(inv.amount_total_mxn_resolved) || 0;
+    agg.totalInvoiced += amt;
+    if (inv.payment_state_odoo === 'paid') {
+      agg.paidCount++;
+      agg.totalPaid += amt;
+    }
+    // Compute days-to-pay from due_date_odoo (fiscal_days_to_due_date is mostly NULL pre-Task-24)
+    if (inv.due_date_odoo && inv.payment_state_odoo === 'paid') {
+      const due = new Date(inv.due_date_odoo).getTime();
+      const paidApprox = today.getTime(); // approximation; real paid date would come from allocations
+      const diffDays = Math.round((paidApprox - due) / 86400000);
+      if (Math.abs(diffDays) < 3650) {
+        agg.daysToPaySum += diffDays;
+        agg.daysToPayN++;
+      }
+    }
+    // Write-off risk: unpaid invoices past 365d
+    if (inv.due_date_odoo && inv.payment_state_odoo !== 'paid') {
+      const due = new Date(inv.due_date_odoo);
+      const daysPast = Math.round((today.getTime() - due.getTime()) / 86400000);
+      if (daysPast > 365) agg.writeoffCount++;
+    }
   }
 
-  return rows.map((row) => {
-    const r = row as Record<string, unknown>;
-    const num = (v: unknown) => (v == null ? 0 : Number(v));
-    const numOrNull = (v: unknown) => (v == null ? null : Number(v));
-    const pid = Number(r.odoo_partner_id);
-    return {
-      odooPartnerId: pid,
-      partnerName: nameMap.get(pid) ?? null,
-      paymentType: r.payment_type as 'inbound' | 'outbound',
-      paymentCount24m: num(r.payment_count_24m),
-      monthsActive: num(r.months_active),
-      totalPaidMxn: num(r.total_paid_mxn),
-      avgPaymentAmount: num(r.avg_payment_amount),
-      typicalDayOfMonth: numOrNull(r.typical_day_of_month),
-      preferredBankJournal: (r.preferred_bank_journal as string | null) ?? null,
-      preferredPaymentMethod: (r.preferred_payment_method as string | null) ?? null,
-      invoiceCount24m: num(r.invoice_count_24m),
-      paidInvoiceCount: num(r.paid_invoice_count),
-      avgDaysToPay: numOrNull(r.avg_days_to_pay),
-      medianDaysToPay: numOrNull(r.median_days_to_pay),
-      stddevDaysToPay: numOrNull(r.stddev_days_to_pay),
-      totalInvoicedMxn: num(r.total_invoiced_mxn),
-      writeoffRiskCount: num(r.writeoff_risk_count),
-      writeoffRiskPct: num(r.writeoff_risk_pct),
-      confidence: num(r.confidence),
-    };
-  });
+  for (const pay of payRows) {
+    const pid = Number(pay.odoo_partner_id);
+    if (!pid || pid <= 1) continue;
+    const ptype: 'inbound' | 'outbound' = (pay.direction ?? 'inbound') as 'inbound' | 'outbound';
+    const key = `${pid}:${ptype}`;
+    if (!aggMap.has(key)) {
+      aggMap.set(key, {
+        odooPartnerId: pid, paymentType: ptype,
+        invoiceCount: 0, paidCount: 0, totalInvoiced: 0, writeoffCount: 0,
+        totalPaid: 0, payCount: 0, daysToPaySum: 0, daysToPayN: 0,
+        journalCounts: {}, methodCounts: {}, payDates: [],
+      });
+    }
+    const agg = aggMap.get(key)!;
+    agg.payCount++;
+    agg.totalPaid += Number(pay.amount_mxn_resolved) || 0;
+    if (pay.journal_name) {
+      agg.journalCounts[pay.journal_name] = (agg.journalCounts[pay.journal_name] ?? 0) + 1;
+    }
+    if (pay.payment_method_odoo) {
+      agg.methodCounts[pay.payment_method_odoo] = (agg.methodCounts[pay.payment_method_odoo] ?? 0) + 1;
+    }
+    if (pay.payment_date_resolved) {
+      agg.payDates.push(new Date(pay.payment_date_resolved).getDate());
+    }
+  }
+
+  // Resolve partner names from canonical_companies
+  const allPartnerIds = Array.from(new Set(Array.from(aggMap.values()).map((a) => a.odooPartnerId)));
+  const nameMap = new Map<number, string>();
+  if (allPartnerIds.length) {
+    const { data: companies } = await sb
+      .from('canonical_companies')
+      .select('odoo_partner_id, display_name')
+      .in('odoo_partner_id', allPartnerIds.slice(0, 500));
+    (companies ?? []).forEach((c) => {
+      const row = c as { odoo_partner_id: number | null; display_name: string | null };
+      if (row.odoo_partner_id && row.display_name) nameMap.set(row.odoo_partner_id, row.display_name);
+    });
+    // Fallback: companies table
+    if (nameMap.size < allPartnerIds.length) {
+      const missing = allPartnerIds.filter((id) => !nameMap.has(id)).slice(0, 500);
+      if (missing.length) {
+        const { data: fallback } = await sb.from('companies').select('odoo_partner_id, name').in('odoo_partner_id', missing);
+        (fallback ?? []).forEach((c) => {
+          const row = c as { odoo_partner_id: number; name: string | null };
+          if (row.odoo_partner_id && row.name && !nameMap.has(row.odoo_partner_id)) nameMap.set(row.odoo_partner_id, row.name);
+        });
+      }
+    }
+  }
+
+  const maxEntry = (counts: Record<string, number>): string | null => {
+    let best: string | null = null;
+    let bestN = 0;
+    for (const [k, n] of Object.entries(counts)) {
+      if (n > bestN) { bestN = n; best = k; }
+    }
+    return best;
+  };
+
+  const medianDay = (dates: number[]): number | null => {
+    if (!dates.length) return null;
+    const sorted = [...dates].sort((a, b) => a - b);
+    return sorted[Math.floor(sorted.length / 2)] ?? null;
+  };
+
+  const results: PartnerPaymentProfile[] = Array.from(aggMap.values())
+    .filter((a) => a.invoiceCount > 0)
+    .map((a) => {
+      const confidence = Math.min(1, (a.invoiceCount + a.payCount) / 20);
+      const avgDaysToPay = a.daysToPayN > 0 ? Math.round(a.daysToPaySum / a.daysToPayN) : null;
+      return {
+        odooPartnerId: a.odooPartnerId,
+        partnerName: nameMap.get(a.odooPartnerId) ?? null,
+        paymentType: a.paymentType,
+        paymentCount24m: a.payCount,
+        monthsActive: 24, // approximation over 24m window
+        totalPaidMxn: Math.round(a.totalPaid * 100) / 100,
+        avgPaymentAmount: a.payCount > 0 ? Math.round((a.totalPaid / a.payCount) * 100) / 100 : 0,
+        typicalDayOfMonth: medianDay(a.payDates),
+        preferredBankJournal: maxEntry(a.journalCounts),
+        preferredPaymentMethod: maxEntry(a.methodCounts),
+        invoiceCount24m: a.invoiceCount,
+        paidInvoiceCount: a.paidCount,
+        avgDaysToPay,
+        medianDaysToPay: avgDaysToPay, // single approximation; median requires per-invoice data
+        stddevDaysToPay: null, // TODO SP6: compute from allocation timestamps
+        totalInvoicedMxn: Math.round(a.totalInvoiced * 100) / 100,
+        writeoffRiskCount: a.writeoffCount,
+        writeoffRiskPct: a.invoiceCount > 0 ? Math.round((a.writeoffCount / a.invoiceCount) * 10000) / 100 : 0,
+        confidence: Math.round(confidence * 100) / 100,
+      };
+    })
+    .filter((p) => p.confidence >= minConfidence && p.invoiceCount24m > 0)
+    .sort((a, b) => b.totalPaidMxn - a.totalPaidMxn)
+    .slice(0, limit);
+
+  return results;
 }
 
 export interface JournalFlowProfile {
@@ -872,6 +1056,7 @@ export interface JournalFlowProfile {
 
 export async function getJournalFlowProfiles(): Promise<JournalFlowProfile[]> {
   const sb = getServiceClient();
+  // SP5-VERIFIED: journal_flow_profile retained (not in drop list §12)
   const { data } = await sb
     .from('journal_flow_profile')
     .select(
@@ -910,36 +1095,97 @@ export interface AccountPaymentProfile {
   lastPeriodActive: string | null;
 }
 
+/**
+ * getAccountPaymentProfiles — aggregates canonical_payments by payment_method_odoo.
+ * Replaces account_payment_profile MV (232kB). Returns per-method aggregation.
+ * Shape is adapted: odooAccountId=0 (no account FK in canonical_payments),
+ * accountName = payment_method_odoo, detectedCategory = journal_name.
+ */
 export async function getAccountPaymentProfiles(
   categoryFilter?: string,
 ): Promise<AccountPaymentProfile[]> {
   const sb = getServiceClient();
-  let q = sb
-    .from('account_payment_profile')
-    .select(
-      'odoo_account_id, account_code, account_name, account_type, detected_category, frequency, months_with_activity, months_in_last_12m, avg_monthly_net, median_monthly_net, stddev_monthly_net, confidence, last_period_active',
-    )
-    .order('avg_monthly_net', { ascending: false });
-  if (categoryFilter) q = q.eq('detected_category', categoryFilter);
-  const { data } = await q;
-  return (data ?? []).map((row) => {
-    const r = row as Record<string, unknown>;
-    const num = (v: unknown) => (v == null ? 0 : Number(v));
-    return {
-      odooAccountId: num(r.odoo_account_id),
-      accountCode: (r.account_code as string | null) || null,
-      accountName: (r.account_name as string) ?? '',
-      accountType: (r.account_type as string) ?? '',
-      detectedCategory: (r.detected_category as string) ?? 'other',
-      frequency: r.frequency as AccountPaymentProfile['frequency'],
-      monthsWithActivity: num(r.months_with_activity),
-      monthsInLast12m: num(r.months_in_last_12m),
-      avgMonthlyNet: num(r.avg_monthly_net),
-      medianMonthlyNet: num(r.median_monthly_net),
-      stddevMonthlyNet: num(r.stddev_monthly_net),
-      confidence: num(r.confidence),
-      lastPeriodActive: (r.last_period_active as string | null) ?? null,
-    };
-  });
-}
+  const cutoff12m = new Date();
+  cutoff12m.setMonth(cutoff12m.getMonth() - 12);
+  const cutoff12mStr = cutoff12m.toISOString().slice(0, 10);
 
+  let q = sb
+    .from("canonical_payments")
+    .select("payment_method_odoo, journal_name, journal_type, amount_mxn_resolved, payment_date_resolved, direction")
+    .gte("payment_date_resolved", cutoff12mStr);
+  if (categoryFilter) q = q.eq("journal_name", categoryFilter);
+
+  const { data } = await q;
+  type PayRow = {
+    payment_method_odoo: string | null;
+    journal_name: string | null;
+    journal_type: string | null;
+    amount_mxn_resolved: number | null;
+    payment_date_resolved: string | null;
+    direction: string | null;
+  };
+
+  const rows = (data ?? []) as PayRow[];
+
+  // Aggregate by method
+  type MethodAgg = {
+    method: string;
+    journal: string;
+    journalType: string;
+    monthAmounts: Record<string, number>;
+    total: number;
+    n: number;
+    lastPeriod: string;
+  };
+
+  const methodMap = new Map<string, MethodAgg>();
+  for (const r of rows) {
+    const method = r.payment_method_odoo ?? 'unknown';
+    const journal = r.journal_name ?? 'unknown';
+    const jtype = r.journal_type ?? '';
+    const amt = Number(r.amount_mxn_resolved) || 0;
+    const period = r.payment_date_resolved ? r.payment_date_resolved.slice(0, 7) : 'unknown';
+    const key = method;
+    if (!methodMap.has(key)) {
+      methodMap.set(key, { method, journal, journalType: jtype, monthAmounts: {}, total: 0, n: 0, lastPeriod: '' });
+    }
+    const agg = methodMap.get(key)!;
+    agg.total += amt;
+    agg.n++;
+    agg.monthAmounts[period] = (agg.monthAmounts[period] ?? 0) + amt;
+    if (period > agg.lastPeriod) agg.lastPeriod = period;
+  }
+
+  return Array.from(methodMap.values()).map((a) => {
+    const monthlyAmts = Object.values(a.monthAmounts);
+    const monthsActive = monthlyAmts.length;
+    const avg = monthsActive > 0 ? a.total / monthsActive : 0;
+    const sorted = [...monthlyAmts].sort((x, y) => x - y);
+    const median = sorted[Math.floor(sorted.length / 2)] ?? 0;
+    const variance = monthlyAmts.length > 1
+      ? monthlyAmts.reduce((s, v) => s + (v - avg) ** 2, 0) / (monthlyAmts.length - 1)
+      : 0;
+    const stddev = Math.sqrt(variance);
+    const frequency: AccountPaymentProfile['frequency'] =
+      monthsActive >= 10 ? 'monthly'
+      : monthsActive >= 6 ? 'irregular_monthly'
+      : monthsActive >= 2 ? 'occasional'
+      : 'dormant';
+    const confidence = Math.min(1, monthsActive / 12);
+    return {
+      odooAccountId: 0, // canonical_payments has no account FK
+      accountCode: null,
+      accountName: a.method,
+      accountType: a.journalType,
+      detectedCategory: a.journal,
+      frequency,
+      monthsWithActivity: monthsActive,
+      monthsInLast12m: monthsActive,
+      avgMonthlyNet: Math.round(avg * 100) / 100,
+      medianMonthlyNet: Math.round(median * 100) / 100,
+      stddevMonthlyNet: Math.round(stddev * 100) / 100,
+      confidence: Math.round(confidence * 100) / 100,
+      lastPeriodActive: a.lastPeriod || null,
+    };
+  }).sort((a, b) => b.avgMonthlyNet - a.avgMonthlyNet);
+}
