@@ -1,3 +1,18 @@
+/**
+ * SP6 foundation — StatusBadge mapping.
+ *
+ * Pure function `resolveStatusBadge(input)` that translates a discriminated-union
+ * input (severity, blacklist, shadow, payment, estado_sat, match, staleness,
+ * reconciliation, generic) into a resolved shape with a traffic-light color
+ * (`ok|warning|critical|info|muted`), a Spanish label, an aria-label, and an
+ * optional lucide icon name.
+ *
+ * Returns `null` when the kind+value should NOT render (e.g., `blacklist="none"`
+ * or `shadow=false`). Callers should check for null before rendering.
+ *
+ * Consumed by `<StatusBadge>` (Task 4).
+ */
+
 export type StatusColor = "ok" | "warning" | "critical" | "info" | "muted";
 
 export type StatusBadgeInput =
@@ -44,7 +59,7 @@ export function resolveStatusBadge(
         high:     "Severidad alta",
         medium:   "Severidad media",
         low:      "Severidad baja",
-      } as const;
+      } as const satisfies Record<typeof input.value, string>;
       const label = labelMap[input.value];
       return { color: colorMap[input.value], label, ariaLabel: label, icon: "alert-circle" };
     }

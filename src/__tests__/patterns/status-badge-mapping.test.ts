@@ -22,17 +22,25 @@ describe("resolveStatusBadge", () => {
     [{ kind: "staleness", value: "fresh" }, "ok",       "Datos recientes"],
     [{ kind: "staleness", value: "stale" }, "critical", "Datos desactualizados"],
     [{ kind: "reconciliation", value: "unmatched" }, "info", "Sin reconciliar"],
+    [{ kind: "reconciliation", value: "matched" }, "ok", "Reconciliado"],
   ])("maps %o → color=%s label=%s", (input, color, label) => {
     const out = resolveStatusBadge(input);
-    expect(out.color).toBe(color);
-    expect(out.label).toBe(label);
-    expect(out.ariaLabel).toBe(label);
+    expect(out).not.toBeNull();
+    expect(out!.color).toBe(color);
+    expect(out!.label).toBe(label);
+    expect(out!.ariaLabel).toBe(label);
   });
 
   it("maps match confidence bands", () => {
-    expect(resolveStatusBadge({ kind: "match", value: 0.95 }).color).toBe("ok");
-    expect(resolveStatusBadge({ kind: "match", value: 0.75 }).color).toBe("warning");
-    expect(resolveStatusBadge({ kind: "match", value: 0.3  }).color).toBe("critical");
+    const high = resolveStatusBadge({ kind: "match", value: 0.95 });
+    expect(high).not.toBeNull();
+    expect(high!.color).toBe("ok");
+    const mid = resolveStatusBadge({ kind: "match", value: 0.75 });
+    expect(mid).not.toBeNull();
+    expect(mid!.color).toBe("warning");
+    const low = resolveStatusBadge({ kind: "match", value: 0.3 });
+    expect(low).not.toBeNull();
+    expect(low!.color).toBe("critical");
   });
 
   it("blacklist=none returns null (no render)", () => {
@@ -43,5 +51,9 @@ describe("resolveStatusBadge", () => {
     const out = resolveStatusBadge({ kind: "generic", value: "custom_label" });
     expect(out?.label).toBe("custom_label");
     expect(out?.color).toBe("muted");
+  });
+
+  it("shadow=false returns null (no render)", () => {
+    expect(resolveStatusBadge({ kind: "shadow", value: false })).toBeNull();
   });
 });
