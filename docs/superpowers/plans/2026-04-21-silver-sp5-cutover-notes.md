@@ -803,3 +803,63 @@ None matched the test regex `from\(['"]${banned}['"]` — only string literals, 
 - No TypeScript errors in productos/operaciones/contactos scope.
 
 ### Commit: 6a9cc7d
+
+---
+
+## Task 24 — Backfill `canonical_invoices.amount_residual_mxn_resolved` (completed 2026-04-21)
+
+Migration: `1065_silver_sp5_amount_residual_mxn_resolved` (applied via MCP + local file written).
+
+### Pre-backfill gate counts
+
+| Metric | Value |
+|---|---|
+| total rows in canonical_invoices | 88,462 |
+| already_filled (amount_residual_mxn_resolved IS NOT NULL) | 0 |
+| candidates_positive (amount_residual_mxn_odoo > 0) | 669 |
+| candidates_any (amount_residual_mxn_odoo IS NOT NULL) | 27,198 |
+
+### Post-backfill counts
+
+| Metric | Value |
+|---|---|
+| candidates | 27,198 |
+| filled | 27,198 |
+| coverage_pct | **100.00%** |
+
+### FX helper verification
+
+- `usd_to_mxn(date)` confirmed present in `pg_proc`.
+- `eur_to_mxn` not present (not needed — no EUR residuals in dataset).
+
+### Column-name adaptations
+
+| Plan name | Actual column |
+|---|---|
+| `fiscal_moneda` | `currency_odoo` (primary; 27,198 filled — aligns exactly with target rows) |
+| `odoo_currency` | `currency_odoo` |
+| `fiscal_tipo_cambio` | `tipo_cambio_sat` (`tipo_cambio_odoo` is 0% filled) |
+| `invoice_date` | `invoice_date` (confirmed) |
+
+### FX logic applied
+
+```
+CASE
+  WHEN currency_odoo IS NULL → treat as MXN (passthrough)
+  WHEN currency_odoo = 'MXN' → passthrough amount_residual_mxn_odoo
+  WHEN currency_odoo = 'USD' → amount_residual_mxn_odoo * COALESCE(usd_to_mxn(invoice_date), tipo_cambio_sat, 1)
+  WHEN tipo_cambio_sat > 0   → amount_residual_mxn_odoo * tipo_cambio_sat
+  ELSE                        → passthrough amount_residual_mxn_odoo
+END
+```
+
+### gold_cashflow observation
+
+`gold_cashflow` is a regular view (`relkind=v`) — no REFRESH needed. `total_receivable_mxn` currently shows `0.00` because it reads from `canonical_companies` pre-computed aggregates, which are updated by the nightly `silver_sp2_refresh_canonical_nightly` cron (03:30 UTC). The backfill unblocks that cron's AR aggregation pass. Post-next-cron-run, `total_receivable_mxn` will reflect the backfilled residuals.
+
+### Audit
+
+- `audit_runs` row inserted: `source='supabase'`, `model='silver_sp5'`, `invariant_key='sp5.task24'`, `bucket_key='sp5_task24_residual_backfill'`, `severity='ok'`.
+- `schema_changes` row inserted: `triggered_by='silver-sp5-task-24'`, `change_type='BACKFILL'`.
+
+### Commit: (see git log — committed after notes appended)
