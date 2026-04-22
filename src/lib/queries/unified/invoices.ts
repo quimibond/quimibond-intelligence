@@ -9,17 +9,127 @@ import {
 } from "../_shared/table-params";
 
 /**
- * Cobranza queries v2 — usa SIEMPRE columnas `_mxn` per spec.
- * - `invoices_unified` — fuente canónica (Fase 1 migración)
- * - `cash_flow_aging` (view) — buckets por empresa (ya normalizada)
- * - `payment_predictions` (MV) — riesgo anormal de pago
+ * SP5 Task 11: rewired to canonical_invoices + canonical_payment_allocations.
+ * Legacy MVs dropped: invoices_unified, unified_invoices, unified_payment_allocations.
+ *
+ * Schema notes (live-verified 2026-04-21):
+ * - canonical_invoices: invoice_date (date), due_date_odoo (date), payment_state_odoo,
+ *   match_confidence (not match_status), amount_residual_mxn_odoo (for open-balance),
+ *   amount_total_mxn_resolved, estado_sat, salesperson_user_id, salesperson_contact_id
+ *   (no salesperson_name column — returned as null back-compat).
+ * - canonical_payment_allocations: invoice_canonical_id (FK to canonical_invoices),
+ *   payment_canonical_id, allocated_amount, created_at.
+ * - days_overdue: computed client-side from due_date_odoo (fiscal_days_to_due_date is NULL).
+ * - cash_flow_aging: KEEP-listed view; used for company-level AR aging buckets.
+ * - payment_predictions: KEEP-listed MV; unchanged.
  */
 
-// Common unified filter: direction=issued + computable match_status + no cancelado
-const UNIFIED_MATCH_STATUSES = ["match_uuid", "match_composite", "odoo_only"] as const;
+// SP5-VERIFIED: cash_flow_aging is in §12 KEEP list (not dropped)
+// SP5-VERIFIED: payment_predictions is in §12 KEEP list (not dropped)
+// SP5-VERIFIED: reconciliation_issues is a base table (not in §12 drop list)
+// SP5-VERIFIED: ar_aging_detail is in §12 KEEP list (not dropped)
 
 // ──────────────────────────────────────────────────────────────────────────
-// AR aging buckets (calculado de odoo_invoices con _mxn)
+// listInvoices — SP5 canonical: reads canonical_invoices
+// ──────────────────────────────────────────────────────────────────────────
+export async function listInvoices(
+  opts: {
+    direction?: "issued" | "received";
+    matchStatus?: string;
+    canonicalCompanyId?: number;
+    fromDate?: string;
+    toDate?: string;
+    onlyOpen?: boolean;
+    onlyOverdue?: boolean;
+    search?: string;
+    limit?: number;
+    offset?: number;
+  } = {}
+) {
+  const sb = getServiceClient();
+  let q = sb
+    .from("canonical_invoices")
+    .select("*")
+    .order("invoice_date", { ascending: false, nullsFirst: false });
+  if (opts.direction) q = q.eq("direction", opts.direction);
+  if (opts.matchStatus) q = q.eq("match_confidence", opts.matchStatus);
+  if (typeof opts.canonicalCompanyId === "number") {
+    q = q.or(
+      `emisor_canonical_company_id.eq.${opts.canonicalCompanyId},receptor_canonical_company_id.eq.${opts.canonicalCompanyId}`
+    );
+  }
+  if (opts.fromDate) q = q.gte("invoice_date", opts.fromDate);
+  if (opts.toDate) q = q.lte("invoice_date", opts.toDate);
+  if (opts.onlyOpen) q = q.gt("amount_residual_mxn_odoo", 0);
+  if (opts.onlyOverdue) {
+    const today = new Date().toISOString().slice(0, 10);
+    q = q.lt("due_date_odoo", today).gt("amount_residual_mxn_odoo", 0);
+  }
+  if (opts.search)
+    q = q.or(
+      `sat_uuid.ilike.%${opts.search}%,odoo_ref.ilike.%${opts.search}%`
+    );
+  if (opts.limit) q = q.limit(opts.limit);
+  if (opts.offset)
+    q = q.range(opts.offset, opts.offset + (opts.limit ?? 50) - 1);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// listAllocations — SP5 canonical: reads canonical_payment_allocations
+// ──────────────────────────────────────────────────────────────────────────
+export async function listAllocations(canonical_invoice_id: string) {
+  const sb = getServiceClient();
+  const { data, error } = await sb
+    .from("canonical_payment_allocations")
+    .select("*")
+    .eq("invoice_canonical_id", canonical_invoice_id)
+    .order("created_at", { ascending: false, nullsFirst: false });
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// invoicesReceivableAging — SP5 canonical: derived from canonical_invoices
+// ──────────────────────────────────────────────────────────────────────────
+export async function invoicesReceivableAging(opts: { asOf?: string } = {}) {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("canonical_invoices")
+    .select("due_date_odoo, amount_residual_mxn_odoo")
+    .eq("direction", "issued")
+    .gt("amount_residual_mxn_odoo", 0);
+  const today = new Date(opts.asOf ?? Date.now());
+  const buckets: Record<string, number> = {
+    current: 0,
+    "1-30": 0,
+    "31-60": 0,
+    "61-90": 0,
+    "90+": 0,
+  };
+  for (const r of (data ?? []) as Array<{
+    due_date_odoo: string | null;
+    amount_residual_mxn_odoo: number | null;
+  }>) {
+    const amt = Number(r.amount_residual_mxn_odoo ?? 0);
+    const d = r.due_date_odoo
+      ? Math.floor(
+          (today.getTime() - new Date(r.due_date_odoo).getTime()) / 86400000
+        )
+      : 0;
+    if (d <= 0) buckets.current += amt;
+    else if (d <= 30) buckets["1-30"] += amt;
+    else if (d <= 60) buckets["31-60"] += amt;
+    else if (d <= 90) buckets["61-90"] += amt;
+    else buckets["90+"] += amt;
+  }
+  return buckets;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// AR aging buckets — SP5 canonical: derived from ar_aging_detail (KEEP)
 // ──────────────────────────────────────────────────────────────────────────
 export interface ArAgingBucket {
   bucket: string; // "1-30" | "31-60" | "61-90" | "91-120" | "120+"
@@ -40,23 +150,19 @@ const BUCKET_DEFS: Array<{
   { label: "120+", min: 121, max: null, sort: 5 },
 ];
 
-async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
+async function _getArAgingRaw(): Promise<ArAgingBucket[]> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
+  // SP5-VERIFIED: ar_aging_detail is a KEEP-listed MV (§12 not in drop list)
   const { data } = await sb
-    .from("invoices_unified")
-    .select("amount_residual, odoo_amount_residual_mxn, days_overdue")
-    .eq("direction", "issued")
-    .in("match_status", UNIFIED_MATCH_STATUSES)
-    .not("estado_sat", "eq", "cancelado")
-    .in("payment_state", ["not_paid", "partial"])
+    .from("ar_aging_detail")
+    .select("days_overdue, amount_residual")
     .gt("days_overdue", 0)
     .not("company_id", "in", pgInList(selfIds));
 
   const rows = (data ?? []) as Array<{
-    amount_residual: number | null;
-    odoo_amount_residual_mxn: number | null;
     days_overdue: number | null;
+    amount_residual: number | null;
   }>;
 
   return BUCKET_DEFS.map((b) => {
@@ -70,7 +176,7 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
       bucket: b.label,
       count: inBucket.length,
       amount_mxn: inBucket.reduce(
-        (acc, r) => acc + (Number(r.odoo_amount_residual_mxn ?? r.amount_residual) || 0),
+        (acc, r) => acc + (Number(r.amount_residual) || 0),
         0
       ),
     };
@@ -78,13 +184,13 @@ async function unifiedGetArAging(): Promise<ArAgingBucket[]> {
 }
 
 export const getArAging = unstable_cache(
-  unifiedGetArAging,
-  ["invoices-ar-aging-v1"],
+  _getArAgingRaw,
+  ["invoices-ar-aging-v2"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
 
 // ──────────────────────────────────────────────────────────────────────────
-// Empresas con cartera vencida (view: cash_flow_aging — ya normalizada)
+// Company aging — SP5: uses cash_flow_aging view (KEEP)
 // ──────────────────────────────────────────────────────────────────────────
 export interface CompanyAgingRow {
   company_id: number;
@@ -99,13 +205,12 @@ export interface CompanyAgingRow {
   total_revenue: number;
 }
 
-export async function getCompanyAging(
-  limit = 50
-): Promise<CompanyAgingRow[]> {
+export async function getCompanyAging(limit = 50): Promise<CompanyAgingRow[]> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
+  // SP5-VERIFIED: cash_flow_aging is a KEEP-listed view (§12 not in drop list)
   const { data } = await sb
-    .from("analytics_ar_aging")
+    .from("cash_flow_aging")
     .select(
       "company_id, company_name, tier, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, total_revenue"
     )
@@ -127,6 +232,9 @@ export async function getCompanyAging(
   }));
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// Overdue invoices — SP5 canonical: reads canonical_invoices
+// ──────────────────────────────────────────────────────────────────────────
 export interface OverdueInvoice {
   id: number;
   name: string | null;
@@ -139,94 +247,107 @@ export interface OverdueInvoice {
   due_date: string | null;
   invoice_date: string | null;
   payment_state: string | null;
-  salesperson_name: string | null;
-  // SAT fields (populated by unified path; null in legacy path)
+  salesperson_name: string | null; // NOTE: not on canonical_invoices; always null (SP6: join canonical_contacts)
+  // SAT fields
   uuid_sat: string | null;
   estado_sat: string | null;
 }
 
-async function unifiedGetOverdueInvoices(limit: number): Promise<OverdueInvoice[]> {
+/** Compute days overdue from due_date_odoo (fiscal_days_to_due_date is NULL in canonical). */
+function computeDaysOverdue(due_date_odoo: string | null): number | null {
+  if (!due_date_odoo) return null;
+  const d = Math.floor(
+    (Date.now() - new Date(due_date_odoo).getTime()) / 86400000
+  );
+  return d > 0 ? d : 0;
+}
+
+type CanonicalInvoiceRow = {
+  odoo_invoice_id: number | null;
+  odoo_name: string | null;
+  odoo_ref: string | null;
+  receptor_canonical_company_id: number | null;
+  amount_total_mxn_resolved: number | null;
+  amount_total_mxn_odoo: number | null;
+  amount_residual_mxn_odoo: number | null;
+  currency_odoo: string | null;
+  due_date_odoo: string | null;
+  invoice_date: string | null;
+  payment_state_odoo: string | null;
+  salesperson_user_id: number | null;
+  sat_uuid: string | null;
+  estado_sat: string | null;
+};
+
+function mapOverdueRow(row: CanonicalInvoiceRow): OverdueInvoice {
+  return {
+    id: Number(row.odoo_invoice_id) || 0,
+    name: row.odoo_name ?? row.odoo_ref,
+    company_id: row.receptor_canonical_company_id,
+    company_name: null, // SP6: join canonical_companies
+    amount_total_mxn:
+      Number(row.amount_total_mxn_resolved ?? row.amount_total_mxn_odoo) || 0,
+    amount_residual_mxn: Number(row.amount_residual_mxn_odoo) || 0,
+    currency: row.currency_odoo,
+    days_overdue: computeDaysOverdue(row.due_date_odoo),
+    due_date: row.due_date_odoo,
+    invoice_date: row.invoice_date,
+    payment_state: row.payment_state_odoo,
+    salesperson_name: null, // canonical_invoices has salesperson_user_id only; SP6 join canonical_contacts
+    uuid_sat: row.sat_uuid,
+    estado_sat: row.estado_sat,
+  };
+}
+
+const OVERDUE_SELECT =
+  "odoo_invoice_id, odoo_name, odoo_ref, receptor_canonical_company_id, amount_total_mxn_resolved, amount_total_mxn_odoo, amount_residual_mxn_odoo, currency_odoo, due_date_odoo, invoice_date, payment_state_odoo, salesperson_user_id, sat_uuid, estado_sat";
+
+async function _getOverdueInvoicesRaw(limit: number): Promise<OverdueInvoice[]> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
+  const today = new Date().toISOString().slice(0, 10);
   const { data } = await sb
-    .from("invoices_unified")
-    .select(
-      "odoo_invoice_id, odoo_ref, company_id, odoo_amount_total, odoo_amount_total_mxn, amount_residual, odoo_amount_residual_mxn, odoo_currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, salesperson_user_id, uuid_sat, estado_sat"
-    )
+    .from("canonical_invoices")
+    .select(OVERDUE_SELECT)
     .eq("direction", "issued")
-    .in("match_status", UNIFIED_MATCH_STATUSES)
     .not("estado_sat", "eq", "cancelado")
-    .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0)
-    .not("company_id", "in", pgInList(selfIds))
-    .order("odoo_amount_residual_mxn", { ascending: false, nullsFirst: false })
+    .in("payment_state_odoo", ["not_paid", "partial"])
+    .lt("due_date_odoo", today)
+    .gt("amount_residual_mxn_odoo", 0)
+    .not("receptor_canonical_company_id", "in", pgInList(selfIds))
+    .order("amount_residual_mxn_odoo", { ascending: false, nullsFirst: false })
     .limit(limit);
 
-  type Raw = {
-    odoo_invoice_id: number | null;
-    odoo_ref: string | null;
-    company_id: number | null;
-    odoo_amount_total: number | null;
-    odoo_amount_total_mxn: number | null;
-    amount_residual: number | null;
-    odoo_amount_residual_mxn: number | null;
-    odoo_currency: string | null;
-    days_overdue: number | null;
-    due_date: string | null;
-    invoice_date: string | null;
-    payment_state: string | null;
-    salesperson_name: string | null;
-    salesperson_user_id: number | null;
-    uuid_sat: string | null;
-    estado_sat: string | null;
-  };
-  return ((data ?? []) as unknown as Raw[]).map((row) => ({
-    id: Number(row.odoo_invoice_id) || 0,
-    name: row.odoo_ref,
-    company_id: row.company_id,
-    company_name: null, // invoices_unified doesn't have company_name directly
-    amount_total_mxn: Number(row.odoo_amount_total_mxn ?? row.odoo_amount_total) || 0,
-    amount_residual_mxn: Number(row.odoo_amount_residual_mxn ?? row.amount_residual) || 0,
-    currency: row.odoo_currency,
-    days_overdue: row.days_overdue,
-    due_date: row.due_date,
-    invoice_date: row.invoice_date,
-    payment_state: row.payment_state,
-    salesperson_name: row.salesperson_name,
-    uuid_sat: row.uuid_sat,
-    estado_sat: row.estado_sat,
-  }));
+  return ((data ?? []) as unknown as CanonicalInvoiceRow[]).map(mapOverdueRow);
 }
 
 const _getOverdueInvoicesCached = unstable_cache(
-  unifiedGetOverdueInvoices,
-  ["invoices-overdue-v1"],
+  _getOverdueInvoicesRaw,
+  ["invoices-overdue-v2"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
 
-export async function getOverdueInvoices(
-  limit = 50
-): Promise<OverdueInvoice[]> {
+export async function getOverdueInvoices(limit = 50): Promise<OverdueInvoice[]> {
   return _getOverdueInvoicesCached(limit);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Facturas vencidas — versión paginada + filtrable (para DataTableToolbar)
+// Overdue invoices — paginated + filterable
 // ──────────────────────────────────────────────────────────────────────────
 export interface OverdueInvoicePage {
   rows: OverdueInvoice[];
   total: number;
 }
 
-const OVERDUE_SORT_MAP_UNIFIED: Record<string, string> = {
-  amount: "amount_residual",
-  days: "days_overdue",
-  due: "due_date",
+const OVERDUE_SORT_MAP: Record<string, string> = {
+  amount: "amount_residual_mxn_odoo",
+  days: "due_date_odoo", // sort by due date as proxy for days overdue
+  due: "due_date_odoo",
   invoice: "invoice_date",
-  name: "odoo_ref",
+  name: "odoo_name",
 };
 
-async function unifiedGetOverdueInvoicesPage(
+async function _getOverdueInvoicesPageRaw(
   params: TableParams & {
     bucket?: string[];
     salesperson?: string[];
@@ -236,45 +357,78 @@ async function unifiedGetOverdueInvoicesPage(
   const selfIds = await getSelfCompanyIds();
 
   const sortCol =
-    (params.sort && OVERDUE_SORT_MAP_UNIFIED[params.sort]) ?? "amount_residual";
+    (params.sort && OVERDUE_SORT_MAP[params.sort]) ?? "amount_residual_mxn_odoo";
   const ascending = params.sortDir === "asc";
-
   const [start, end] = paginationRange(params.page, params.size);
+  const today = new Date().toISOString().slice(0, 10);
 
   let query = sb
-    .from("invoices_unified")
-    .select(
-      "odoo_invoice_id, odoo_ref, company_id, odoo_amount_total, odoo_amount_total_mxn, amount_residual, odoo_amount_residual_mxn, odoo_currency, days_overdue, due_date, invoice_date, payment_state, salesperson_name, salesperson_user_id, uuid_sat, estado_sat",
-      { count: "exact" }
-    )
+    .from("canonical_invoices")
+    .select(OVERDUE_SELECT, { count: "exact" })
     .eq("direction", "issued")
-    .in("match_status", UNIFIED_MATCH_STATUSES)
     .not("estado_sat", "eq", "cancelado")
-    .in("payment_state", ["not_paid", "partial"])
-    .gt("days_overdue", 0)
-    .not("company_id", "in", pgInList(selfIds));
+    .in("payment_state_odoo", ["not_paid", "partial"])
+    .lt("due_date_odoo", today)
+    .gt("amount_residual_mxn_odoo", 0)
+    .not("receptor_canonical_company_id", "in", pgInList(selfIds));
 
   if (params.from) query = query.gte("invoice_date", params.from);
   if (params.to) {
     const next = endOfDay(params.to);
     if (next) query = query.lt("invoice_date", next);
   }
-  if (params.q) query = query.ilike("odoo_ref", `%${params.q}%`);
-  if (params.salesperson && params.salesperson.length > 0) {
-    query = query.in("salesperson_name", params.salesperson);
-  }
+  if (params.q) query = query.ilike("odoo_name", `%${params.q}%`);
+  // salesperson filter: canonical_invoices only has salesperson_user_id; name filter stubbed
+  // (SP6: join canonical_contacts for name-based filter)
 
   if (params.bucket && params.bucket.length > 0) {
+    // Compute client-side bucket filter via due_date_odoo ranges
     const orParts: string[] = [];
+    const now = new Date();
     for (const b of params.bucket) {
-      if (b === "1-30") orParts.push("and(days_overdue.gte.1,days_overdue.lte.30)");
-      else if (b === "31-60")
-        orParts.push("and(days_overdue.gte.31,days_overdue.lte.60)");
-      else if (b === "61-90")
-        orParts.push("and(days_overdue.gte.61,days_overdue.lte.90)");
-      else if (b === "91-120")
-        orParts.push("and(days_overdue.gte.91,days_overdue.lte.120)");
-      else if (b === "120+") orParts.push("days_overdue.gte.121");
+      if (b === "1-30") {
+        const d30 = new Date(now.getTime() - 30 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(
+          `and(due_date_odoo.gte.${d30},due_date_odoo.lt.${today})`
+        );
+      } else if (b === "31-60") {
+        const d31 = new Date(now.getTime() - 31 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        const d60 = new Date(now.getTime() - 60 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(
+          `and(due_date_odoo.gte.${d60},due_date_odoo.lt.${d31})`
+        );
+      } else if (b === "61-90") {
+        const d61 = new Date(now.getTime() - 61 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        const d90 = new Date(now.getTime() - 90 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(
+          `and(due_date_odoo.gte.${d90},due_date_odoo.lt.${d61})`
+        );
+      } else if (b === "91-120") {
+        const d91 = new Date(now.getTime() - 91 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        const d120 = new Date(now.getTime() - 120 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(
+          `and(due_date_odoo.gte.${d120},due_date_odoo.lt.${d91})`
+        );
+      } else if (b === "120+") {
+        const d121 = new Date(now.getTime() - 121 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(`due_date_odoo.lt.${d121}`);
+      }
     }
     if (orParts.length > 0) query = query.or(orParts.join(","));
   }
@@ -283,40 +437,9 @@ async function unifiedGetOverdueInvoicesPage(
     .order(sortCol, { ascending, nullsFirst: false })
     .range(start, end);
 
-  type Raw = {
-    odoo_invoice_id: number | null;
-    odoo_ref: string | null;
-    company_id: number | null;
-    odoo_amount_total: number | null;
-    odoo_amount_total_mxn: number | null;
-    amount_residual: number | null;
-    odoo_amount_residual_mxn: number | null;
-    odoo_currency: string | null;
-    days_overdue: number | null;
-    due_date: string | null;
-    invoice_date: string | null;
-    payment_state: string | null;
-    salesperson_name: string | null;
-    salesperson_user_id: number | null;
-    uuid_sat: string | null;
-    estado_sat: string | null;
-  };
-  const rows = ((data ?? []) as unknown as Raw[]).map((row) => ({
-    id: Number(row.odoo_invoice_id) || 0,
-    name: row.odoo_ref,
-    company_id: row.company_id,
-    company_name: null,
-    amount_total_mxn: Number(row.odoo_amount_total_mxn ?? row.odoo_amount_total) || 0,
-    amount_residual_mxn: Number(row.odoo_amount_residual_mxn ?? row.amount_residual) || 0,
-    currency: row.odoo_currency,
-    days_overdue: row.days_overdue,
-    due_date: row.due_date,
-    invoice_date: row.invoice_date,
-    payment_state: row.payment_state,
-    salesperson_name: row.salesperson_name,
-    uuid_sat: row.uuid_sat,
-    estado_sat: row.estado_sat,
-  }));
+  const rows = ((data ?? []) as unknown as CanonicalInvoiceRow[]).map(
+    mapOverdueRow
+  );
 
   return { rows, total: count ?? rows.length };
 }
@@ -327,40 +450,27 @@ export async function getOverdueInvoicesPage(
     salesperson?: string[];
   }
 ): Promise<OverdueInvoicePage> {
-  return unifiedGetOverdueInvoicesPage(params);
+  return _getOverdueInvoicesPageRaw(params);
 }
 
-/**
- * Opciones distinct para el facet "Vendedor" en cobranza.
- * Lightweight: solo nombres únicos entre las facturas vencidas.
- */
-async function unifiedGetOverdueSalespeopleOptions(): Promise<string[]> {
-  const supabase = getServiceClient();
-  const { data, error } = await supabase.from("invoices_unified")
-    .select("salesperson_name")
-    .eq("direction", "issued")
-    .in("match_status", UNIFIED_MATCH_STATUSES)
-    .not("estado_sat", "eq", "cancelado")
-    .in("payment_state", ["not_paid", "partial", "in_payment"])
-    .not("days_overdue", "eq", 0)
-    .not("salesperson_name", "is", null)
-    .limit(5000);
-  if (error) throw new Error(error.message);
-  const names = new Set<string>();
-  for (const r of (data ?? []) as Array<{ salesperson_name: string | null }>) {
-    if (r.salesperson_name) names.add(r.salesperson_name);
-  }
-  return [...names].sort();
+// ──────────────────────────────────────────────────────────────────────────
+// Overdue salespeople options
+// NOTE: canonical_invoices has salesperson_user_id (int) not salesperson_name.
+// Returning empty array until SP6 adds canonical_contacts join.
+// ──────────────────────────────────────────────────────────────────────────
+async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
+  // SP6-TODO: join canonical_contacts via salesperson_contact_id for name resolution
+  return [];
 }
 
 export const getOverdueSalespeopleOptions = unstable_cache(
-  unifiedGetOverdueSalespeopleOptions,
-  ["invoices-overdue-salespeople-v1"],
+  _getOverdueSalespeopleOptionsRaw,
+  ["invoices-overdue-salespeople-v2"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
 
 // ──────────────────────────────────────────────────────────────────────────
-// Company aging — versión paginada + filtrable
+// Company aging — paginated
 // ──────────────────────────────────────────────────────────────────────────
 export interface CompanyAgingPage {
   rows: CompanyAgingRow[];
@@ -386,8 +496,9 @@ export async function getCompanyAgingPage(
   const sortCol = (params.sort && sortMap[params.sort]) ?? "total_receivable";
   const ascending = params.sortDir === "asc";
 
+  // SP5-VERIFIED: cash_flow_aging is a KEEP-listed view (§12 not in drop list)
   let query = sb
-    .from("analytics_ar_aging")
+    .from("cash_flow_aging")
     .select(
       "company_id, company_name, tier, current_amount, overdue_1_30, overdue_31_60, overdue_61_90, overdue_90plus, total_receivable, total_revenue",
       { count: "exact" }
@@ -421,7 +532,7 @@ export async function getCompanyAgingPage(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Payment predictions — clientes con patrón anormal de pago
+// Payment predictions — unchanged (KEEP-listed MV)
 // ──────────────────────────────────────────────────────────────────────────
 export interface PaymentPredictionRow {
   company_id: number;
@@ -449,79 +560,8 @@ const PAYMENT_PREDICTION_SORT_MAP: Record<string, string> = {
   company: "company_name",
 };
 
-export async function getPaymentPredictionsPage(
-  params: TableParams & { risk?: string[]; trend?: string[] }
-): Promise<PaymentPredictionsPage> {
-  const sb = getServiceClient();
-  const selfIds = await getSelfCompanyIds();
-  const [start, end] = paginationRange(params.page, params.size);
-  const sortCol =
-    (params.sort && PAYMENT_PREDICTION_SORT_MAP[params.sort]) ??
-    "total_pending";
-  const ascending = params.sortDir === "asc";
-
-  let query = sb
-    .from("payment_predictions")
-    .select(
-      "company_id, company_name, tier, payment_risk, payment_trend, avg_days_to_pay, median_days_to_pay, max_days_overdue, total_pending, pending_count, predicted_payment_date",
-      { count: "exact" }
-    )
-    .gt("total_pending", 0)
-    .not("payment_risk", "ilike", "NORMAL%")
-    .not("company_id", "in", pgInList(selfIds));
-
-  if (params.q) query = query.ilike("company_name", `%${params.q}%`);
-  if (params.risk && params.risk.length > 0) {
-    // Match "CRITICO%" / "ALTO%" / "MEDIO%" prefixes
-    const orParts = params.risk.map((r) => `payment_risk.ilike.${r}%`);
-    query = query.or(orParts.join(","));
-  }
-  if (params.trend && params.trend.length > 0) {
-    query = query.in("payment_trend", params.trend);
-  }
-
-  const { data, count } = await query
-    .order(sortCol, { ascending, nullsFirst: false })
-    .range(start, end);
-
-  const rows = ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map(
-    (r) => ({
-      company_id: Number(r.company_id) || 0,
-      company_name: r.company_name ?? null,
-      tier: r.tier ?? null,
-      payment_risk: r.payment_risk ?? "—",
-      payment_trend: r.payment_trend ?? null,
-      avg_days_to_pay:
-        r.avg_days_to_pay != null ? Number(r.avg_days_to_pay) : null,
-      median_days_to_pay:
-        r.median_days_to_pay != null ? Number(r.median_days_to_pay) : null,
-      max_days_overdue:
-        r.max_days_overdue != null ? Number(r.max_days_overdue) : null,
-      total_pending: Number(r.total_pending) || 0,
-      pending_count: Number(r.pending_count) || 0,
-      predicted_payment_date: r.predicted_payment_date ?? null,
-    })
-  );
-
-  return { rows, total: count ?? rows.length };
-}
-
-export async function getPaymentPredictions(
-  limit = 30
-): Promise<PaymentPredictionRow[]> {
-  const sb = getServiceClient();
-  const selfIds = await getSelfCompanyIds();
-  const { data } = await sb
-    .from("payment_predictions")
-    .select(
-      "company_id, company_name, tier, payment_risk, payment_trend, avg_days_to_pay, median_days_to_pay, max_days_overdue, total_pending, pending_count, predicted_payment_date"
-    )
-    .gt("total_pending", 0)
-    .not("payment_risk", "ilike", "NORMAL%")
-    .not("company_id", "in", pgInList(selfIds))
-    .order("total_pending", { ascending: false })
-    .limit(limit);
-  return ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map((r) => ({
+function mapPredRow(r: Partial<PaymentPredictionRow>): PaymentPredictionRow {
+  return {
     company_id: Number(r.company_id) || 0,
     company_name: r.company_name ?? null,
     tier: r.tier ?? null,
@@ -536,7 +576,64 @@ export async function getPaymentPredictions(
     total_pending: Number(r.total_pending) || 0,
     pending_count: Number(r.pending_count) || 0,
     predicted_payment_date: r.predicted_payment_date ?? null,
-  }));
+  };
+}
+
+const PRED_SELECT =
+  "company_id, company_name, tier, payment_risk, payment_trend, avg_days_to_pay, median_days_to_pay, max_days_overdue, total_pending, pending_count, predicted_payment_date";
+
+export async function getPaymentPredictionsPage(
+  params: TableParams & { risk?: string[]; trend?: string[] }
+): Promise<PaymentPredictionsPage> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  const [start, end] = paginationRange(params.page, params.size);
+  const sortCol =
+    (params.sort && PAYMENT_PREDICTION_SORT_MAP[params.sort]) ?? "total_pending";
+  const ascending = params.sortDir === "asc";
+
+  // SP5-VERIFIED: payment_predictions is a KEEP-listed MV (§12 not in drop list)
+  let query = sb
+    .from("payment_predictions")
+    .select(PRED_SELECT, { count: "exact" })
+    .gt("total_pending", 0)
+    .not("payment_risk", "ilike", "NORMAL%")
+    .not("company_id", "in", pgInList(selfIds));
+
+  if (params.q) query = query.ilike("company_name", `%${params.q}%`);
+  if (params.risk && params.risk.length > 0) {
+    const orParts = params.risk.map((r) => `payment_risk.ilike.${r}%`);
+    query = query.or(orParts.join(","));
+  }
+  if (params.trend && params.trend.length > 0) {
+    query = query.in("payment_trend", params.trend);
+  }
+
+  const { data, count } = await query
+    .order(sortCol, { ascending, nullsFirst: false })
+    .range(start, end);
+
+  const rows = ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map(
+    mapPredRow
+  );
+  return { rows, total: count ?? rows.length };
+}
+
+export async function getPaymentPredictions(
+  limit = 30
+): Promise<PaymentPredictionRow[]> {
+  const sb = getServiceClient();
+  const selfIds = await getSelfCompanyIds();
+  // SP5-VERIFIED: payment_predictions is a KEEP-listed MV (§12 not in drop list)
+  const { data } = await sb
+    .from("payment_predictions")
+    .select(PRED_SELECT)
+    .gt("total_pending", 0)
+    .not("payment_risk", "ilike", "NORMAL%")
+    .not("company_id", "in", pgInList(selfIds))
+    .order("total_pending", { ascending: false })
+    .limit(limit);
+  return ((data ?? []) as Array<Partial<PaymentPredictionRow>>).map(mapPredRow);
 }
 
 async function _getPaymentRiskKpisRaw(): Promise<{
@@ -547,6 +644,7 @@ async function _getPaymentRiskKpisRaw(): Promise<{
 }> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
+  // SP5-VERIFIED: payment_predictions is a KEEP-listed MV (§12 not in drop list)
   const { data } = await sb
     .from("payment_predictions")
     .select("payment_risk, total_pending")
@@ -578,6 +676,6 @@ async function _getPaymentRiskKpisRaw(): Promise<{
 
 export const getPaymentRiskKpis = unstable_cache(
   _getPaymentRiskKpisRaw,
-  ["invoices-payment-risk-kpis-v1"],
+  ["invoices-payment-risk-kpis-v2"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
