@@ -44,7 +44,7 @@ export async function handleTaxReturnEvent(ctx: HandlerCtx, event: SyntageEvent)
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_tax_returns")
+    .from("syntage_tax_returns") // SP5-EXCEPTION: SAT source-layer writer — syntage_tax_returns is the canonical Bronze intake for SAT tax return records.
     .upsert(row, { onConflict: "syntage_id" });
   if (error) throw error;
 }

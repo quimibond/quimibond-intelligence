@@ -52,7 +52,7 @@ export async function handleTaxRetentionEvent(ctx: HandlerCtx, event: SyntageEve
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_tax_retentions")
+    .from("syntage_tax_retentions") // SP5-EXCEPTION: SAT source-layer writer — syntage_tax_retentions is the canonical Bronze intake for SAT retentions. TODO SP6: pipe through canonical_tax_events.
     .upsert(row, { onConflict: "syntage_id" });
   if (error) throw error;
 }

@@ -79,13 +79,13 @@ export async function POST(request: NextRequest) {
   let upserted = 0;
   if (rows.length > 0) {
     const { error: upsertErr } = await supabase
-      .from("syntage_invoice_payments")
+      .from("syntage_invoice_payments") // SP5-EXCEPTION: SAT source-layer writer — syntage_invoice_payments is the canonical Bronze intake for SAT payment complements (bulk import path). TODO SP6: pipe through canonical_payment_allocations.
       .upsert(rows, { onConflict: "syntage_id" });
     if (upsertErr) {
       // Per-row fallback
       for (const r of rows) {
         const { error: one } = await supabase
-          .from("syntage_invoice_payments")
+          .from("syntage_invoice_payments") // SP5-EXCEPTION: SAT source-layer writer — per-row fallback path.
           .upsert(r, { onConflict: "syntage_id" });
         if (one) {
           errors.push({ id: String(r.syntage_id), message: one.message });

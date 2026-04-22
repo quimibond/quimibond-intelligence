@@ -55,7 +55,7 @@ export const getFiscalRevenueMonthly = unstable_cache(
   async (months: number = 24): Promise<FiscalRevenueMonthlyRow[]> => {
     const sb = getServiceClient();
     const { data } = await sb
-      .from("syntage_revenue_fiscal_monthly")
+      .from("syntage_revenue_fiscal_monthly") // SP5-EXCEPTION: SAT fiscal MV — syntage_revenue_fiscal_monthly is the canonical Bronze aggregate for SAT monthly fiscal revenue; no silver equivalent. TODO SP6.
       .select(
         "month, revenue_mxn, gasto_mxn, cfdis_emitidos, cfdis_recibidos, clientes_unicos"
       )
@@ -71,7 +71,7 @@ export const getTopClientsFiscalLifetime = unstable_cache(
   async (limit: number = 20): Promise<TopClientFiscalRow[]> => {
     const sb = getServiceClient();
     const { data } = await sb
-      .from("syntage_top_clients_fiscal_lifetime")
+      .from("syntage_top_clients_fiscal_lifetime") // SP5-EXCEPTION: SAT fiscal MV — syntage_top_clients_fiscal_lifetime is the canonical Bronze aggregate for SAT lifetime client revenue; no silver equivalent. TODO SP6.
       .select(
         "rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, revenue_prev_12m_mxn, yoy_pct, cancellation_rate_pct, days_since_last_cfdi, company_id, first_cfdi"
       )
@@ -87,7 +87,7 @@ export const getTopSuppliersFiscalLifetime = unstable_cache(
   async (limit: number = 20): Promise<TopSupplierFiscalRow[]> => {
     const sb = getServiceClient();
     const { data } = await sb
-      .from("syntage_top_suppliers_fiscal_lifetime")
+      .from("syntage_top_suppliers_fiscal_lifetime") // SP5-EXCEPTION: SAT fiscal MV — syntage_top_suppliers_fiscal_lifetime is the canonical Bronze aggregate for SAT lifetime supplier spend; no silver equivalent. TODO SP6.
       .select(
         "rfc, name, lifetime_spend_mxn, spend_12m_mxn, spend_prev_12m_mxn, yoy_pct, retenciones_lifetime_mxn, company_id"
       )
@@ -134,7 +134,7 @@ export async function getCompanyFiscalProfile(
 
   const [clientRes, supplierRes] = await Promise.all([
     sb
-      .from("syntage_top_clients_fiscal_lifetime")
+      .from("syntage_top_clients_fiscal_lifetime") // SP5-EXCEPTION: SAT fiscal MV — company-level lookup; no silver equivalent. TODO SP6.
       .select(
         "rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, revenue_prev_12m_mxn, yoy_pct, cancellation_rate_pct, days_since_last_cfdi, company_id, first_cfdi"
       )
@@ -142,7 +142,7 @@ export async function getCompanyFiscalProfile(
       .limit(1)
       .maybeSingle(),
     sb
-      .from("syntage_top_suppliers_fiscal_lifetime")
+      .from("syntage_top_suppliers_fiscal_lifetime") // SP5-EXCEPTION: SAT fiscal MV — company-level lookup; no silver equivalent. TODO SP6.
       .select(
         "rfc, name, lifetime_spend_mxn, spend_12m_mxn, spend_prev_12m_mxn, yoy_pct, retenciones_lifetime_mxn, company_id"
       )

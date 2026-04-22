@@ -24,17 +24,17 @@ export async function getSyntageFilesSummary(): Promise<SyntageFilesSummary> {
   const sb = getServiceClient();
 
   const [totalQ, storageQ, recentQ, typesQ] = await Promise.all([
-    sb.from("syntage_files").select("*", { count: "exact", head: true }),
+    sb.from("syntage_files").select("*", { count: "exact", head: true }), // SP5-EXCEPTION: SAT source-layer reader — syntage_files is the canonical Bronze source for SAT document files. TODO SP6.
     sb
-      .from("syntage_files")
+      .from("syntage_files") // SP5-EXCEPTION: SAT source-layer reader — storage path count.
       .select("*", { count: "exact", head: true })
       .not("storage_path", "is", null),
     sb
-      .from("syntage_files")
+      .from("syntage_files") // SP5-EXCEPTION: SAT source-layer reader — most recent file lookup.
       .select("created_at")
       .order("created_at", { ascending: false })
       .limit(1),
-    sb.from("syntage_files").select("file_type").limit(5000),
+    sb.from("syntage_files").select("file_type").limit(5000), // SP5-EXCEPTION: SAT source-layer reader — file type distribution.
   ]);
 
   if (totalQ.error)
@@ -68,7 +68,7 @@ export async function getSyntageFilesRecent(
 ): Promise<SyntageFileRow[]> {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("syntage_files")
+    .from("syntage_files") // SP5-EXCEPTION: SAT source-layer reader — syntage_files recent list. TODO SP6.
     .select(
       "id, syntage_id, taxpayer_rfc, file_type, filename, mime_type, size_bytes, storage_path, created_at"
     )

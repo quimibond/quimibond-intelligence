@@ -53,7 +53,7 @@ export async function handleInvoiceLineItemEvent(ctx: HandlerCtx, event: Syntage
   // resolved at query time in invoices_unified.
 
   const { error } = await ctx.supabase
-    .from("syntage_invoice_line_items")
+    .from("syntage_invoice_line_items") // SP5-EXCEPTION: SAT source-layer writer — syntage_invoice_line_items is the canonical Bronze intake for SAT invoice line items. TODO SP6: pipe through canonical_invoice_lines.
     .upsert(row, { onConflict: "syntage_id" });
 
   if (error) throw error;

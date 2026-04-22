@@ -43,7 +43,7 @@ export async function buildComplianceContextOperativo(
       .eq("issue_type", "partner_blacklist_69b")
       .is("resolved_at", null)
       .order("detected_at", { ascending: false }),
-    sb.from("syntage_tax_status")
+    sb.from("syntage_tax_status") // SP5-EXCEPTION: SAT source-layer reader — syntage_tax_status is the canonical Bronze source for SAT compliance opinion; no silver equivalent exists yet. TODO SP6.
       .select("opinion_cumplimiento, fecha_consulta, regimen_fiscal")
       .order("fecha_consulta", { ascending: false, nullsFirst: false })
       .limit(1),

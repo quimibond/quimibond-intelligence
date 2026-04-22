@@ -44,7 +44,7 @@ export async function handleElectronicAccountingEvent(ctx: HandlerCtx, event: Sy
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_electronic_accounting")
+    .from("syntage_electronic_accounting") // SP5-EXCEPTION: SAT source-layer writer — syntage_electronic_accounting is the canonical Bronze intake for SAT electronic accounting records.
     .upsert(row, { onConflict: "syntage_id" });
   if (error) throw error;
 }

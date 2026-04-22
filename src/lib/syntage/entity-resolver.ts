@@ -25,7 +25,7 @@ export function supabaseEntityMapStore(
   return {
     async lookup(rfc) {
       const { data, error } = await supabase
-        .from("syntage_entity_map")
+        .from("syntage_entity_map") // SP5-EXCEPTION: SAT source-layer reader — syntage_entity_map is the canonical Bronze RFC→Odoo company lookup. TODO SP6: replace with canonical_companies.rfc match.
         .select("odoo_company_id")
         .ilike("taxpayer_rfc", rfc)
         .eq("is_active", true)

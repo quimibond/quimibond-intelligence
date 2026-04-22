@@ -66,7 +66,7 @@ async function _getRfmSegmentsRaw(
 ): Promise<RfmSegmentRow[]> {
   const sb = getServiceClient();
   let q = sb
-    .from("rfm_segments")
+    .from("rfm_segments") // SP5-EXCEPTION: §12 banned MV — RFM segmentation read; no canonical replacement in SP5 scope. TODO SP6: replace with gold_rfm_segments or canonical_company_metrics.
     .select(
       "company_id, company_name, tier, segment, recency_days, frequency, monetary_2y, monetary_12m, monetary_90d, avg_ticket, outstanding, max_days_overdue, last_purchase, first_purchase, r_score, f_score, m_score, rfm_code, contact_priority_score"
     )
@@ -241,7 +241,7 @@ export async function getRevenueConcentration(
 ): Promise<ConcentrationRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("revenue_concentration")
+    .from("revenue_concentration") // SP5-EXCEPTION: §12 banned MV — revenue concentration portfolio read; no canonical replacement in SP5 scope. TODO SP6: derive from canonical_invoices aggregate.
     .select("*")
     .lte("rank_in_portfolio", topN);
   return ((data ?? []) as Array<Partial<ConcentrationRow>>).map((r) => ({
@@ -514,7 +514,7 @@ export async function getCustomerCohorts(
   cutoff.setMonth(cutoff.getMonth() - monthsBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
   const { data } = await sb
-    .from("customer_cohorts")
+    .from("customer_cohorts") // SP5-EXCEPTION: §12 banned MV — cohort analysis read; no canonical replacement in SP5 scope. TODO SP6: derive from canonical_invoices aggregate.
     .select("*")
     .gte("cohort_quarter", cutoffStr)
     .order("cohort_quarter", { ascending: true })

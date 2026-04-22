@@ -78,7 +78,7 @@ async function getExtractionsStatus(
   supabase: import("@supabase/supabase-js").SupabaseClient,
 ) {
   const { data } = await supabase
-    .from("syntage_extractions")
+    .from("syntage_extractions") // SP5-EXCEPTION: SAT source-layer reader — syntage_extractions is the canonical Bronze source for SAT extraction status. TODO SP6.
     .select("syntage_id, extractor_type, status, started_at, finished_at, rows_produced, raw_payload")
     .order("created_at", { ascending: false })
     .limit(20);
@@ -135,17 +135,17 @@ async function computeOdooCrossCheckFallback(
 ) {
   // legitimate raw use: cross-check syntage_invoices ↔ odoo_invoices via cfdi_uuid — this IS the reconciliation layer
   const [{ count: syntageCount }, { count: odooCount }, { data: syntageUuids }] = await Promise.all([
-    supabase.from("syntage_invoices").select("*", { count: "exact", head: true }),
-    supabase.from("odoo_invoices").select("*", { count: "exact", head: true }).not("cfdi_uuid", "is", null),
-    supabase.from("syntage_invoices").select("uuid").limit(10000),
+    supabase.from("syntage_invoices").select("*", { count: "exact", head: true }), // SP5-EXCEPTION: SAT source-layer reader — syntage_invoices count for cross-check. TODO SP6: replace with canonical_invoices.
+    supabase.from("odoo_invoices").select("*", { count: "exact", head: true }).not("cfdi_uuid", "is", null), // SP5-EXCEPTION: syntage/health cross-check — reconciliation layer reads both Bronze sources by design. TODO SP6: replace with canonical_invoices.
+    supabase.from("syntage_invoices").select("uuid").limit(10000), // SP5-EXCEPTION: SAT source-layer reader — UUID batch fetch for cross-check. TODO SP6: replace with canonical_invoices.
   ]);
 
   const uuids = (syntageUuids ?? []).map(r => (r.uuid as string).toLowerCase());
   let matched = 0;
   if (uuids.length > 0) {
-    // legitimate raw use: UUID matching against odoo_invoices.cfdi_uuid — raw needed for cross-source reconciliation
+    // SP5-EXCEPTION: syntage/health UUID match loop — reconciliation layer reads both Bronze sources by design. TODO SP6: replace with canonical_invoices.
     const { count } = await supabase
-      .from("odoo_invoices")
+      .from("odoo_invoices") // SP5-EXCEPTION: see comment above
       .select("*", { count: "exact", head: true })
       .in("cfdi_uuid", uuids);
     matched = count ?? 0;
@@ -171,7 +171,7 @@ async function getErrorRate(
 
   const [{ count: webhookCount }, { count: errorCount }, { data: errorSamples }] = await Promise.all([
     supabase
-      .from("syntage_webhook_events")
+      .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — error rate monitor. TODO SP6.
       .select("*", { count: "exact", head: true })
       .gte("received_at", since),
     supabase
@@ -209,7 +209,7 @@ async function getYearlyDistribution(
 ) {
   // Lightweight: fetch up to 10k rows, compute distribution in memory.
   const { data } = await supabase
-    .from("syntage_invoices")
+    .from("syntage_invoices") // SP5-EXCEPTION: SAT source-layer reader — yearly distribution analysis. TODO SP6: replace with canonical_invoices.
     .select("fecha_emision, direction")
     .not("fecha_emision", "is", null)
     .limit(10000);
