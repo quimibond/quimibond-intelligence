@@ -655,3 +655,59 @@ Evidence tables confirmed: `email_signals`, `ai_extracted_facts`, `manual_notes`
 - No TypeScript errors from inbox files.
 
 ### Commit: 23618e3
+
+## Task 13 — /empresas pages + PanoramaTab + CompanyLink rewire (completed 2026-04-21)
+
+### Inventory (pre-rewire)
+
+All 6 tab components and both page files had **0 direct `.from()` calls** — they already delegated to lib helpers.
+
+| File | Direct `.from()` calls | Status |
+|---|---|---|
+| `empresas/page.tsx` | 0 | Uses `getCompaniesPage`, `getRfmSegments`, `getRfmSegmentSummary` |
+| `empresas/[id]/page.tsx` | 0 | Uses `getCompanyDetail` (canonical since T03) |
+| `PanoramaTab.tsx` | 0 | Uses `getCustomer360`, `getCompanyInsights`, `getCompanyEvidencePack` |
+| `ComercialTab.tsx` | 0 | Clean |
+| `FinancieroTab.tsx` | 0 | Uses `getCustomer360` (via analytics helpers) |
+| `FiscalTab.tsx` | 0 | Uses `getCustomer360`, domain components |
+| `OperativoTab.tsx` | 0 | Clean |
+| `PagosTab.tsx` | 0 | Clean |
+| `company-link.tsx` | 0 direct, but wrong URL | Linked to `/companies/` (legacy) |
+
+### Changes made
+
+1. **`company-link.tsx`** — rewired `href` from `/companies/${companyId}` → `/empresas/${companyId}`. `companyId` is `canonical_companies.id` (= `canonical_company_id` in `gold_company_360`). Added SP5 T13 annotation in comment.
+
+2. **`empresas/page.tsx`** — fixed two `rowHref` callbacks from `/companies/${r.company_id}` → `/empresas/${r.company_id}` (one in `ReactivacionSection`, one in `CompaniesTable`).
+
+3. **`src/__tests__/silver-sp5/empresas-pages.test.ts`** — new test file (17 tests): §12 ban list check for all files in `src/app/empresas/` + `company-link.tsx`; PanoramaTab odoo_ direct-read check; URL routing checks.
+
+### Key finding: pages were already clean
+
+The T03 rewire of `_shared/companies.ts` + T04 rewire of `_shared/contacts.ts` had already eliminated all legacy reads from the lib layer. Page files never had direct `.from()` calls — they were always using helper functions. The only real bugs were the URL routing issues (`/companies/` instead of `/empresas/`).
+
+### Helper functions called from page files (all canonical)
+
+- `getCompaniesPage` → `gold_company_360` (canonical)
+- `getRfmSegments`, `getRfmSegmentSummary` → `rfm_segments` (in KEEP list — retained in §12)
+- `getCompanyDetail` → `canonical_companies` + `gold_company_360` + `canonical_invoices` + `canonical_sale_orders`
+- `getCustomer360` → `gold_company_360`
+- `getCompanyInsights` → `agent_insights` (operational table, not in ban list)
+- `getCompanyEvidencePack` → evidence layer (canonical)
+
+### Schema drift beyond T1-T12
+
+None discovered. All column names used in lib helpers confirmed correct from prior tasks.
+
+### Test results
+
+- `npm run vitest src/__tests__/silver-sp5/empresas-pages.test.ts`: 17/17 passed
+- Grep gate: 0 legacy reads in page files
+
+### Build
+
+- Pre-existing `/equipo` prerender failure (missing SUPABASE_SERVICE_KEY in build env) — unrelated to T13.
+- No TypeScript errors from empresas pages.
+- All empresas routes compiled cleanly.
+
+### Commit: (see git log)
