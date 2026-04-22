@@ -90,3 +90,4 @@ export { Chart, type ChartProps, type ChartSeries } from "./chart";
 export type { ChartType as ChartPrimitiveType } from "./chart";
 export { TrendSpark } from "./trend-spark";
 export { InboxCard, type InboxCardIssue, type InboxActionCta, type InboxCardSeverity } from "./inbox-card";
+export { SwipeStack } from "./swipe-stack";
