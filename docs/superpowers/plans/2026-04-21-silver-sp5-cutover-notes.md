@@ -168,3 +168,53 @@ period-filter.ts, year-filter.ts, table-params.ts, _helpers.ts — 0 `.from(` ma
 - Integration: 3 skipped without env.
 
 ### Commit: 2afd9d6
+
+## Task 5 — analytics/finance.ts rewrite (completed 2026-04-21)
+
+### Inventory (Step 1 — legacy reads)
+| Function | Legacy Read | Action |
+|---|---|---|
+| `getCfoSnapshot` | `cfo_dashboard` view | KEEP — SP5-VERIFIED |
+| `getArZombies` | `invoices_unified` MV (257MB) | REPLACED → `canonical_invoices` |
+| `getFinancialRunway` | `financial_runway` view | STUB null — view does not exist (dropped SP1) |
+| `getWorkingCapital` | `working_capital` view | REPLACED → `gold_cashflow` |
+| `getCashPosition` | `cash_position` view | REPLACED → `canonical_bank_balances` |
+| `getPlHistory` | `pl_estado_resultados` view | REPLACED → `gold_pl_statement` |
+| `getWorkingCapitalCycle` | `working_capital_cycle` view | KEEP — SP5-VERIFIED (gold_cashflow has no DSO/DPO/DIO) |
+| `getProjectedCashFlow` | `projected_cash_flow_weekly` view + RPC | KEEP — SP5-VERIFIED |
+| `getCashflowRecommendations` | RPC `get_cashflow_recommendations` | KEEP — SP5-VERIFIED (reads cashflow_* views) |
+| `getPartnerPaymentProfiles` | `partner_payment_profile` MV (376kB) | REPLACED → client-side agg canonical_invoices + canonical_payments |
+| `getJournalFlowProfiles` | `journal_flow_profile` MV (40kB) | KEEP — SP5-VERIFIED |
+| `getAccountPaymentProfiles` | `account_payment_profile` MV (232kB) | REPLACED → canonical_payments agg by payment_method_odoo |
+
+### Step 2 KEEP/DROP Verdicts
+- KEEP: `cfo_dashboard` (reads odoo_bank_balances + odoo_invoices, not in drop list)
+- KEEP: `projected_cash_flow_weekly` (reads cashflow_* views, not in drop list)
+- KEEP: `working_capital_cycle` (gold_cashflow has no DSO/DPO/DIO fields)
+- KEEP: `journal_flow_profile` (not in drop list §12)
+- NOT EXIST: `financial_runway`, `working_capital` (dropped SP1) — stubbed returning null
+- RPC `get_cashflow_recommendations` reads `cashflow_liquidity_metrics`, `cashflow_ar_acelerate`, `cashflow_ap_negotiate`, `cashflow_so_backlog` — all are views (not dropped legacy MVs) → SAFE
+- RPC `get_projected_cash_flow_summary` reads same cashflow_* views → SAFE
+
+### Schema Drift (new findings beyond T1-T4)
+- `payment_state_odoo` (NOT `odoo_payment_state` or `payment_state`) — in `canonical_invoices`
+- `canonical_payments.payment_method_odoo` (NOT `method_resolved`)
+- `fiscal_days_to_due_date` is NULL for essentially all open issued invoices pre-Task-24 — fallback to `due_date_odoo` arithmetic used
+- `financial_runway` and `working_capital` views DO NOT EXIST (dropped SP1, confirmed by pg_class query returning 0 rows)
+- `gold_cashflow` fields: `current_cash_mxn`, `current_debt_mxn`, `total_receivable_mxn`, `overdue_receivable_mxn`, `total_payable_mxn`, `working_capital_mxn`, `bank_breakdown`, `refreshed_at` — NO DSO/DPO/DIO fields
+- `gold_pl_statement.total_income` uses negative accounting convention (ABS needed for display)
+- `gold_pl_statement.by_level_1` JSONB used to derive `costoVentas` / `gastosOperativos` / `otrosNeto` by `account_type` key
+
+### Functions rewritten vs preserved
+- REWRITTEN (5): `getArZombies`, `getWorkingCapital`, `getCashPosition`, `getPlHistory`, `getPartnerPaymentProfiles`, `getAccountPaymentProfiles`
+- STUBBED TODO-SP6 (1): `getFinancialRunway` (view does not exist)
+- PRESERVED with SP5-VERIFIED (7 annotations): `getCfoSnapshot`, `getWorkingCapitalCycle`, `getProjectedCashFlow`, `getCashflowRecommendations`, `getJournalFlowProfiles`
+
+### Tests
+- Banned-token: 6 passing / 4 skipped (integration without env)
+- Grep gate: 0 banned reads in finance.ts
+- Build: `✓ Compiled successfully` (no errors from this file; pre-existing consumer warnings in other files)
+
+### SP5-VERIFIED annotations added: 7
+
+### Commit: 5a07c80
