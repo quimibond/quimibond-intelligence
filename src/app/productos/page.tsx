@@ -952,7 +952,7 @@ async function TopMarginTable({
       emptyState={{
         icon: TrendingUp,
         title: "Sin datos de margen",
-        description: "No hay datos en product_margin_analysis.",
+        description: "No hay datos de margen en gold_product_performance.",
       }}
     />
   );
