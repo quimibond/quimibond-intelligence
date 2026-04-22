@@ -1,51 +1,21 @@
-import { cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
+import { StatusBadge } from "./status-badge";
 
 export type Severity = "critical" | "high" | "medium" | "low";
 
 interface SeverityBadgeProps {
   level: Severity | string;
   className?: string;
-  pulse?: boolean;
+  pulse?: boolean; // accepted but ignored in SP6 — motion removed for minimalist aesthetic
 }
 
-const config: Record<
-  Severity,
-  { label: string; variant: "critical" | "warning" | "info" | "success" }
-> = {
-  critical: { label: "Crítica", variant: "critical" },
-  high: { label: "Alta", variant: "warning" },
-  medium: { label: "Media", variant: "info" },
-  low: { label: "Baja", variant: "success" },
-};
-
 /**
- * SeverityBadge — badge con color semántico para insights / alertas.
- *
- * @example
- * <SeverityBadge level="critical" />  // red pulse
- * <SeverityBadge level="low" />       // green
+ * @deprecated SP6 — use `<StatusBadge kind="severity" value={level} />` instead.
+ * This wrapper is preserved for back-compat with out-of-scope pages during SP6 foundation.
  */
-export function SeverityBadge({
-  level,
-  className,
-  pulse,
-}: SeverityBadgeProps) {
-  const entry = (config as Record<string, (typeof config)["critical"]>)[level] ?? {
-    label: level,
-    variant: "info" as const,
-  };
-  const isCritical = level === "critical";
-  return (
-    <Badge
-      variant={entry.variant}
-      className={cn(
-        "uppercase tracking-wide text-[10px]",
-        pulse && isCritical && "animate-pulse",
-        className
-      )}
-    >
-      {entry.label}
-    </Badge>
-  );
+export function SeverityBadge({ level, className }: SeverityBadgeProps) {
+  const allowed: Severity[] = ["critical", "high", "medium", "low"];
+  if (allowed.includes(level as Severity)) {
+    return <StatusBadge kind="severity" value={level as Severity} density="regular" className={className} />;
+  }
+  return <StatusBadge kind="generic" value={String(level)} density="regular" className={className} />;
 }

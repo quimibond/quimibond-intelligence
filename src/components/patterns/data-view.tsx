@@ -96,6 +96,8 @@ interface DataViewProps<T> {
 }
 
 /**
+ * @deprecated SP6 — use <Chart /> + <DataTable /> with URL-driven view state.
+ *
  * DataView — tabla con toggle opcional a gráfica.
  *
  * Server component: decide qué renderizar en base al param `view` de la URL.

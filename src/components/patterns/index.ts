@@ -1,6 +1,7 @@
 // Catálogo canónico de patterns. Ver docs/design-system.md.
 // Usar SIEMPRE estos building blocks en nuevas páginas (mobile-first).
 // Anteriormente vivía en src/components/shared/v2/ (renombrado 2026-04-19).
+export { AgingBuckets, type AgingData, type AgingBucketKey } from "./aging-buckets";
 export { KpiCard } from "./kpi-card";
 export { StatGrid } from "./stat-grid";
 export {
@@ -33,6 +34,7 @@ export { Currency } from "./currency";
 export { DateDisplay } from "./date-display";
 export { SeverityBadge, type Severity } from "./severity-badge";
 export { StatusBadge, type Status } from "./status-badge";
+export type { StatusBadgeProps, StatusBadgeDensity, StatusBadgeVariant } from "./status-badge";
 export { TrendIndicator } from "./trend-indicator";
 export { MetricRow } from "./metric-row";
 export { EmptyState } from "./empty-state";
@@ -85,3 +87,9 @@ export {
   type GroupByTemporal,
   type GroupByToggleProps,
 } from "./groupby-toggle";
+export { Chart, type ChartProps, type ChartSeries } from "./chart";
+export type { ChartType as ChartPrimitiveType } from "./chart";
+export { TrendSpark } from "./trend-spark";
+export { InboxCard, type InboxCardIssue, type InboxActionCta, type InboxCardSeverity } from "./inbox-card";
+export { SwipeStack } from "./swipe-stack";
+export { CompanyKpiHero, type CompanyKpiHeroCanonical, type CompanyKpiHero360 } from "./company-kpi-hero";

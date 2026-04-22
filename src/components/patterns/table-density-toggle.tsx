@@ -1,3 +1,11 @@
+/**
+ * @deprecated SP6 foundation — candidate for SP7 removal.
+ * Current callers (as of 2026-04-22):
+ *   - src/app/profile/page.tsx:17 (import)
+ *   - src/app/profile/page.tsx:95 (<TableDensityToggle />)
+ * Kept functional via existing implementation; new page rebuilds
+ * should not introduce new callers.
+ */
 "use client";
 
 import * as React from "react";

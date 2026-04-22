@@ -13,6 +13,8 @@ interface DataViewToggleProps {
 }
 
 /**
+ * @deprecated SP6 — use <Chart /> with URL-driven view state.
+ *
  * SSR-friendly segmented control: Tabla ⇄ Gráfica.
  *
  * Renders as two `<Link>` triggers styled like shadcn `TabsList`/`TabsTrigger`.

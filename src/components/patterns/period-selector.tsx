@@ -106,8 +106,8 @@ export function PeriodSelector({
           </span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-[460px] p-0" align="end">
-        <div className="grid grid-cols-[1fr_1fr] divide-x max-h-[440px]">
+      <PopoverContent className="w-[min(460px,calc(100vw-1rem))] p-0" align="end">
+        <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr] sm:divide-x max-h-[440px] overflow-y-auto">
           {/* Col 1 — Presets */}
           <div className="p-2 overflow-y-auto">
             <div className="text-xs font-semibold text-muted-foreground px-2 py-1">
