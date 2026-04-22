@@ -503,3 +503,68 @@ Result: 0 matches on all banned Bronze + §12 drop-list patterns.
 - Static generation: fails on `/equipo` — pre-existing missing SUPABASE_SERVICE_KEY env var (same as T2/T3/T5/T7/T8)
 
 ### Commit: e1b0692
+
+## Task 10 — operational/{operations,team}.ts rewire (completed 2026-04-21)
+
+### Files rewired
+
+- `src/lib/queries/operational/operations.ts` (15KB → canonical)
+- `src/lib/queries/operational/team.ts` (9KB → canonical)
+- `src/__tests__/silver-sp5/operational-ops-and-team.test.ts` (new)
+
+### Legacy reads eliminated
+
+**operations.ts:**
+- `odoo_deliveries` → `canonical_deliveries` (MV, PK=`canonical_id`)
+- `odoo_manufacturing` → `canonical_manufacturing` (MV, PK=`canonical_id`)
+- `odoo_orderpoints` → `canonical_inventory` (view, PK=`canonical_product_id`)
+
+**team.ts:**
+- `odoo_employees` → `canonical_employees` (view over canonical_contacts)
+- `odoo_users` → `canonical_employees` (same view, has `odoo_user_id`, `pending_activities_count`)
+- `odoo_departments` → derived from `canonical_employees.department_name DISTINCT`
+- `departments` (QB internal table) → also derived from `canonical_employees`
+- `person_unified` — was not present; ban test confirms no reference
+
+### SP5-VERIFIED annotations (3)
+
+- `ops_delivery_health_weekly` — §12 KEEP (appears 2x)
+- `inventory_velocity` — §12 KEEP
+- `dead_stock_analysis` — §12 KEEP
+
+### New required exports added
+
+- `listDeliveries(opts)` — canonical_deliveries
+- `listManufacturingOrders(opts)` — canonical_manufacturing
+- `listInventory(opts)` — canonical_inventory
+- `fetchInventoryVelocity(limit)` — inventory_velocity MV
+- `fetchDeadStockAnalysis(limit)` — dead_stock_analysis MV
+- `listTeamMembers(opts)` — canonical_employees
+- `listDepartments()` — derived from canonical_employees
+- `fetchEmployeeWorkload(opts)` — canonical_employees + agent_insights
+
+### Schema drift discovered
+
+- `canonical_deliveries` has NO embedded `company_name`. Has `canonical_company_id` only. Consumer pages expecting `company_name` get `null` (acceptable — company lookup requires separate join not available on the MV).
+- Back-compat alias: `company_id = canonical_company_id` added to `DeliveryRow`, `LateDeliveryRow`, `PendingDeliveryRow` interfaces — `/operaciones` page uses `r.company_id` in CompanyLink.
+- `canonical_employees` view has `pending_activities_count` and `overdue_activities_count` — no need to query `canonical_contacts` separately for activity counts.
+- `canonical_employees` does NOT have `manager_name` text column — only `manager_canonical_contact_id` bigint FK. `getEmployees()` returns `manager_name: null`.
+- `agent_insights.assignee_user_id` = odoo integer. No `assignee_canonical_contact_id` column on agent_insights (exists only on `reconciliation_issues`). Map via `canonical_employees.odoo_user_id → assignee_user_id`.
+
+### Grep gate
+
+0 matches for all banned Bronze + §12 drop-list patterns.
+
+### Test results
+
+- Static ban tests: 4 passed
+- Integration tests: 8 skipped (no live env)
+- Total: 4 passed, 8 skipped
+
+### Build state
+
+- TypeScript: 0 errors from T10 files
+- ESLint: 1 lint fix during build (`let` → `const` for insightsByOdooUser)
+- Static generation: fails on `/equipo` — pre-existing missing SUPABASE_SERVICE_KEY (same as all prior tasks)
+
+### Commit: ed61c67
