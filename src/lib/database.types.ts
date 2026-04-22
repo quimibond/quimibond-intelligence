@@ -89,13 +89,6 @@ export type Database = {
             foreignKeyName: "action_items_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -110,56 +103,7 @@ export type Database = {
             foreignKeyName: "action_items_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -168,20 +112,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "action_items_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "action_items_contact_id_fkey"
@@ -324,13 +254,6 @@ export type Database = {
             foreignKeyName: "agent_insights_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -345,56 +268,7 @@ export type Database = {
             foreignKeyName: "agent_insights_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -403,20 +277,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "agent_insights_contact_id_fkey"
@@ -585,89 +445,6 @@ export type Database = {
           {
             foreignKeyName: "agent_runs_agent_id_fkey"
             columns: ["agent_id"]
-            isOneToOne: false
-            referencedRelation: "director_health_30d"
-            referencedColumns: ["agent_id"]
-          },
-        ]
-      }
-      agent_tickets: {
-        Row: {
-          created_at: string | null
-          from_agent_id: number | null
-          id: number
-          insight_id: number | null
-          message: string | null
-          status: string | null
-          ticket_type: string | null
-          to_agent_id: number | null
-        }
-        Insert: {
-          created_at?: string | null
-          from_agent_id?: number | null
-          id?: number
-          insight_id?: number | null
-          message?: string | null
-          status?: string | null
-          ticket_type?: string | null
-          to_agent_id?: number | null
-        }
-        Update: {
-          created_at?: string | null
-          from_agent_id?: number | null
-          id?: number
-          insight_id?: number | null
-          message?: string | null
-          status?: string | null
-          ticket_type?: string | null
-          to_agent_id?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agent_tickets_from_agent_id_fkey"
-            columns: ["from_agent_id"]
-            isOneToOne: false
-            referencedRelation: "agent_effectiveness"
-            referencedColumns: ["agent_id"]
-          },
-          {
-            foreignKeyName: "agent_tickets_from_agent_id_fkey"
-            columns: ["from_agent_id"]
-            isOneToOne: false
-            referencedRelation: "ai_agents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_tickets_from_agent_id_fkey"
-            columns: ["from_agent_id"]
-            isOneToOne: false
-            referencedRelation: "director_health_30d"
-            referencedColumns: ["agent_id"]
-          },
-          {
-            foreignKeyName: "agent_tickets_insight_id_fkey"
-            columns: ["insight_id"]
-            isOneToOne: false
-            referencedRelation: "agent_insights"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_tickets_to_agent_id_fkey"
-            columns: ["to_agent_id"]
-            isOneToOne: false
-            referencedRelation: "agent_effectiveness"
-            referencedColumns: ["agent_id"]
-          },
-          {
-            foreignKeyName: "agent_tickets_to_agent_id_fkey"
-            columns: ["to_agent_id"]
-            isOneToOne: false
-            referencedRelation: "ai_agents"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_tickets_to_agent_id_fkey"
-            columns: ["to_agent_id"]
             isOneToOne: false
             referencedRelation: "director_health_30d"
             referencedColumns: ["agent_id"]
@@ -945,54 +722,6 @@ export type Database = {
         }
         Relationships: []
       }
-      blacklist_alerts: {
-        Row: {
-          acknowledged_at: string | null
-          acknowledged_by: string | null
-          alerted_at: string
-          blacklist_status: string
-          company_id: number | null
-          id: number
-          invoice_direction: string | null
-          invoice_fecha_timbrado: string | null
-          invoice_total_mxn: number | null
-          invoice_uuid: string
-          note: string | null
-          rfc: string
-          side: string
-        }
-        Insert: {
-          acknowledged_at?: string | null
-          acknowledged_by?: string | null
-          alerted_at?: string
-          blacklist_status: string
-          company_id?: number | null
-          id?: number
-          invoice_direction?: string | null
-          invoice_fecha_timbrado?: string | null
-          invoice_total_mxn?: number | null
-          invoice_uuid: string
-          note?: string | null
-          rfc: string
-          side: string
-        }
-        Update: {
-          acknowledged_at?: string | null
-          acknowledged_by?: string | null
-          alerted_at?: string
-          blacklist_status?: string
-          company_id?: number | null
-          id?: number
-          invoice_direction?: string | null
-          invoice_fecha_timbrado?: string | null
-          invoice_total_mxn?: number | null
-          invoice_uuid?: string
-          note?: string | null
-          rfc?: string
-          side?: string
-        }
-        Relationships: []
-      }
       briefings: {
         Row: {
           account: string
@@ -1077,13 +806,6 @@ export type Database = {
             foreignKeyName: "briefings_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -1098,56 +820,7 @@ export type Database = {
             foreignKeyName: "briefings_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -1156,20 +829,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "briefings_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -2836,27 +2495,6 @@ export type Database = {
         }
         Relationships: []
       }
-      cashflow_journal_classification: {
-        Row: {
-          bucket: string
-          note: string | null
-          pattern: string
-          updated_at: string
-        }
-        Insert: {
-          bucket: string
-          note?: string | null
-          pattern: string
-          updated_at?: string
-        }
-        Update: {
-          bucket?: string
-          note?: string | null
-          pattern?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
       companies: {
         Row: {
           business_type: string | null
@@ -3136,13 +2774,6 @@ export type Database = {
             foreignKeyName: "contacts_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -3157,56 +2788,7 @@ export type Database = {
             foreignKeyName: "contacts_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -3215,20 +2797,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "contacts_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "contacts_entity_id_fkey"
@@ -3550,13 +3118,6 @@ export type Database = {
             foreignKeyName: "emails_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -3571,56 +3132,7 @@ export type Database = {
             foreignKeyName: "emails_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -3629,20 +3141,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "emails_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "emails_sender_contact_id_fkey"
@@ -3840,172 +3338,6 @@ export type Database = {
           },
         ]
       }
-      health_scores: {
-        Row: {
-          communication_score: number | null
-          company_id: number | null
-          contact_email: string
-          contact_id: number | null
-          created_at: string
-          engagement_score: number | null
-          financial_score: number | null
-          id: number
-          opportunity_signals: Json | null
-          overall_score: number | null
-          payment_compliance_score: number | null
-          previous_score: number | null
-          responsiveness_score: number | null
-          risk_signals: Json | null
-          score_date: string
-          sentiment_score: number | null
-          trend: string | null
-        }
-        Insert: {
-          communication_score?: number | null
-          company_id?: number | null
-          contact_email: string
-          contact_id?: number | null
-          created_at?: string
-          engagement_score?: number | null
-          financial_score?: number | null
-          id?: never
-          opportunity_signals?: Json | null
-          overall_score?: number | null
-          payment_compliance_score?: number | null
-          previous_score?: number | null
-          responsiveness_score?: number | null
-          risk_signals?: Json | null
-          score_date: string
-          sentiment_score?: number | null
-          trend?: string | null
-        }
-        Update: {
-          communication_score?: number | null
-          company_id?: number | null
-          contact_email?: string
-          contact_id?: number | null
-          created_at?: string
-          engagement_score?: number | null
-          financial_score?: number | null
-          id?: never
-          opportunity_signals?: Json | null
-          overall_score?: number | null
-          payment_compliance_score?: number | null
-          previous_score?: number | null
-          responsiveness_score?: number | null
-          risk_signals?: Json | null
-          score_date?: string
-          sentiment_score?: number | null
-          trend?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "health_scores_contact_id_fkey"
-            columns: ["contact_id"]
-            isOneToOne: false
-            referencedRelation: "contacts"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
       insight_follow_ups: {
         Row: {
           assignee_email: string | null
@@ -4057,13 +3389,6 @@ export type Database = {
             foreignKeyName: "insight_follow_ups_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -4078,56 +3403,7 @@ export type Database = {
             foreignKeyName: "insight_follow_ups_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -4136,20 +3412,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "insight_follow_ups_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "insight_follow_ups_insight_id_fkey"
@@ -4195,32 +3457,62 @@ export type Database = {
           },
         ]
       }
-      invoice_bridge_manual: {
+      invariant_routing: {
         Row: {
-          id: number
-          linked_at: string
-          linked_by: string
-          note: string | null
-          odoo_invoice_id: number | null
-          syntage_uuid: string | null
+          canonical_contact_id: number | null
+          department_name: string
+          invariant_namespace: string
+          updated_at: string
         }
         Insert: {
-          id?: number
-          linked_at?: string
-          linked_by: string
-          note?: string | null
-          odoo_invoice_id?: number | null
-          syntage_uuid?: string | null
+          canonical_contact_id?: number | null
+          department_name: string
+          invariant_namespace: string
+          updated_at?: string
         }
         Update: {
-          id?: number
-          linked_at?: string
-          linked_by?: string
-          note?: string | null
-          odoo_invoice_id?: number | null
-          syntage_uuid?: string | null
+          canonical_contact_id?: number | null
+          department_name?: string
+          invariant_namespace?: string
+          updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "invariant_routing_canonical_contact_id_fkey"
+            columns: ["canonical_contact_id"]
+            isOneToOne: false
+            referencedRelation: "canonical_contacts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "invariant_routing_canonical_contact_id_fkey"
+            columns: ["canonical_contact_id"]
+            isOneToOne: false
+            referencedRelation: "canonical_crm_leads"
+            referencedColumns: ["assignee_canonical_contact_id"]
+          },
+          {
+            foreignKeyName: "invariant_routing_canonical_contact_id_fkey"
+            columns: ["canonical_contact_id"]
+            isOneToOne: false
+            referencedRelation: "canonical_employees"
+            referencedColumns: ["contact_id"]
+          },
+          {
+            foreignKeyName: "invariant_routing_canonical_contact_id_fkey"
+            columns: ["canonical_contact_id"]
+            isOneToOne: false
+            referencedRelation: "canonical_purchase_orders"
+            referencedColumns: ["buyer_canonical_contact_id"]
+          },
+          {
+            foreignKeyName: "invariant_routing_canonical_contact_id_fkey"
+            columns: ["canonical_contact_id"]
+            isOneToOne: false
+            referencedRelation: "canonical_sale_orders"
+            referencedColumns: ["salesperson_canonical_contact_id"]
+          },
+        ]
       }
       manual_notes: {
         Row: {
@@ -4407,57 +3699,6 @@ export type Database = {
         }
         Relationships: []
       }
-      notification_queue: {
-        Row: {
-          body: string
-          channel: string
-          created_at: string
-          dedup_key: string | null
-          error_message: string | null
-          id: number
-          metadata: Json | null
-          priority: string
-          recipient_email: string | null
-          recipient_name: string | null
-          recipient_phone: string | null
-          sent_at: string | null
-          status: string
-          title: string
-        }
-        Insert: {
-          body: string
-          channel?: string
-          created_at?: string
-          dedup_key?: string | null
-          error_message?: string | null
-          id?: number
-          metadata?: Json | null
-          priority?: string
-          recipient_email?: string | null
-          recipient_name?: string | null
-          recipient_phone?: string | null
-          sent_at?: string | null
-          status?: string
-          title: string
-        }
-        Update: {
-          body?: string
-          channel?: string
-          created_at?: string
-          dedup_key?: string | null
-          error_message?: string | null
-          id?: number
-          metadata?: Json | null
-          priority?: string
-          recipient_email?: string | null
-          recipient_name?: string | null
-          recipient_phone?: string | null
-          sent_at?: string | null
-          status?: string
-          title?: string
-        }
-        Relationships: []
-      }
       odoo_account_balances: {
         Row: {
           account_code: string | null
@@ -4569,13 +3810,6 @@ export type Database = {
             foreignKeyName: "odoo_account_payments_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -4590,56 +3824,7 @@ export type Database = {
             foreignKeyName: "odoo_account_payments_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -4648,20 +3833,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -4710,13 +3881,6 @@ export type Database = {
             foreignKeyName: "odoo_activities_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -4731,56 +3895,7 @@ export type Database = {
             foreignKeyName: "odoo_activities_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -4789,20 +3904,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_activities_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -4947,13 +4048,6 @@ export type Database = {
             foreignKeyName: "odoo_crm_leads_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -4968,56 +4062,7 @@ export type Database = {
             foreignKeyName: "odoo_crm_leads_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -5026,20 +4071,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_crm_leads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -5133,13 +4164,6 @@ export type Database = {
             foreignKeyName: "odoo_deliveries_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -5154,56 +4178,7 @@ export type Database = {
             foreignKeyName: "odoo_deliveries_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -5212,20 +4187,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_deliveries_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -5406,13 +4367,6 @@ export type Database = {
             foreignKeyName: "odoo_invoice_lines_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -5427,56 +4381,7 @@ export type Database = {
             foreignKeyName: "odoo_invoice_lines_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -5485,20 +4390,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -5533,6 +4424,7 @@ export type Database = {
           payment_status: string | null
           payment_term: string | null
           ref: string | null
+          reversed_entry_id: number | null
           salesperson_name: string | null
           salesperson_user_id: number | null
           state: string
@@ -5569,6 +4461,7 @@ export type Database = {
           payment_status?: string | null
           payment_term?: string | null
           ref?: string | null
+          reversed_entry_id?: number | null
           salesperson_name?: string | null
           salesperson_user_id?: number | null
           state?: string
@@ -5605,6 +4498,7 @@ export type Database = {
           payment_status?: string | null
           payment_term?: string | null
           ref?: string | null
+          reversed_entry_id?: number | null
           salesperson_name?: string | null
           salesperson_user_id?: number | null
           state?: string
@@ -5612,13 +4506,6 @@ export type Database = {
           write_date?: string | null
         }
         Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
           {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
@@ -5637,56 +4524,7 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -5696,138 +4534,7 @@ export type Database = {
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
           },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
         ]
-      }
-      odoo_invoices_archive_dup_cfdi_uuid_2026_04_20: {
-        Row: {
-          amount_paid: number | null
-          amount_residual: number | null
-          amount_residual_mxn: number | null
-          amount_tax: number | null
-          amount_total: number | null
-          amount_total_mxn: number | null
-          amount_untaxed: number | null
-          amount_untaxed_mxn: number | null
-          archive_reason: string | null
-          archived_at: string | null
-          cfdi_sat_state: string | null
-          cfdi_state: string | null
-          cfdi_uuid: string | null
-          company_id: number | null
-          currency: string | null
-          days_overdue: number | null
-          days_to_pay: number | null
-          due_date: string | null
-          edi_state: string | null
-          id: number | null
-          invoice_date: string | null
-          move_type: string | null
-          name: string | null
-          odoo_company_id: number | null
-          odoo_invoice_id: number | null
-          odoo_partner_id: number | null
-          payment_date: string | null
-          payment_state: string | null
-          payment_status: string | null
-          payment_term: string | null
-          ref: string | null
-          salesperson_name: string | null
-          salesperson_user_id: number | null
-          state: string | null
-          synced_at: string | null
-          write_date: string | null
-        }
-        Insert: {
-          amount_paid?: number | null
-          amount_residual?: number | null
-          amount_residual_mxn?: number | null
-          amount_tax?: number | null
-          amount_total?: number | null
-          amount_total_mxn?: number | null
-          amount_untaxed?: number | null
-          amount_untaxed_mxn?: number | null
-          archive_reason?: string | null
-          archived_at?: string | null
-          cfdi_sat_state?: string | null
-          cfdi_state?: string | null
-          cfdi_uuid?: string | null
-          company_id?: number | null
-          currency?: string | null
-          days_overdue?: number | null
-          days_to_pay?: number | null
-          due_date?: string | null
-          edi_state?: string | null
-          id?: number | null
-          invoice_date?: string | null
-          move_type?: string | null
-          name?: string | null
-          odoo_company_id?: number | null
-          odoo_invoice_id?: number | null
-          odoo_partner_id?: number | null
-          payment_date?: string | null
-          payment_state?: string | null
-          payment_status?: string | null
-          payment_term?: string | null
-          ref?: string | null
-          salesperson_name?: string | null
-          salesperson_user_id?: number | null
-          state?: string | null
-          synced_at?: string | null
-          write_date?: string | null
-        }
-        Update: {
-          amount_paid?: number | null
-          amount_residual?: number | null
-          amount_residual_mxn?: number | null
-          amount_tax?: number | null
-          amount_total?: number | null
-          amount_total_mxn?: number | null
-          amount_untaxed?: number | null
-          amount_untaxed_mxn?: number | null
-          archive_reason?: string | null
-          archived_at?: string | null
-          cfdi_sat_state?: string | null
-          cfdi_state?: string | null
-          cfdi_uuid?: string | null
-          company_id?: number | null
-          currency?: string | null
-          days_overdue?: number | null
-          days_to_pay?: number | null
-          due_date?: string | null
-          edi_state?: string | null
-          id?: number | null
-          invoice_date?: string | null
-          move_type?: string | null
-          name?: string | null
-          odoo_company_id?: number | null
-          odoo_invoice_id?: number | null
-          odoo_partner_id?: number | null
-          payment_date?: string | null
-          payment_state?: string | null
-          payment_status?: string | null
-          payment_term?: string | null
-          ref?: string | null
-          salesperson_name?: string | null
-          salesperson_user_id?: number | null
-          state?: string | null
-          synced_at?: string | null
-          write_date?: string | null
-        }
-        Relationships: []
       }
       odoo_manufacturing: {
         Row: {
@@ -5967,13 +4674,6 @@ export type Database = {
             foreignKeyName: "odoo_order_lines_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -5988,56 +4688,7 @@ export type Database = {
             foreignKeyName: "odoo_order_lines_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -6046,20 +4697,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -6114,30 +4751,6 @@ export type Database = {
           synced_at?: string | null
           trigger_type?: string | null
           warehouse_name?: string | null
-        }
-        Relationships: []
-      }
-      odoo_payment_invoice_links: {
-        Row: {
-          id: number
-          odoo_company_id: number | null
-          odoo_invoice_id: number
-          odoo_payment_id: number
-          synced_at: string
-        }
-        Insert: {
-          id?: number
-          odoo_company_id?: number | null
-          odoo_invoice_id: number
-          odoo_payment_id: number
-          synced_at?: string
-        }
-        Update: {
-          id?: number
-          odoo_company_id?: number | null
-          odoo_invoice_id?: number
-          odoo_payment_id?: number
-          synced_at?: string
         }
         Relationships: []
       }
@@ -6357,159 +4970,6 @@ export type Database = {
         }
         Relationships: []
       }
-      odoo_snapshots: {
-        Row: {
-          company_id: number
-          created_at: string
-          credit_notes_total: number | null
-          crm_leads_count: number | null
-          crm_pipeline_value: number | null
-          id: number
-          late_deliveries_count: number | null
-          manufacturing_count: number | null
-          monthly_avg: number | null
-          open_orders_count: number | null
-          overdue_amount: number | null
-          pending_amount: number | null
-          pending_deliveries_count: number | null
-          snapshot_date: string
-          total_invoiced: number | null
-        }
-        Insert: {
-          company_id: number
-          created_at?: string
-          credit_notes_total?: number | null
-          crm_leads_count?: number | null
-          crm_pipeline_value?: number | null
-          id?: never
-          late_deliveries_count?: number | null
-          manufacturing_count?: number | null
-          monthly_avg?: number | null
-          open_orders_count?: number | null
-          overdue_amount?: number | null
-          pending_amount?: number | null
-          pending_deliveries_count?: number | null
-          snapshot_date: string
-          total_invoiced?: number | null
-        }
-        Update: {
-          company_id?: number
-          created_at?: string
-          credit_notes_total?: number | null
-          crm_leads_count?: number | null
-          crm_pipeline_value?: number | null
-          id?: never
-          late_deliveries_count?: number | null
-          manufacturing_count?: number | null
-          monthly_avg?: number | null
-          open_orders_count?: number | null
-          overdue_amount?: number | null
-          pending_amount?: number | null
-          pending_deliveries_count?: number | null
-          snapshot_date?: string
-          total_invoiced?: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
       odoo_users: {
         Row: {
           activities_json: Json | null
@@ -6552,33 +5012,6 @@ export type Database = {
         }
         Relationships: []
       }
-      payment_bridge_manual: {
-        Row: {
-          id: number
-          linked_at: string
-          linked_by: string
-          note: string | null
-          odoo_payment_id: number | null
-          syntage_complemento_uuid: string | null
-        }
-        Insert: {
-          id?: number
-          linked_at?: string
-          linked_by: string
-          note?: string | null
-          odoo_payment_id?: number | null
-          syntage_complemento_uuid?: string | null
-        }
-        Update: {
-          id?: number
-          linked_at?: string
-          linked_by?: string
-          note?: string | null
-          odoo_payment_id?: number | null
-          syntage_complemento_uuid?: string | null
-        }
-        Relationships: []
-      }
       pipeline_logs: {
         Row: {
           created_at: string
@@ -6606,46 +5039,11 @@ export type Database = {
         }
         Relationships: []
       }
-      products_fiscal_map: {
-        Row: {
-          confidence: string
-          created_at: string
-          created_by: string
-          description_pattern: string | null
-          id: number
-          internal_ref: string
-          note: string | null
-          odoo_product_id: number
-          sat_clave_prod_serv: string
-        }
-        Insert: {
-          confidence: string
-          created_at?: string
-          created_by?: string
-          description_pattern?: string | null
-          id?: number
-          internal_ref: string
-          note?: string | null
-          odoo_product_id: number
-          sat_clave_prod_serv: string
-        }
-        Update: {
-          confidence?: string
-          created_at?: string
-          created_by?: string
-          description_pattern?: string | null
-          id?: number
-          internal_ref?: string
-          note?: string | null
-          odoo_product_id?: number
-          sat_clave_prod_serv?: string
-        }
-        Relationships: []
-      }
       reconciliation_issues: {
         Row: {
           action_cta: string | null
           age_days: number | null
+          assigned_at: string | null
           assignee_canonical_contact_id: number | null
           canonical_entity_id: string | null
           canonical_entity_type: string | null
@@ -6663,6 +5061,7 @@ export type Database = {
           odoo_payment_id: number | null
           priority_score: number | null
           resolution: string | null
+          resolution_note: string | null
           resolved_at: string | null
           severity: string
           uuid_sat: string | null
@@ -6670,6 +5069,7 @@ export type Database = {
         Insert: {
           action_cta?: string | null
           age_days?: number | null
+          assigned_at?: string | null
           assignee_canonical_contact_id?: number | null
           canonical_entity_id?: string | null
           canonical_entity_type?: string | null
@@ -6687,6 +5087,7 @@ export type Database = {
           odoo_payment_id?: number | null
           priority_score?: number | null
           resolution?: string | null
+          resolution_note?: string | null
           resolved_at?: string | null
           severity: string
           uuid_sat?: string | null
@@ -6694,6 +5095,7 @@ export type Database = {
         Update: {
           action_cta?: string | null
           age_days?: number | null
+          assigned_at?: string | null
           assignee_canonical_contact_id?: number | null
           canonical_entity_id?: string | null
           canonical_entity_type?: string | null
@@ -6711,39 +5113,10 @@ export type Database = {
           odoo_payment_id?: number | null
           priority_score?: number | null
           resolution?: string | null
+          resolution_note?: string | null
           resolved_at?: string | null
           severity?: string
           uuid_sat?: string | null
-        }
-        Relationships: []
-      }
-      reconciliation_summary_daily: {
-        Row: {
-          blacklist_69b_count: number
-          by_issue_type: Json
-          created_at: string
-          severity_counts: Json
-          snapshot_date: string
-          tax_status_opinion: string | null
-          total_open: number
-        }
-        Insert: {
-          blacklist_69b_count?: number
-          by_issue_type: Json
-          created_at?: string
-          severity_counts: Json
-          snapshot_date: string
-          tax_status_opinion?: string | null
-          total_open: number
-        }
-        Update: {
-          blacklist_69b_count?: number
-          by_issue_type?: Json
-          created_at?: string
-          severity_counts?: Json
-          snapshot_date?: string
-          tax_status_opinion?: string | null
-          total_open?: number
         }
         Relationships: []
       }
@@ -7350,13 +5723,6 @@ export type Database = {
             foreignKeyName: "syntage_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -7371,56 +5737,7 @@ export type Database = {
             foreignKeyName: "syntage_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -7429,20 +5746,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "syntage_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "syntage_invoices_pdf_file_id_fkey"
@@ -7799,13 +6102,6 @@ export type Database = {
             foreignKeyName: "threads_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -7820,56 +6116,7 @@ export type Database = {
             foreignKeyName: "threads_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -7878,20 +6125,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "threads_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
           {
             foreignKeyName: "threads_started_by_contact_id_fkey"
@@ -7931,26 +6164,6 @@ export type Database = {
       }
     }
     Views: {
-      account_payment_profile: {
-        Row: {
-          account_code: string | null
-          account_name: string | null
-          account_type: string | null
-          avg_monthly_net: number | null
-          computed_at: string | null
-          confidence: number | null
-          detected_category: string | null
-          frequency: string | null
-          last_period_active: string | null
-          median_monthly_net: number | null
-          months_in_last_12m: number | null
-          months_with_activity: number | null
-          odoo_account_id: number | null
-          stddev_monthly_net: number | null
-          typical_month: number | null
-        }
-        Relationships: []
-      }
       accounting_anomalies: {
         Row: {
           amount: number | null
@@ -7992,67 +6205,6 @@ export type Database = {
         }
         Relationships: []
       }
-      analytics_customer_360: {
-        Row: {
-          canonical_name: string | null
-          churn_risk_score: number | null
-          commitments: number | null
-          company_id: number | null
-          complaints_total: number | null
-          contact_count: number | null
-          credit_limit: number | null
-          days_since_last_order: string | null
-          email_count: number | null
-          emails_30d: number | null
-          first_purchase: string | null
-          fiscal_cancellation_rate_pct: number | null
-          fiscal_cancelled_24m: number | null
-          fiscal_cancelled_amount_mxn: number | null
-          fiscal_days_since_last_cfdi: number | null
-          fiscal_first_cfdi: string | null
-          fiscal_issues_critical: number | null
-          fiscal_issues_open: number | null
-          fiscal_lifetime_revenue_mxn: number | null
-          fiscal_revenue_12m_mxn: number | null
-          fiscal_yoy_pct: number | null
-          industry: string | null
-          is_customer: boolean | null
-          is_supplier: boolean | null
-          last_email_date: string | null
-          last_order_date: string | null
-          last_purchase: string | null
-          last_purchase_date: string | null
-          late_deliveries: number | null
-          ltv_mxn: number | null
-          max_days_overdue: number | null
-          name: string | null
-          otd_rate: number | null
-          overdue_30d_count: number | null
-          overdue_amount: number | null
-          overdue_count: number | null
-          overdue_risk_score: number | null
-          pending_amount: number | null
-          recent_complaints: string | null
-          requests: number | null
-          revenue_12m_mxn: number | null
-          revenue_3m_mxn: number | null
-          revenue_90d: number | null
-          revenue_lifetime_mxn: number | null
-          revenue_prior_90d: number | null
-          revenue_share_pct: number | null
-          revenue_trend_90d_pct: number | null
-          risk_level: string | null
-          risk_signal: string | null
-          salespeople: string | null
-          tier: string | null
-          top_products: string | null
-          total_deliveries: number | null
-          total_orders: number | null
-          total_purchases: number | null
-          trend_pct_yoy: number | null
-        }
-        Relationships: []
-      }
       ar_aging_detail: {
         Row: {
           aging_bucket: string | null
@@ -8074,13 +6226,6 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -8095,56 +6240,7 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -8153,20 +6249,6 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
           },
         ]
       }
@@ -8585,13 +6667,6 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -8606,56 +6681,7 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -8665,433 +6691,13 @@ export type Database = {
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
           },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
         ]
-      }
-      cash_position: {
-        Row: {
-          actualizado: string | null
-          banco: string | null
-          cuenta: string | null
-          moneda: string | null
-          saldo: number | null
-          saldo_mxn: number | null
-          tipo: string | null
-        }
-        Relationships: []
-      }
-      cashflow_ap_negotiate: {
-        Row: {
-          avg_confidence: number | null
-          avg_days_overdue: number | null
-          company_id: number | null
-          company_name: string | null
-          max_days_overdue: number | null
-          n_invoices: number | null
-          total_overdue_mxn: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      cashflow_ap_predicted: {
-        Row: {
-          company_id: number | null
-          confidence: number | null
-          days_overdue: number | null
-          due_date: string | null
-          id: number | null
-          invoice_date: string | null
-          name: string | null
-          predicted_payment_date: string | null
-          residual_mxn: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      cashflow_ar_acelerate: {
-        Row: {
-          avg_confidence: number | null
-          avg_days_overdue: number | null
-          collection_probability_14d: number | null
-          company_id: number | null
-          company_name: string | null
-          expected_collection_14d_mxn: number | null
-          max_days_overdue: number | null
-          n_invoices: number | null
-          total_overdue_mxn: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      cashflow_current_cash: {
-        Row: {
-          active_accounts: number | null
-          cash_clearing_mxn: number | null
-          cash_net_mxn: number | null
-          cash_operative_mxn: number | null
-          cash_restricted_mxn: number | null
-          cc_debt_mxn: number | null
-          eur_rate: number | null
-          usd_rate: number | null
-        }
-        Relationships: []
       }
       cashflow_in_transit: {
         Row: {
           account_count: number | null
           accounts_with_data: number | null
           in_transit_mxn: number | null
-        }
-        Relationships: []
-      }
-      cashflow_liquidity_metrics: {
-        Row: {
-          ap_overdue: number | null
-          ap_overdue_coverage_ratio: number | null
-          ar_overdue: number | null
-          burn_rate_weekly: number | null
-          effective_mxn: number | null
-          liquidity_gap_if_pay_all_overdue: number | null
-          opex_weekly: number | null
-          payroll_quincenal: number | null
-          runway_weeks_recurring_only: number | null
-          tax_weekly: number | null
-        }
-        Relationships: []
-      }
-      cashflow_opex_monthly: {
-        Row: {
-          monthly_mxn: number | null
-          months_used: number | null
-          periods: string | null
-        }
-        Relationships: []
-      }
-      cashflow_payroll_monthly: {
-        Row: {
-          monthly_mxn: number | null
-          months_used: number | null
-          periods: string | null
-        }
-        Relationships: []
-      }
-      cashflow_po_backlog: {
-        Row: {
-          company_id: number | null
-          confidence: number | null
-          date_order: string | null
-          name: string | null
-          odoo_order_id: number | null
-          pending_mxn: number | null
-          predicted_bill_date: string | null
-          predicted_payment_date: string | null
         }
         Relationships: []
       }
@@ -9105,25 +6711,6 @@ export type Database = {
           flow_type: string | null
           invoice_name: string | null
           projected_date: string | null
-        }
-        Relationships: []
-      }
-      cashflow_recurring_detail: {
-        Row: {
-          account_count: number | null
-          avg_confidence: number | null
-          detected_category: string | null
-          monthly_count: number | null
-          total_median_net: number | null
-          total_monthly_net: number | null
-          total_stddev: number | null
-        }
-        Relationships: []
-      }
-      cashflow_tax_monthly: {
-        Row: {
-          monthly_mxn: number | null
-          months_used: number | null
         }
         Relationships: []
       }
@@ -9229,393 +6816,6 @@ export type Database = {
           total_presumed_invoices: number | null
         }
         Relationships: []
-      }
-      company_email_intelligence: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          confidence: number | null
-          created_at: string | null
-          fact_text: string | null
-          fact_type: string | null
-        }
-        Relationships: []
-      }
-      company_handlers: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          ops_handler_name: string | null
-          sales_handler_email: string | null
-          sales_handler_name: string | null
-        }
-        Relationships: []
-      }
-      company_insight_history: {
-        Row: {
-          categories_flagged: string[] | null
-          company_id: number | null
-          company_name: string | null
-          currently_active: number | null
-          directors_flagging: number | null
-          last_flagged: string | null
-          times_acted: number | null
-          times_dismissed: number | null
-          total_insights_30d: number | null
-          which_directors: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "agent_insights_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      company_narrative: {
-        Row: {
-          canonical_name: string | null
-          commitments: number | null
-          company_id: number | null
-          complaints: number | null
-          days_since_last_order: number | null
-          emails_30d: number | null
-          industry: string | null
-          invoices_overdue_30d: number | null
-          is_customer: boolean | null
-          is_supplier: boolean | null
-          last_email_date: string | null
-          last_order_date: string | null
-          last_purchase_date: string | null
-          late_deliveries: number | null
-          max_days_overdue: number | null
-          otd_rate: number | null
-          overdue_amount: number | null
-          pending_amount: number | null
-          pending_deliveries: number | null
-          recent_complaints: string | null
-          requests: number | null
-          revenue_90d: number | null
-          rfc: string | null
-          risk_level: string | null
-          risk_signal: string | null
-          salespeople: string | null
-          tier: string | null
-          top_products: string | null
-          total_emails: number | null
-          total_purchases: number | null
-          total_revenue: number | null
-          trend_pct: number | null
-        }
-        Relationships: []
-      }
-      company_profile: {
-        Row: {
-          ar_aging_buckets: Json | null
-          canonical_name: string | null
-          company_id: number | null
-          contact_count: number | null
-          credit_limit: number | null
-          email_count: number | null
-          industry: string | null
-          invoices_with_cfdi: number | null
-          invoices_with_syntage_match: number | null
-          is_customer: boolean | null
-          is_supplier: boolean | null
-          last_activity_at: string | null
-          last_email_date: string | null
-          last_order_date: string | null
-          last_purchase_date: string | null
-          late_deliveries: number | null
-          max_days_overdue: number | null
-          name: string | null
-          otd_rate: number | null
-          otd_rate_90d: number | null
-          overdue_30d_count: number | null
-          overdue_amount: number | null
-          overdue_count: number | null
-          pending_amount: number | null
-          purchase_orders_ytd: number | null
-          purchases_ytd: number | null
-          revenue_90d: number | null
-          revenue_prior_90d: number | null
-          revenue_share_pct: number | null
-          revenue_ytd: number | null
-          risk_level: string | null
-          sale_orders_ytd: number | null
-          sat_compliance_score: number | null
-          sat_open_issues: number | null
-          tier: string | null
-          total_deliveries: number | null
-          total_orders: number | null
-          total_purchases: number | null
-          total_revenue: number | null
-          trend_pct: number | null
-        }
-        Relationships: []
-      }
-      company_profile_sat: {
-        Row: {
-          company_id: number | null
-          last_sat_invoice_date: string | null
-          name: string | null
-          rfc: string | null
-          total_cancelled_invoiced: number | null
-          total_credit_notes: number | null
-          total_invoiced_sat: number | null
-          total_invoiced_sat_gross: number | null
-          total_invoiced_sat_ytd: number | null
-          total_invoiced_sat_ytd_gross: number | null
-          total_received_sat: number | null
-          total_received_sat_gross: number | null
-          total_received_sat_ytd: number | null
-        }
-        Relationships: []
-      }
-      customer_cohorts: {
-        Row: {
-          active_customers: number | null
-          avg_revenue_per_customer: number | null
-          cohort_quarter: string | null
-          cohort_revenue: number | null
-          quarters_since_first: number | null
-          revenue_quarter: string | null
-        }
-        Relationships: []
-      }
-      customer_ltv_health: {
-        Row: {
-          churn_risk_score: number | null
-          company_id: number | null
-          company_name: string | null
-          computed_at: string | null
-          days_since_last_order: string | null
-          first_purchase: string | null
-          last_purchase: string | null
-          ltv_mxn: number | null
-          max_days_overdue: number | null
-          overdue_invoices: number | null
-          overdue_mxn: number | null
-          overdue_risk_score: number | null
-          revenue_12m: number | null
-          revenue_3m: number | null
-          tier: string | null
-          total_invoices: number | null
-          trend_pct_vs_prior_quarters: number | null
-        }
-        Relationships: []
-      }
-      customer_margin_analysis: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          distinct_products: number | null
-          lines_with_avg_cost: number | null
-          lines_with_bom_cost: number | null
-          lines_with_no_cost: number | null
-          lines_with_standard_cost: number | null
-          margin_12m: number | null
-          margin_pct: number | null
-          margin_pct_12m: number | null
-          revenue_12m: number | null
-          total_cost: number | null
-          total_lines: number | null
-          total_margin: number | null
-          total_revenue: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoice_lines_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
       }
       customer_product_matrix: {
         Row: {
@@ -10114,160 +7314,6 @@ export type Database = {
         }
         Relationships: []
       }
-      invoices_unified: {
-        Row: {
-          amount_diff: number | null
-          amount_residual: number | null
-          canonical_id: string | null
-          company_id: number | null
-          days_overdue: number | null
-          descuento_fiscal: number | null
-          direction: string | null
-          due_date: string | null
-          email_id_origen: number | null
-          emisor_blacklist_status: string | null
-          emisor_nombre: string | null
-          emisor_rfc: string | null
-          estado_sat: string | null
-          fecha_cancelacion: string | null
-          fecha_timbrado: string | null
-          fiscal_operational_consistency: string | null
-          forma_pago: string | null
-          impuestos_retenidos: number | null
-          impuestos_trasladados: number | null
-          invoice_date: string | null
-          match_quality: string | null
-          match_status: string | null
-          metodo_pago: string | null
-          moneda_fiscal: string | null
-          odoo_amount_residual_mxn: number | null
-          odoo_amount_total: number | null
-          odoo_amount_total_mxn: number | null
-          odoo_company_id: number | null
-          odoo_currency: string | null
-          odoo_external_ref: string | null
-          odoo_invoice_id: number | null
-          odoo_move_type: string | null
-          odoo_partner_id: number | null
-          odoo_ref: string | null
-          odoo_state: string | null
-          partner_name: string | null
-          payment_state: string | null
-          receptor_blacklist_status: string | null
-          receptor_nombre: string | null
-          receptor_rfc: string | null
-          refreshed_at: string | null
-          salesperson_name: string | null
-          salesperson_user_id: number | null
-          subtotal_fiscal: number | null
-          tipo_cambio_fiscal: number | null
-          tipo_comprobante: string | null
-          total_fiscal: number | null
-          total_mxn_fiscal: number | null
-          uso_cfdi: string | null
-          uuid_sat: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
       journal_flow_profile: {
         Row: {
           avg_monthly_amount: number | null
@@ -10281,125 +7327,6 @@ export type Database = {
           volatility_cv: number | null
         }
         Relationships: []
-      }
-      monthly_revenue_by_company: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          credit_note_count: number | null
-          credit_notes: number | null
-          invoice_count: number | null
-          ma_3m: number | null
-          ma_6m: number | null
-          mom_growth_pct: number | null
-          month: string | null
-          net_revenue: number | null
-          prev_month_revenue: number | null
-          rank_in_month: number | null
-          revenue: number | null
-          yoy_growth_pct: number | null
-          yoy_revenue: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
       }
       odoo_push_last_events: {
         Row: {
@@ -10455,48 +7382,6 @@ export type Database = {
         }
         Relationships: []
       }
-      partner_payment_profile: {
-        Row: {
-          avg_days_to_pay: number | null
-          avg_payment_amount: number | null
-          confidence: number | null
-          invoice_count_24m: number | null
-          median_days_to_pay: number | null
-          months_active: number | null
-          odoo_partner_id: number | null
-          paid_invoice_count: number | null
-          payment_count_24m: number | null
-          payment_type: string | null
-          preferred_bank_journal: string | null
-          preferred_payment_method: string | null
-          stddev_days_to_pay: number | null
-          total_invoiced_mxn: number | null
-          total_paid_mxn: number | null
-          typical_day_of_month: number | null
-          writeoff_risk_count: number | null
-          writeoff_risk_pct: number | null
-        }
-        Relationships: []
-      }
-      payment_allocations_unified: {
-        Row: {
-          canonical_payment_id: string | null
-          direction: string | null
-          fecha_pago: string | null
-          imp_pagado: number | null
-          imp_saldo_ant: number | null
-          imp_saldo_insoluto: number | null
-          invoice_canonical_id: string | null
-          invoice_folio: string | null
-          invoice_serie: string | null
-          invoice_uuid_sat: string | null
-          odoo_company_id: number | null
-          odoo_payment_id: number | null
-          parcialidad: number | null
-          uuid_complemento: string | null
-        }
-        Relationships: []
-      }
       payment_predictions: {
         Row: {
           avg_days_to_pay: number | null
@@ -10523,13 +7408,6 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
           },
@@ -10544,56 +7422,7 @@ export type Database = {
             foreignKeyName: "odoo_invoices_company_id_fkey"
             columns: ["company_id"]
             isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
             referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
             referencedColumns: ["company_id"]
           },
           {
@@ -10603,314 +7432,7 @@ export type Database = {
             referencedRelation: "stockout_queue"
             referencedColumns: ["last_supplier_id"]
           },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
         ]
-      }
-      payments_unified: {
-        Row: {
-          canonical_payment_id: string | null
-          company_id: number | null
-          direction: string | null
-          doctos_relacionados: Json | null
-          estado_sat: string | null
-          fecha_pago: string | null
-          forma_pago_p: string | null
-          is_reconciled: boolean | null
-          journal_name: string | null
-          match_quality: string | null
-          match_status: string | null
-          moneda_p: string | null
-          monto: number | null
-          num_operacion: string | null
-          odoo_amount: number | null
-          odoo_company_id: number | null
-          odoo_currency: string | null
-          odoo_date: string | null
-          odoo_partner_id: number | null
-          odoo_payment_id: number | null
-          odoo_ref: string | null
-          payment_method: string | null
-          refreshed_at: string | null
-          rfc_emisor_cta_ben: string | null
-          rfc_emisor_cta_ord: string | null
-          tipo_cambio_p: number | null
-          uuid_complemento: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_account_payments_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      pl_estado_resultados: {
-        Row: {
-          costo_ventas: number | null
-          gastos_operativos: number | null
-          ingresos: number | null
-          otros_neto: number | null
-          period: string | null
-          utilidad_bruta: number | null
-          utilidad_operativa: number | null
-        }
-        Relationships: []
-      }
-      portfolio_concentration: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          cumulative_pct: number | null
-          customer_status: string | null
-          first_invoice: string | null
-          hhi_contribution: number | null
-          invoice_count: number | null
-          last_invoice: string | null
-          pareto_class: string | null
-          pct_of_total: number | null
-          pct_of_total_12m: number | null
-          revenue_12m: number | null
-          revenue_3m: number | null
-          revenue_6m: number | null
-          revenue_rank: number | null
-          total_customers: number | null
-          total_revenue: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      product_margin_analysis: {
-        Row: {
-          avg_invoice_price: number | null
-          avg_order_price: number | null
-          bom_has_missing_components: boolean | null
-          bom_max_depth: number | null
-          bom_real_cost: number | null
-          cached_standard_price: number | null
-          company_id: number | null
-          company_name: string | null
-          cost_source: string | null
-          effective_cost: number | null
-          gross_margin_pct: number | null
-          gross_margin_pct_bom_only: number | null
-          has_uom_mismatch: boolean | null
-          odoo_product_id: number | null
-          order_count: number | null
-          price_delta_pct: number | null
-          product_category: string | null
-          product_name: string | null
-          product_ref: string | null
-          total_order_value: number | null
-          total_qty_ordered: number | null
-          uom_mismatch_invoice_lines: number | null
-          uom_mismatch_order_lines: number | null
-          uom_mismatch_revenue_mxn: number | null
-        }
-        Relationships: []
       }
       product_real_cost: {
         Row: {
@@ -11022,249 +7544,6 @@ export type Database = {
         }
         Relationships: []
       }
-      revenue_concentration: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          cumulative_pct: number | null
-          days_since_last_invoice: number | null
-          last_invoice_date: string | null
-          pareto_class: string | null
-          rank_in_portfolio: number | null
-          rev_12m: number | null
-          rev_30d: number | null
-          rev_30d_delta_pct: number | null
-          rev_30d_prev: number | null
-          rev_90d: number | null
-          share_pct: number | null
-          tier: string | null
-          tripwire: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      rfm_segments: {
-        Row: {
-          avg_ticket: number | null
-          company_id: number | null
-          company_name: string | null
-          computed_at: string | null
-          contact_priority_score: number | null
-          f_score: number | null
-          first_purchase: string | null
-          frequency: number | null
-          last_purchase: string | null
-          m_score: number | null
-          max_days_overdue: number | null
-          monetary_12m: number | null
-          monetary_2y: number | null
-          monetary_90d: number | null
-          outstanding: number | null
-          r_score: number | null
-          recency_days: number | null
-          rfm_code: number | null
-          segment: string | null
-          tier: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_invoices_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
       salesperson_workload_30d: {
         Row: {
           department: string | null
@@ -11281,124 +7560,6 @@ export type Database = {
           workload_stress_score: number | null
         }
         Relationships: []
-      }
-      snapshot_changes: {
-        Row: {
-          company_id: number | null
-          company_name: string | null
-          compare_date: string | null
-          current_date: string | null
-          late_before: number | null
-          late_now: number | null
-          orders_before: number | null
-          orders_now: number | null
-          overdue_before: number | null
-          overdue_change: number | null
-          overdue_now: number | null
-          pending_before: number | null
-          pending_change: number | null
-          pending_now: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_snapshots_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
       }
       stockout_queue: {
         Row: {
@@ -11423,162 +7584,6 @@ export type Database = {
           suggested_order_qty: number | null
           top_consumer: string | null
           urgency: string | null
-        }
-        Relationships: []
-      }
-      supplier_concentration_herfindahl: {
-        Row: {
-          computed_at: string | null
-          concentration_level: string | null
-          herfindahl_idx: number | null
-          odoo_product_id: number | null
-          product_name: string | null
-          product_ref: string | null
-          supplier_count: number | null
-          top_supplier_company_id: number | null
-          top_supplier_name: string | null
-          top_supplier_share_pct: number | null
-          top_supplier_spent_12m: number | null
-          total_spent_12m: number | null
-        }
-        Relationships: []
-      }
-      supplier_price_index: {
-        Row: {
-          benchmark_price: number | null
-          computed_at: string | null
-          last_po_date: string | null
-          last_po_name: string | null
-          month: string | null
-          odoo_product_id: number | null
-          overpaid_mxn: number | null
-          price_delta: number | null
-          price_flag: string | null
-          price_index: number | null
-          product_name: string | null
-          product_ref: string | null
-          saved_mxn: number | null
-          supplier_avg_price: number | null
-          supplier_id: number | null
-          supplier_lines: number | null
-          supplier_name: string | null
-          supplier_qty: number | null
-          supplier_spend: number | null
-          suppliers_in_month: number | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "analytics_customer_360"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "company_69b_status"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "company_email_intelligence"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "company_handlers"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "company_narrative"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "company_profile_sat"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "customer_ltv_health"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "customer_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "product_margin_analysis"
-            referencedColumns: ["company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "stockout_queue"
-            referencedColumns: ["last_supplier_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_concentration_herfindahl"
-            referencedColumns: ["top_supplier_company_id"]
-          },
-          {
-            foreignKeyName: "odoo_order_lines_company_id_fkey"
-            columns: ["supplier_id"]
-            isOneToOne: false
-            referencedRelation: "supplier_product_matrix"
-            referencedColumns: ["company_id"]
-          },
-        ]
-      }
-      supplier_product_matrix: {
-        Row: {
-          company_id: number | null
-          last_purchase: string | null
-          odoo_product_id: number | null
-          pct_of_product_purchases: number | null
-          product_name: string | null
-          product_ref: string | null
-          purchase_orders: number | null
-          purchase_value: number | null
-          supplier_name: string | null
-          total_suppliers_for_product: number | null
         }
         Relationships: []
       }
@@ -12274,6 +8279,20 @@ export type Database = {
           run_id: string
         }[]
       }
+      link_orphan_emails_to_companies: {
+        Args: never
+        Returns: {
+          emails_linked: number
+          emails_remaining: number
+        }[]
+      }
+      link_orphan_emails_to_contacts: {
+        Args: never
+        Returns: {
+          emails_linked: number
+          emails_processed: number
+        }[]
+      }
       link_orphan_insights: { Args: never; Returns: number }
       match_emails_company_via_contact: { Args: never; Returns: Json }
       match_emails_to_companies_by_domain: {
@@ -12418,8 +8437,6 @@ export type Database = {
         Args: { p_contact_email?: string }
         Returns: undefined
       }
-      refresh_invoices_unified: { Args: never; Returns: Json }
-      refresh_payments_unified: { Args: never; Returns: Json }
       refresh_product_intelligence: { Args: never; Returns: undefined }
       refresh_purchase_intelligence: { Args: never; Returns: undefined }
       refresh_real_sale_price: { Args: never; Returns: undefined }
@@ -12510,6 +8527,7 @@ export type Database = {
         Args: { base_date: string; target_day: number }
         Returns: string
       }
+      sp5_assign_issues: { Args: never; Returns: number }
       syntage_open_issues_by_week: {
         Args: never
         Returns: {
