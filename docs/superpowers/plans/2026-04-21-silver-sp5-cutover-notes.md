@@ -862,4 +862,4 @@ END
 - `audit_runs` row inserted: `source='supabase'`, `model='silver_sp5'`, `invariant_key='sp5.task24'`, `bucket_key='sp5_task24_residual_backfill'`, `severity='ok'`.
 - `schema_changes` row inserted: `triggered_by='silver-sp5-task-24'`, `change_type='BACKFILL'`.
 
-### Commit: (see git log — committed after notes appended)
+### Commit: 84b1944
