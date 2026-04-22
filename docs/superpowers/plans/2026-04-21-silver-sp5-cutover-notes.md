@@ -863,3 +863,87 @@ END
 - `schema_changes` row inserted: `triggered_by='silver-sp5-task-24'`, `change_type='BACKFILL'`.
 
 ### Commit: 84b1944
+
+---
+
+## Task 29 — Physical DROP of legacy objects (completed 2026-04-22)
+
+Branch: `silver-sp5-t29-physical-drop`
+
+### Step 2: Pre-DROP caller check
+
+Initial run of caller check returned non-zero (7 files, multiple live callers). Required caller-unwiring pass before DROP could proceed. This was NOT in the original procedure — callers were supposed to have been cleaned up by T27/T28, but several remained:
+
+- `health_scores` — `orchestrate/route.ts:1402` (atRiskContacts in comercial domain), `health-scores/route.ts` (full read/write)
+- `agent_tickets` — `orchestrate/route.ts:396` (dedup enrich insert), `orchestrate/route.ts:1147` (pendingTickets cross-cutting select)
+- `notification_queue` — `system.ts:41,471` (getSystemKpis + getNotifications for /sistema)
+- `reconciliation_summary_daily` — `briefing/route.ts:153,157` (fiscal one-liner)
+- `invoices_unified` — 3 test files (parity-fase5, invoices-unified-schema, reconciliation-integration)
+
+### Caller fixes applied (commit 62af387)
+
+| File | Fix |
+|---|---|
+| `orchestrate/route.ts:1402` | `Promise.resolve({data:[]})` — health_scores dropped |
+| `orchestrate/route.ts:396` | noop — agent_tickets dropped |
+| `orchestrate/route.ts:1147` | `Promise.resolve({data:[]})` — agent_tickets dropped |
+| `system.ts:41` | `Promise.resolve({data:[]})` — notification_queue dropped |
+| `system.ts:471 getNotifications()` | `return []` stub |
+| `briefing/route.ts:153,157` | `Promise.resolve({data:null})` × 2 — reconciliation_summary_daily dropped |
+| `health-scores/route.ts` | 410 Gone |
+| `syntage/refresh-unified/route.ts` | 410 Gone |
+| `vercel.json` | Removed `pipeline/health-scores` cron entry |
+| `parity-fase5.test.ts` | `describe.skip` stub |
+| `invoices-unified-schema.test.ts` | `describe.skip` stub |
+| `reconciliation-integration.test.ts` | `describe.skip` stub |
+
+Post-fix caller check: exit 1 (0 matches) — clean.
+
+### Step 5: Inventory
+
+| Object | Kind | Size |
+|---|---|---|
+| `invoices_unified` | MV | 257 MB |
+| `payments_unified` | MV | 33 MB |
+| `health_scores` | table | 12 MB |
+| `odoo_snapshots` | table | 5.4 MB |
+| `_deprecated_sp5` MVs (T27+T28, 12 objects) | MVs | ~13 MB |
+| `agent_tickets` | table | 840 KB |
+| `notification_queue` | table | 784 KB |
+| `products_fiscal_map` + `invoice_bridge_manual` + `payment_bridge_manual` | tables | ~228 KB |
+| `reconciliation_summary_daily` | table | 32 KB |
+| Views (`cashflow_*`, `analytics_*`, etc., 5 objects) | views | 0 |
+| **Total** | | **~322+ MB** |
+
+Notable absences from DB: `syntage_invoices_enriched`, `products_unified`, `odoo_schema_catalog`, `odoo_uoms`, `unified_refresh_queue` — never existed or already dropped.
+
+### Step 6: DB dependency check
+
+CASCADE consumers (both legacy views, zero frontend callers):
+- `payment_allocations_unified` — depended on `invoices_unified` + `payments_unified`
+- `snapshot_changes` — depended on `odoo_snapshots`
+
+Both were included in CASCADE and dropped cleanly.
+
+### Migration 1071 — applied, result: success
+
+All `_deprecated_sp5` remaining count: **0**. All spot-checked `to_regclass()` calls return NULL.
+
+### Step 9 cron issue discovered and resolved
+
+Post-drop cron check found two jobs still referencing dropped objects:
+- jobid 3 `refresh-syntage-unified` (every 15 min): called `refresh_invoices_unified()` + `refresh_payments_unified()`
+- jobid 5 `syntage-reconciliation-daily-snapshot` (daily 6:15am): inserted into `reconciliation_summary_daily`
+
+Also: `refresh_all_matviews()` (jobid 2) had one failing run at 18:15 UTC attempting to REFRESH `invoices_unified` — this was a pre-drop timeout from the LAST run before DROP. Its T28 rewrite (defensive loop with `NOT LIKE '%_deprecated_sp5'` filter + per-MV error swallowing) will handle future runs cleanly.
+
+**Migration 1071b** applied: `cron.unschedule('refresh-syntage-unified')`, `cron.unschedule('syntage-reconciliation-daily-snapshot')`, `DROP FUNCTION refresh_invoices_unified()`, `DROP FUNCTION refresh_payments_unified()`.
+
+Active cron jobs after cleanup: **8** (all legitimate, all active).
+
+### Commits
+
+- `62af387` — chore(sp5): task 29 pre-drop — retire all legacy table callers
+- `640248c` — feat(sp5): task 29 — physical DROP of legacy objects (irreversible)
+
+### Branch pushed to origin — no PR yet (T30 will open PR)
