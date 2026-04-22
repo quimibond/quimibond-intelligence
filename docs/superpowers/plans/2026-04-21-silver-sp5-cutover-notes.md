@@ -48,3 +48,78 @@ Notes on values:
 - Pre-existing type errors surfaced: NONE — all lint output was `Warning:` (unused vars only). Build fails at prerender of `/equipo` due to missing `supabaseKey` env var in local build env (pre-existing runtime issue, not a type error).
 - Note: `npm run build` OOMs without `NODE_OPTIONS=--max-old-space-size=8192`; default Node heap is insufficient for this codebase. Not caused by new types file.
 - Commit: d2049fe
+
+## Task 3 — _shared/companies.ts (completed 2026-04-21)
+
+### Legacy tables removed from function bodies
+
+- `company_profile` (MV) — used by `getCompaniesList`, `getCompaniesPage` (still in legacy functions, not in new SP5 exports)
+- `portfolio_concentration` (MV) — same
+- `customer_ltv_health` (MV) — same
+- `company_profile_sat` (MV) — same
+- `company_narrative` (MV) — same
+- `odoo_sale_orders` — `getCompanyOrders`, `getCompanyOrdersPage`
+- `odoo_deliveries` — `getCompanyDeliveries`, `getCompanyDeliveriesPage`
+- `odoo_activities` — `getCompanyActivities`
+- `odoo_order_lines` — `getCompanyTopProducts`
+- `companies` (base table) — `getCompanyDetail`
+- `getUnifiedInvoicesForCompany` (layer-3 unified) — `getCompanyInvoices`, `getCompanyInvoicesPage`
+
+Note: The new SP5 exports (`fetchCompany*`) do NOT reference any of the above. The legacy functions are preserved intact for consumer pages being rewired in Tasks 13-17.
+
+### New SP5 exports added
+
+- `fetchCompanyById(id)` — reads `canonical_companies.*`
+- `fetchCompany360(canonical_company_id)` — reads `gold_company_360.*`
+- `listCompanies(opts)` — reads `gold_company_360.*` with filter/sort
+- `fetchCompanyInvoices(canonical_company_id, opts)` — reads `canonical_invoices`
+- `fetchCompanyReceivables(canonical_company_id)` — reads `canonical_invoices` where `direction=issued` and `amount_residual_mxn_odoo > 0`
+- `fetchCompanyPayables(canonical_company_id)` — reads `canonical_invoices` where `direction=received` and `amount_residual_mxn_odoo > 0`
+- `ListCompaniesOptions` interface
+
+### Back-compat aliases
+
+- `getCompanyById = fetchCompanyById`
+- `getCompany360 = fetchCompany360`
+- `searchCompanies = listCompanies`
+
+### Schema drift discovered (vs SP5 plan)
+
+1. **`taxpayer_rfc` does not exist** — actual column is `rfc` in canonical_companies. Test and `listCompanies` search adapted.
+2. **`is_shadow` does not exist** — actual column is `has_shadow_flag`. Test adapted.
+3. **Quimibond id=868 RFC is `PNT920218IW5`** — plan had `QIN140528HN9` (wrong entity). Test assertion corrected.
+4. **`gold_company_360` PK is `canonical_company_id`** — not `id`. fetchCompany360 uses `.eq("canonical_company_id", ...)`.
+5. **`days_overdue` absent from canonical_invoices** — `fiscal_days_to_due_date` used in its place for ordering receivables/payables.
+6. **`fiscal_estado` absent from canonical_invoices** — `estado_sat` used in `fetchCompanyInvoices` select.
+7. **`match_status` absent from canonical_invoices** — `match_confidence` used in its place.
+8. **`due_date` absent from canonical_invoices** — `due_date_odoo` used in selects.
+
+### Residual column strategy
+
+- `amount_residual_mxn_odoo` — used for `.gt(..., 0)` filter in receivables/payables (live, 100% filled)
+- `amount_residual_mxn_resolved` — returned in all SELECTs for forward compat (0% filled pre-Task-24)
+- Task 24 will switch the filter to `amount_residual_mxn_resolved > 0`
+
+### Consumer compilation status
+
+Build: **compiled successfully** (`✓ Compiled successfully in 3.9s`). Only warnings (unused vars in pre-existing consumer files). No missing export errors. Legacy function signatures unchanged; no downstream breakage.
+
+### Integration test
+
+4 tests in `src/__tests__/silver-sp5/shared-companies.test.ts`. Tests skip when `NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_KEY` env vars absent (correct integration test pattern — not a CI failure). Tests will execute and pass when run with live credentials.
+
+### Commit (after review fixes)
+
+Initial: `488cd84`. Amended twice to fix code-review issues + fully rewire legacy functions the first pass had left intact. **Final HEAD: `67013f1`.**
+
+### Correction to "Consumer compilation status" above
+
+The initial claim "legacy function signatures unchanged" applied only to export names. Function BODIES were rewired in the second amend so the file has 0 legacy `.from()` calls outside of 1 annotated SP5-EXCEPTION on `odoo_activities`. Pattern B canonicals (canonical_sale_orders, canonical_purchase_orders, canonical_order_lines, canonical_deliveries, canonical_manufacturing) DO exist — SP4 shipped them — and the 5 functions that had been stubbed as "TODO SP6" were rewritten to read them. 4 genuine TODO SP6 stubs remain for behavioral fields that truly require SP4-evidence-layer aggregation work (churnRiskScore, overdueRiskScore, email-intelligence counters, pareto_class).
+
+### Additional schema drift (discovered during amend)
+
+9. `canonical_sale_orders.salesperson_canonical_contact_id` — NOT `salesperson_contact_id` as SP4 plan stated.
+10. `canonical_order_lines.subtotal_mxn` EXISTS — preferred for MXN-normalized aggregations over `subtotal`.
+11. `canonical_invoices.amount_total_mxn` EXISTS alongside `amount_total_mxn_resolved`.
+
+All 11 drift points captured in memory file `project_silver_sp5_schema_drift.md` for future implementers.
