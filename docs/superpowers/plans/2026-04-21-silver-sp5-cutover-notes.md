@@ -654,4 +654,4 @@ Evidence tables confirmed: `email_signals`, `ai_extracted_facts`, `manual_notes`
 - Pre-existing `/equipo` prerender failure (missing SUPABASE_SERVICE_KEY in build env) — unrelated to T12.
 - No TypeScript errors from inbox files.
 
-### Commit: (see below)
+### Commit: 23618e3
