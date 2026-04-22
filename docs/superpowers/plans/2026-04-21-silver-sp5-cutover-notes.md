@@ -123,3 +123,48 @@ The initial claim "legacy function signatures unchanged" applied only to export 
 11. `canonical_invoices.amount_total_mxn` EXISTS alongside `amount_total_mxn_resolved`.
 
 All 11 drift points captured in memory file `project_silver_sp5_schema_drift.md` for future implementers.
+
+## Task 4 — _shared/{contacts,payments}.ts (completed 2026-04-21)
+
+### Legacy reads removed
+- contacts.ts: `from('contacts'` (3 call sites: getContactsPage, getContactDetail, getContactsKpis); also removed join to `companies` table
+- payments.ts: `from('odoo_account_payments'` (1 call site: getCompanyPayments)
+
+### New / preserved exports
+- contacts.ts:
+  - `listContacts(opts)` — new canonical function (also aliased as `searchContacts`)
+  - `fetchContactById(id: number)` — new canonical function (also aliased as `getContactById`)
+  - `getContactsPage(params)` — preserved, now reads canonical_contacts
+  - `getContactDetail(id: string)` — preserved, now reads canonical_contacts + canonical_companies join
+  - `getContactsKpis()` — preserved, now reads canonical_contacts
+  - `listEmployees(opts)` — new, reads canonical_contacts WHERE contact_type LIKE 'internal_%'
+- payments.ts:
+  - `listCompanyPayments(canonical_company_id, opts)` — new canonical function
+  - `getCompanyPayments(canonical_company_id, limit)` — preserved back-compat wrapper
+  - `classifyPaymentState(state)` — new utility
+
+### Schema drift verified vs plan
+- canonical_contacts: email column is `primary_email` (plan assumed `primary_email` — CORRECT)
+- canonical_contacts: name column is `display_name` (plan assumed `display_name` — CORRECT)
+- canonical_contacts: company FK is `canonical_company_id` (plan assumed `canonical_company_id` — CORRECT)
+- canonical_contacts: `is_internal` field does NOT EXIST; actual is `contact_type` (LIKE 'internal_%' for staff)
+- canonical_payments: company FK is `counterparty_canonical_company_id` (plan assumed `canonical_company_id` — DRIFT)
+- canonical_payments: date column is `payment_date_resolved` (plan assumed `payment_date` — DRIFT)
+- canonical_payments: amount column is `amount_mxn_resolved` (plan assumed `amount_mxn` — DRIFT)
+- canonical_payments: source column does NOT EXIST; `sources_present`, `has_odoo_record`, `has_sat_record` exist instead
+- canonical_payments: PK is `canonical_id` (not `id`)
+- canonical_payments: `direction` replaces `payment_type` (inbound/outbound)
+
+### Back-compat aliases added to avoid breaking consumer pages
+- ContactListRow: `company_id` (= canonical_company_id), `company_name` (= null for list, not joined)
+- ContactDetail: `company_id` (= canonical_company_id), `company_name` (from canonical_companies join), `entity_id` (= primary_entity_kg_id)
+- CompanyPaymentRow: `id` (= canonical_id), `payment_type` (= direction), `payment_date` (= payment_date_resolved), `amount_mxn` / `amount` (= amount_mxn_resolved), `currency` (= currency_odoo), `state` (derived from is_reconciled), `name` (derived)
+
+### Helpers verified clean
+period-filter.ts, year-filter.ts, table-params.ts, _helpers.ts — 0 `.from(` matches (all pure utilities, no DB reads).
+
+### Tests
+- Banned-token: 2 passing (no env needed).
+- Integration: 3 skipped without env.
+
+### Commit: 2afd9d6
