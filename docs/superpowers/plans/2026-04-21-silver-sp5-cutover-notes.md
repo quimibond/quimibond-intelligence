@@ -218,3 +218,57 @@ period-filter.ts, year-filter.ts, table-params.ts, _helpers.ts — 0 `.from(` ma
 ### SP5-VERIFIED annotations added: 7
 
 ### Commit: 5a07c80
+
+## Task 6 — analytics/products.ts rewrite (completed 2026-04-21)
+
+### Inventory (Step 1 — legacy reads found)
+
+| Function | Legacy Read | Action |
+|---|---|---|
+| `getProductsKpis` | `odoo_products`, `product_margin_analysis` | REPLACED → `canonical_products`, `gold_product_performance` |
+| `getTopMarginProducts` | `product_margin_analysis` | REPLACED → `gold_product_performance` |
+| `getUomMismatchProducts` | `product_margin_analysis` | STUBBED → TODO SP6 (no canonical equivalent yet) |
+| `getBomCostSummary` | `product_margin_analysis` (revenue context) | REPLACED → `canonical_order_lines` (sale) agg |
+| `getPmaRevenueMap` (private) | `product_margin_analysis` | REPLACED → `getRevenueMapFromOrderLines` via `canonical_order_lines` |
+| `getBomDuplicates` | `product_margin_analysis` (revenue+qty) | REPLACED → `canonical_order_lines` (sale) agg |
+| `getSuspiciousBoms`, `getBomsMissingComponents`, `getTopRevenueBoms`, `getBomsWithMultipleVersions` | `product_real_cost` | KEEP (§12) + SP5-VERIFIED |
+| `getInventoryPage`, `getReorderNeeded`, `getTopMovers`, `getTopMoversPage`, `getProductCategoryOptions` | `inventory_velocity` | KEEP (§12) + SP5-VERIFIED |
+| `getDeadStock`, `getDeadStockPage` | `dead_stock_analysis` | KEEP (§12) + SP5-VERIFIED |
+
+### New SP5 exports added
+
+- `listProducts(opts)` — reads `canonical_products.*` with search/filter/active/category
+- `searchProducts` — alias for `listProducts`
+- `fetchTopSkusByRevenue(opts)` — reads `gold_product_performance` ordered by `odoo_revenue_12m_mxn`
+- `topProductsByRevenue` — alias for `fetchTopSkusByRevenue`
+- `fetchProductPerformance(canonical_product_id)` — reads `gold_product_performance` single row
+- `getProductPerformance` — alias for `fetchProductPerformance`
+- `fetchSupplierPriceIntelligence(canonical_product_id)` — `canonical_order_lines WHERE order_type=purchase` client-agg
+- `fetchCompanyProductMatrix(canonical_company_id, direction)` — `canonical_order_lines` client-agg (replaces customer_product_matrix + supplier_product_matrix)
+- `fetchProductSeasonality` — STUBBED returning null (TODO SP6: product_seasonality MV does not exist)
+
+### Schema drift discovered (new, beyond T1-T5)
+
+12. **`canonical_order_lines` is a MATERIALIZED VIEW (relkind=m)** — not a table, so `information_schema.columns` returns null. Must use `pg_attribute` to introspect columns.
+13. **`gold_product_performance` column names differ from plan** — actual: `odoo_revenue_12m_mxn` (NOT `revenue_mxn_12m`), `unique_customers_12m` (NOT `customers`); no `margin_mxn_12m` column. Adapted selects.
+14. **`canonical_products.category`** — not `category_path` (plan assumed). Fixed ilike filter.
+15. **`product_seasonality` MV does not exist** (dropped before SP5) — `fetchProductSeasonality` stubbed as TODO SP6. The 6 other KEEP-list MVs all confirmed present.
+16. **`TopMarginProductRow` back-compat** — `/productos` page uses `product_ref`, `product_name`, `weighted_margin_pct`, `weighted_markup_pct`, `total_revenue`, `customers`. All added as alias fields on the new interface to prevent downstream type errors without requiring consumer page rewire in T6.
+
+### Functions rewritten vs preserved
+
+- REWRITTEN (5 functions + 1 private helper): `getProductsKpis`, `getTopMarginProducts`, `getBomCostSummary`, `getBomDuplicates`, `getUomMismatchProducts` (stub), `getPmaRevenueMap` → `getRevenueMapFromOrderLines`
+- NEW EXPORTS (7): `listProducts`, `searchProducts`, `fetchTopSkusByRevenue`, `topProductsByRevenue`, `fetchProductPerformance`, `getProductPerformance`, `fetchSupplierPriceIntelligence`, `fetchCompanyProductMatrix`, `fetchProductSeasonality`
+- PRESERVED with SP5-VERIFIED (14 annotation sites): `inventory_velocity` (5), `dead_stock_analysis` (3), `product_real_cost` (6)
+- STUBBED TODO SP6 (1): `fetchProductSeasonality` — MV does not exist
+
+### SP5-VERIFIED annotations added: 14
+
+### Tests
+
+- Banned-token: 1 passing (no env needed).
+- Integration: 2 skipped without env.
+- Grep gate: 0 banned reads in products.ts.
+- Build: `✓ Compiled successfully in 4.7s`
+
+### Commit: 18f645a
