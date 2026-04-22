@@ -29,7 +29,7 @@ const TYPE_LABELS: Record<string, string> = {
 export async function getElectronicAccountingSummary(): Promise<ElectronicAccountingByType[]> {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("syntage_electronic_accounting")
+    .from("syntage_electronic_accounting") // SP5-EXCEPTION: SAT source-layer reader — syntage_electronic_accounting is the canonical Bronze source for SAT contabilidad electronica. TODO SP6.
     .select(
       "syntage_id, taxpayer_rfc, odoo_company_id, record_type, ejercicio, periodo, tipo_envio, synced_at, created_at"
     );
@@ -72,7 +72,7 @@ export async function getElectronicAccountingRecent(
 ): Promise<ElectronicAccountingRow[]> {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("syntage_electronic_accounting")
+    .from("syntage_electronic_accounting") // SP5-EXCEPTION: SAT source-layer reader — syntage_electronic_accounting recent records. TODO SP6.
     .select(
       "syntage_id, taxpayer_rfc, odoo_company_id, record_type, ejercicio, periodo, tipo_envio, synced_at, created_at"
     )

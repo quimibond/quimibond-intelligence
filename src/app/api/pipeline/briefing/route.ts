@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
       supabase.rpc("top_actionable_insights", { p_limit: 3 }),
       // 1. Company narratives — the connected intelligence view
       supabase
-        .from("company_narrative")
+        .from("company_narrative") // SP5-EXCEPTION: §12 banned MV — briefing risk snapshot; no canonical replacement for risk_signal + OTD + complaint aggregate yet. TODO SP6: replace with gold_company_360.
         .select("canonical_name, tier, risk_level, total_revenue, revenue_90d, trend_pct, days_since_last_order, salespeople, top_products, overdue_amount, max_days_overdue, late_deliveries, otd_rate, emails_30d, complaints, recent_complaints, total_purchases, risk_signal")
         .not("risk_signal", "is", null)
         .order("total_revenue", { ascending: false })
@@ -90,7 +90,7 @@ export async function POST(request: NextRequest) {
 
       // 3. Companies flagged by MULTIPLE directors (convergent signals)
       supabase
-        .from("company_insight_history")
+        .from("company_insight_history") // SP5-EXCEPTION: §12 banned MV — briefing multi-director convergence signal; no canonical replacement yet. TODO SP6: derive from agent_insights aggregate.
         .select("company_name, total_insights_30d, times_acted, times_dismissed, directors_flagging, which_directors, categories_flagged")
         .gte("directors_flagging", 2)
         .order("total_insights_30d", { ascending: false })
@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 
       // 5. Email facts: actual complaints, commitments, requests
       supabase
-        .from("company_email_intelligence")
+        .from("company_email_intelligence") // SP5-EXCEPTION: §12 banned MV — briefing email-facts snapshot; no canonical email-intel view yet. TODO SP6: replace with email_signals/ai_extracted_facts aggregate.
         .select("company_name, fact_type, fact_text")
         .in("fact_type", ["complaint", "commitment", "request"])
         .order("created_at", { ascending: false })
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
 
       // 6. Recent payments (real payments with bank/method detail)
       supabase
-        .from("odoo_account_payments")
+        .from("odoo_account_payments") // SP5-EXCEPTION: briefing recent-payments — odoo_account_payments is Bronze-authoritative for bank journal detail (journal_name, payment_method). TODO SP6: replace with canonical_payments + journal FK.
         .select("company_id, amount, date, journal_name, payment_method")
         .gte("date", new Date(Date.now() - 3 * 24 * 3600_000).toISOString().split("T")[0])
         .order("amount", { ascending: false })
@@ -149,15 +149,10 @@ export async function POST(request: NextRequest) {
     const scope = new URL(request.url).searchParams.get("scope") ?? "daily";
     const todayDate = today; // yyyy-mm-dd
     const yesterdayDate = new Date(Date.now() - 86400_000).toISOString().split("T")[0];
+    // SP5 T29: reconciliation_summary_daily dropped — fiscalLine will be empty
     const [todaySnap, yesterdaySnap] = await Promise.all([
-      supabase.from("reconciliation_summary_daily")
-        .select("total_open, severity_counts, tax_status_opinion")
-        .eq("snapshot_date", todayDate)
-        .maybeSingle(),
-      supabase.from("reconciliation_summary_daily")
-        .select("total_open, severity_counts, tax_status_opinion")
-        .eq("snapshot_date", yesterdayDate)
-        .maybeSingle(),
+      Promise.resolve({ data: null as null }),
+      Promise.resolve({ data: null as null }),
     ]);
     const fiscalLine = buildFiscalOneLiner(
       (todaySnap.data as ReconciliationSnapshot | null),

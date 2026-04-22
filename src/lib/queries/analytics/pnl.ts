@@ -85,7 +85,7 @@ export async function getMostRecentPeriod(): Promise<string | null> {
   const sb = getServiceClient();
   // SP5-VERIFIED: odoo_account_balances is Bronze authoritative for account-level P&L detail
   const { data, error } = await sb
-    .from("odoo_account_balances") // SP5-VERIFIED: odoo_account_balances Bronze authoritative for account-level P&L
+    .from("odoo_account_balances") // SP5-EXCEPTION: odoo_account_balances is Bronze-authoritative for account-level P&L detail; no canonical equivalent exists in SP4 scope. TODO SP6.
     .select("period")
     .order("period", { ascending: false })
     .limit(1);
@@ -109,7 +109,7 @@ export async function getPnlByAccount(
 
   // SP5-VERIFIED: odoo_account_balances Bronze authoritative for account-level P&L detail
   const { data, error } = await sb
-    .from("odoo_account_balances") // SP5-VERIFIED: odoo_account_balances Bronze authoritative for account-level P&L
+    .from("odoo_account_balances") // SP5-EXCEPTION: odoo_account_balances is Bronze-authoritative for account-level P&L detail; no canonical equivalent exists in SP4 scope. TODO SP6.
     .select("account_code, account_name, account_type, period, debit, credit, balance")
     .eq("period", targetPeriod)
     .order("account_code", { ascending: true })

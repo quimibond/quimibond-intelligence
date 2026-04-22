@@ -69,7 +69,7 @@ export async function handleInvoiceEvent(ctx: HandlerCtx, event: SyntageEvent): 
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_invoices")
+    .from("syntage_invoices") // SP5-EXCEPTION: SAT source-layer writer — syntage_invoices is the canonical Bronze intake for SAT CFDI invoices. TODO SP6: pipe through canonical_invoices on insert.
     .upsert(row, { onConflict: "syntage_id" });
 
   if (error) throw error;

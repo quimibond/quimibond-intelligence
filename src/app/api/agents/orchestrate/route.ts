@@ -392,14 +392,10 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
               const eTheme = extractTheme(e.title, null);
               return eTheme === theme;
             }) as { id?: number } | undefined;
+            // SP5 T29: agent_tickets dropped — enrich ticket no longer created
             if (existingInsight?.id && insight.description) {
-              await supabase.from("agent_tickets").insert({
-                from_agent_id: agent.id,
-                to_agent_id: null, // will be resolved
-                insight_id: existingInsight.id,
-                ticket_type: "enrich",
-                message: `${agent.name} agrega contexto: ${String(insight.title).slice(0, 100)} — ${String(insight.description).slice(0, 200)}`,
-              });
+              // noop: agent_tickets table retired in SP5 T29
+              void existingInsight; // prevent lint unused warning
             }
           } catch { /* don't break dedup on ticket error */ }
           duplicatesSkipped++;
@@ -1142,13 +1138,8 @@ async function buildAgentContext(
       .order("updated_at", { ascending: false })
       .limit(8),
 
-    // Tickets from other directors (reduced from 10 to 5)
-    supabase
-      .from("agent_tickets")
-      .select("from_agent_id, insight_id, ticket_type, message, created_at")
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(5),
+    // SP5 T29: agent_tickets dropped — return empty to unblock cross-director context
+    Promise.resolve({ data: [] as Array<{ from_agent_id: number | null; insight_id: number | null; ticket_type: string | null; message: string | null; created_at: string | null }> }),
 
     // High-confidence KG facts (reduced from 20 to 10)
     supabase
@@ -1399,7 +1390,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10), // SP5-EXCEPTION: Bronze — no canonical_crm_leads in SP4 scope
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").eq("last_sender_type", "external").gt("hours_without_response", 24).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
         sb.from("gold_company_360").select("display_name, total_revenue_mxn, overdue_mxn, tier").gt("overdue_mxn", 50000).order("overdue_mxn", { ascending: false }).limit(10), // SP5: replaced company_profile (overdue filter)
-        sb.from("health_scores").select("contact_email, company_id, overall_score, previous_score, trend, sentiment_score, responsiveness_score, payment_compliance_score, risk_signals").gte("score_date", new Date(Date.now() - 14 * 86400_000).toISOString().split("T")[0]).lt("overall_score", 60).order("overall_score", { ascending: true }).limit(10),
+        Promise.resolve({ data: [] }), // SP5 T29: health_scores dropped — use gold_company_360 overdue_mxn as proxy
         // SP5: customer_ltv_health (§12 banned MV) replaced by gold_company_360 churn proxy
         sb.from("gold_company_360").select("display_name, tier, total_revenue_mxn, revenue_90d_mxn, overdue_mxn, last_sale_date, trend_pct").in("tier", ["strategic", "important"]).order("revenue_90d_mxn", { ascending: true }).limit(15), // SP5: replaced customer_ltv_health; no churn_risk_score equivalent — use revenue_90d trend as proxy
         // SP5-EXCEPTION: rfm_segments (§12 banned MV) — dropped, no canonical replacement. TODO SP6: build canonical RFM from canonical_sale_orders

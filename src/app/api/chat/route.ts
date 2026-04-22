@@ -93,7 +93,7 @@ async function gatherContext(
 
     // Company narratives: the richest source (revenue + overdue + deliveries + complaints + risk_signal)
     supabase
-      .from("company_narrative")
+      .from("company_narrative") // SP5-EXCEPTION: §12 banned MV — chat/RAG flattened company snapshot; no canonical replacement for risk_signal + OTD + complaints aggregate yet. TODO SP6: replace with gold_company_360.
       .select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, max_days_overdue, late_deliveries, otd_rate, emails_30d, complaints, recent_complaints, total_purchases, risk_signal, salespeople, top_products, days_since_last_order")
       .or(`canonical_name.ilike.${q}`)
       .order("total_revenue", { ascending: false })
@@ -230,7 +230,7 @@ async function gatherContext(
       // Fetch ALL invoices for the specific companies (sales + purchases)
       const companyIds = matchedCompanies.map(c => c.id);
       const { data: companyInvoices } = await supabase
-        .from("odoo_invoices")
+        .from("odoo_invoices") // SP5-EXCEPTION: chat/RAG company invoice lookup — canonical_invoices lacks company_id FK in SP5; TODO SP6 replace with canonical_invoices + company FK.
         .select("name, move_type, amount_total_mxn, amount_residual_mxn, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
         .eq("state", "posted")
         .in("company_id", companyIds)
@@ -248,7 +248,7 @@ async function gatherContext(
     // If no company match or no invoices found, get general top overdue
     if (invoiceData.length === 0) {
       const { data: topOverdue } = await supabase
-        .from("odoo_invoices")
+        .from("odoo_invoices") // SP5-EXCEPTION: chat/RAG top-overdue fallback — canonical_invoices lacks days_overdue column in SP5; TODO SP6 replace.
         .select("name, amount_total_mxn, amount_residual_mxn, amount_paid, currency, invoice_date, due_date, days_overdue, payment_state, payment_term, company_id")
         .eq("move_type", "out_invoice")
         .in("payment_state", ["not_paid", "partial"])

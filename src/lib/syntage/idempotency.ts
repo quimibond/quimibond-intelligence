@@ -30,7 +30,7 @@ export function supabaseEventStore(
   return {
     async insert(eventId, eventType, source) {
       const { data, error } = await supabase
-        .from("syntage_webhook_events")
+        .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer idempotency writer — syntage_webhook_events is the canonical Bronze dedup store for SAT webhook events.
         .insert({ event_id: eventId, event_type: eventType, source })
         .select("event_id");
 

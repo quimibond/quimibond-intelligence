@@ -38,7 +38,7 @@ export async function getSystemKpis(): Promise<SystemKpis> {
     sb.from("odoo_sync_freshness").select("status"), // SP5-EXCEPTION: /sistema diagnostic
     sb.from("claude_cost_summary").select("*"),
     sb.from("data_quality_scorecard").select("severity"),
-    sb.from("notification_queue").select("status"), // SP5-EXCEPTION: /sistema diagnostic
+    Promise.resolve({ data: [] as Array<{ status: string | null }> }), // SP5 T29: notification_queue dropped
     sb
       .from("agent_runs") // SP5-VERIFIED: agent_runs retained (not in §12 drop list)
       .select("status")
@@ -464,17 +464,10 @@ export interface NotificationRow {
 }
 
 export async function getNotifications(
-  limit = 20
+  // SP5 T29: notification_queue dropped — returns empty array
+  _limit = 20
 ): Promise<NotificationRow[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("notification_queue") // SP5-EXCEPTION: /sistema diagnostic — will be dropped T29
-    .select(
-      "id, channel, status, priority, recipient_name, title, body, created_at, sent_at, error_message"
-    )
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  return (data ?? []) as NotificationRow[];
+  return [];
 }
 
 // ──────────────────────────────────────────────────────────────────────────

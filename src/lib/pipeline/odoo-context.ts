@@ -54,7 +54,7 @@ export async function buildOdooContext(
     await Promise.all([
       partnerIds.length
         ? supabase
-            .from("odoo_invoices")
+            .from("odoo_invoices") // SP5-EXCEPTION: pipeline/odoo-context — no canonical per-partner invoice view yet; canonical_invoices lacks partner_id FK. TODO SP6: replace with canonical_invoices join.
             .select("*")
             .in("odoo_partner_id", partnerIds)
             .order("invoice_date", { ascending: false })
@@ -62,7 +62,7 @@ export async function buildOdooContext(
 
       partnerIds.length
         ? supabase
-            .from("odoo_account_payments")
+            .from("odoo_account_payments") // SP5-EXCEPTION: pipeline/odoo-context — no canonical payment view with bank detail; odoo_account_payments is authoritative for bank journal. TODO SP6.
             .select("*")
             .in("odoo_partner_id", partnerIds)
             .order("date", { ascending: false })
@@ -70,7 +70,7 @@ export async function buildOdooContext(
 
       partnerIds.length
         ? supabase
-            .from("odoo_deliveries")
+            .from("odoo_deliveries") // SP5-EXCEPTION: pipeline/odoo-context — no canonical delivery view yet. TODO SP6.
             .select("*")
             .in("odoo_partner_id", partnerIds)
             .order("scheduled_date", { ascending: false })
@@ -78,7 +78,7 @@ export async function buildOdooContext(
 
       partnerIds.length
         ? supabase
-            .from("odoo_crm_leads")
+            .from("odoo_crm_leads") // SP5-EXCEPTION: pipeline/odoo-context — no canonical CRM view yet. TODO SP6.
             .select("*")
             .in("odoo_partner_id", partnerIds)
             .eq("active", true)
@@ -86,14 +86,14 @@ export async function buildOdooContext(
 
       partnerIds.length
         ? supabase
-            .from("odoo_activities")
+            .from("odoo_activities") // SP5-EXCEPTION: pipeline/odoo-context — no canonical activities view yet. TODO SP6.
             .select("*")
             .in("odoo_partner_id", partnerIds)
         : Promise.resolve({ data: [] }),
 
       partnerIds.length
         ? supabase
-            .from("odoo_order_lines")
+            .from("odoo_order_lines") // SP5-EXCEPTION: pipeline/odoo-context — no canonical order-lines per-partner view yet. TODO SP6.
             .select("*")
             .in("odoo_partner_id", partnerIds)
             .order("order_date", { ascending: false })

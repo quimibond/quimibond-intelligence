@@ -60,7 +60,7 @@ export async function handleExtractionEvent(ctx: HandlerCtx, event: SyntageEvent
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_extractions")
+    .from("syntage_extractions") // SP5-EXCEPTION: SAT source-layer writer — syntage_extractions is the canonical Bronze intake for SAT extraction events.
     .upsert(row, { onConflict: "syntage_id" });
   if (error) throw error;
 }
@@ -88,7 +88,7 @@ async function upsertTaxpayerFromEvent(ctx: HandlerCtx, taxpayer: unknown): Prom
   };
 
   const { error } = await ctx.supabase
-    .from("syntage_taxpayers")
+    .from("syntage_taxpayers") // SP5-EXCEPTION: SAT source-layer writer — syntage_taxpayers is the canonical Bronze intake for SAT taxpayer profiles.
     .upsert(row, { onConflict: "rfc" });
   if (error) throw error;
 }
@@ -126,7 +126,7 @@ export async function handleFileCreatedEvent(ctx: HandlerCtx, event: SyntageEven
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_files")
+    .from("syntage_files") // SP5-EXCEPTION: SAT source-layer writer — syntage_files is the canonical Bronze intake for SAT document files.
     .upsert(row, { onConflict: "syntage_id" });
   if (error) throw error;
 }

@@ -40,7 +40,7 @@ export interface TaxRetentionRow {
 export async function getRecentTaxRetentions(limit = 50): Promise<TaxRetentionRow[]> {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("syntage_tax_retentions")
+    .from("syntage_tax_retentions") // SP5-EXCEPTION: SAT source-layer reader — syntage_tax_retentions is the canonical Bronze source for SAT retention CFDIs. TODO SP6: promote to canonical_tax_events.
     .select(
       "syntage_id, uuid, direction, fecha_emision, emisor_rfc, emisor_nombre, " +
       "receptor_rfc, receptor_nombre, tipo_retencion, monto_total_operacion, " +

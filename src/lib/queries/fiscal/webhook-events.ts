@@ -25,26 +25,26 @@ export async function getWebhookEventsSummary(): Promise<WebhookEventsSummary> {
   const d30 = new Date(now - 30 * 86400 * 1000).toISOString();
 
   const [totalQ, h24Q, d7Q, d30Q, recentQ, typesQ] = await Promise.all([
-    sb.from("syntage_webhook_events").select("*", { count: "exact", head: true }),
+    sb.from("syntage_webhook_events").select("*", { count: "exact", head: true }), // SP5-EXCEPTION: SAT source-layer reader — syntage_webhook_events is the canonical Bronze source for SAT webhook event monitoring. TODO SP6.
     sb
-      .from("syntage_webhook_events")
+      .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — 24h count.
       .select("*", { count: "exact", head: true })
       .gte("received_at", h24),
     sb
-      .from("syntage_webhook_events")
+      .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — 7d count.
       .select("*", { count: "exact", head: true })
       .gte("received_at", d7),
     sb
-      .from("syntage_webhook_events")
+      .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — 30d count.
       .select("*", { count: "exact", head: true })
       .gte("received_at", d30),
     sb
-      .from("syntage_webhook_events")
+      .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — most recent event.
       .select("received_at")
       .order("received_at", { ascending: false })
       .limit(1),
     sb
-      .from("syntage_webhook_events")
+      .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — event type distribution.
       .select("event_type")
       .gte("received_at", d30)
       .limit(5000),
@@ -81,7 +81,7 @@ export async function getWebhookEventsRecent(
 ): Promise<WebhookEventRow[]> {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("syntage_webhook_events")
+    .from("syntage_webhook_events") // SP5-EXCEPTION: SAT source-layer reader — recent webhook events list. TODO SP6.
     .select("event_id, event_type, source, received_at")
     .order("received_at", { ascending: false })
     .limit(limit);

@@ -28,7 +28,7 @@ export async function handleInvoicePaymentEvent(ctx: HandlerCtx, event: SyntageE
   }
 
   const { error } = await ctx.supabase
-    .from("syntage_invoice_payments")
+    .from("syntage_invoice_payments") // SP5-EXCEPTION: SAT source-layer writer — syntage_invoice_payments is the canonical Bronze intake for SAT payment complements. TODO SP6: pipe through canonical_payment_allocations.
     .upsert(row, { onConflict: "syntage_id" });
 
   if (error) throw error;
