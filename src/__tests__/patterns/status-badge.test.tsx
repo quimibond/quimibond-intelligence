@@ -48,3 +48,25 @@ describe("StatusBadge (legacy API: status=)", () => {
     expect(el.textContent).toContain("unknown_xyz");
   });
 });
+
+describe("StatusBadge (additional coverage)", () => {
+  it("renders leftbar variant when explicitly requested", () => {
+    render(<StatusBadge kind="payment" value="paid" variant="leftbar" />);
+    const el = screen.getByRole("status");
+    expect(el).toHaveAttribute("data-variant", "leftbar");
+    expect(el).toHaveAttribute("data-color", "ok");
+    expect(el.textContent).toContain("Pagada");
+  });
+
+  it("returns null for shadow=false", () => {
+    const { container } = render(<StatusBadge kind="shadow" value={false} />);
+    expect(container.firstChild).toBeNull();
+  });
+
+  it("maps legacy in_payment status to 'En proceso de pago'", () => {
+    render(<StatusBadge status="in_payment" />);
+    const el = screen.getByRole("status");
+    expect(el.textContent).toContain("En proceso de pago");
+    expect(el).toHaveAttribute("data-color", "info");
+  });
+});

@@ -12,7 +12,7 @@ export type StatusBadgeVariant = "dot" | "pill" | "outline" | "leftbar";
 /** Legacy API preserved for back-compat (9 out-of-scope pages). */
 export type LegacyStatus =
   | "paid" | "overdue" | "partial" | "active" | "draft"
-  | "cancelled" | "pending" | "delivered" | "in_progress";
+  | "cancelled" | "pending" | "delivered" | "in_progress" | "in_payment";
 
 /** @deprecated — kept for back-compat with the old `<StatusBadge status="..."/>` API. */
 export type Status = LegacyStatus | string;
@@ -27,6 +27,7 @@ const LEGACY_MAP: Record<LegacyStatus, StatusBadgeInput> = {
   pending:     { kind: "generic", value: "Pendiente" },
   delivered:   { kind: "generic", value: "Entregada" },
   in_progress: { kind: "generic", value: "En curso" },
+  in_payment:  { kind: "payment", value: "in_payment" },
 };
 
 type NewProps = StatusBadgeInput & {
@@ -120,7 +121,7 @@ export function StatusBadge(props: StatusBadgeProps): React.ReactElement | null 
         aria-label={ariaLabel}
         data-variant="outline"
         data-color={color}
-        className={cn(base, "rounded-md border px-2 py-0.5", classes.border, className)}
+        className={cn(base, "rounded-md border px-2 py-0.5", classes.border, classes.text, className)}
       >
         <span aria-hidden="true" className={cn("inline-block h-1.5 w-1.5 rounded-full", classes.dot)} />
         <span>{resolved.label}</span>
@@ -135,7 +136,7 @@ export function StatusBadge(props: StatusBadgeProps): React.ReactElement | null 
       aria-label={ariaLabel}
       data-variant="leftbar"
       data-color={color}
-      className={cn("inline-flex items-center pl-2 border-l-2 text-xs", classes.border, className)}
+      className={cn(base, "pl-2 border-l-2", classes.border, classes.text, className)}
     >
       {resolved.label}
     </span>
