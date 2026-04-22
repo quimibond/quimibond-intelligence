@@ -92,3 +92,4 @@ export type { ChartType as ChartPrimitiveType } from "./chart";
 export { TrendSpark } from "./trend-spark";
 export { InboxCard, type InboxCardIssue, type InboxActionCta, type InboxCardSeverity } from "./inbox-card";
 export { SwipeStack } from "./swipe-stack";
+export { CompanyKpiHero, type CompanyKpiHeroCanonical, type CompanyKpiHero360 } from "./company-kpi-hero";
