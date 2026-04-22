@@ -2,91 +2,87 @@ import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
- * customer-360.ts — Queries para analytics_customer_360 y vistas fiscales.
+ * customer-360.ts — Gold layer reads via gold_company_360.
  *
- * analytics_customer_360 es la master view por company_id combinando:
- *   Odoo operativo + Syntage fiscal + AI scores (47+ campos).
+ * gold_company_360 is the canonical per-company snapshot combining
+ * canonical_companies + canonical_invoices + canonical_payments + MDM.
+ * PK: canonical_company_id.
  */
 
 // ──────────────────────────────────────────────────────────────────────────
-// Customer 360 snapshot
+// Customer 360 snapshot (gold_company_360)
 // ──────────────────────────────────────────────────────────────────────────
 
-export interface Customer360 {
-  company_id: number;
-  company_name: string | null;
-  rfc: string | null;
-  tier: string | null;
-  risk_level: string | null;
-  // Revenue metrics
-  revenue_12m_odoo: number | null;
-  revenue_12m_sat: number | null;
-  revenue_total_odoo: number | null;
-  // Cartera
-  overdue_amount: number | null;
-  overdue_count: number | null;
-  max_days_overdue: number | null;
-  // OTD
-  otd_rate: number | null;
-  late_deliveries: number | null;
-  // Fiscal
-  fiscal_issues_open: number | null;
-  fiscal_issues_critical: number | null;
-  cancellation_rate: number | null;
-  first_cfdi: string | null;
-  last_cfdi: string | null;
-  days_since_last_cfdi: number | null;
-  fiscal_lifetime_revenue_mxn: number | null;
-  // LTV / Churn
-  ltv_mxn: number | null;
-  churn_risk_score: number | null;
-}
-
-export async function getCustomer360(
-  companyId: number
-): Promise<Customer360 | null> {
+export async function fetchCustomer360(canonical_company_id: number) {
   const sb = getServiceClient();
   const { data, error } = await sb
-    .from("analytics_customer_360")
+    .from("gold_company_360")
     .select("*")
-    .eq("company_id", companyId)
+    .eq("canonical_company_id", canonical_company_id)
     .maybeSingle();
+  if (error) throw error;
+  return data;
+}
 
-  if (error || !data) return null;
-
-  const r = data as Record<string, unknown>;
-
-  return {
-    company_id: Number(r.company_id) || companyId,
-    company_name: (r.company_name as string | null) ?? null,
-    rfc: (r.rfc as string | null) ?? null,
-    tier: (r.tier as string | null) ?? null,
-    risk_level: (r.risk_level as string | null) ?? null,
-    revenue_12m_odoo: r.revenue_12m_odoo != null ? Number(r.revenue_12m_odoo) : null,
-    revenue_12m_sat: r.revenue_12m_sat != null ? Number(r.revenue_12m_sat) : null,
-    revenue_total_odoo: r.revenue_total_odoo != null ? Number(r.revenue_total_odoo) : null,
-    overdue_amount: r.overdue_amount != null ? Number(r.overdue_amount) : null,
-    overdue_count: r.overdue_count != null ? Number(r.overdue_count) : null,
-    max_days_overdue: r.max_days_overdue != null ? Number(r.max_days_overdue) : null,
-    otd_rate: r.otd_rate != null ? Number(r.otd_rate) : null,
-    late_deliveries: r.late_deliveries != null ? Number(r.late_deliveries) : null,
-    fiscal_issues_open: r.fiscal_issues_open != null ? Number(r.fiscal_issues_open) : null,
-    fiscal_issues_critical: r.fiscal_issues_critical != null ? Number(r.fiscal_issues_critical) : null,
-    cancellation_rate: r.cancellation_rate != null ? Number(r.cancellation_rate) : null,
-    first_cfdi: (r.first_cfdi as string | null) ?? null,
-    last_cfdi: (r.last_cfdi as string | null) ?? null,
-    days_since_last_cfdi: r.days_since_last_cfdi != null ? Number(r.days_since_last_cfdi) : null,
-    fiscal_lifetime_revenue_mxn:
-      r.fiscal_lifetime_revenue_mxn != null
-        ? Number(r.fiscal_lifetime_revenue_mxn)
-        : null,
-    ltv_mxn: r.ltv_mxn != null ? Number(r.ltv_mxn) : null,
-    churn_risk_score: r.churn_risk_score != null ? Number(r.churn_risk_score) : null,
-  };
+// Legacy alias — preserves consumers that call getCustomer360(companyId)
+// Note: companyId here is canonical_company_id (SP3 MDM onward).
+export async function getCustomer360(
+  canonical_company_id: number
+): Promise<ReturnType<typeof fetchCustomer360> extends Promise<infer T> ? T : never> {
+  return fetchCustomer360(canonical_company_id) as never;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Company insights (last N active insights)
+// Top customers ranked by lifetime_value_mxn
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function fetchTopCustomers(
+  opts: { limit?: number; minLtv?: number } = {}
+) {
+  const sb = getServiceClient();
+  let q = sb
+    .from("gold_company_360")
+    .select(
+      "canonical_company_id, display_name, rfc, lifetime_value_mxn, revenue_ytd_mxn, open_company_issues_count, blacklist_level"
+    )
+    .eq("is_customer", true)
+    .order("lifetime_value_mxn", { ascending: false, nullsFirst: false });
+  if (opts.minLtv) q = q.gte("lifetime_value_mxn", opts.minLtv);
+  if (opts.limit) q = q.limit(opts.limit);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Top suppliers ranked by lifetime_value_mxn
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function fetchTopSuppliers(opts: { limit?: number } = {}) {
+  const sb = getServiceClient();
+  let q = sb
+    .from("gold_company_360")
+    .select(
+      "canonical_company_id, display_name, rfc, lifetime_value_mxn, overdue_amount_mxn, blacklist_level"
+    )
+    .eq("is_supplier", true)
+    .order("lifetime_value_mxn", { ascending: false, nullsFirst: false });
+  if (opts.limit) q = q.limit(opts.limit);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Top at-risk clients — consumers of getTopAtRiskClients moved here
+// Reads gold_company_360 (churn_risk not present → use overdue_amount_mxn + blacklist_level)
+// ──────────────────────────────────────────────────────────────────────────
+
+// AtRiskClient — see dashboard.ts for the canonical version with back-compat aliases.
+// Re-exported from dashboard.ts via index.ts barrel.
+
+// ──────────────────────────────────────────────────────────────────────────
+// Company insights (agent_insights — operational table, not dropped)
 // ──────────────────────────────────────────────────────────────────────────
 
 export interface CompanyInsightRow {
@@ -100,16 +96,17 @@ export interface CompanyInsightRow {
 }
 
 export async function getCompanyInsights(
-  companyId: number,
+  canonical_company_id: number,
   limit = 3
 ): Promise<CompanyInsightRow[]> {
   const sb = getServiceClient();
+  // agent_insights.company_id is the legacy companies.id; SP5-TODO: migrate to canonical_company_id when routing table is updated
   const { data } = await sb
     .from("agent_insights")
     .select(
       "id, title, description, severity, category, created_at, ai_agents:agent_id(name)"
     )
-    .eq("company_id", companyId)
+    .eq("company_id", canonical_company_id)
     .in("state", ["new", "seen"])
     .order("created_at", { ascending: false })
     .limit(limit);
