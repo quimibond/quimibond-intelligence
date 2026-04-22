@@ -88,3 +88,4 @@ export {
 } from "./groupby-toggle";
 export { Chart, type ChartProps, type ChartSeries } from "./chart";
 export type { ChartType as ChartPrimitiveType } from "./chart";
+export { TrendSpark } from "./trend-spark";
