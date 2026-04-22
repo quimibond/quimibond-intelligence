@@ -764,3 +764,42 @@ None matched the test regex `from\(['"]${banned}['"]` — only string literals, 
 - Pre-existing `/equipo` prerender failure (SUPABASE_SERVICE_KEY missing in build env) — unrelated to T14.
 - No TypeScript errors in ventas/compras/cobranza files.
 - `./src/app/ventas/page.tsx` compiled cleanly in build output.
+
+## Task 16 — /productos /operaciones /contactos pages (completed 2026-04-21)
+
+### Inventory (Step 1)
+
+| Page | Files | Legacy reads found | Action |
+|---|---|---|---|
+| `/productos/page.tsx` | 1 | 0 direct `.from()` — delegates to `analytics/products.ts` (T06); string `product_margin_analysis` in EmptyState description | Cleaned description string |
+| `/operaciones/page.tsx` | 1 | 0 direct `.from()` — delegates to `operational/operations.ts` (T10) | Already clean |
+| `/contactos/page.tsx` | 1 | 0 direct `.from()` — delegates to `_shared/contacts.ts` (T04) | URL fix applied |
+| `/contactos/[id]/page.tsx` | 1 | 0 direct `.from()` — delegates to `_shared/contacts.ts` (T04) | Already clean |
+| `operaciones/_components/otd-weekly-chart.tsx` | 1 | 0 DB calls — pure renderer | No changes needed |
+
+### Changes applied
+
+1. **`/contactos/page.tsx` URL fix**: `rowHref={(r) => \`/contacts/${r.id}\`` → `\`/contactos/${r.id}\`` (1 URL fix)
+2. **`/productos/page.tsx` description cleanup**: `"No hay datos en product_margin_analysis."` → `"No hay datos de margen en gold_product_performance."` — removed banned table name from UI text
+
+### Lib delegation confirmed
+
+- `/productos` → `analytics/products.ts` (T06): `getProductsKpis`, `getInventoryPage`, `getProductCategoryOptions`, `getTopMoversPage`, `getDeadStockPage`, `getTopMarginProducts`
+- `/operaciones` → `operational/operations.ts` (T10): `getOperationsKpis`, `getWeeklyTrend`, `getDeliveriesPage`, `getManufacturingPage`, `getManufacturingAssigneeOptions`
+- `/contactos` + `/contactos/[id]` → `_shared/contacts.ts` (T04): `getContactsPage`, `getContactsKpis`, `getContactDetail`
+
+### SP5-EXCEPTION annotations added: 0
+
+### URL fixes applied: 1 (`/contacts/` → `/contactos/`)
+
+### Tests
+
+- `domain-pages.test.ts`: 15/15 passed (5 files × 3 tests each: §12 ban + Bronze ban + /companies/ routing gate)
+- Grep gate: 0 banned reads in any scope file
+
+### Build
+
+- Pre-existing `/equipo` prerender failure (SUPABASE_SERVICE_KEY missing in build env) — same as T14/T15, unrelated to T16.
+- No TypeScript errors in productos/operaciones/contactos scope.
+
+### Commit: 6a9cc7d
