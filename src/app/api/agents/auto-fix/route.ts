@@ -1,4 +1,11 @@
 /**
+ * SP5-VERIFIED: agent_insights / emails / contacts / companies / pipeline_logs / entities — retained (not in §12 drop list).
+ * SP5-EXCEPTION (Bronze reads by design): odoo_invoices, odoo_order_lines
+ *   These reads check Bronze link-completeness (company_id IS NULL) to decide whether
+ *   a data-quality insight has been resolved. canonical_invoices and canonical_order_lines
+ *   expose canonical_company_id (different FK namespace) — cannot substitute directly
+ *   without also migrating the agent_insights.company_id FK. Mark for SP6.
+ *
  * Data Auto-Fix — Self-healing data quality agent.
  *
  * Runs automatically. Fixes safe, non-destructive data issues:
@@ -274,10 +281,10 @@ export async function POST() {  const supabase = getServiceClient();
           if (count && total && count / total < 0.3) resolved = true;
         } else if (title.includes("factura") && title.includes("empresa")) {
           // legitimate raw use: count orphaned odoo_invoices (company_id=null) — only the raw table has unlinked records
-          const { count } = await supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null);
+          const { count } = await supabase.from("odoo_invoices").select("id", { count: "exact", head: true }).is("company_id", null); // SP5-EXCEPTION: Bronze link-completeness check — company_id FK namespace differs from canonical
           if (count !== null && count < 50) resolved = true;
         } else if (title.includes("orden") && title.includes("empresa")) {
-          const { count } = await supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }).is("company_id", null);
+          const { count } = await supabase.from("odoo_order_lines").select("id", { count: "exact", head: true }).is("company_id", null); // SP5-EXCEPTION: Bronze link-completeness check — canonical_order_lines is MV, no company_id FK
           if (count !== null && count < 100) resolved = true;
         } else if (title.includes("entity") || title.includes("entity_id")) {
           const { count } = await supabase.from("companies").select("id", { count: "exact", head: true }).is("entity_id", null);

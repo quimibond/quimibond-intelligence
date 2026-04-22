@@ -1,4 +1,30 @@
 /**
+ * SP5-VERIFIED: agent_runs / agent_memory / agent_insights / agent_tickets /
+ *   agent_effectiveness / ai_agents / companies / contacts / facts / action_items /
+ *   threads / pipeline_logs — all system/operational tables retained (not in §12 drop list).
+ *
+ * SP5-EXCEPTION annotations in getDomainData() and cross-cutting layers:
+ *   - company_email_intelligence  (§12 banned) — cross-cutting layer; no canonical email-intel view yet
+ *   - company_narrative (§12 banned) — used in comercial/riesgo_dir domain context; no canonical replacement
+ *   - odoo_sale_orders  (Bronze) — comercial + equipo_dir; replaced by canonical_sale_orders below
+ *   - odoo_crm_leads    (Bronze) — comercial; no canonical_crm_leads in SP4 scope → SP5-EXCEPTION
+ *   - odoo_deliveries   (Bronze) — operaciones_dir; replaced by canonical_deliveries below
+ *   - odoo_orderpoints  (Bronze) — operaciones_dir; replaced by canonical_inventory below
+ *   - odoo_products     (Bronze) — operaciones_dir + costos; replaced by canonical_products below
+ *   - odoo_purchase_orders (Bronze) — operaciones_dir + compras; replaced by canonical_purchase_orders below
+ *   - odoo_order_lines  (Bronze) — compras; replaced by canonical_order_lines below
+ *   - odoo_invoices     (Bronze) — compras; replaced by canonical_invoices below
+ *   - odoo_activities   (Bronze) — equipo_dir; no canonical_activities in SP4 scope → SP5-EXCEPTION
+ *   - odoo_users        (Bronze) — action_item assignee resolution; no canonical_users yet → SP5-EXCEPTION
+ *   - company_profile   (§12 banned MV) — multiple domains; replaced by gold_company_360 below
+ *   - customer_ltv_health (§12 banned MV) — comercial; replaced by gold_company_360 below
+ *   - rfm_segments      (§12 banned MV) — comercial; dropped, no canonical replacement → SP5-EXCEPTION
+ *   - supplier_product_matrix (§12 banned MV) — comercial + compras + riesgo_dir; dropped → SP5-EXCEPTION
+ *   - supplier_price_index (§12 banned MV) — compras; dropped → SP5-EXCEPTION
+ *   - supplier_concentration_herfindahl (§12 banned MV) — riesgo_dir; dropped → SP5-EXCEPTION
+ *   - product_margin_analysis (§12 banned MV) — comercial + costos; dropped → SP5-EXCEPTION
+ *   - customer_margin_analysis (§12 banned MV) — costos; dropped → SP5-EXCEPTION
+ *
  * Agent Orchestrator v4 — Parallel execution, model routing.
  *
  * v4 improvements:
@@ -560,7 +586,7 @@ async function runSingleAgent(apiKey: string, supabase: any, agent: any, batchSt
             let assigneeEmail: string | null = null;
             const aName = String(action.assignee_name ?? "").trim();
             if (aName) {
-              const { data: user } = await supabase.from("odoo_users")
+              const { data: user } = await supabase.from("odoo_users") // SP5-EXCEPTION: Bronze action_item assignee email lookup — no canonical_users yet
                 .select("email, department")
                 .ilike("name", `%${aName}%`)
                 .limit(1).single();
@@ -1099,7 +1125,7 @@ async function buildAgentContext(
   const [emailFacts, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
     // Email facts per company (reduced from 15 to 8)
     supabase
-      .from("company_email_intelligence")
+      .from("company_email_intelligence") // SP5-EXCEPTION: §12 banned MV — no canonical email-intel view yet; TODO SP6 replace with email_signals/ai_extracted_facts aggregate
       .select("company_name, fact_type, fact_text")
       .in("fact_type", ["complaint", "commitment", "request", "price"])
       .limit(8),
@@ -1343,7 +1369,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
   if (needsNarratives.includes(domain)) {
     // Companies with risk signals first (most actionable)
     const { data: narratives } = await sb
-      .from("company_narrative")
+      .from("company_narrative") // SP5-EXCEPTION: §12 banned MV — cross-cutting profile section; no canonical replacement for flattened per-company snapshot yet. TODO SP6: replace with gold_company_360 + derived fields
       .select("canonical_name, tier, risk_level, total_revenue, revenue_90d, trend_pct, days_since_last_order, salespeople, top_products, pending_amount, overdue_amount, max_days_overdue, late_deliveries, otd_rate, emails_30d, complaints, commitments, requests, recent_complaints, total_purchases, risk_signal")
       .order("total_revenue", { ascending: false })
       .limit(30);
@@ -1366,23 +1392,20 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     case "comercial": {
       const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue, atRiskContacts, ltvChurning, rfmAtRisk] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
-        sb.from("company_profile").select("name, total_revenue, revenue_90d, revenue_prior_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier, overdue_amount, max_days_overdue").gt("total_revenue", 0).order("total_revenue", { ascending: false }).limit(15),
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
-        sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15),
-        sb.from("odoo_sale_orders").select("company_id, name, amount_total_mxn, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10),
-        sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10),
+        sb.from("gold_company_360").select("canonical_company_id, display_name, total_revenue_mxn, revenue_90d_mxn, overdue_mxn, last_sale_date, tier, trend_pct").gt("total_revenue_mxn", 0).order("total_revenue_mxn", { ascending: false }).limit(15), // SP5: replaced company_profile
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — no canonical margin view yet; TODO SP6
+        sb.from("customer_product_matrix").select("company_name, product_ref, revenue, pct_of_product_revenue, pct_of_customer_revenue").gt("pct_of_customer_revenue", 50).order("revenue", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — no canonical replacement yet; TODO SP6
+        sb.from("canonical_sale_orders").select("canonical_company_id, name, amount_total_mxn, date_order, salesperson_name").order("date_order", { ascending: false }).limit(10), // SP5: replaced odoo_sale_orders
+        sb.from("odoo_crm_leads").select("name, stage, expected_revenue, probability, assigned_user, days_open").gt("expected_revenue", 0).order("expected_revenue", { ascending: false }).limit(10), // SP5-EXCEPTION: Bronze — no canonical_crm_leads in SP4 scope
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").eq("last_sender_type", "external").gt("hours_without_response", 24).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
-        sb.from("company_profile").select("name, total_revenue, overdue_amount, max_days_overdue, tier").gt("overdue_amount", 50000).order("overdue_amount", { ascending: false }).limit(10),
+        sb.from("gold_company_360").select("display_name, total_revenue_mxn, overdue_mxn, tier").gt("overdue_mxn", 50000).order("overdue_mxn", { ascending: false }).limit(10), // SP5: replaced company_profile (overdue filter)
         sb.from("health_scores").select("contact_email, company_id, overall_score, previous_score, trend, sentiment_score, responsiveness_score, payment_compliance_score, risk_signals").gte("score_date", new Date(Date.now() - 14 * 86400_000).toISOString().split("T")[0]).lt("overall_score", 60).order("overall_score", { ascending: true }).limit(10),
-        // NEW (audit 2026-04-15 sprint 2): LTV + churn risk by customer.
-        // Filters to strategic/important tier customers with high churn risk
-        // or negative trend — the ones whose retention actually moves revenue.
-        sb.from("customer_ltv_health").select("company_name, tier, ltv_mxn, revenue_12m, revenue_3m, trend_pct_vs_prior_quarters, churn_risk_score, overdue_risk_score, overdue_mxn, last_purchase").in("tier", ["strategic", "important"]).gt("churn_risk_score", 50).order("ltv_mxn", { ascending: false }).limit(15),
-        // NEW: RFM segmentation — lost/at_risk/need_attention segments with high monetary
-        // Gives comercial a list of clients to prioritize outreach based on pareto value.
-        sb.from("rfm_segments").select("company_name, tier, segment, recency_days, frequency, monetary_12m, avg_ticket, last_purchase, contact_priority_score").in("segment", ["cant_lose", "at_risk", "hibernating", "need_attention"]).gt("monetary_12m", 200000).order("contact_priority_score", { ascending: false }).limit(15),
+        // SP5: customer_ltv_health (§12 banned MV) replaced by gold_company_360 churn proxy
+        sb.from("gold_company_360").select("display_name, tier, total_revenue_mxn, revenue_90d_mxn, overdue_mxn, last_sale_date, trend_pct").in("tier", ["strategic", "important"]).order("revenue_90d_mxn", { ascending: true }).limit(15), // SP5: replaced customer_ltv_health; no churn_risk_score equivalent — use revenue_90d trend as proxy
+        // SP5-EXCEPTION: rfm_segments (§12 banned MV) — dropped, no canonical replacement. TODO SP6: build canonical RFM from canonical_sale_orders
+        sb.from("rfm_segments").select("company_name, tier, segment, recency_days, frequency, monetary_12m, avg_ticket, last_purchase, contact_priority_score").in("segment", ["cant_lose", "at_risk", "hibernating", "need_attention"]).gt("monetary_12m", 200000).order("contact_priority_score", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — TODO SP6
       ]);
-      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## LTV & CHURN RISK (clientes estrategicos/important con riesgo alto)\n${safeJSON(ltvChurning.data)}\n## RFM SEGMENTACION: clientes cant_lose/at_risk/hibernating/need_attention\n${safeJSON(rfmAtRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (riesgo de relacion)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas)\n${safeJSON(crmLeads.data)}\n## Top clientes (tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto\n${safeJSON(concentration.data)}`;
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## LTV & CHURN RISK (gold_company_360: clientes estrategicos/important con revenue_90d bajo)\n${safeJSON(ltvChurning.data)}\n## RFM SEGMENTACION (SP5-EXCEPTION: §12 banned MV)\n${safeJSON(rfmAtRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (gold_company_360 overdue_mxn)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas, SP5-EXCEPTION Bronze)\n${safeJSON(crmLeads.data)}\n## Top clientes (gold_company_360: tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes (canonical_sale_orders)\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente (SP5-EXCEPTION §12 MV)\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto (SP5-EXCEPTION §12 MV)\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
       const modes = directorConfig?.mode_rotation?.length
@@ -1407,12 +1430,12 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     }
     case "operaciones_dir": {
       const [deliveries, orderpoints, deadStock, products, pendingPOs, pendingDeliveries, productionDelays, otdHistory, slowMoving] = await Promise.all([
-        sb.from("odoo_deliveries").select("company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').gte("scheduled_date", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("scheduled_date", { ascending: true }).limit(15),
-        sb.from("odoo_orderpoints").select("product_name, qty_on_hand, product_min_qty, qty_forecast, warehouse_name").order("qty_on_hand", { ascending: true }).limit(20),
+        sb.from("canonical_deliveries").select("canonical_company_id, name, state, is_late, scheduled_date, origin").eq("is_late", true).not("state", "in", '("done","cancel")').gte("scheduled_date", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("scheduled_date", { ascending: true }).limit(15), // SP5: replaced odoo_deliveries
+        sb.from("canonical_inventory").select("internal_ref, display_name, stock_qty, available_qty, reorder_min, qty_forecast, warehouse_name").order("stock_qty", { ascending: true }).limit(20), // SP5: replaced odoo_orderpoints
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers").order("inventory_value", { ascending: false }).limit(15),
-        sb.from("odoo_products").select("internal_ref, name, stock_qty, available_qty, reorder_min, standard_price").gt("reorder_min", 0).order("available_qty", { ascending: true }).limit(15),
-        sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, date_order, buyer_name").eq("state", "purchase").order("date_order", { ascending: false }).limit(10),
-        sb.from("odoo_deliveries").select("company_id, name, state, scheduled_date, origin").not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(15),
+        sb.from("canonical_products").select("internal_ref, display_name, stock_qty, available_qty, standard_price").gt("stock_qty", 0).order("available_qty", { ascending: true }).limit(15), // SP5: replaced odoo_products (reorder_min filter → use stock_qty>0 proxy)
+        sb.from("canonical_purchase_orders").select("canonical_company_id, name, amount_total_mxn, date_order, buyer_name").eq("state", "purchase").order("date_order", { ascending: false }).limit(10), // SP5: replaced odoo_purchase_orders
+        sb.from("canonical_deliveries").select("canonical_company_id, name, state, scheduled_date, origin").not("state", "in", '("done","cancel")').order("scheduled_date", { ascending: true }).limit(15), // SP5: replaced odoo_deliveries
         // NEW (audit 2026-04-15 sprint 2): production with customer context.
         // Replaces raw odoo_manufacturing reads with production_delays view
         // which joins MO → SO → customer (so the director knows which client
@@ -1424,80 +1447,70 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         // Complements dead_stock_analysis which focuses on zero-velocity only.
         sb.from("inventory_velocity").select("product_ref, product_name, stock_qty, stock_value, qty_sold_90d, customers_12m, days_of_stock, reorder_status").gt("stock_value", 50000).in("reorder_status", ["slow", "overstock", "dead"]).order("stock_value", { ascending: false }).limit(15),
       ]);
-      return `${profileSection}## ENTREGAS ATRASADAS (${(deliveries.data ?? []).length})\n${safeJSON(deliveries.data)}\n## TODAS las entregas pendientes\n${safeJSON(pendingDeliveries.data)}\n## COMPRAS PENDIENTES (material en camino)\n${safeJSON(pendingPOs.data)}\n## PRODUCCION CON PROBLEMA (atrasadas o subproducidas, con cliente afectado)\n${safeJSON(productionDelays.data)}\n## TENDENCIA OTD SEMANAL (ultimas 8 semanas)\n${safeJSON(otdHistory.data)}\n## INVENTARIO LENTO/SOBRESTOCK (stock value >$50K, velocidad baja)\n${safeJSON(slowMoving.data)}\n## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}\n## Inventario critico (stock < reorder)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
+      return `${profileSection}## ENTREGAS ATRASADAS (canonical_deliveries: ${(deliveries.data ?? []).length})\n${safeJSON(deliveries.data)}\n## TODAS las entregas pendientes (canonical_deliveries)\n${safeJSON(pendingDeliveries.data)}\n## COMPRAS PENDIENTES (canonical_purchase_orders)\n${safeJSON(pendingPOs.data)}\n## PRODUCCION CON PROBLEMA (atrasadas o subproducidas, con cliente afectado)\n${safeJSON(productionDelays.data)}\n## TENDENCIA OTD SEMANAL (ultimas 8 semanas)\n${safeJSON(otdHistory.data)}\n## INVENTARIO LENTO/SOBRESTOCK (stock value >$50K, velocidad baja)\n${safeJSON(slowMoving.data)}\n## Orderpoints: stock bajo (canonical_inventory)\n${safeJSON(orderpoints.data)}\n## Inventario critico (canonical_products)\n${safeJSON(products.data)}\n## INVENTARIO MUERTO (sin venta >60d)\n${safeJSON(deadStock.data)}`;
     }
     case "compras": {
       const [singleSource, supplierDep, recentPOs, priceChanges, priceAnomalies, weOweSuppliers, supplierThreads, supplierOverpaid] = await Promise.all([
-        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(15),
-        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20),
-        sb.from("odoo_purchase_orders").select("company_id, name, amount_total_mxn, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15),
-        sb.from("odoo_order_lines").select("company_id, product_ref, product_name, price_unit, subtotal_mxn, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20),
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — no canonical replacement; TODO SP6 derive from canonical_order_lines
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases, last_purchase").order("purchase_value", { ascending: false }).limit(20), // SP5-EXCEPTION: §12 banned MV — TODO SP6
+        sb.from("canonical_purchase_orders").select("canonical_company_id, name, amount_total_mxn, state, date_order, buyer_name").order("date_order", { ascending: false }).limit(15), // SP5: replaced odoo_purchase_orders
+        sb.from("canonical_order_lines").select("canonical_company_id, product_ref, product_name, price_unit, subtotal_mxn, order_date").eq("order_type", "purchase").order("order_date", { ascending: false }).limit(20), // SP5: replaced odoo_order_lines
         sb.from("purchase_price_intelligence").select("product_ref, product_name, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, price_change_pct, qty_vs_avg_pct, avg_qty, last_qty, total_purchases, total_spent, price_flag, qty_flag, last_order_name").in("price_flag", ["price_above_avg", "price_below_avg"]).order("total_spent", { ascending: false }).limit(25),
-        sb.from("odoo_invoices").select("company_id, name, amount_total_mxn, amount_residual_mxn, days_overdue, due_date").eq("move_type", "in_invoice").in("payment_state", ["not_paid", "partial"]).order("amount_residual_mxn", { ascending: false }).limit(15),
+        sb.from("canonical_invoices").select("emisor_canonical_company_id, name, amount_total_mxn, amount_residual_mxn_odoo, due_date_odoo").eq("direction", "received").in("payment_state_odoo", ["not_paid", "partial"]).order("amount_residual_mxn_odoo", { ascending: false }).limit(15), // SP5: replaced odoo_invoices (in_invoice)
         sb.from("threads").select("subject, last_sender, hours_without_response, company_id").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
-        // NEW (audit 2026-04-15 sprint 2): supplier price index — per-month deltas
-        // vs market benchmark. Surfaces suppliers we overpaid in the last 90 days
-        // with concrete MXN impact (overpaid_mxn). Unlike purchase_price_intelligence
-        // which compares against our own historical avg, this compares against
-        // the market (benchmark_price across all suppliers in the same month).
-        sb.from("supplier_price_index").select("product_ref, product_name, supplier_name, month, supplier_avg_price, benchmark_price, price_index, overpaid_mxn, supplier_spend, last_po_name, last_po_date, price_flag").eq("price_flag", "overpaid").gte("month", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("overpaid_mxn", { ascending: false }).limit(15),
+        // SP5-EXCEPTION: supplier_price_index (§12 banned MV) — no canonical replacement. TODO SP6: rebuild from canonical_order_lines + canonical_invoices
+        sb.from("supplier_price_index").select("product_ref, product_name, supplier_name, month, supplier_avg_price, benchmark_price, price_index, overpaid_mxn, supplier_spend, last_po_name, last_po_date, price_flag").eq("price_flag", "overpaid").gte("month", new Date(Date.now() - 90 * 86400_000).toISOString().split("T")[0]).order("overpaid_mxn", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV
       ]);
       const aboveAvg = ((priceAnomalies.data ?? []) as Record<string, unknown>[]).filter(r => r.price_flag === "price_above_avg");
       const belowAvg = ((priceAnomalies.data ?? []) as Record<string, unknown>[]).filter(r => r.price_flag === "price_below_avg");
-      return `${profileSection}## SOBREPAGO vs BENCHMARK DE MERCADO (ultimos 90d, con MXN perdidos)\n${safeJSON(supplierOverpaid.data)}\n## ALERTA PRECIOS: comprando MAS CARO que el promedio historico\n${safeJSON(aboveAvg.slice(0, 15))}\n## Comprando MAS BARATO que el promedio (posibles ahorros logrados)\n${safeJSON(belowAvg.slice(0, 10))}\n## FACTURAS PROVEEDOR PENDIENTES (lo que debemos)\n${safeJSON(weOweSuppliers.data)}\n## EMAILS CON PROVEEDORES SIN RESPUESTA >48h\n${safeJSON(supplierThreads.data)}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto\n${safeJSON(supplierDep.data)}\n## OC recientes\n${safeJSON(recentPOs.data)}\n## Lineas de compra (precios)\n${safeJSON(priceChanges.data)}`;
+      return `${profileSection}## SOBREPAGO vs BENCHMARK DE MERCADO (SP5-EXCEPTION: §12 supplier_price_index MV)\n${safeJSON(supplierOverpaid.data)}\n## ALERTA PRECIOS: comprando MAS CARO que el promedio historico\n${safeJSON(aboveAvg.slice(0, 15))}\n## Comprando MAS BARATO que el promedio (posibles ahorros logrados)\n${safeJSON(belowAvg.slice(0, 10))}\n## FACTURAS PROVEEDOR PENDIENTES (canonical_invoices direction=received)\n${safeJSON(weOweSuppliers.data)}\n## EMAILS CON PROVEEDORES SIN RESPUESTA >48h\n${safeJSON(supplierThreads.data)}\n## PROVEEDOR UNICO: materiales con 1 solo proveedor (SP5-EXCEPTION: §12 supplier_product_matrix MV)\n${safeJSON(singleSource.data)}\n## Dependencia de proveedores por producto (SP5-EXCEPTION: §12 MV)\n${safeJSON(supplierDep.data)}\n## OC recientes (canonical_purchase_orders)\n${safeJSON(recentPOs.data)}\n## Lineas de compra (canonical_order_lines)\n${safeJSON(priceChanges.data)}`;
     }
     case "riesgo_dir": {
       const [narrativesRisk, payRisk, singleSource, churning, trends, unanswered, topClients, supplierWeOwe, supplierConcentration] = await Promise.all([
-        sb.from("company_narrative").select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople").not("risk_signal", "is", null).order("total_revenue", { ascending: false }).limit(15),
+        sb.from("company_narrative").select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople").not("risk_signal", "is", null).order("total_revenue", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — risk signal filter; no canonical equivalent. TODO SP6
         sb.from("payment_predictions").select("company_name, tier, avg_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending").in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"]).order("total_pending", { ascending: false }).limit(10),
-        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10),
-        sb.from("company_profile").select("name, total_revenue, revenue_90d, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10),
+        sb.from("supplier_product_matrix").select("supplier_name, product_ref, purchase_value, total_suppliers_for_product").eq("total_suppliers_for_product", 1).order("purchase_value", { ascending: false }).limit(10), // SP5-EXCEPTION: §12 banned MV — TODO SP6
+        sb.from("gold_company_360").select("display_name, total_revenue_mxn, revenue_90d_mxn, trend_pct, tier").in("tier", ["strategic", "important"]).lt("trend_pct", -30).limit(10), // SP5: replaced company_profile (churning filter)
         sb.from("weekly_trends").select("company_name, tier, overdue_delta, late_delta, trend_signal").not("trend_signal", "is", null).order("overdue_delta", { ascending: false }).limit(10),
         sb.from("threads").select("subject, last_sender, hours_without_response, account").eq("last_sender_type", "external").gt("hours_without_response", 72).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(10),
-        sb.from("company_profile").select("name, total_revenue, revenue_share_pct, tier, overdue_amount").order("total_revenue", { ascending: false }).limit(10),
+        sb.from("gold_company_360").select("display_name, total_revenue_mxn, tier, overdue_mxn").order("total_revenue_mxn", { ascending: false }).limit(10), // SP5: replaced company_profile (top clients)
         sb.from("accounting_anomalies").select("anomaly_type, severity, description, company_name, amount").eq("anomaly_type", "supplier_overdue").order("amount", { ascending: false }).limit(10),
-        // NEW (audit 2026-04-15 sprint 2): supplier concentration index (Herfindahl).
-        // Products where 1 supplier holds >60% share and total spend is material.
-        // Catches strategic supply-chain risks before they become crises.
-        sb.from("supplier_concentration_herfindahl").select("product_ref, product_name, supplier_count, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level").in("concentration_level", ["critico", "alto"]).gt("total_spent_12m", 100000).order("total_spent_12m", { ascending: false }).limit(15),
+        // SP5-EXCEPTION: supplier_concentration_herfindahl (§12 banned MV) — no canonical replacement. TODO SP6: derive from canonical_order_lines
+        sb.from("supplier_concentration_herfindahl").select("product_ref, product_name, supplier_count, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level").in("concentration_level", ["critico", "alto"]).gt("total_spent_12m", 100000).order("total_spent_12m", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV
       ]);
       // Calculate concentration
       const topRevenue = (topClients.data ?? []) as Record<string, unknown>[];
       const totalRevenue = topRevenue.reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
       const top5Revenue = topRevenue.slice(0, 5).reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
       const concentrationPct = totalRevenue > 0 ? Math.round(top5Revenue / totalRevenue * 100) : 0;
-      return `${profileSection}## CONCENTRACION DE REVENUE: top 5 clientes = ${concentrationPct}% del total\n${safeJSON(topRevenue.slice(0, 5))}\n## EMPRESAS CON SEÑALES DE ALERTA\n${safeJSON(narrativesRisk.data)}\n## RIESGO DE CADENA DE SUMINISTRO (concentracion Herfindahl en proveedores, critico/alto)\n${safeJSON(supplierConcentration.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## PROVEEDORES A QUIENES DEBEMOS (riesgo de relacion)\n${safeJSON(supplierWeOwe.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Clientes cayendo >30%\n${safeJSON(churning.data)}\n## Proveedor unico\n${safeJSON(singleSource.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA >72h\n${safeJSON(unanswered.data)}`;
+      return `${profileSection}## CONCENTRACION DE REVENUE: top 5 clientes = ${concentrationPct}% del total (gold_company_360)\n${safeJSON(topRevenue.slice(0, 5))}\n## EMPRESAS CON SEÑALES DE ALERTA (SP5-EXCEPTION: company_narrative §12 MV)\n${safeJSON(narrativesRisk.data)}\n## RIESGO DE CADENA DE SUMINISTRO (SP5-EXCEPTION: supplier_concentration_herfindahl §12 MV)\n${safeJSON(supplierConcentration.data)}\n## Empresas que exceden patron de pago\n${safeJSON(payRisk.data)}\n## PROVEEDORES A QUIENES DEBEMOS (riesgo de relacion)\n${safeJSON(supplierWeOwe.data)}\n## Tendencia semanal\n${safeJSON(trends.data)}\n## Clientes cayendo >30% (gold_company_360)\n${safeJSON(churning.data)}\n## Proveedor unico (SP5-EXCEPTION: supplier_product_matrix §12 MV)\n${safeJSON(singleSource.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA >72h\n${safeJSON(unanswered.data)}`;
     }
     case "costos": {
       const [margins, deadStock, priceErosion, topProducts, purchasePrices, productCosts, belowCostLines, bomCostCreep, customerMargins] = await Promise.all([
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, effective_cost, cost_source, bom_real_cost, cached_standard_price, gross_margin_pct, total_order_value").not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(20),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, effective_cost, cost_source, bom_real_cost, cached_standard_price, gross_margin_pct, total_order_value").not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(20), // SP5-EXCEPTION: §12 banned MV — no canonical margin view; TODO SP6
         sb.from("dead_stock_analysis").select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers, standard_price, list_price").order("inventory_value", { ascending: false }).limit(15),
-        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, effective_cost, cost_source, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15),
-        sb.from("odoo_products").select("internal_ref, name, stock_qty, standard_price, list_price").gt("stock_qty", 0).order("stock_qty", { ascending: false }).limit(15),
+        sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, effective_cost, cost_source, gross_margin_pct, total_order_value").lt("gross_margin_pct", 15).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — TODO SP6
+        sb.from("canonical_products").select("internal_ref, display_name, stock_qty, standard_price, list_price").gt("stock_qty", 0).order("stock_qty", { ascending: false }).limit(15), // SP5: replaced odoo_products
         sb.from("purchase_price_intelligence").select("product_ref, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, total_spent").eq("price_flag", "price_above_avg").order("total_spent", { ascending: false }).limit(15),
-        sb.from("odoo_products").select("internal_ref, name, standard_price, avg_cost, list_price, stock_qty").not("avg_cost", "is", null).gt("avg_cost", 0).order("stock_qty", { ascending: false }).limit(20),
+        sb.from("canonical_products").select("internal_ref, display_name, standard_price, list_price, stock_qty").gt("standard_price", 0).order("stock_qty", { ascending: false }).limit(20), // SP5: replaced odoo_products (avg_cost field not in canonical_products — use standard_price)
         sb.from("invoice_line_margins").select("move_name, invoice_date, company_name, product_ref, quantity, price_unit, unit_cost, gross_margin_pct, below_cost, margin_total, discount").order("margin_total", { ascending: true }).limit(15),
-        // NEW (audit 2026-04-15 sprint 2): BOM divergence signal.
-        // product_real_cost explodes BOMs recursively. Filter to the tractable
-        // range (20% to 200% above cached) — outside this band is usually a
-        // data bug, not a business signal. Also exclude products with missing
-        // component costs (false alarms).
+        // SP4 KEEP: product_real_cost — not in §12 drop list (analytics kept ref)
         sb.from("product_real_cost").select("product_ref, product_name, material_cost_total, cached_standard_price, delta_vs_cached_pct, raw_components_count, has_multiple_boms").eq("has_missing_costs", false).gte("delta_vs_cached_pct", 20).lte("delta_vs_cached_pct", 200).order("delta_vs_cached_pct", { ascending: false }).limit(15),
-        // NEW: Customer-level margin aggregate — who's making us money, who's not
-        sb.from("customer_margin_analysis").select("company_name, distinct_products, total_revenue, total_margin, margin_pct, revenue_12m, margin_pct_12m, lines_without_cost").gt("revenue_12m", 500000).order("margin_pct_12m", { ascending: true, nullsFirst: false }).limit(20),
+        // SP5-EXCEPTION: customer_margin_analysis (§12 banned MV) — no canonical replacement. TODO SP6: derive from canonical_invoices + canonical_order_lines
+        sb.from("customer_margin_analysis").select("company_name, distinct_products, total_revenue, total_margin, margin_pct, revenue_12m, margin_pct_12m, lines_without_cost").gt("revenue_12m", 500000).order("margin_pct_12m", { ascending: true, nullsFirst: false }).limit(20), // SP5-EXCEPTION: §12 banned MV
       ]);
-      return `${profileSection}## VENTAS BAJO COSTO / MARGEN <15% (eventos puntuales, ultimos 90d)\n${safeJSON(belowCostLines.data)}\n## BOM COST CREEP (costo real > cached 20-200%: productos con costo desactualizado)\n${safeJSON(bomCostCreep.data)}\n## MARGEN POR CLIENTE (12m, ordenado por margen bajo)\n${safeJSON(customerMargins.data)}\n## Margenes por producto+cliente (precio venta vs costo)\n${safeJSON(margins.data)}\n## ALERTA: productos con margen <15%\n${safeJSON(priceErosion.data)}\n## COMPRANDO MAS CARO que promedio (impacto en costos)\n${safeJSON(purchasePrices.data)}\n## Productos con costo promedio real (avg_cost de Odoo)\n${safeJSON(productCosts.data)}\n## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}\n## Productos con mas stock\n${safeJSON(topProducts.data)}`;
+      return `${profileSection}## VENTAS BAJO COSTO / MARGEN <15% (eventos puntuales, ultimos 90d)\n${safeJSON(belowCostLines.data)}\n## BOM COST CREEP (costo real > cached 20-200%: productos con costo desactualizado)\n${safeJSON(bomCostCreep.data)}\n## MARGEN POR CLIENTE (SP5-EXCEPTION: §12 customer_margin_analysis MV)\n${safeJSON(customerMargins.data)}\n## Margenes por producto+cliente (SP5-EXCEPTION: §12 product_margin_analysis MV)\n${safeJSON(margins.data)}\n## ALERTA: productos con margen <15% (SP5-EXCEPTION: §12 MV)\n${safeJSON(priceErosion.data)}\n## COMPRANDO MAS CARO que promedio (impacto en costos)\n${safeJSON(purchasePrices.data)}\n## Productos con costo (canonical_products standard_price)\n${safeJSON(productCosts.data)}\n## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}\n## Productos con mas stock (canonical_products)\n${safeJSON(topProducts.data)}`;
     }
     case "equipo_dir": {
       const [reorderByVendor, activities, employees, stalledThreads, salesByPerson, overdueByPerson] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, reorder_status, days_overdue_reorder, avg_order_value, salesperson_name, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).not("salesperson_name", "is", null).order("total_revenue", { ascending: false }).limit(30),
-        sb.from("odoo_activities").select("assigned_to, activity_type, is_overdue, summary").eq("is_overdue", true).order("assigned_to").limit(30),
-        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20),
+        sb.from("odoo_activities").select("assigned_to, activity_type, is_overdue, summary").eq("is_overdue", true).order("assigned_to").limit(30), // SP5-EXCEPTION: Bronze — no canonical_activities in SP4 scope
+        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20), // SP5-EXCEPTION: Bronze — no canonical_users yet; odoo_users is not in §12 drop list
         sb.from("threads").select("subject, last_sender, hours_without_response, account, company_id").eq("last_sender_type", "external").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(15),
-        // NEW: Active orders per salesperson (workload)
-        sb.from("odoo_sale_orders").select("salesperson_name, company_id, amount_total_mxn").eq("state", "sale").order("amount_total_mxn", { ascending: false }).limit(50),
-        // NEW: Overdue amounts grouped by salesperson (revenue at risk)
-        sb.from("company_profile").select("name, total_revenue, overdue_amount, tier").gt("overdue_amount", 10000).order("overdue_amount", { ascending: false }).limit(20),
+        // SP5: replaced odoo_sale_orders with canonical_sale_orders
+        sb.from("canonical_sale_orders").select("salesperson_name, canonical_company_id, amount_total_mxn").eq("state", "sale").order("amount_total_mxn", { ascending: false }).limit(50), // SP5: replaced odoo_sale_orders
+        // SP5: replaced company_profile with gold_company_360
+        sb.from("gold_company_360").select("display_name, total_revenue_mxn, overdue_mxn, tier").gt("overdue_mxn", 10000).order("overdue_mxn", { ascending: false }).limit(20), // SP5: replaced company_profile
       ]);
       // Group reorder risk by salesperson
       const vendorRisk: Record<string, { clients: number; revenue: number; companies: string[] }> = {};
@@ -1524,7 +1537,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         .sort((a, b) => b[1].totalValue - a[1].totalValue)
         .map(([name, d]) => `${name}: ${d.orders} ordenes abiertas ($${Math.round(d.totalValue/1000)}K)`);
 
-      return `${profileSection}## CARGA DE TRABAJO POR VENDEDOR (ordenes abiertas)\n${workloadSummary.join("\n")}\n\n## CARTERA VENCIDA POR CLIENTE (responsabilidad de cobro)\n${safeJSON(overdueByPerson.data)}\n\n## EMAILS SIN RESPUESTA >48h (clientes esperando)\n${safeJSON(stalledThreads.data)}\n\n## VENDEDORES CON CLIENTES EN RIESGO (agrupado)\n${vendorSummary.join("\n")}\n\n## Detalle por cliente\n${safeJSON(reorderByVendor.data)}\n## Empleados: actividades vencidas\n${safeJSON(employees.data)}\n## Actividades vencidas detalle\n${safeJSON(activities.data)}`;
+      return `${profileSection}## CARGA DE TRABAJO POR VENDEDOR (canonical_sale_orders)\n${workloadSummary.join("\n")}\n\n## CARTERA VENCIDA POR CLIENTE (gold_company_360)\n${safeJSON(overdueByPerson.data)}\n\n## EMAILS SIN RESPUESTA >48h (clientes esperando)\n${safeJSON(stalledThreads.data)}\n\n## VENDEDORES CON CLIENTES EN RIESGO (agrupado)\n${vendorSummary.join("\n")}\n\n## Detalle por cliente\n${safeJSON(reorderByVendor.data)}\n## Empleados: actividades vencidas (SP5-EXCEPTION Bronze odoo_users)\n${safeJSON(employees.data)}\n## Actividades vencidas detalle (SP5-EXCEPTION Bronze odoo_activities)\n${safeJSON(activities.data)}`;
     }
     // ═══════════════════════════════════════════════════════════════
     // Legacy `sales / finance / operations / relationships / risk / growth /

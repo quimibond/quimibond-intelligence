@@ -1,3 +1,16 @@
+/**
+ * SP5-VERIFIED: action_items / insight_follow_ups / agent_insights / ai_agents / emails / contacts — retained (not in §12 drop list).
+ * SP5-EXCEPTION (Bronze reads by design): odoo_invoices, odoo_deliveries, odoo_crm_leads
+ *   Used to verify whether pending action_items have been resolved in Odoo Bronze.
+ *   action_items.company_id is a Bronze companies.id FK — canonical tables use
+ *   canonical_company_id namespace. Cannot directly substitute without migrating
+ *   action_items schema. Mark for SP6.
+ * SP5-EXCEPTION: company_narrative
+ *   Used by insight_follow_ups resolution loop to read current metrics snapshot.
+ *   company_narrative is in §12 drop list — but no canonical replacement exposes
+ *   the same flattened per-company snapshot (overdue_amount, late_deliveries,
+ *   days_since_last_order, complaints). TODO SP6: build gold_company_snapshot view.
+ */
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
@@ -38,7 +51,7 @@ export async function POST(request: NextRequest) {
     if (paymentActions?.length) {
       // Get companies with recently paid invoices
       const { data: paidInvoices } = await supabase
-        .from("odoo_invoices")
+        .from("odoo_invoices") // SP5-EXCEPTION: Bronze validation — action_items use Bronze company_id FK namespace
         .select("odoo_partner_id, name")
         .eq("payment_state", "paid")
         .not("odoo_partner_id", "is", null);
@@ -87,7 +100,7 @@ export async function POST(request: NextRequest) {
       if (companyIds.length) {
         // Check if all pending deliveries for these companies are now done
         const { data: pendingDeliveries } = await supabase
-          .from("odoo_deliveries")
+          .from("odoo_deliveries") // SP5-EXCEPTION: Bronze validation — action_items use Bronze company_id FK namespace
           .select("odoo_partner_id, state")
           .in("odoo_partner_id", companyIds)
           .not("state", "in", '("done","cancel")');
@@ -176,7 +189,7 @@ export async function POST(request: NextRequest) {
 
       if (companyIds.length) {
         const { data: wonLeads } = await supabase
-          .from("odoo_crm_leads")
+          .from("odoo_crm_leads") // SP5-EXCEPTION: Bronze validation — action_items use Bronze company_id FK namespace
           .select("odoo_partner_id, stage")
           .in("odoo_partner_id", companyIds)
           .in("stage", ["Won", "Ganado", "Orden de Venta"]);
@@ -220,7 +233,7 @@ export async function POST(request: NextRequest) {
 
         // Get current company metrics from narrative
         const { data: current } = await supabase
-          .from("company_narrative")
+          .from("company_narrative") // SP5-EXCEPTION: §12 banned MV — follow-up snapshot read; no canonical equivalent yet. TODO SP6: replace with gold_company_snapshot
           .select("overdue_amount, revenue_90d, late_deliveries, complaints, days_since_last_order")
           .eq("company_id", fu.company_id)
           .limit(1)

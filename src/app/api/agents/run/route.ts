@@ -1,4 +1,9 @@
 /**
+ * SP5-VERIFIED: Reads from ai_agents, agent_runs, agent_memory, contacts (Bronze — not §12),
+ * agent_insights, agent_tickets (system tables — not in §12 drop list). Writes to
+ * agent_runs, agent_insights, action_items, pipeline_logs. No §12 banned reads.
+ * SP5-EXCEPTION: companies (Bronze lookup for company_id resolution — not in §12 drop list).
+ *
  * Run a single agent or all agents.
  * Delegates to the orchestrator which has all context builders.
  */

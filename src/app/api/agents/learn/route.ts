@@ -1,4 +1,7 @@
 /**
+ * SP5-VERIFIED: All reads are from agent_insights, ai_agents, agent_memory — none in §12 drop list.
+ * Writes go to agent_memory and pipeline_logs — both retained.
+ *
  * Agent Learning Pipeline v2 — Makes agents smarter over time.
  *
  * Improvements over v1:

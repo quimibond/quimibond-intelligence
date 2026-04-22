@@ -1,4 +1,13 @@
 /**
+ * SP5-VERIFIED: agent_insights / agent_runs / pipeline_logs — retained (not in §12 drop list).
+ * SP5-EXCEPTION (Bronze reads by design): odoo_invoices, odoo_deliveries, odoo_crm_leads
+ *   These three tables are read to VERIFY whether a previously-generated insight
+ *   has been resolved in Odoo. They are not used to BUILD new insights (that path
+ *   goes through canonical_*).  No canonical equivalent exposes the same
+ *   company_id foreign-key that action-reconciliation requires (canonical_invoices
+ *   uses canonical_company_id, not the Bronze company_id used by action_items).
+ *   Mark for SP6 migration once canonical FK joins are stable.
+ *
  * Insight Validator v2 — Auto-cleans stale insights with adaptive TTL.
  *
  * Improvements over v1:
@@ -83,7 +92,7 @@ export async function POST() {  const supabase = getServiceClient();
       const companyIds = [...new Set(paymentInsights.map(i => i.company_id).filter(Boolean))];
       if (companyIds.length) {
         const { data: overdueInvoices } = await supabase
-          .from("odoo_invoices")
+          .from("odoo_invoices") // SP5-EXCEPTION: Bronze validation — reconciling existing insights by company_id FK
           .select("company_id")
           .in("company_id", companyIds)
           .in("payment_state", ["not_paid", "partial"])
@@ -116,7 +125,7 @@ export async function POST() {  const supabase = getServiceClient();
       if (companyIds.length) {
         // Check if deliveries are now done
         const { data: pendingDeliveries } = await supabase
-          .from("odoo_deliveries")
+          .from("odoo_deliveries") // SP5-EXCEPTION: Bronze validation — reconciling existing insights by company_id FK
           .select("company_id")
           .in("company_id", companyIds)
           .eq("is_late", true)
@@ -180,7 +189,7 @@ export async function POST() {  const supabase = getServiceClient();
       const companyIds = [...new Set(crmInsights.map(i => i.company_id).filter(Boolean))];
       if (companyIds.length) {
         const { data: wonLeads } = await supabase
-          .from("odoo_crm_leads")
+          .from("odoo_crm_leads") // SP5-EXCEPTION: Bronze validation — reconciling existing insights by odoo_partner_id FK
           .select("odoo_partner_id")
           .in("odoo_partner_id", companyIds)
           .in("stage", ["Won", "Ganado", "Orden de Venta"]);

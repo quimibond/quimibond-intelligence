@@ -1,4 +1,7 @@
 /**
+ * SP5-VERIFIED: Reads from ai_agents, agent_runs, pipeline_logs — none in §12 drop list.
+ * Delegates actual agent execution to /api/agents/run (which handles its own SP5 compliance).
+ *
  * Wake Agent — Event-driven agent execution.
  *
  * Instead of waiting for the next cron cycle, this endpoint wakes a specific
