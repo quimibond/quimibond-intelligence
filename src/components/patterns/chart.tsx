@@ -61,7 +61,11 @@ export function Chart({
           <LineChart data={data}>
             {showAxes && <XAxis dataKey={xKey} />}
             {showAxes && <YAxis tickFormatter={yFormatter ? (v) => yFormatter(Number(v)) : undefined} />}
-            {showTooltip && <Tooltip />}
+            {showTooltip && (
+              <Tooltip
+                formatter={yFormatter ? (v: unknown) => yFormatter(Number(v)) : undefined}
+              />
+            )}
             {showAxes && series.length > 1 && <Legend />}
             {series.map((s, i) => (
               <Line
@@ -84,7 +88,7 @@ export function Chart({
           <AreaChart data={data}>
             <XAxis dataKey={xKey} />
             <YAxis tickFormatter={yFormatter ? (v) => yFormatter(Number(v)) : undefined} />
-            <Tooltip />
+            <Tooltip formatter={yFormatter ? (v: unknown) => yFormatter(Number(v)) : undefined} />
             {series.length > 1 && <Legend />}
             {series.map((s, i) => (
               <Area
@@ -107,7 +111,7 @@ export function Chart({
           <BarChart data={data}>
             <XAxis dataKey={xKey} />
             <YAxis tickFormatter={yFormatter ? (v) => yFormatter(Number(v)) : undefined} />
-            <Tooltip />
+            <Tooltip formatter={yFormatter ? (v: unknown) => yFormatter(Number(v)) : undefined} />
             {series.length > 1 && <Legend />}
             {series.map((s, i) => (
               <Bar
@@ -140,12 +144,14 @@ export function Chart({
   })();
 
   return (
-    <div role="img" aria-label={ariaLabel} className={cn("relative", className)}>
-      <ResponsiveContainer width="100%" height={h}>
-        {content as React.ReactElement}
-      </ResponsiveContainer>
-      {/* Screen-reader data table mirrors the chart */}
-      <table className="sr-only" aria-hidden="false">
+    <div className={cn("relative", className)}>
+      <div role="img" aria-label={ariaLabel}>
+        <ResponsiveContainer width="100%" height={h}>
+          {content as React.ReactElement}
+        </ResponsiveContainer>
+      </div>
+      {/* Screen-reader data table — sibling of the role=img wrapper so it appears in the a11y tree */}
+      <table className="sr-only">
         <caption>{ariaLabel}</caption>
         <thead>
           <tr>

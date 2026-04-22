@@ -86,4 +86,5 @@ export {
   type GroupByTemporal,
   type GroupByToggleProps,
 } from "./groupby-toggle";
-export { Chart, type ChartProps, type ChartType, type ChartSeries } from "./chart";
+export { Chart, type ChartProps, type ChartSeries } from "./chart";
+export type { ChartType as ChartPrimitiveType } from "./chart";
