@@ -907,7 +907,7 @@ async function PaymentRiskTable({
         })
       }
       rowKey={(r) => String(r.company_id)}
-      rowHref={(r) => `/companies/${r.company_id}`}
+      rowHref={(r) => `/empresas/${r.company_id}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
@@ -1168,7 +1168,7 @@ async function CompanyAgingTable({
         })
       }
       rowKey={(r) => String(r.company_id)}
-      rowHref={(r) => `/companies/${r.company_id}`}
+      rowHref={(r) => `/empresas/${r.company_id}`}
       sort={params.sort ? { key: params.sort, dir: params.sortDir } : null}
       sortHref={sortHref}
       visibleKeys={visibleKeys}
@@ -1469,7 +1469,7 @@ async function OverdueTable({
       stickyHeader
       rowKey={(r) => String(r.id)}
       rowHref={(r) =>
-        r.company_id ? `/companies/${r.company_id}` : null
+        r.company_id ? `/empresas/${r.company_id}` : null
       }
       mobileCard={(r) => (
         <MobileCard

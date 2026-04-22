@@ -465,7 +465,7 @@ async function ContactsTable({
         sortHref={sortHref}
         visibleKeys={visibleKeys}
         stickyHeader
-        rowHref={(r) => `/contacts/${r.id}`}
+        rowHref={(r) => `/contactos/${r.id}`}
         mobileCard={(r) => (
           <MobileCard
             title={r.name ?? "—"}

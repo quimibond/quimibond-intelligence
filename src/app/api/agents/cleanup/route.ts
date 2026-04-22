@@ -1,4 +1,10 @@
 /**
+ * SP5-VERIFIED: agent_insights / pipeline_logs / companies / contacts / emails — retained (not in §12 drop list).
+ * SP5-EXCEPTION (Bronze reads by design): odoo_order_lines
+ *   Used to build product context for company enrichment (classify industry/business_type).
+ *   canonical_order_lines is a materialized view that doesn't expose the same company_id FK
+ *   used here to filter by Bronze company.id. Mark for SP6 migration.
+ *
  * Cleanup Agent — Silent data hygiene that makes other agents smarter.
  *
  * Unlike other agents, this one does NOT generate insights for the CEO.
@@ -55,7 +61,7 @@ export async function POST(request: NextRequest) {
         // Get product context for each company
         for (const company of unenriched) {
           const { data: orders } = await supabase
-            .from("odoo_order_lines")
+            .from("odoo_order_lines") // SP5-EXCEPTION: Bronze product-context for AI enrichment — company_id FK not yet in canonical_order_lines MV
             .select("product_name, order_type, subtotal_mxn")
             .eq("company_id", company.id)
             .order("subtotal_mxn", { ascending: false })

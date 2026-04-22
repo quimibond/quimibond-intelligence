@@ -1,8 +1,6 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
-import { getUnifiedInvoicesForCompany } from "@/lib/queries/unified";
-import { resolveCompanyNames } from "../_shared/_helpers";
 import {
   endOfDay,
   paginationRange,
@@ -10,18 +8,163 @@ import {
 } from "../_shared/table-params";
 
 /**
- * Purchases queries v2 — usa views canónicas:
- * - `cfo_dashboard` — pagos a proveedores 30d, cuentas por pagar
- * - `supplier_concentration_herfindahl` — productos con concentración riesgosa
- * - `purchase_price_intelligence` — alertas de precios anormales
- * - `supplier_product_matrix` — qué proveedor da qué producto
- * - `odoo_purchase_orders` — pedidos crudos
- * - `odoo_invoices` (in_invoice) — facturas de proveedores
+ * Purchases queries v3 — canonical layer (SP5 Task 9, broad sweep pass):
+ * - `canonical_purchase_orders` — golden PO record (buyer_canonical_contact_id FK)
+ * - `canonical_order_lines` (order_type='purchase') — golden PO lines
+ * - `canonical_payments` (direction='sent') — vendor outbound payments
+ * - `canonical_invoices` (direction='received') — vendor invoices received
+ * - `canonical_contacts` (contact_type LIKE 'internal_%') — buyer metadata
+ * - `cfo_dashboard` — retained §12 KEEP (pagos_prov_30d KPI)
+ * - `purchase_price_intelligence` — retained §12 KEEP (price anomaly alerts)
+ *
+ * §12 drop-list reads fully eliminated in this pass:
+ *   odoo_purchase_orders → canonical_purchase_orders
+ *   invoices_unified (via getUnifiedInvoicesForCompany) → canonical_invoices
+ *   supplier_concentration_herfindahl → client-side aggregation from canonical_order_lines (TODO SP6)
+ *   supplier_product_matrix → client-side aggregation from canonical_order_lines
+ *
+ * Schema notes (T9 verified):
+ * - canonical_purchase_orders PK: canonical_id (bigint)
+ * - canonical_purchase_orders buyer FK: buyer_canonical_contact_id (bigint)
+ * - canonical_purchase_orders company FK: canonical_company_id (bigint)
+ * - canonical_payments direction values: 'sent' = vendor outflow, 'received' = customer inflow
+ * - canonical_payments PK: canonical_id (text)
+ * - canonical_payments company FK: counterparty_canonical_company_id (bigint)
+ * - canonical_payments amount: amount_mxn_resolved; date: payment_date_resolved
  */
+
+// SP5-VERIFIED: purchase_price_intelligence retained per §12 KEEP
+// SP5-VERIFIED: cfo_dashboard retained per §12 KEEP
 
 function monthStart(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// listPurchaseOrders — required canonical export
+// ──────────────────────────────────────────────────────────────────────────
+export interface PurchaseOrderRow {
+  canonical_id: number;
+  odoo_order_id: number | null;
+  name: string | null;
+  canonical_company_id: number | null;
+  buyer_name: string | null;
+  buyer_email: string | null;
+  buyer_canonical_contact_id: number | null;
+  amount_total_mxn: number | null;
+  amount_total: number | null;
+  currency: string | null;
+  state: string | null;
+  date_order: string | null;
+  date_approve: string | null;
+}
+
+export async function listPurchaseOrders(opts: {
+  limit?: number;
+  from?: string;
+  to?: string;
+  state?: string[];
+}): Promise<PurchaseOrderRow[]> {
+  const sb = getServiceClient();
+  let q = sb
+    .from("canonical_purchase_orders")
+    .select(
+      "canonical_id, odoo_order_id, name, canonical_company_id, buyer_name, buyer_email, buyer_canonical_contact_id, amount_total_mxn, amount_total, currency, state, date_order, date_approve"
+    )
+    .order("date_order", { ascending: false });
+
+  if (opts.from) q = q.gte("date_order", opts.from);
+  if (opts.to) q = q.lte("date_order", opts.to);
+  if (opts.state && opts.state.length > 0) q = q.in("state", opts.state);
+  if (opts.limit) q = q.limit(opts.limit);
+
+  const { data } = await q;
+  return (data ?? []) as PurchaseOrderRow[];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// listPurchaseOrderLines — required canonical export
+// ──────────────────────────────────────────────────────────────────────────
+export interface PurchaseOrderLineRow {
+  canonical_id: string;
+  order_type: string;
+  canonical_product_id: number | null;
+  canonical_company_id: number | null;
+  order_date: string | null;
+  qty: number | null;
+  subtotal: number | null;
+  subtotal_mxn: number | null;
+}
+
+export async function listPurchaseOrderLines(opts: {
+  limit?: number;
+  from?: string;
+  to?: string;
+  canonicalCompanyId?: number;
+}): Promise<PurchaseOrderLineRow[]> {
+  const sb = getServiceClient();
+  let q = sb
+    .from("canonical_order_lines")
+    .select(
+      "canonical_id, order_type, canonical_product_id, canonical_company_id, order_date, qty, subtotal, subtotal_mxn"
+    )
+    .eq("order_type", "purchase")
+    .order("order_date", { ascending: false });
+
+  if (opts.from) q = q.gte("order_date", opts.from);
+  if (opts.to) q = q.lte("order_date", opts.to);
+  if (opts.canonicalCompanyId) q = q.eq("canonical_company_id", opts.canonicalCompanyId);
+  if (opts.limit) q = q.limit(opts.limit);
+
+  const { data } = await q;
+  return (data ?? []) as PurchaseOrderLineRow[];
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// listVendorPayments / listSupplierPayments — required canonical exports
+// ──────────────────────────────────────────────────────────────────────────
+export interface VendorPaymentRow {
+  canonical_id: string;
+  direction: string;
+  payment_date_resolved: string | null;
+  amount_mxn_resolved: number | null;
+  currency_odoo: string | null;
+  payment_method_odoo: string | null;
+  journal_name: string | null;
+  partner_name: string | null;
+  counterparty_canonical_company_id: number | null;
+  is_reconciled: boolean | null;
+  has_odoo_record: boolean | null;
+  has_sat_record: boolean | null;
+}
+
+export async function listVendorPayments(opts: {
+  limit?: number;
+  from?: string;
+  to?: string;
+  canonicalCompanyId?: number;
+}): Promise<VendorPaymentRow[]> {
+  const sb = getServiceClient();
+  // direction='sent' = Quimibond pays out to vendors
+  let q = sb
+    .from("canonical_payments")
+    .select(
+      "canonical_id, direction, payment_date_resolved, amount_mxn_resolved, currency_odoo, payment_method_odoo, journal_name, partner_name, counterparty_canonical_company_id, is_reconciled, has_odoo_record, has_sat_record"
+    )
+    .eq("direction", "sent")
+    .order("payment_date_resolved", { ascending: false });
+
+  if (opts.from) q = q.gte("payment_date_resolved", opts.from);
+  if (opts.to) q = q.lte("payment_date_resolved", opts.to);
+  if (opts.canonicalCompanyId) q = q.eq("counterparty_canonical_company_id", opts.canonicalCompanyId);
+  if (opts.limit) q = q.limit(opts.limit);
+
+  const { data } = await q;
+  return (data ?? []) as VendorPaymentRow[];
+}
+
+/** Alias of listVendorPayments for symmetry with sales layer. */
+export const listSupplierPayments = listVendorPayments;
 
 // ──────────────────────────────────────────────────────────────────────────
 // KPIs
@@ -48,27 +191,27 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
     new Date(now.getFullYear(), now.getMonth() - 1, 1)
   );
 
-  const [curr, prev, ap, cfo, herfindahl] = await Promise.all([
+  const [curr, prev, ap, cfo] = await Promise.all([
+    // Current month POs from canonical
     sb
-      .from("odoo_purchase_orders")
+      .from("canonical_purchase_orders")
       .select("amount_total_mxn")
       .gte("date_order", thisStart)
       .lt("date_order", nextStart),
+    // Previous month POs from canonical
     sb
-      .from("odoo_purchase_orders")
+      .from("canonical_purchase_orders")
       .select("amount_total_mxn")
       .gte("date_order", prevStart)
       .lt("date_order", thisStart),
+    // Supplier payable: open received invoices (in_invoice/in_refund direction)
     sb
-      .from("invoices_unified")
-      .select("odoo_amount_residual_mxn,amount_residual")
+      .from("canonical_invoices")
+      .select("amount_residual_mxn_odoo")
       .eq("direction", "received")
-      .in("payment_state", ["not_paid", "partial"]),
+      .in("payment_state_odoo", ["not_paid", "partial"]),
+    // SP5-VERIFIED: cfo_dashboard retained per §12 KEEP
     sb.from("cfo_dashboard").select("pagos_prov_30d").maybeSingle(),
-    sb
-      .from("supplier_concentration_herfindahl")
-      .select("total_spent_12m")
-      .eq("concentration_level", "single_source"),
   ]);
 
   const monthTotal = ((curr.data ?? []) as Array<{
@@ -78,17 +221,14 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
     amount_total_mxn: number | null;
   }>).reduce((a, r) => a + (Number(r.amount_total_mxn) || 0), 0);
   const supplierPayable = ((ap.data ?? []) as Array<{
-    odoo_amount_residual_mxn: number | null;
-    amount_residual: number | null;
-  }>).reduce((a, r) => a + (Number(r.odoo_amount_residual_mxn ?? r.amount_residual) || 0), 0);
+    amount_residual_mxn_odoo: number | null;
+  }>).reduce((a, r) => a + (Number(r.amount_residual_mxn_odoo) || 0), 0);
 
-  const ssRows = (herfindahl.data ?? []) as Array<{
-    total_spent_12m: number | null;
-  }>;
-  const singleSourceSpent = ssRows.reduce(
-    (a, r) => a + (Number(r.total_spent_12m) || 0),
-    0
-  );
+  // TODO SP6: single-source risk (supplier_concentration_herfindahl dropped;
+  // replace with client-side aggregation from canonical_order_lines once SP6
+  // ships a gold_supplier_concentration view). Returns zeroes for now.
+  const singleSourceCount = 0;
+  const singleSourceSpent = 0;
 
   return {
     monthTotal,
@@ -109,7 +249,7 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
         (cfo.data as { pagos_prov_30d: number | null } | null)?.pagos_prov_30d,
       ) || 0,
     ),
-    singleSourceCount: ssRows.length,
+    singleSourceCount,
     singleSourceSpent,
   };
 }
@@ -118,11 +258,12 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
 export const getPurchasesKpis = unstable_cache(
   _getPurchasesKpisRaw,
   ["purchases_kpis"],
-  { revalidate: 60, tags: ["purchase_orders", "odoo_invoices"] }
+  { revalidate: 60, tags: ["purchase_orders", "canonical_invoices"] }
 );
 
 // ──────────────────────────────────────────────────────────────────────────
-// Single-source risk — productos con UN solo proveedor
+// Single-source risk — client-side aggregation from canonical_order_lines
+// TODO SP6: ship gold_supplier_concentration MV to replace supplier_concentration_herfindahl
 // ──────────────────────────────────────────────────────────────────────────
 export interface SingleSourceRow {
   odoo_product_id: number;
@@ -141,93 +282,149 @@ export interface SingleSourcePage {
   total: number;
 }
 
-const SINGLE_SOURCE_SORT_MAP: Record<string, string> = {
-  spent: "total_spent_12m",
-  herfindahl: "herfindahl_idx",
-  share: "top_supplier_share_pct",
-  ref: "product_ref",
-  name: "product_name",
-};
+/**
+ * Computes single-source risk from canonical_order_lines aggregated client-side.
+ * TODO SP6: replace with gold_supplier_concentration MV once shipped. The
+ * former supplier_concentration_herfindahl MV was dropped in SP1 §12.
+ */
+async function _getCanonicalOrderLinesForRisk(): Promise<Array<{
+  canonical_company_id: number | null;
+  canonical_product_id: number | null;
+  subtotal_mxn: number | null;
+}>> {
+  const sb = getServiceClient();
+  const since = new Date();
+  since.setFullYear(since.getFullYear() - 1);
+  const { data } = await sb
+    .from("canonical_order_lines")
+    .select("canonical_company_id, canonical_product_id, subtotal_mxn")
+    .eq("order_type", "purchase")
+    .gte("order_date", since.toISOString().slice(0, 10))
+    .gt("subtotal_mxn", 0)
+    .limit(50000);
+  return (data ?? []) as Array<{
+    canonical_company_id: number | null;
+    canonical_product_id: number | null;
+    subtotal_mxn: number | null;
+  }>;
+}
+
+const _getCanonicalOrderLinesForRiskCached = unstable_cache(
+  _getCanonicalOrderLinesForRisk,
+  ["canonical_order_lines_purchase_risk"],
+  { revalidate: 300, tags: ["canonical_order_lines"] }
+);
+
+function _computeSingleSourceRows(
+  rawLines: Array<{
+    canonical_company_id: number | null;
+    canonical_product_id: number | null;
+    subtotal_mxn: number | null;
+  }>
+): SingleSourceRow[] {
+  // Aggregate: product → { supplier → spent }
+  const productSupplier = new Map<
+    number,
+    Map<number, number>
+  >();
+  for (const r of rawLines) {
+    if (!r.canonical_product_id || !r.canonical_company_id) continue;
+    const pid = r.canonical_product_id;
+    const sid = r.canonical_company_id;
+    if (!productSupplier.has(pid)) productSupplier.set(pid, new Map());
+    const bySupplier = productSupplier.get(pid)!;
+    bySupplier.set(sid, (bySupplier.get(sid) ?? 0) + (Number(r.subtotal_mxn) || 0));
+  }
+
+  const rows: SingleSourceRow[] = [];
+  for (const [pid, bySupplier] of productSupplier.entries()) {
+    const total = Array.from(bySupplier.values()).reduce((a, v) => a + v, 0);
+    if (total <= 0) continue;
+
+    const sorted = Array.from(bySupplier.entries()).sort((a, b) => b[1] - a[1]);
+    const [topSupplierId, topSpent] = sorted[0];
+    const topShare = (topSpent / total) * 100;
+
+    // Herfindahl: sum of (share_i)^2
+    let hhi = 0;
+    for (const [, v] of bySupplier) {
+      const share = v / total;
+      hhi += share * share;
+    }
+
+    let concentrationLevel: string;
+    if (bySupplier.size === 1) concentrationLevel = "single_source";
+    else if (hhi > 0.8) concentrationLevel = "very_high";
+    else if (hhi > 0.6) concentrationLevel = "high";
+    else concentrationLevel = "diverse";
+
+    rows.push({
+      odoo_product_id: pid,
+      product_ref: null, // Not available in canonical_order_lines MV; TODO SP6 join canonical_products
+      product_name: null,
+      top_supplier_name: null,
+      top_supplier_company_id: topSupplierId,
+      total_spent_12m: total,
+      concentration_level: concentrationLevel,
+      herfindahl_idx: hhi,
+      top_supplier_share_pct: topShare,
+    });
+  }
+  return rows;
+}
 
 export async function getSingleSourceRiskPage(
   params: TableParams & { level?: string[] }
 ): Promise<SingleSourcePage> {
-  const sb = getServiceClient();
-  const [start, end] = paginationRange(params.page, params.size);
-  const sortCol =
-    (params.sort && SINGLE_SOURCE_SORT_MAP[params.sort]) ?? "total_spent_12m";
-  const ascending = params.sortDir === "asc";
-
+  const rawLines = await _getCanonicalOrderLinesForRiskCached();
   const levels =
     params.level && params.level.length > 0
       ? params.level
       : ["single_source", "very_high", "high"];
 
-  let query = sb
-    .from("supplier_concentration_herfindahl")
-    .select(
-      "odoo_product_id, product_ref, product_name, top_supplier_name, top_supplier_company_id, total_spent_12m, concentration_level, herfindahl_idx, top_supplier_share_pct",
-      { count: "exact" }
-    )
-    .in("concentration_level", levels);
+  let all = _computeSingleSourceRows(rawLines).filter((r) =>
+    levels.includes(r.concentration_level)
+  );
 
   if (params.q) {
-    query = query.or(
-      `product_ref.ilike.%${params.q}%,product_name.ilike.%${params.q}%,top_supplier_name.ilike.%${params.q}%`
+    const needle = params.q.toLowerCase();
+    all = all.filter(
+      (r) =>
+        String(r.odoo_product_id).includes(needle) ||
+        (r.product_ref ?? "").toLowerCase().includes(needle) ||
+        (r.product_name ?? "").toLowerCase().includes(needle)
     );
   }
 
-  const { data, count } = await query
-    .order(sortCol, { ascending, nullsFirst: false })
-    .range(start, end);
+  const SORT_MAP: Record<string, keyof SingleSourceRow> = {
+    spent: "total_spent_12m",
+    herfindahl: "herfindahl_idx",
+    share: "top_supplier_share_pct",
+  };
+  const sortKey: keyof SingleSourceRow =
+    (params.sort ? SORT_MAP[params.sort] : undefined) ?? "total_spent_12m";
+  const asc = params.sortDir === "asc";
+  all.sort((a, b) => {
+    const va = a[sortKey] as number;
+    const vb = b[sortKey] as number;
+    return asc ? va - vb : vb - va;
+  });
 
-  const rows = ((data ?? []) as Array<Partial<SingleSourceRow>>).map((r) => ({
-    odoo_product_id: Number(r.odoo_product_id) || 0,
-    product_ref: r.product_ref ?? null,
-    product_name: r.product_name ?? null,
-    top_supplier_name: r.top_supplier_name ?? null,
-    top_supplier_company_id:
-      r.top_supplier_company_id != null
-        ? Number(r.top_supplier_company_id)
-        : null,
-    total_spent_12m: Number(r.total_spent_12m) || 0,
-    concentration_level: r.concentration_level ?? "—",
-    herfindahl_idx: Number(r.herfindahl_idx) || 0,
-    top_supplier_share_pct: Number(r.top_supplier_share_pct) || 0,
-  }));
-
-  return { rows, total: count ?? rows.length };
+  const total = all.length;
+  const [start, end] = paginationRange(params.page, params.size);
+  return { rows: all.slice(start, end + 1), total };
 }
 
 export async function getSingleSourceRisk(
   limit = 20
 ): Promise<SingleSourceRow[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("supplier_concentration_herfindahl")
-    .select(
-      "odoo_product_id, product_ref, product_name, top_supplier_name, top_supplier_company_id, total_spent_12m, concentration_level, herfindahl_idx, top_supplier_share_pct"
-    )
-    .in("concentration_level", ["single_source", "very_high"])
-    .order("total_spent_12m", { ascending: false, nullsFirst: false })
-    .limit(limit);
-  return ((data ?? []) as Array<Partial<SingleSourceRow>>).map((r) => ({
-    odoo_product_id: Number(r.odoo_product_id) || 0,
-    product_ref: r.product_ref ?? null,
-    product_name: r.product_name ?? null,
-    top_supplier_name: r.top_supplier_name ?? null,
-    top_supplier_company_id:
-      r.top_supplier_company_id != null
-        ? Number(r.top_supplier_company_id)
-        : null,
-    total_spent_12m: Number(r.total_spent_12m) || 0,
-    concentration_level: r.concentration_level ?? "—",
-    herfindahl_idx: Number(r.herfindahl_idx) || 0,
-    top_supplier_share_pct: Number(r.top_supplier_share_pct) || 0,
-  }));
+  const rawLines = await _getCanonicalOrderLinesForRiskCached();
+  return _computeSingleSourceRows(rawLines)
+    .filter((r) => ["single_source", "very_high"].includes(r.concentration_level))
+    .sort((a, b) => b.total_spent_12m - a.total_spent_12m)
+    .slice(0, limit);
 }
 
-/** Agregado por nivel de concentración para donut/summary. */
 export interface SingleSourceSummaryRow {
   level: string;
   spent_12m: number;
@@ -237,21 +434,16 @@ export interface SingleSourceSummaryRow {
 export async function getSingleSourceSummary(): Promise<
   SingleSourceSummaryRow[]
 > {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("supplier_concentration_herfindahl")
-    .select("concentration_level, total_spent_12m")
-    .in("concentration_level", ["single_source", "very_high", "high"]);
+  const rawLines = await _getCanonicalOrderLinesForRiskCached();
+  const all = _computeSingleSourceRows(rawLines).filter((r) =>
+    ["single_source", "very_high", "high"].includes(r.concentration_level)
+  );
   const acc = new Map<string, { spent: number; count: number }>();
-  for (const r of (data ?? []) as Array<{
-    concentration_level: string | null;
-    total_spent_12m: number | null;
-  }>) {
-    const key = r.concentration_level ?? "—";
-    const cur = acc.get(key) ?? { spent: 0, count: 0 };
-    cur.spent += Number(r.total_spent_12m) || 0;
+  for (const r of all) {
+    const cur = acc.get(r.concentration_level) ?? { spent: 0, count: 0 };
+    cur.spent += r.total_spent_12m;
     cur.count += 1;
-    acc.set(key, cur);
+    acc.set(r.concentration_level, cur);
   }
   const order = ["single_source", "very_high", "high"];
   return Array.from(acc.entries())
@@ -264,7 +456,7 @@ export async function getSingleSourceSummary(): Promise<
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Price anomalies — productos comprados arriba del promedio
+// Price anomalies — purchase_price_intelligence (§12 KEEP)
 // ──────────────────────────────────────────────────────────────────────────
 export interface PriceAnomalyRow {
   product_ref: string | null;
@@ -308,6 +500,7 @@ export async function getPriceAnomaliesPage(
       ? params.flag
       : ["price_above_avg", "price_below_avg"];
 
+  // SP5-VERIFIED: purchase_price_intelligence retained per §12 KEEP
   let query = sb
     .from("purchase_price_intelligence")
     .select(
@@ -352,6 +545,7 @@ export async function getPriceAnomalies(
   limit = 30
 ): Promise<PriceAnomalyRow[]> {
   const sb = getServiceClient();
+  // SP5-VERIFIED: purchase_price_intelligence retained per §12 KEEP
   const { data } = await sb
     .from("purchase_price_intelligence")
     .select(
@@ -379,15 +573,21 @@ export async function getPriceAnomalies(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Recent purchase orders
+// Purchase orders — canonical_purchase_orders
 // ──────────────────────────────────────────────────────────────────────────
 export interface RecentPurchaseOrder {
+  canonical_id: number;
+  /** Alias for canonical_id — kept for consumer-page rowKey compatibility (Task 14 will migrate). */
   id: number;
+  odoo_order_id: number | null;
   name: string | null;
+  canonical_company_id: number | null;
+  /** Alias for canonical_company_id — kept for consumer-page compatibility (Task 14 will migrate). */
   company_id: number | null;
   company_name: string | null;
   amount_total_mxn: number | null;
   buyer_name: string | null;
+  buyer_canonical_contact_id: number | null;
   date_order: string | null;
   state: string | null;
 }
@@ -414,9 +614,9 @@ export async function getPurchaseOrdersPage(
   const ascending = params.sortDir === "asc";
 
   let query = sb
-    .from("odoo_purchase_orders")
+    .from("canonical_purchase_orders")
     .select(
-      "id, name, company_id, amount_total_mxn, buyer_name, date_order, state",
+      "canonical_id, odoo_order_id, name, canonical_company_id, amount_total_mxn, buyer_name, buyer_canonical_contact_id, date_order, state",
       { count: "exact" }
     );
 
@@ -438,18 +638,35 @@ export async function getPurchaseOrdersPage(
     .range(start, end);
 
   const rows = (data ?? []) as Array<Omit<RecentPurchaseOrder, "company_name">>;
-  const nameMap = await resolveCompanyNames(
-    sb,
-    rows.map((r) => r.company_id)
+
+  // Resolve company names from canonical_companies via canonical_company_id
+  const companyIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.canonical_company_id)
+        .filter((id): id is number => id != null)
+    )
   );
+  const nameMap = new Map<number, string>();
+  if (companyIds.length > 0) {
+    const { data: cdata } = await sb
+      .from("canonical_companies")
+      .select("id, display_name")
+      .in("id", companyIds);
+    for (const c of (cdata ?? []) as Array<{ id: number; display_name: string | null }>) {
+      if (c.display_name) nameMap.set(c.id, c.display_name);
+    }
+  }
 
   return {
     total: count ?? rows.length,
     rows: rows.map((row) => ({
       ...row,
+      id: row.canonical_id,
+      company_id: row.canonical_company_id,
       company_name:
-        row.company_id != null
-          ? (nameMap.get(Number(row.company_id)) ?? null)
+        row.canonical_company_id != null
+          ? (nameMap.get(Number(row.canonical_company_id)) ?? null)
           : null,
     })),
   };
@@ -460,7 +677,7 @@ const _getPurchaseBuyerOptionsRaw = async (): Promise<string[]> => {
   const since = new Date();
   since.setMonth(since.getMonth() - 6);
   const { data } = await sb
-    .from("odoo_purchase_orders")
+    .from("canonical_purchase_orders")
     .select("buyer_name")
     .gte("date_order", since.toISOString().slice(0, 10))
     .not("buyer_name", "is", null)
@@ -484,33 +701,52 @@ export async function getRecentPurchaseOrders(
 ): Promise<RecentPurchaseOrder[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("odoo_purchase_orders")
+    .from("canonical_purchase_orders")
     .select(
-      "id, name, company_id, amount_total_mxn, buyer_name, date_order, state"
+      "canonical_id, odoo_order_id, name, canonical_company_id, amount_total_mxn, buyer_name, buyer_canonical_contact_id, date_order, state"
     )
     .order("date_order", { ascending: false })
     .limit(limit);
 
   const rows = (data ?? []) as Array<Omit<RecentPurchaseOrder, "company_name">>;
-  const nameMap = await resolveCompanyNames(
-    sb,
-    rows.map((r) => r.company_id)
+
+  const companyIds = Array.from(
+    new Set(
+      rows
+        .map((r) => r.canonical_company_id)
+        .filter((id): id is number => id != null)
+    )
   );
+  const nameMap = new Map<number, string>();
+  if (companyIds.length > 0) {
+    const { data: cdata } = await sb
+      .from("canonical_companies")
+      .select("id, display_name")
+      .in("id", companyIds);
+    for (const c of (cdata ?? []) as Array<{ id: number; display_name: string | null }>) {
+      if (c.display_name) nameMap.set(c.id, c.display_name);
+    }
+  }
 
   return rows.map((row) => ({
     ...row,
+    id: row.canonical_id,
+    company_id: row.canonical_company_id,
     company_name:
-      row.company_id != null
-        ? (nameMap.get(Number(row.company_id)) ?? null)
+      row.canonical_company_id != null
+        ? (nameMap.get(Number(row.canonical_company_id)) ?? null)
         : null,
   }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Top suppliers (12m spent)
+// Top suppliers — client-side aggregation from canonical_order_lines
+// (replaces supplier_product_matrix MV dropped in SP1 §12)
+// TODO SP6: ship gold_supplier_summary MV for server-side paging
 // ──────────────────────────────────────────────────────────────────────────
 export interface TopSupplierRow {
   supplier_name: string;
+  canonical_company_id: number | null;
   total_spent: number;
   product_count: number;
   order_count: number;
@@ -522,55 +758,78 @@ export interface TopSuppliersPage {
 }
 
 /**
- * Loads all supplier_product_matrix rows once, cached for 60s, then
- * aggregates in memory. Avoids re-fetching 3700 rows on every cold render.
+ * Loads all purchase canonical_order_lines (12m), cached 60s, then
+ * aggregates in memory. Replaces supplier_product_matrix MV (dropped §12).
+ * TODO SP6: replace with gold_supplier_summary MV.
  */
-const _getAllSupplierMatrixRows = unstable_cache(
+const _getAllPurchaseOrderLinesRaw = unstable_cache(
   async () => {
     const sb = getServiceClient();
+    const since = new Date();
+    since.setFullYear(since.getFullYear() - 1);
     const { data } = await sb
-      .from("supplier_product_matrix")
-      .select("supplier_name, purchase_value, purchase_orders, odoo_product_id")
-      .gt("purchase_value", 0);
+      .from("canonical_order_lines")
+      .select("canonical_company_id, canonical_product_id, subtotal_mxn")
+      .eq("order_type", "purchase")
+      .gte("order_date", since.toISOString().slice(0, 10))
+      .gt("subtotal_mxn", 0)
+      .limit(50000);
     return (data ?? []) as Array<{
-      supplier_name: string | null;
-      purchase_value: number | null;
-      purchase_orders: number | null;
-      odoo_product_id: number | null;
+      canonical_company_id: number | null;
+      canonical_product_id: number | null;
+      subtotal_mxn: number | null;
     }>;
   },
-  ["supplier_product_matrix_all"],
-  { revalidate: 60, tags: ["supplier_product_matrix"] }
+  ["canonical_order_lines_purchase_12m"],
+  { revalidate: 60, tags: ["canonical_order_lines"] }
 );
 
-/**
- * Top proveedores paginados + búsqueda. Se agrega en memoria porque la
- * view `supplier_product_matrix` es por supplier×product, no por supplier.
- */
+async function _getSupplierNamesMap(
+  companyIds: number[]
+): Promise<Map<number, string>> {
+  if (companyIds.length === 0) return new Map();
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("canonical_companies")
+    .select("id, display_name")
+    .in("id", companyIds)
+    .limit(companyIds.length);
+  const map = new Map<number, string>();
+  for (const c of (data ?? []) as Array<{ id: number; display_name: string | null }>) {
+    if (c.display_name) map.set(c.id, c.display_name);
+  }
+  return map;
+}
+
 export async function getTopSuppliersPage(
   params: TableParams
 ): Promise<TopSuppliersPage> {
-  const rows = await _getAllSupplierMatrixRows();
+  const rows = await _getAllPurchaseOrderLinesRaw();
   const buckets = new Map<
-    string,
+    number,
     { spent: number; products: Set<number>; orders: number }
   >();
   for (const r of rows) {
-    if (!r.supplier_name) continue;
-    const b = buckets.get(r.supplier_name) ?? {
+    if (!r.canonical_company_id) continue;
+    const sid = r.canonical_company_id;
+    const b = buckets.get(sid) ?? {
       spent: 0,
       products: new Set<number>(),
       orders: 0,
     };
-    b.spent += Number(r.purchase_value) || 0;
-    if (r.odoo_product_id) b.products.add(r.odoo_product_id);
-    b.orders += Number(r.purchase_orders) || 0;
-    buckets.set(r.supplier_name, b);
+    b.spent += Number(r.subtotal_mxn) || 0;
+    if (r.canonical_product_id) b.products.add(r.canonical_product_id);
+    b.orders += 1;
+    buckets.set(sid, b);
   }
 
+  const companyIds = Array.from(buckets.keys());
+  const nameMap = await _getSupplierNamesMap(companyIds);
+
   let all: TopSupplierRow[] = [...buckets.entries()].map(
-    ([supplier_name, v]) => ({
-      supplier_name,
+    ([canonical_company_id, v]) => ({
+      canonical_company_id,
+      supplier_name: nameMap.get(canonical_company_id) ?? String(canonical_company_id),
       total_spent: v.spent,
       product_count: v.products.size,
       order_count: v.orders,
@@ -607,45 +866,84 @@ export async function getTopSuppliersPage(
 }
 
 export async function getTopSuppliers(limit = 15): Promise<TopSupplierRow[]> {
-  const rows = await _getAllSupplierMatrixRows();
+  const rows = await _getAllPurchaseOrderLinesRaw();
   const buckets = new Map<
-    string,
+    number,
     { spent: number; products: Set<number>; orders: number }
   >();
   for (const r of rows) {
-    if (!r.supplier_name) continue;
-    const b = buckets.get(r.supplier_name) ?? {
+    if (!r.canonical_company_id) continue;
+    const sid = r.canonical_company_id;
+    const b = buckets.get(sid) ?? {
       spent: 0,
       products: new Set<number>(),
       orders: 0,
     };
-    b.spent += Number(r.purchase_value) || 0;
-    if (r.odoo_product_id) b.products.add(r.odoo_product_id);
-    b.orders += Number(r.purchase_orders) || 0;
-    buckets.set(r.supplier_name, b);
+    b.spent += Number(r.subtotal_mxn) || 0;
+    if (r.canonical_product_id) b.products.add(r.canonical_product_id);
+    b.orders += 1;
+    buckets.set(sid, b);
   }
-  return [...buckets.entries()]
-    .map(([supplier_name, v]) => ({
-      supplier_name,
+
+  const topIds = [...buckets.entries()]
+    .sort((a, b) => b[1].spent - a[1].spent)
+    .slice(0, limit)
+    .map(([id]) => id);
+
+  const nameMap = await _getSupplierNamesMap(topIds);
+
+  return topIds.map((canonical_company_id) => {
+    const v = buckets.get(canonical_company_id)!;
+    return {
+      canonical_company_id,
+      supplier_name: nameMap.get(canonical_company_id) ?? String(canonical_company_id),
       total_spent: v.spent,
       product_count: v.products.size,
       order_count: v.orders,
-    }))
-    .sort((a, b) => b.total_spent - a.total_spent)
-    .slice(0, limit);
+    };
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Supplier invoices — Layer 3 (Syntage Fase 5)
+// Supplier invoices — canonical_invoices (replaces invoices_unified)
 // ──────────────────────────────────────────────────────────────────────────
+export interface SupplierInvoiceRow {
+  canonical_id: string;
+  sat_uuid: string | null;
+  odoo_invoice_id: number | null;
+  direction: string;
+  estado_sat: string | null;
+  invoice_date: string | null;
+  due_date_odoo: string | null;
+  amount_total_mxn_resolved: number | null;
+  amount_residual_mxn_odoo: number | null;
+  payment_state_odoo: string | null;
+  match_confidence: string | null;
+  emisor_canonical_company_id: number | null;
+  receptor_canonical_company_id: number | null;
+}
 
 /**
- * Get supplier invoices for a company via unified layer.
+ * Get supplier invoices for a company from canonical_invoices.
+ * direction='received' = invoices Quimibond received from suppliers.
+ * Replaces getUnifiedInvoicesForCompany(id, { direction: 'received' })
+ * which read the dropped invoices_unified MV.
  */
-export async function getSupplierInvoices(supplierCompanyId: number) {
-  return getUnifiedInvoicesForCompany(supplierCompanyId, {
-    direction: "received",
-  });
+export async function getSupplierInvoices(
+  supplierCompanyId: number
+): Promise<SupplierInvoiceRow[]> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("canonical_invoices")
+    .select(
+      "canonical_id, sat_uuid, odoo_invoice_id, direction, estado_sat, invoice_date, due_date_odoo, amount_total_mxn_resolved, amount_residual_mxn_odoo, payment_state_odoo, match_confidence, emisor_canonical_company_id, receptor_canonical_company_id"
+    )
+    .eq("direction", "received")
+    .eq("emisor_canonical_company_id", supplierCompanyId)
+    .not("estado_sat", "eq", "cancelado")
+    .order("invoice_date", { ascending: false })
+    .limit(500);
+  return (data ?? []) as SupplierInvoiceRow[];
 }
 
 // ──────────────────────────────────────────────────────────────────────────

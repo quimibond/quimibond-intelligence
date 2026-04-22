@@ -21,6 +21,8 @@ const tierVariant: Record<string, "success" | "warning" | "secondary"> = {
 /**
  * CompanyLink — link canónico a la ficha de empresa.
  * Touch target 44px mínimo.
+ * SP5 T13: href rewired from /companies → /empresas (canonical route).
+ * companyId is canonical_companies.id (canonical_company_id in gold_company_360).
  */
 export function CompanyLink({
   companyId,
@@ -29,14 +31,14 @@ export function CompanyLink({
   className,
   truncate,
 }: CompanyLinkProps) {
-  // Nombres raw de MVs (company_profile, rfm_segments, cash_flow_aging, etc.)
+  // Nombres raw de MVs (rfm_segments, cash_flow_aging, etc.)
   // no pasan por `joinedCompanyName`, así que pueden traer basura (193 rows
   // en producción: "8141", "5806", "1139" — Odoo partners sin nombre real).
   // Este es el último backstop antes del render.
   const displayName = sanitizeCompanyName(name) ?? "—";
   return (
     <Link
-      href={`/companies/${companyId}`}
+      href={`/empresas/${companyId}`}
       className={cn(
         "inline-flex min-h-[44px] items-center gap-2 py-1 font-medium text-foreground hover:text-primary active:text-primary",
         className

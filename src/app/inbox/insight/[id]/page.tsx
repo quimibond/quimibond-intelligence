@@ -18,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { getInsightById } from "@/lib/queries/intelligence/insights";
+import { fetchInboxItem } from "@/lib/queries/intelligence/inbox";
 import { getCompanyEvidencePack } from "@/lib/queries/intelligence/evidence";
 import {
   buildTimelineFromEvidencePack,
@@ -28,12 +29,20 @@ import { InsightActions } from "./_components/insight-actions";
 
 export const dynamic = "force-dynamic";
 
+/** UUID regex — gold_ceo_inbox issue_id format */
+const UUID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function generateMetadata({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
+  if (UUID_RE.test(id)) {
+    const item = await fetchInboxItem(id);
+    return { title: item?.description?.slice(0, 60) ?? "Alerta" };
+  }
   const insight = await getInsightById(Number(id));
   return { title: insight?.title ?? "Insight" };
 }
@@ -44,6 +53,37 @@ export default async function InsightDetailPage({
   params: Promise<{ id: string }>;
 }) {
   const { id: idParam } = await params;
+
+  // gold_ceo_inbox items use UUID issue_id; agent_insights use numeric id
+  if (UUID_RE.test(idParam)) {
+    const item = await fetchInboxItem(idParam);
+    if (!item) return notFound();
+    // Render a lightweight detail view for reconciliation issues
+    return (
+      <div className="space-y-5 pb-24 md:pb-6">
+        <PageHeader
+          breadcrumbs={[
+            { label: "Dashboard", href: "/" },
+            { label: "Inbox", href: "/inbox" },
+            { label: "Alerta" },
+          ]}
+          title={item.description ?? item.invariant_key ?? "Alerta"}
+          subtitle={item.action_cta ?? undefined}
+          actions={
+            <div className="flex flex-wrap gap-1.5">
+              <SeverityBadge level={item.severity ?? "medium"} />
+              {item.issue_type && (
+                <Badge variant="secondary" className="uppercase text-[10px]">
+                  {item.issue_type}
+                </Badge>
+              )}
+            </div>
+          }
+        />
+      </div>
+    );
+  }
+
   const id = Number(idParam);
   if (!Number.isFinite(id)) notFound();
 

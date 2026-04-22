@@ -1,4 +1,7 @@
 /**
+ * SP5-VERIFIED: All DB reads go through RPCs (resolve_identities, get_identity_gaps)
+ * and pipeline_logs write. No §12 banned table reads. No Bronze direct reads.
+ *
  * Identity Resolution Agent
  *
  * Resolves the gap where external contacts have no odoo_partner_id link

@@ -460,7 +460,7 @@ async function ReactivacionSection({
         })
       }
       rowKey={(r) => String(r.company_id)}
-      rowHref={(r) => `/companies/${r.company_id}`}
+      rowHref={(r) => `/empresas/${r.company_id}`}
       mobileCard={(r) => (
         <MobileCard
           title={
@@ -811,7 +811,7 @@ async function CompaniesTable({
         sortHref={sortHref}
         visibleKeys={visibleKeys}
         stickyHeader
-        rowHref={(r) => `/companies/${r.company_id}`}
+        rowHref={(r) => `/empresas/${r.company_id}`}
         mobileCard={(r) => (
           <MobileCard
             title={

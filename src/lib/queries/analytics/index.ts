@@ -3,19 +3,27 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
- * Analytics queries — wrappers tipados sobre los 6 modelos del Sprint 2:
+ * Analytics queries — wrappers tipados sobre modelos Silver/Gold SP5:
  * - `rfm_segments` (matview)         — segmentación RFM 8-buckets + priority score
  * - `collection_effectiveness_index` — CEI cohort mensual + health_status
  * - `revenue_concentration` (view)   — rank Pareto + tripwires top 5/10
  * - `stockout_queue` (view)          — cola de productos en riesgo de faltante
- * - `supplier_price_index` (matview) — índice por proveedor vs benchmark
  * - `real_sale_price` (matview)      — precio real ponderado por cantidad
- *
- * Sprint 12 agrega:
  * - `customer_cohorts` (matview)     — retention quarterly heatmap
  *
- * Todos los modelos están en MXN normalizado (no requieren conversión FX).
+ * Banned (dropped SP1) — reads removed in Task 7:
+ * - supplier_price_index   → getSupplierPriceAlerts() returns [] (TODO SP6: canonical_order_lines)
+ *
+ * Barrel re-exports for domain files:
  */
+export * from "./customer-360";
+export * from "./dashboard";
+export * from "./currency-rates";
+export * from "./pnl";
+export * from "./products";
+
+// Note: finance.ts and products.ts are exported separately by their pages;
+// they are NOT re-exported here to avoid circular conflicts on large bundlers.
 
 // ──────────────────────────────────────────────────────────────────────────
 // RFM Segments
@@ -193,7 +201,7 @@ async function _getCollectionEffectivenessRaw(
 const _getCollectionEffectivenessCached = unstable_cache(
   _getCollectionEffectivenessRaw,
   ["analytics-collection-effectiveness-v1"],
-  { revalidate: 60, tags: ["invoices-unified"] }
+  { revalidate: 60, tags: ["collection_effectiveness_index"] }
 );
 
 export async function getCollectionEffectiveness(
@@ -380,7 +388,10 @@ export async function getStockoutSummary(): Promise<StockoutSummary[]> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Supplier Price Index
+// Supplier Price Alerts
+// supplier_price_index was on the SP1 drop list. Reads replaced with empty
+// return + TODO SP6 stub. Interface preserved for consumers (compras/page.tsx).
+// TODO SP6: reimplement via canonical_order_lines purchase aggregation + benchmark logic.
 // ──────────────────────────────────────────────────────────────────────────
 export type PriceFlag =
   | "single_source"
@@ -412,42 +423,14 @@ export interface SupplierPriceRow {
 }
 
 export async function getSupplierPriceAlerts(
-  flag: PriceFlag = "overpriced",
-  monthsBack = 6,
-  limit = 50
+  _flag: PriceFlag = "overpriced",
+  _monthsBack = 6,
+  _limit = 50
 ): Promise<SupplierPriceRow[]> {
-  const sb = getServiceClient();
-  const cutoff = new Date();
-  cutoff.setMonth(cutoff.getMonth() - monthsBack);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const { data } = await sb
-    .from("supplier_price_index")
-    .select("*")
-    .eq("price_flag", flag)
-    .gte("month", cutoffStr)
-    .order("overpaid_mxn", { ascending: false })
-    .limit(limit);
-  return ((data ?? []) as Array<Partial<SupplierPriceRow>>).map((r) => ({
-    odoo_product_id: Number(r.odoo_product_id) || 0,
-    product_ref: r.product_ref ?? null,
-    product_name: r.product_name ?? null,
-    supplier_id: Number(r.supplier_id) || 0,
-    supplier_name: r.supplier_name ?? "—",
-    month: r.month ?? "",
-    supplier_avg_price: Number(r.supplier_avg_price) || 0,
-    benchmark_price: Number(r.benchmark_price) || 0,
-    suppliers_in_month: Number(r.suppliers_in_month) || 0,
-    price_index: Number(r.price_index) || 0,
-    price_delta: Number(r.price_delta) || 0,
-    overpaid_mxn: Number(r.overpaid_mxn) || 0,
-    saved_mxn: Number(r.saved_mxn) || 0,
-    supplier_qty: Number(r.supplier_qty) || 0,
-    supplier_spend: Number(r.supplier_spend) || 0,
-    supplier_lines: Number(r.supplier_lines) || 0,
-    last_po_date: r.last_po_date ?? null,
-    last_po_name: r.last_po_name ?? null,
-    price_flag: (r.price_flag as PriceFlag) ?? "aligned",
-  }));
+  // TODO SP6: supplier_price_index dropped in SP1. Reimplement via
+  // canonical_order_lines (purchase) aggregation with per-product benchmark logic
+  // from purchase_price_intelligence MV (pending creation).
+  return [];
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -503,7 +486,7 @@ export async function getRealSalePrices(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Customer Cohorts (matview existente, sin UI hasta Sprint 12)
+// Customer Cohorts (matview — SP5 KEEP)
 // ──────────────────────────────────────────────────────────────────────────
 export interface CohortCellRow {
   cohort_quarter: string;

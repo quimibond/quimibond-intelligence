@@ -3,13 +3,241 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { paginationRange, type TableParams } from "../_shared/table-params";
 
 /**
- * Products queries v2 — usa views canónicas:
- * - `inventory_velocity` (view) — daily run rate, days of stock, reorder_status
- * - `dead_stock_analysis` (MV) — productos sin movimiento
- * - `product_margin_analysis` (MV) — margen por producto×cliente
- * - `odoo_products` (base) — catálogo
- * - `odoo_orderpoints` (base) — reglas de reorden
+ * Products queries SP5 — uses canonical/gold layer:
+ * - `canonical_products` (table) — golden product catalog (SP3 MDM)
+ * - `gold_product_performance` (view) — revenue/margin/velocity per product
+ * - `canonical_order_lines` (MV) — SP4 canonical order lines (sale + purchase)
+ * - `inventory_velocity` (view) — daily run rate, days of stock, reorder_status  SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
+ * - `dead_stock_analysis` (MV) — products with no movement  SP5-VERIFIED: dead_stock_analysis retained (§12 KEEP)
+ * - `product_real_cost` (MV) — BOM-derived real unit cost  SP5-VERIFIED: product_real_cost retained (§12 KEEP)
+ * - `client_reorder_predictions` (MV) — per-client reorder signals  SP5-VERIFIED: client_reorder_predictions retained (§12 KEEP)
+ * - `overhead_factor_12m` (MV) — overhead allocation factor  SP5-VERIFIED: overhead_factor_12m retained (§12 KEEP)
+ * - `purchase_price_intelligence` (MV) — purchase price trends  SP5-VERIFIED: purchase_price_intelligence retained (§12 KEEP)
+ * - `product_seasonality` — DOES NOT EXIST (dropped before SP5); readers stubbed as TODO SP6
+ *
+ * Banned (dropped in SP1): product_margin_analysis, customer_product_matrix,
+ * supplier_product_matrix, supplier_price_index, product_price_history, products_unified
  */
+
+// ──────────────────────────────────────────────────────────────────────────
+// canonical_products list / search
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function listProducts(opts: {
+  search?: string;
+  limit?: number;
+  onlyActive?: boolean;
+  categoryLike?: string;
+} = {}) {
+  const sb = getServiceClient();
+  let q = sb.from("canonical_products").select("*");
+  if (opts.search) {
+    q = q.or(
+      `internal_ref.ilike.%${opts.search}%,display_name.ilike.%${opts.search}%`
+    );
+  }
+  if (opts.onlyActive) q = q.eq("is_active", true);
+  // canonical_products.category (not category_path — SP5 drift)
+  if (opts.categoryLike) q = q.ilike("category", `%${opts.categoryLike}%`);
+  if (opts.limit) q = q.limit(opts.limit);
+  const { data, error } = await q;
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Back-compat alias */
+export const searchProducts = listProducts;
+
+// ──────────────────────────────────────────────────────────────────────────
+// gold_product_performance — top SKUs by revenue
+// ──────────────────────────────────────────────────────────────────────────
+// Schema drift vs plan: gold_product_performance uses odoo_revenue_12m_mxn
+// (not revenue_mxn_12m), units_sold_12m, unique_customers_12m (no margin_mxn_12m).
+
+export async function fetchTopSkusByRevenue(opts: { limit?: number } = {}) {
+  const sb = getServiceClient();
+  // SP5-VERIFIED: gold_product_performance retained (§12 KEEP+rewire category)
+  const { data, error } = await sb
+    .from("gold_product_performance")
+    .select(
+      "canonical_product_id, internal_ref, display_name, category, odoo_revenue_12m_mxn, sat_revenue_12m_mxn, units_sold_12m, unique_customers_12m, margin_pct_12m, stock_qty, available_qty, is_active"
+    )
+    .order("odoo_revenue_12m_mxn", { ascending: false, nullsFirst: false })
+    .limit(opts.limit ?? 20);
+  if (error) throw error;
+  return data ?? [];
+}
+
+/** Back-compat alias */
+export const topProductsByRevenue = fetchTopSkusByRevenue;
+
+// ──────────────────────────────────────────────────────────────────────────
+// fetchProductPerformance — single product gold view
+// ──────────────────────────────────────────────────────────────────────────
+
+export async function fetchProductPerformance(canonical_product_id: number) {
+  const sb = getServiceClient();
+  // SP5-VERIFIED: gold_product_performance retained (§12 KEEP+rewire category)
+  const { data, error } = await sb
+    .from("gold_product_performance")
+    .select("*")
+    .eq("canonical_product_id", canonical_product_id)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+/** Back-compat alias */
+export const getProductPerformance = fetchProductPerformance;
+
+// ──────────────────────────────────────────────────────────────────────────
+// fetchSupplierPriceIntelligence — canonical_order_lines (purchase) agg
+// ──────────────────────────────────────────────────────────────────────────
+// Replaces supplier_price_index (dropped SP1). Uses canonical_order_lines MV.
+
+export async function fetchSupplierPriceIntelligence(
+  canonical_product_id: number
+) {
+  const sb = getServiceClient();
+  const { data, error } = await sb
+    .from("canonical_order_lines")
+    .select(
+      "canonical_company_id, price_unit, qty, currency, order_date, subtotal_mxn"
+    )
+    .eq("canonical_product_id", canonical_product_id)
+    .eq("order_type", "purchase")
+    .order("order_date", { ascending: false })
+    .limit(500);
+  if (error) throw error;
+
+  type OlPurchaseRow = {
+    canonical_company_id: number | null;
+    price_unit: number | null;
+    qty: number | null;
+    currency: string | null;
+    order_date: string | null;
+    subtotal_mxn: number | null;
+  };
+  const bySupplier: Record<
+    number,
+    { n: number; totalQty: number; prices: number[]; lastDate: string | null }
+  > = {};
+  for (const r of (data ?? []) as OlPurchaseRow[]) {
+    const k = Number(r.canonical_company_id);
+    if (!k) continue;
+    bySupplier[k] ??= { n: 0, totalQty: 0, prices: [], lastDate: null };
+    bySupplier[k].n += 1;
+    bySupplier[k].totalQty += Number(r.qty ?? 0);
+    bySupplier[k].prices.push(Number(r.price_unit ?? 0));
+    if (
+      !bySupplier[k].lastDate ||
+      (r.order_date && r.order_date > bySupplier[k].lastDate!)
+    ) {
+      bySupplier[k].lastDate = r.order_date;
+    }
+  }
+  return Object.entries(bySupplier).map(([id, agg]) => ({
+    canonical_company_id: Number(id),
+    lines: agg.n,
+    total_qty: agg.totalQty,
+    min_price: agg.prices.length ? Math.min(...agg.prices) : null,
+    max_price: agg.prices.length ? Math.max(...agg.prices) : null,
+    avg_price: agg.prices.length
+      ? agg.prices.reduce((a, b) => a + b, 0) / agg.prices.length
+      : null,
+    last_purchase_at: agg.lastDate,
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// fetchCompanyProductMatrix — canonical_order_lines (sale or purchase) agg
+// ──────────────────────────────────────────────────────────────────────────
+// Replaces customer_product_matrix + supplier_product_matrix (dropped SP1).
+
+export async function fetchCompanyProductMatrix(
+  canonical_company_id: number,
+  direction: "customer" | "supplier"
+) {
+  const sb = getServiceClient();
+  const { data, error } = await sb
+    .from("canonical_order_lines")
+    .select(
+      "canonical_product_id, product_ref, product_name, qty, subtotal_mxn, subtotal, order_date"
+    )
+    .eq("order_type", direction === "customer" ? "sale" : "purchase")
+    .eq("canonical_company_id", canonical_company_id)
+    .order("order_date", { ascending: false })
+    .limit(2000);
+  if (error) throw error;
+
+  type OlMatrixRow = {
+    canonical_product_id: number | null;
+    product_ref: string | null;
+    product_name: string | null;
+    qty: number | null;
+    subtotal_mxn: number | null;
+    subtotal: number | null;
+    order_date: string | null;
+  };
+  const byProduct: Record<
+    number,
+    {
+      canonical_product_id: number;
+      product_ref: string | null;
+      product_name: string | null;
+      n: number;
+      totalQty: number;
+      totalRevenue: number;
+      lastAt: string | null;
+    }
+  > = {};
+  for (const r of (data ?? []) as OlMatrixRow[]) {
+    const p = Number(r.canonical_product_id);
+    if (!p) continue;
+    byProduct[p] ??= {
+      canonical_product_id: p,
+      product_ref: r.product_ref ?? null,
+      product_name: r.product_name ?? null,
+      n: 0,
+      totalQty: 0,
+      totalRevenue: 0,
+      lastAt: null,
+    };
+    byProduct[p].n += 1;
+    byProduct[p].totalQty += Number(r.qty ?? 0);
+    byProduct[p].totalRevenue += Number(r.subtotal_mxn ?? r.subtotal ?? 0);
+    if (
+      !byProduct[p].lastAt ||
+      (r.order_date && r.order_date > byProduct[p].lastAt!)
+    )
+      byProduct[p].lastAt = r.order_date;
+  }
+  return Object.values(byProduct)
+    .map((v) => ({
+      canonical_product_id: v.canonical_product_id,
+      product_ref: v.product_ref,
+      product_name: v.product_name,
+      lines: v.n,
+      total_qty: v.totalQty,
+      total_revenue_mxn: v.totalRevenue,
+      last_order_at: v.lastAt,
+    }))
+    .sort((a, b) => b.total_revenue_mxn - a.total_revenue_mxn);
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// fetchProductSeasonality — STUBBED (product_seasonality MV does not exist)
+// ──────────────────────────────────────────────────────────────────────────
+// TODO SP6: product_seasonality MV was dropped before SP5. Implement via
+// canonical_order_lines monthly aggregation grouped by month-of-year.
+
+export async function fetchProductSeasonality(
+  _canonical_product_id: number
+): Promise<null> {
+  // TODO SP6: product_seasonality MV does not exist (dropped before SP5).
+  // Reimplement via canonical_order_lines GROUP BY EXTRACT(month FROM order_date).
+  return null;
+}
 
 // ──────────────────────────────────────────────────────────────────────────
 // KPIs
@@ -25,16 +253,21 @@ export interface ProductsKpis {
 
 export async function getProductsKpis(): Promise<ProductsKpis> {
   const sb = getServiceClient();
-  const [catalog, velocity, deadStock, margin] = await Promise.all([
+  const [catalog, velocity, deadStock, perf] = await Promise.all([
     sb
-      .from("odoo_products")
+      .from("canonical_products")
       .select("id", { count: "exact", head: true })
-      .eq("active", true),
-    sb
+      .eq("is_active", true),
+    sb // SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
       .from("inventory_velocity")
       .select("reorder_status, stock_value"),
-    sb.from("dead_stock_analysis").select("inventory_value"),
-    sb.from("product_margin_analysis").select("gross_margin_pct"),
+    sb // SP5-VERIFIED: dead_stock_analysis retained (§12 KEEP)
+      .from("dead_stock_analysis")
+      .select("inventory_value"),
+    sb // SP5-VERIFIED: gold_product_performance retained (§12 KEEP+rewire category)
+      .from("gold_product_performance")
+      .select("margin_pct_12m")
+      .not("margin_pct_12m", "is", null),
   ]);
 
   const velocityRows = (velocity.data ?? []) as Array<{
@@ -59,25 +292,23 @@ export async function getProductsKpis(): Promise<ProductsKpis> {
     0
   );
 
-  const marginRows = (margin.data ?? []) as Array<{
-    gross_margin_pct: number | null;
+  const perfRows = (perf.data ?? []) as Array<{
+    margin_pct_12m: number | null;
   }>;
-  const validMargins = marginRows.filter(
-    (r) => r.gross_margin_pct != null && Number(r.gross_margin_pct) > 0
+  const validMargins = perfRows.filter(
+    (r) => r.margin_pct_12m != null && Number(r.margin_pct_12m) > 0
   );
   const avgMarginPct =
     validMargins.length > 0
-      ? validMargins.reduce(
-          (a, r) => a + (Number(r.gross_margin_pct) || 0),
-          0
-        ) / validMargins.length
+      ? validMargins.reduce((a, r) => a + (Number(r.margin_pct_12m) || 0), 0) /
+        validMargins.length
       : 0;
 
   return {
     catalogActive: catalog.count ?? 0,
     needsReorder,
     noMovementCount: noMovement.length,
-    noMovementValue: noMovementValue,
+    noMovementValue,
     stockValue,
     avgMarginPct,
   };
@@ -101,11 +332,9 @@ export interface ReorderRow {
   last_sale_date: string | null;
 }
 
-export async function getReorderNeeded(
-  limit = 50
-): Promise<ReorderRow[]> {
+export async function getReorderNeeded(limit = 50): Promise<ReorderRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
     .from("inventory_velocity")
     .select(
       "product_ref, product_name, category, reorder_status, stock_qty, available_qty, daily_run_rate, days_of_stock, qty_sold_90d, reorder_min, customers_12m, last_sale_date"
@@ -170,7 +399,7 @@ export async function getInventoryPage(
     (params.sort && INVENTORY_SORT_MAP[params.sort]) ?? "daily_run_rate";
   const ascending = params.sortDir === "asc";
 
-  let query = sb
+  let query = sb // SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
     .from("inventory_velocity")
     .select(
       "product_ref, product_name, category, reorder_status, stock_qty, available_qty, daily_run_rate, days_of_stock, qty_sold_90d, reorder_min, customers_12m, last_sale_date",
@@ -219,7 +448,7 @@ export const INVENTORY_STATUS_OPTIONS = INVENTORY_STATUSES;
 
 export async function getProductCategoryOptions(): Promise<string[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
     .from("inventory_velocity")
     .select("category")
     .not("category", "is", null)
@@ -272,7 +501,7 @@ export async function getTopMoversPage(
     (params.sort && TOP_MOVER_SORT_MAP[params.sort]) ?? "qty_sold_90d";
   const ascending = params.sortDir === "asc";
 
-  let query = sb
+  let query = sb // SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
     .from("inventory_velocity")
     .select(
       "product_ref, product_name, qty_sold_90d, qty_sold_180d, qty_sold_365d, customers_12m, daily_run_rate, days_of_stock, stock_value, annual_turnover",
@@ -310,7 +539,7 @@ export async function getTopMoversPage(
 
 export async function getTopMovers(limit = 15): Promise<TopMoverRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: inventory_velocity retained (§12 KEEP)
     .from("inventory_velocity")
     .select(
       "product_ref, product_name, qty_sold_90d, qty_sold_180d, qty_sold_365d, customers_12m, daily_run_rate, days_of_stock, stock_value, annual_turnover"
@@ -371,7 +600,7 @@ export async function getDeadStockPage(
     (params.sort && DEAD_STOCK_SORT_MAP[params.sort]) ?? "inventory_value";
   const ascending = params.sortDir === "asc";
 
-  let query = sb
+  let query = sb // SP5-VERIFIED: dead_stock_analysis retained (§12 KEEP)
     .from("dead_stock_analysis")
     .select(
       "product_ref, product_name, inventory_value, days_since_last_sale, stock_qty, last_sale_date, historical_customers, lifetime_revenue",
@@ -404,7 +633,7 @@ export async function getDeadStockPage(
 
 export async function getDeadStock(limit = 20): Promise<DeadStockRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: dead_stock_analysis retained (§12 KEEP)
     .from("dead_stock_analysis")
     .select(
       "product_ref, product_name, inventory_value, days_since_last_sale, stock_qty, last_sale_date, historical_customers, lifetime_revenue"
@@ -424,107 +653,89 @@ export async function getDeadStock(limit = 20): Promise<DeadStockRow[]> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Top markup products (aggregated por product across all customers)
+// Top margin products — gold_product_performance aggregation
 // ──────────────────────────────────────────────────────────────────────────
-// IMPORTANTE: `product_margin_analysis.gross_margin_pct` es MARKUP
-// `(price-cost)/cost*100`, NO margen `(price-cost)/price*100`. Valores de
-// 691%, 758% son válidos como markup (precio 7-8x el costo) pero se leen
-// como "margen" incoherentes. Convertimos a margen real aquí antes de
-// renderizar. Referencia: customer_margin_analysis sí computa margen real
-// `SUM(line_margin)/SUM(line_revenue)*100` (0-100%), así que /ventas y
-// /productos ahora son comparables.
+// Replaces product_margin_analysis (dropped SP1). Uses gold_product_performance
+// which provides margin_pct_12m (true margin, not markup) and odoo_revenue_12m_mxn.
+// Back-compat: keeps product_ref, product_name, weighted_margin_pct, weighted_markup_pct,
+// total_revenue, customers fields used by /productos page.
 export interface TopMarginProductRow {
+  internal_ref: string | null;
+  display_name: string | null;
+  total_revenue_mxn: number;
+  margin_pct_12m: number | null;
+  units_sold_12m: number;
+  unique_customers_12m: number;
+  // Back-compat aliases (consumers rely on these)
   product_ref: string | null;
   product_name: string | null;
   total_revenue: number;
   weighted_margin_pct: number;
   weighted_markup_pct: number;
   customers: number;
-}
-
-/** Convierte markup a margen real: m% = markup% / (1 + markup%/100). */
-function markupToMargin(markupPct: number): number {
-  if (!Number.isFinite(markupPct)) return 0;
-  return (markupPct / (100 + markupPct)) * 100;
+  category: string | null;
 }
 
 export async function getTopMarginProducts(
   limit = 15
 ): Promise<TopMarginProductRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
-    .from("product_margin_analysis")
+  // SP5-VERIFIED: gold_product_performance retained (§12 KEEP+rewire category)
+  const { data, error } = await sb
+    .from("gold_product_performance")
     .select(
-      "product_ref, product_name, gross_margin_pct, total_order_value, company_id"
+      "internal_ref, display_name, category, odoo_revenue_12m_mxn, margin_pct_12m, units_sold_12m, unique_customers_12m"
     )
-    .gt("total_order_value", 0)
-    .not("gross_margin_pct", "is", null);
-  const rows = (data ?? []) as Array<{
-    product_ref: string | null;
-    product_name: string | null;
-    gross_margin_pct: number | null;
-    total_order_value: number | null;
-    company_id: number | null;
-  }>;
+    .gt("odoo_revenue_12m_mxn", 0)
+    .not("margin_pct_12m", "is", null)
+    .order("odoo_revenue_12m_mxn", { ascending: false, nullsFirst: false })
+    .limit(limit * 3); // over-fetch so caller can re-sort
+  if (error) throw error;
 
-  const byProduct = new Map<
-    string,
-    {
-      product_ref: string | null;
-      product_name: string | null;
-      revenue_sum: number;
-      markup_weighted: number;
-      customers: Set<number>;
-    }
-  >();
-
-  for (const r of rows) {
-    const key = r.product_ref ?? r.product_name ?? "—";
-    const entry =
-      byProduct.get(key) ??
-      {
-        product_ref: r.product_ref,
-        product_name: r.product_name,
-        revenue_sum: 0,
-        markup_weighted: 0,
-        customers: new Set<number>(),
-      };
-    const rev = Number(r.total_order_value) || 0;
-    const markup = Number(r.gross_margin_pct) || 0;
-    entry.revenue_sum += rev;
-    entry.markup_weighted += rev * markup;
-    if (r.company_id) entry.customers.add(r.company_id);
-    byProduct.set(key, entry);
-  }
-
-  return [...byProduct.values()]
-    .map((v) => {
-      const markup = v.revenue_sum > 0 ? v.markup_weighted / v.revenue_sum : 0;
+  return ((data ?? []) as Array<{
+    internal_ref: string | null;
+    display_name: string | null;
+    category: string | null;
+    odoo_revenue_12m_mxn: number | null;
+    margin_pct_12m: number | null;
+    units_sold_12m: number | null;
+    unique_customers_12m: number | null;
+  }>)
+    .map((r) => {
+      const rev = Number(r.odoo_revenue_12m_mxn) || 0;
+      const marginPct = r.margin_pct_12m != null ? Number(r.margin_pct_12m) : 0;
+      // margin_pct_12m from gold view is already true margin (0-100).
+      // Derive markup for back-compat: markup = margin / (1 - margin/100)
+      const markupPct = marginPct < 100 ? (marginPct / (100 - marginPct)) * 100 : 0;
       return {
-        product_ref: v.product_ref,
-        product_name: v.product_name,
-        total_revenue: v.revenue_sum,
-        weighted_markup_pct: markup,
-        weighted_margin_pct: markupToMargin(markup),
-        customers: v.customers.size,
+        internal_ref: r.internal_ref,
+        display_name: r.display_name,
+        category: r.category,
+        total_revenue_mxn: rev,
+        margin_pct_12m: r.margin_pct_12m != null ? Number(r.margin_pct_12m) : null,
+        units_sold_12m: Number(r.units_sold_12m) || 0,
+        unique_customers_12m: Number(r.unique_customers_12m) || 0,
+        // Back-compat aliases
+        product_ref: r.internal_ref,
+        product_name: r.display_name,
+        total_revenue: rev,
+        weighted_margin_pct: marginPct,
+        weighted_markup_pct: markupPct,
+        customers: Number(r.unique_customers_12m) || 0,
       };
     })
-    .sort((a, b) => b.total_revenue - a.total_revenue)
+    .sort((a, b) => b.total_revenue_mxn - a.total_revenue_mxn)
     .slice(0, limit);
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// UoM mismatch (Sprint 13e)
+// UoM mismatch — replaced product_margin_analysis reads with TODO SP6 stub
 // ──────────────────────────────────────────────────────────────────────────
-//
-// Surfaces products where some sale/invoice line was sold in a different
-// UoM than the product's canonical UoM (e.g. CHIFON NEGRO 011 marked in
-// meters but sold by kilos). The matview already excludes those lines
-// from the qty / avg-price math; this query lists which products are
-// affected so Production / Compras can clean up the Odoo data.
-
+// product_margin_analysis was dropped in SP1. The has_uom_mismatch field and
+// uom_mismatch_* fields do not exist in any canonical/gold table yet.
+// TODO SP6: implement via canonical_order_lines JOIN canonical_products on uom comparison.
 export interface UomMismatchRow {
-  odoo_product_id: number;
+  odoo_product_id: number | null;
   product_ref: string | null;
   product_name: string | null;
   product_uom: string | null;
@@ -535,102 +746,20 @@ export interface UomMismatchRow {
 }
 
 export async function getUomMismatchProducts(
-  limit = 30
+  _limit = 30
 ): Promise<UomMismatchRow[]> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("product_margin_analysis")
-    .select(
-      "odoo_product_id, product_ref, product_name, total_order_value, uom_mismatch_order_lines, uom_mismatch_invoice_lines, uom_mismatch_revenue_mxn"
-    )
-    .eq("has_uom_mismatch", true);
-
-  const rows = (data ?? []) as Array<{
-    odoo_product_id: number;
-    product_ref: string | null;
-    product_name: string | null;
-    total_order_value: number | null;
-    uom_mismatch_order_lines: number | null;
-    uom_mismatch_invoice_lines: number | null;
-    uom_mismatch_revenue_mxn: number | null;
-  }>;
-
-  if (rows.length === 0) return [];
-
-  // Roll up per product (matview is per product x company)
-  const byProduct = new Map<
-    number,
-    {
-      odoo_product_id: number;
-      product_ref: string | null;
-      product_name: string | null;
-      orders: number;
-      invoices: number;
-      mismatch_rev: number;
-      total_rev: number;
-    }
-  >();
-  for (const r of rows) {
-    const cur = byProduct.get(r.odoo_product_id) ?? {
-      odoo_product_id: r.odoo_product_id,
-      product_ref: r.product_ref,
-      product_name: r.product_name,
-      orders: 0,
-      invoices: 0,
-      mismatch_rev: 0,
-      total_rev: 0,
-    };
-    cur.orders += r.uom_mismatch_order_lines ?? 0;
-    cur.invoices += r.uom_mismatch_invoice_lines ?? 0;
-    cur.mismatch_rev += r.uom_mismatch_revenue_mxn ?? 0;
-    cur.total_rev += r.total_order_value ?? 0;
-    byProduct.set(r.odoo_product_id, cur);
-  }
-
-  // Pull product UoM
-  const ids = [...byProduct.keys()];
-  const { data: prods } = await sb
-    .from("odoo_products")
-    .select("odoo_product_id, uom")
-    .in("odoo_product_id", ids);
-  const uomMap = new Map<number, string>();
-  for (const p of (prods ?? []) as Array<{
-    odoo_product_id: number;
-    uom: string | null;
-  }>) {
-    uomMap.set(p.odoo_product_id, p.uom ?? "");
-  }
-
-  return [...byProduct.values()]
-    .map((p) => ({
-      odoo_product_id: p.odoo_product_id,
-      product_ref: p.product_ref,
-      product_name: p.product_name,
-      product_uom: uomMap.get(p.odoo_product_id) ?? null,
-      mismatch_order_lines: p.orders,
-      mismatch_invoice_lines: p.invoices,
-      mismatch_revenue_mxn: p.mismatch_rev,
-      total_revenue_mxn: p.total_rev,
-    }))
-    .sort((a, b) => b.mismatch_revenue_mxn - a.mismatch_revenue_mxn)
-    .slice(0, limit);
+  // TODO SP6: product_margin_analysis dropped SP1. Reimplement via
+  // canonical_order_lines + canonical_products line_uom vs product uom comparison.
+  return [];
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// BOM real cost insights (Sprint 13)
+// BOM real cost insights
 // ──────────────────────────────────────────────────────────────────────────
 //
-// Desde el 1-Abr-2026, los BOMs sólo contienen materia prima (sin mano de
-// obra ni energéticos, que se incorporarán vía centros de trabajo).
-// Por eso el real_unit_cost derivado de BOM es un LÍMITE INFERIOR del
-// costo verdadero; la diferencia negativa contra standard_price NO es
-// "descubrimiento de margen", es sólo la porción de costos aún no capturada.
-//
-// Usamos estas queries para identificar:
-// 1. BOMs sospechosos (delta positivo grande → el BOM tiene cantidades mal
-//    capturadas, porque nada debería costar MÁS que el standard histórico).
-// 2. Productos con componentes sin costeo (has_missing_costs).
-// 3. Impacto $ en revenue: productos con mayor volumen × delta.
+// product_real_cost MV is on the KEEP list (§12). Preserved intact.
+// getPmaRevenueMap was previously sourcing from product_margin_analysis (dropped
+// SP1). Replaced with canonical_order_lines (sale) aggregation for revenue context.
 
 export interface BomCostRow {
   odoo_product_id: number;
@@ -678,18 +807,75 @@ function median(arr: number[]): number | null {
     : (s[s.length / 2 - 1] + s[s.length / 2]) / 2;
 }
 
+/**
+ * Revenue map sourced from canonical_order_lines (sale) — replaces
+ * product_margin_analysis which was dropped in SP1.
+ */
+async function getRevenueMapFromOrderLines(): Promise<
+  Map<number, { revenue: number; avgPrice: number; qty: number }>
+> {
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("canonical_order_lines")
+    .select("odoo_product_id, subtotal_mxn, price_unit, qty")
+    .eq("order_type", "sale")
+    .not("odoo_product_id", "is", null);
+  const rows = (data ?? []) as Array<{
+    odoo_product_id: number | null;
+    subtotal_mxn: number | null;
+    price_unit: number | null;
+    qty: number | null;
+  }>;
+  const map = new Map<
+    number,
+    { revenue: number; priceSum: number; qty: number; n: number }
+  >();
+  for (const r of rows) {
+    if (!r.odoo_product_id) continue;
+    const cur = map.get(r.odoo_product_id) ?? {
+      revenue: 0,
+      priceSum: 0,
+      qty: 0,
+      n: 0,
+    };
+    cur.revenue += Number(r.subtotal_mxn) || 0;
+    cur.priceSum += Number(r.price_unit) || 0;
+    cur.qty += Number(r.qty) || 0;
+    cur.n += 1;
+    map.set(r.odoo_product_id, cur);
+  }
+  const result = new Map<
+    number,
+    { revenue: number; avgPrice: number; qty: number }
+  >();
+  for (const [k, v] of map) {
+    result.set(k, {
+      revenue: v.revenue,
+      avgPrice: v.n > 0 ? v.priceSum / v.n : 0,
+      qty: v.qty,
+    });
+  }
+  return result;
+}
+
 export async function getBomCostSummary(): Promise<BomCostSummary> {
   const sb = getServiceClient();
-  const [boms, prc, pmaProducts] = await Promise.all([
-    sb.from("mrp_boms").select("id", { count: "exact", head: true }).eq("active", true),
+  const [boms, prc, orderLinesRevenue] = await Promise.all([
     sb
+      .from("mrp_boms")
+      .select("id", { count: "exact", head: true })
+      .eq("active", true),
+    sb // SP5-VERIFIED: product_real_cost retained (§12 KEEP)
       .from("product_real_cost")
       .select(
         "odoo_product_id, has_missing_costs, has_multiple_boms, max_depth, delta_vs_cached_pct, real_unit_cost"
       ),
+    // Replaces product_margin_analysis: revenue context from canonical_order_lines
     sb
-      .from("product_margin_analysis")
-      .select("odoo_product_id, total_order_value, cost_source"),
+      .from("canonical_order_lines")
+      .select("odoo_product_id, subtotal_mxn")
+      .eq("order_type", "sale")
+      .not("odoo_product_id", "is", null),
   ]);
 
   const prcRows = (prc.data ?? []) as Array<{
@@ -701,20 +887,19 @@ export async function getBomCostSummary(): Promise<BomCostSummary> {
     real_unit_cost: number | null;
   }>;
 
-  const pmaRows = (pmaProducts.data ?? []) as Array<{
-    odoo_product_id: number;
-    total_order_value: number | null;
-    cost_source: string | null;
+  const olRows = (orderLinesRevenue.data ?? []) as Array<{
+    odoo_product_id: number | null;
+    subtotal_mxn: number | null;
   }>;
 
   const bomProductIds = new Set(prcRows.map((r) => r.odoo_product_id));
   const saleProductRevenue = new Map<number, number>();
-  for (const r of pmaRows) {
-    if (r.odoo_product_id == null) continue;
+  for (const r of olRows) {
+    if (!r.odoo_product_id) continue;
     saleProductRevenue.set(
       r.odoo_product_id,
       (saleProductRevenue.get(r.odoo_product_id) ?? 0) +
-        (r.total_order_value ?? 0)
+        (Number(r.subtotal_mxn) || 0)
     );
   }
   const productsInSales = saleProductRevenue.size;
@@ -760,57 +945,11 @@ export async function getBomCostSummary(): Promise<BomCostSummary> {
       (r) => (r.delta_vs_cached_pct ?? 0) > 50
     ).length,
     revenueCoveredMxn: revenueCovered,
-    productsWithMultipleBoms: prcRows.filter((r) => r.has_multiple_boms).length,
+    productsWithMultipleBoms: prcRows.filter((r) => r.has_multiple_boms)
+      .length,
     maxBomDepth: maxDepth,
     productsByDepth,
   };
-}
-
-async function getPmaRevenueMap(): Promise<
-  Map<number, { revenue: number; avgPrice: number; qty: number }>
-> {
-  const sb = getServiceClient();
-  const { data } = await sb
-    .from("product_margin_analysis")
-    .select(
-      "odoo_product_id, total_order_value, avg_order_price, total_qty_ordered"
-    );
-  const rows = (data ?? []) as Array<{
-    odoo_product_id: number;
-    total_order_value: number | null;
-    avg_order_price: number | null;
-    total_qty_ordered: number | null;
-  }>;
-  const map = new Map<
-    number,
-    { revenue: number; avgPrice: number; qty: number; n: number }
-  >();
-  for (const r of rows) {
-    if (r.odoo_product_id == null) continue;
-    const cur = map.get(r.odoo_product_id) ?? {
-      revenue: 0,
-      avgPrice: 0,
-      qty: 0,
-      n: 0,
-    };
-    cur.revenue += r.total_order_value ?? 0;
-    cur.avgPrice += r.avg_order_price ?? 0;
-    cur.qty += r.total_qty_ordered ?? 0;
-    cur.n += 1;
-    map.set(r.odoo_product_id, cur);
-  }
-  const result = new Map<
-    number,
-    { revenue: number; avgPrice: number; qty: number }
-  >();
-  for (const [k, v] of map) {
-    result.set(k, {
-      revenue: v.revenue,
-      avgPrice: v.n > 0 ? v.avgPrice / v.n : 0,
-      qty: v.qty,
-    });
-  }
-  return result;
 }
 
 type RawPrcRow = {
@@ -870,12 +1009,8 @@ function mapPrcRow(
 }
 
 export async function getSuspiciousBoms(limit = 30): Promise<BomCostRow[]> {
-  // BOMs donde el costo recursivo derivado > standard_price histórico por
-  // más de 50%. Con MO/energéticos removidos desde abr-2026, esto NO debería
-  // pasar: casi siempre es captura errónea (qty, uom, componente equivocado).
-  // EXCLUYE productos con missing_costs (que están subestimados artificialmente).
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: product_real_cost retained (§12 KEEP)
     .from("product_real_cost")
     .select(PRC_SELECT)
     .gt("delta_vs_cached_pct", 50)
@@ -883,7 +1018,7 @@ export async function getSuspiciousBoms(limit = 30): Promise<BomCostRow[]> {
     .order("delta_vs_cached_pct", { ascending: false })
     .limit(limit);
 
-  const pmaMap = await getPmaRevenueMap();
+  const pmaMap = await getRevenueMapFromOrderLines();
   return ((data ?? []) as RawPrcRow[]).map((r) => mapPrcRow(r, pmaMap));
 }
 
@@ -891,34 +1026,33 @@ export async function getBomsMissingComponents(
   limit = 30
 ): Promise<BomCostRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: product_real_cost retained (§12 KEEP)
     .from("product_real_cost")
     .select(PRC_SELECT)
     .eq("has_missing_costs", true)
     .order("missing_cost_components", { ascending: false })
     .limit(limit);
 
-  const pmaMap = await getPmaRevenueMap();
+  const pmaMap = await getRevenueMapFromOrderLines();
   return ((data ?? []) as RawPrcRow[])
     .map((r) => mapPrcRow(r, pmaMap))
     .sort((a, b) => b.revenue_12m - a.revenue_12m);
 }
 
 export async function getTopRevenueBoms(limit = 30): Promise<BomCostRow[]> {
-  // Productos vendidos con BOM (overlap PMA ↔ PRC), ordenados por revenue.
-  const pmaMap = await getPmaRevenueMap();
-  const topPmaIds = [...pmaMap.entries()]
+  const pmaMap = await getRevenueMapFromOrderLines();
+  const topPrcIds = [...pmaMap.entries()]
     .sort((a, b) => b[1].revenue - a[1].revenue)
     .slice(0, 300)
     .map(([id]) => id);
 
-  if (topPmaIds.length === 0) return [];
+  if (topPrcIds.length === 0) return [];
 
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: product_real_cost retained (§12 KEEP)
     .from("product_real_cost")
     .select(PRC_SELECT)
-    .in("odoo_product_id", topPmaIds);
+    .in("odoo_product_id", topPrcIds);
 
   return ((data ?? []) as RawPrcRow[])
     .map((r) => mapPrcRow(r, pmaMap))
@@ -938,8 +1072,6 @@ export interface BomDuplicateRow {
   real_unit_cost: number;
   overcounted_pct_of_cost: number | null;
   revenue_12m: number;
-  // estimate of total $ overcounted across all sales of this product
-  // = total_overcounted_per_unit * total_qty_ordered (in product UoM)
   total_revenue_impact_mxn: number;
 }
 
@@ -967,16 +1099,18 @@ export async function getBomDuplicates(limit = 30): Promise<BomDuplicateRow[]> {
 
   if (rows.length === 0) return [];
 
-  // Pull cost + revenue context for the same products
   const ids = rows.map((r) => r.odoo_product_id);
-  const [costRes, pmaRes] = await Promise.all([
+  // SP5-VERIFIED: product_real_cost retained (§12 KEEP)
+  const [costRes, revRes] = await Promise.all([
     sb
       .from("product_real_cost")
       .select("odoo_product_id, real_unit_cost")
       .in("odoo_product_id", ids),
+    // Replaces product_margin_analysis: use canonical_order_lines for revenue context
     sb
-      .from("product_margin_analysis")
-      .select("odoo_product_id, total_order_value, total_qty_ordered")
+      .from("canonical_order_lines")
+      .select("odoo_product_id, subtotal_mxn, qty")
+      .eq("order_type", "sale")
       .in("odoo_product_id", ids),
   ]);
 
@@ -989,14 +1123,15 @@ export async function getBomDuplicates(limit = 30): Promise<BomDuplicateRow[]> {
   }
 
   const revMap = new Map<number, { rev: number; qty: number }>();
-  for (const p of (pmaRes.data ?? []) as Array<{
-    odoo_product_id: number;
-    total_order_value: number | null;
-    total_qty_ordered: number | null;
+  for (const p of (revRes.data ?? []) as Array<{
+    odoo_product_id: number | null;
+    subtotal_mxn: number | null;
+    qty: number | null;
   }>) {
+    if (!p.odoo_product_id) continue;
     const cur = revMap.get(p.odoo_product_id) ?? { rev: 0, qty: 0 };
-    cur.rev += p.total_order_value ?? 0;
-    cur.qty += p.total_qty_ordered ?? 0;
+    cur.rev += Number(p.subtotal_mxn) || 0;
+    cur.qty += Number(p.qty) || 0;
     revMap.set(p.odoo_product_id, cur);
   }
 
@@ -1025,18 +1160,15 @@ export async function getBomDuplicates(limit = 30): Promise<BomDuplicateRow[]> {
 export async function getBomsWithMultipleVersions(
   limit = 30
 ): Promise<BomCostRow[]> {
-  // Productos con múltiples BOMs activos. El matview eligió el más reciente
-  // (highest odoo_bom_id). Útil para que Producción consolide o desactive
-  // los BOMs viejos que ya no aplican.
   const sb = getServiceClient();
-  const { data } = await sb
+  const { data } = await sb // SP5-VERIFIED: product_real_cost retained (§12 KEEP)
     .from("product_real_cost")
     .select(PRC_SELECT)
     .eq("has_multiple_boms", true)
     .order("active_boms_for_product", { ascending: false })
     .limit(limit);
 
-  const pmaMap = await getPmaRevenueMap();
+  const pmaMap = await getRevenueMapFromOrderLines();
   return ((data ?? []) as RawPrcRow[])
     .map((r) => mapPrcRow(r, pmaMap))
     .sort((a, b) => b.revenue_12m - a.revenue_12m);
