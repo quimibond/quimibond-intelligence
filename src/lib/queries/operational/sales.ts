@@ -229,26 +229,26 @@ export async function getSalesRevenueTrend(
   const sb = getServiceClient();
 
   // Bounds path: aggregate from canonical_invoices (replaces invoices_unified)
-  // canonical_invoices fields: direction, invoice_date_odoo, amount_total_mxn_resolved,
+  // canonical_invoices fields: direction, invoice_date, amount_total_mxn_resolved,
   //   estado_sat, tipo_comprobante, receptor_canonical_company_id, emisor_canonical_company_id
   if (bounds?.from || bounds?.to) {
     let q = sb
       .from("canonical_invoices")
-      .select("invoice_date_odoo, amount_total_mxn_resolved, amount_total_mxn")
+      .select("invoice_date, amount_total_mxn_resolved, amount_total_mxn")
       .eq("direction", "issued")
       .eq("estado_sat", "vigente");
-    if (bounds.from) q = q.gte("invoice_date_odoo", bounds.from);
-    if (bounds.to) q = q.lt("invoice_date_odoo", bounds.to);
+    if (bounds.from) q = q.gte("invoice_date", bounds.from);
+    if (bounds.to) q = q.lt("invoice_date", bounds.to);
     const { data: rows } = await q;
 
     const map = new Map<string, number>();
     for (const r of (rows ?? []) as Array<{
-      invoice_date_odoo: string | null;
+      invoice_date: string | null;
       amount_total_mxn_resolved: number | null;
       amount_total_mxn: number | null;
     }>) {
-      if (!r.invoice_date_odoo) continue;
-      const d = new Date(r.invoice_date_odoo);
+      if (!r.invoice_date) continue;
+      const d = new Date(r.invoice_date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
       const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn ?? 0);
       map.set(key, (map.get(key) ?? 0) + amount);
@@ -506,8 +506,8 @@ export async function getTopCustomersPage(
       .eq("direction", "issued")
       .eq("estado_sat", "vigente")
       .not("receptor_canonical_company_id", "is", null);
-    if (params.from) q = q.gte("invoice_date_odoo", params.from);
-    if (params.to) q = q.lt("invoice_date_odoo", params.to);
+    if (params.from) q = q.gte("invoice_date", params.from);
+    if (params.to) q = q.lt("invoice_date", params.to);
 
     const { data: invRows } = await q;
 

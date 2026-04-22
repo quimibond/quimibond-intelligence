@@ -913,7 +913,7 @@ export interface SupplierInvoiceRow {
   odoo_invoice_id: number | null;
   direction: string;
   estado_sat: string | null;
-  invoice_date_odoo: string | null;
+  invoice_date: string | null;
   due_date_odoo: string | null;
   amount_total_mxn_resolved: number | null;
   amount_residual_mxn_odoo: number | null;
@@ -936,12 +936,12 @@ export async function getSupplierInvoices(
   const { data } = await sb
     .from("canonical_invoices")
     .select(
-      "canonical_id, sat_uuid, odoo_invoice_id, direction, estado_sat, invoice_date_odoo, due_date_odoo, amount_total_mxn_resolved, amount_residual_mxn_odoo, payment_state_odoo, match_confidence, emisor_canonical_company_id, receptor_canonical_company_id"
+      "canonical_id, sat_uuid, odoo_invoice_id, direction, estado_sat, invoice_date, due_date_odoo, amount_total_mxn_resolved, amount_residual_mxn_odoo, payment_state_odoo, match_confidence, emisor_canonical_company_id, receptor_canonical_company_id"
     )
     .eq("direction", "received")
     .eq("emisor_canonical_company_id", supplierCompanyId)
     .not("estado_sat", "eq", "cancelado")
-    .order("invoice_date_odoo", { ascending: false })
+    .order("invoice_date", { ascending: false })
     .limit(500);
   return (data ?? []) as SupplierInvoiceRow[];
 }
