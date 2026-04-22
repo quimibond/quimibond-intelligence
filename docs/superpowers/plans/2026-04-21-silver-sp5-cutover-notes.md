@@ -431,3 +431,75 @@ Result: 0 banned reads. Only KEEP-annotated `client_reorder_predictions` (×2) a
 - Static generation: fails on `/equipo` — pre-existing missing SUPABASE_SERVICE_KEY env var (same as T2/T3/T5/T7)
 
 ### Commit: 186bfc6
+
+---
+
+## Task 9 — operational/purchases.ts rewire (completed 2026-04-21)
+
+### Inventory (legacy reads eliminated)
+
+| Legacy table | Count | Replacement |
+|---|---|---|
+| `odoo_purchase_orders` | ×4 | `canonical_purchase_orders` |
+| `invoices_unified` | ×1 (via `getUnifiedInvoicesForCompany`) | `canonical_invoices` direction='received' |
+| `supplier_concentration_herfindahl` | ×4 | client-side aggregation from `canonical_order_lines` (TODO SP6) |
+| `supplier_product_matrix` | ×2 | client-side aggregation from `canonical_order_lines` (TODO SP6) |
+
+### Schema drift discovered (T9, beyond T1-T8 notes)
+
+22. `canonical_payments.direction` values are `'sent'` (vendor outflow) and `'received'` (customer inflow) — confirmed via `SELECT DISTINCT direction`. For vendor payments filter on `direction='sent'`.
+23. `canonical_purchase_orders.buyer_canonical_contact_id` EXISTS (confirmed via pg_attribute). `canonical_purchase_orders.canonical_company_id` is the supplier company FK.
+24. `unified/index.ts::getUnifiedInvoicesForCompany` reads banned `invoices_unified` — replaced with direct `canonical_invoices` query in `getSupplierInvoices`.
+
+### Functions rewritten / preserved / stubbed
+
+| Function | Action |
+|---|---|
+| `getPurchasesKpisRaw` | Rewritten: `canonical_purchase_orders` + `canonical_invoices` (AP payable) + `cfo_dashboard` (KEEP) |
+| `getSingleSourceRiskPage` / `getSingleSourceRisk` / `getSingleSourceSummary` | Rewritten: client-side aggregation from `canonical_order_lines`; TODO SP6 for gold_supplier_concentration |
+| `getPriceAnomaliesPage` / `getPriceAnomalies` | Preserved: `purchase_price_intelligence` (SP5-VERIFIED KEEP) |
+| `getPurchaseOrdersPage` | Rewritten: `canonical_purchase_orders`; company names from `canonical_companies.display_name` |
+| `getRecentPurchaseOrders` | Rewritten: `canonical_purchase_orders` |
+| `getPurchaseBuyerOptions` | Rewritten: `canonical_purchase_orders` |
+| `getTopSuppliersPage` / `getTopSuppliers` | Rewritten: client-side aggregation from `canonical_order_lines`; supplier names fetched from `canonical_companies` |
+| `getSupplierInvoices` | Rewritten: `canonical_invoices` direction='received' (drops banned `invoices_unified` import) |
+| `getSupplierBlacklistStatus` / `getSuppliersBlacklistMap` | Unchanged: `reconciliation_issues` (not banned) |
+
+### New exports added
+
+- `listPurchaseOrders` — canonical POs with limit/from/to/state filters
+- `listPurchaseOrderLines` — canonical order lines order_type='purchase'
+- `listVendorPayments` — canonical payments direction='sent'
+- `listSupplierPayments` — alias of listVendorPayments
+
+### SP5-VERIFIED annotations
+
+- `purchase_price_intelligence` ×2 (`getPriceAnomaliesPage`, `getPriceAnomalies`) — §12 KEEP retained
+- `cfo_dashboard` ×1 (`getPurchasesKpisRaw`) — §12 KEEP retained
+
+### TODO SP6 stubs
+
+- `getSingleSourceRiskPage/Risk/Summary`: compute from `canonical_order_lines` client-side; once SP6 ships `gold_supplier_concentration` MV, replace aggregation with server-side query. Note: `product_ref`/`product_name`/`top_supplier_name` return `null` until SP6 adds canonical_products/canonical_companies join.
+- `getTopSuppliersPage/getTopSuppliers`: aggregated from `canonical_order_lines`; TODO SP6 `gold_supplier_summary` for server-side paging.
+
+### Consumer compatibility fixes (in-place, pending Task 14)
+
+- `RecentPurchaseOrder` gains alias fields `id` (= `canonical_id`) and `company_id` (= `canonical_company_id`) — `/compras/page.tsx` references both; alias avoids a Task 14 dependency.
+
+### Grep gate
+
+Result: 0 matches on all banned Bronze + §12 drop-list patterns.
+
+### Test results
+
+- `operational/purchases.ts — no §12 drop-list legacy reads`: 2 passed
+- Integration tests: 4 skipped (no live env vars in CI)
+- Total: 2 passed, 4 skipped
+
+### Build state
+
+- TypeScript: 0 errors from purchases.ts (3 type fixes needed during compilation: SORT_MAP type, id/company_id alias fields)
+- ESLint: warnings only in pre-existing files
+- Static generation: fails on `/equipo` — pre-existing missing SUPABASE_SERVICE_KEY env var (same as T2/T3/T5/T7/T8)
+
+### Commit: e1b0692
