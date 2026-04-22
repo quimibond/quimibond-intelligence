@@ -1,6 +1,7 @@
 // Catálogo canónico de patterns. Ver docs/design-system.md.
 // Usar SIEMPRE estos building blocks en nuevas páginas (mobile-first).
 // Anteriormente vivía en src/components/shared/v2/ (renombrado 2026-04-19).
+export { AgingBuckets, type AgingData, type AgingBucketKey } from "./aging-buckets";
 export { KpiCard } from "./kpi-card";
 export { StatGrid } from "./stat-grid";
 export {
