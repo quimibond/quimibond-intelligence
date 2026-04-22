@@ -238,6 +238,8 @@ function resolveRowHref(
 }
 
 /**
+ * @deprecated SP6 — use <Chart /> directly where possible.
+ *
  * DataViewChart — renderiza un recharts chart usando la config v2/shadcn.
  *
  * Tipos soportados:

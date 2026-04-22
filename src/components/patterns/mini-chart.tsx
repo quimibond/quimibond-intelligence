@@ -1,12 +1,6 @@
 "use client";
 
-import {
-  Area,
-  AreaChart,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-} from "recharts";
+import { Chart } from "./chart";
 
 type Datum = { value: number } & Record<string, unknown>;
 
@@ -27,6 +21,8 @@ const colorVar: Record<string, string> = {
 };
 
 /**
+ * @deprecated SP6 — use <Chart type="sparkline" /> directly.
+ *
  * MiniChart — sparkline inline para KpiCards y tablas.
  * Sin axes, sin tooltip por default.
  */
@@ -34,48 +30,29 @@ export function MiniChart({
   data,
   height = 40,
   color = "primary",
-  variant = "area",
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  variant = "area", // kept for API compat; both variants map to sparkline
   dataKey = "value",
 }: MiniChartProps) {
-  const strokeColor = colorVar[color] ?? colorVar.primary;
-
   if (!data || data.length === 0) {
     return <div style={{ height }} aria-hidden />;
   }
 
+  const strokeColor = colorVar[color] ?? colorVar.primary;
+  // Both area and line variants were axis-free inline sparklines — map both to
+  // type="sparkline" (Chart's no-axes/no-tooltip mode). The visual difference
+  // between area fill and plain line is an acceptable cosmetic change.
+
   return (
     <div style={{ height }} aria-hidden>
-      <ResponsiveContainer width="100%" height="100%">
-        {variant === "line" ? (
-          <LineChart data={data}>
-            <Line
-              type="monotone"
-              dataKey={dataKey}
-              stroke={strokeColor}
-              strokeWidth={2}
-              dot={false}
-              isAnimationActive={false}
-            />
-          </LineChart>
-        ) : (
-          <AreaChart data={data}>
-            <defs>
-              <linearGradient id={`mini-${color}`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={strokeColor} stopOpacity={0.35} />
-                <stop offset="100%" stopColor={strokeColor} stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <Area
-              type="monotone"
-              dataKey={dataKey}
-              stroke={strokeColor}
-              strokeWidth={2}
-              fill={`url(#mini-${color})`}
-              isAnimationActive={false}
-            />
-          </AreaChart>
-        )}
-      </ResponsiveContainer>
+      <Chart
+        type="sparkline"
+        data={data as Array<Record<string, unknown>>}
+        xKey="__x"
+        series={[{ key: dataKey, label: dataKey, color: strokeColor }]}
+        height={height}
+        ariaLabel="mini chart"
+      />
     </div>
   );
 }
