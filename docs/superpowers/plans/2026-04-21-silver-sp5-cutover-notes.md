@@ -272,3 +272,162 @@ period-filter.ts, year-filter.ts, table-params.ts, _helpers.ts — 0 `.from(` ma
 - Build: `✓ Compiled successfully in 4.7s`
 
 ### Commit: 18f645a
+
+## Task 7 — analytics/ small files rewire (completed 2026-04-21)
+
+### Files rewired
+- `customer-360.ts`: `analytics_customer_360` → `gold_company_360` (PK `canonical_company_id`). Added `fetchCustomer360`, `fetchTopCustomers`, `fetchTopSuppliers`. `getCustomer360` preserved as alias. `getTopAtRiskClients` moved to `dashboard.ts` (dashboard concern). `getCompanyInsights` kept (reads `agent_insights`, operational table not dropped).
+- `dashboard.ts`: `customer_ltv_health` → `gold_company_360` for `getTopAtRiskClients` (with back-compat aliases: `company_id`, `company_name`, `ltv_mxn`, `churn_risk_score`). `pl_estado_resultados` → `gold_revenue_monthly` for `getRevenueTrend`. `getDashboardKpis()` SP5-VERIFIED: `get_dashboard_kpis()` RPC retained (page.tsx consumes old shape). Added `fetchDashboardKpis()` reading gold views. Added `fetchDashboardAlerts()` from `gold_ceo_inbox`.
+- `pnl.ts`: Added `fetchPL`/`getPl`/`fetchIncomeStatement` reading `gold_pl_statement`. `getPnlByAccount` + `getMostRecentPeriod` SP5-VERIFIED Bronze: `odoo_account_balances` retained (PnlPorCuentaSection.tsx uses account-level fields `account_code/name/type`; no canonical equivalent in SP4).
+- `currency-rates.ts`: `odoo_currency_rates` → `canonical_fx_rates` (has `recency_rank` for dedup). Added `fetchLatestFxRates`, `fetchFxHistory`. `getLatestCurrencyRates` preserved as alias.
+- `index.ts`: `supplier_price_index` read in `getSupplierPriceAlerts` stubbed → returns `[]` + TODO SP6 (matview still live but in banned list). Added barrel `export *` for customer-360, dashboard, pnl, currency-rates, products. All other functions (rfm_segments, collection_effectiveness_index, revenue_concentration, stockout_queue, real_sale_price, customer_cohorts) preserved intact.
+
+### Schema drift T7
+- `gold_revenue_monthly.period_month` does NOT exist — actual column is `month_start`. Grand-total filter IS `canonical_company_id IS NULL` (confirmed).
+- `gold_company_360.is_customer`, `is_supplier`, `overdue_amount_mxn`, `blacklist_level` all confirmed present.
+- `canonical_fx_rates` has `recency_rank` (integer, 1=most recent per currency) and `is_stale` — confirmed. No `effective_date` column; it's `rate_date`.
+- `supplier_price_index`: still a live matview — confirmed. But on banned grep gate list per SP5 plan. Stubbed in index.ts.
+- `get_dashboard_kpis()` RPC: still live — confirmed. Retained for page.tsx compatibility.
+
+### SP5-VERIFIED annotations added: 3
+1. `get_dashboard_kpis()` RPC — retained, page.tsx consumes old shape
+2. `odoo_account_balances` Bronze — account-level P&L detail, no canonical equivalent SP4
+3. Implicit: `canonical_fx_rates` replaces direct `odoo_currency_rates` (not Bronze-retained; properly migrated)
+
+### TODO SP6 stubs added: 1
+- `getSupplierPriceAlerts()` → `[]` (supplier_price_index banned list; canonical_order_lines replacement pending purchase_price_intelligence MV)
+
+### Test results
+- 9 passed, 1 skipped (integration — no env vars in CI). All source-scan assertions green.
+- Grep gate: 0 banned reads in Task 7 files. `finance.ts` has false-positive `working_capital_cycle` (contains `working_capital` substring; SP5-VERIFIED KEEP — pre-existing from T5).
+
+### Build state
+- TypeScript compile: CLEAN (0 errors in Task 7 files). Pre-existing errors in `analytics-finance.test.ts` from T5 unchanged.
+- Static generation fails on `/equipo` (missing `SUPABASE_SERVICE_KEY` in build env — pre-existing, not introduced by T7).
+
+### Commit: 1dac9df
+
+## Task 8 — operational/sales.ts (completed 2026-04-21)
+
+### Inventory of legacy reads (pre-rewrite)
+| Line | Table | Function |
+|---|---|---|
+| 70 | `odoo_sale_orders` | `getSalesKpis` |
+| 744 | `odoo_sale_orders` | `getTopSalespeople` |
+| 814 | `odoo_sale_orders` | `getSaleOrdersPage` |
+| 861 | `odoo_sale_orders` | `getSaleOrderSalespeopleOptions` |
+| 908 | `odoo_sale_orders` | `getSaleOrdersTimeline` |
+| 968 | `odoo_sale_orders` | `getRecentSaleOrders` |
+
+No `odoo_order_lines`, `odoo_crm_leads`, `orders_unified`, or `order_fulfillment_bridge` reads existed in this file.
+
+### Functions rewritten (6)
+1. `getSalesKpis` — `odoo_sale_orders` → `canonical_sale_orders` (amount_total_mxn, salesperson_name preserved)
+2. `getTopSalespeople` — `odoo_sale_orders` → `canonical_sale_orders` + `getSelfCanonicalCompanyIds()`
+3. `getSaleOrdersPage` — `odoo_sale_orders` → `canonical_sale_orders`; company name resolved via canonical_companies.display_name instead of resolveCompanyNames(). Added `company_id` alias on output.
+4. `getSaleOrderSalespeopleOptions` — `odoo_sale_orders` → `canonical_sale_orders`
+5. `getSaleOrdersTimeline` — `odoo_sale_orders` → `canonical_sale_orders`
+6. `getRecentSaleOrders` — `odoo_sale_orders` → `canonical_sale_orders`; same company-name pattern as getSaleOrdersPage
+
+### New required exports added (5)
+- `listSaleOrders` — canonical_sale_orders, all columns including salesperson_canonical_contact_id
+- `listSaleOrderLines` — canonical_order_lines where order_type='sale'
+- `listCrmLeads` — canonical_crm_leads
+- `salesBySalesperson` — aggregate from canonical_sale_orders
+- `fetchSalespersonMetadata` — canonical_contacts where contact_type LIKE 'internal_%'
+
+### Functions preserved unchanged (8)
+- `getSalesRevenueTrend` — uses pl_estado_resultados + invoices_unified (not banned)
+- `getReorderRiskPage` / `getReorderRisk` — uses client_reorder_predictions (not banned)
+- `getTopCustomersPage` / `getTopCustomers` — uses company_profile + invoices_unified (not banned)
+
+### Schema drift discovered beyond T1-T7
+- `canonical_sale_orders` has `canonical_company_id` (bigint FK to `canonical_companies.id`) — NOT the old `company_id` (FK to `companies.id`). These are different ID spaces.
+- `canonical_companies` has `is_internal` flag (not `has_shadow_flag`) to identify self-company rows.
+- Self-exclude pattern for canonical tables: query `canonical_companies WHERE is_internal=true` → ids [868]. Introduced `getSelfCanonicalCompanyIds()` module-level cached helper.
+- `companies.relationship_type='self'` IDs (264744, 264746, 264747, 6707) are in the old `companies` table ID space — NOT usable against canonical_sale_orders.canonical_company_id.
+- `canonical_sale_orders`: PK is `canonical_id`, no `id` column. `odoo_order_id` carries the Odoo integer for back-compat.
+- `RecentSaleOrder` interface: added `company_id: number | null` alias = `canonical_company_id` for back-compat with `/ventas/page.tsx` which passes it directly to `<CompanyLink companyId={r.company_id}>`.
+- Note: `canonical_companies.display_name` used for company name resolution (not `.name`).
+
+### Tests
+- File: `src/__tests__/silver-sp5/operational-sales.test.ts`
+- 1 passed (banned-token source scan), 5 skipped (integration — no live env vars in CI)
+- Grep gate: 0 banned reads. Command: `rg "\.from\(['\"](odoo_sale_orders|odoo_order_lines|odoo_crm_leads|orders_unified|order_fulfillment_bridge)['\"]" src/lib/queries/operational/sales.ts` → exit 1 (no matches)
+
+### Build state
+- TypeScript: 0 errors in sales.ts (`npx tsc --noEmit | grep sales.ts` = empty)
+- ESLint: fixed `prefer-const` (2 `let companyNameMap` → `const`) and removed unused `resolveCompanyNames` import
+- Static generation: fails on `/equipo` (pre-existing missing SUPABASE_SERVICE_KEY in build env — not introduced by T8)
+
+### Commit: de6a49a
+
+## Task 8 — broad sweep pass (completed 2026-04-21, amend → 186bfc6)
+
+### Context
+
+Prior implementer only eliminated `odoo_sale_orders` reads. File still had 18+ `.from()` calls to §12 drop-list MVs: `pl_estado_resultados`, `invoices_unified`, `company_profile`, `company_profile_sat`, `customer_margin_analysis`, `monthly_revenue_by_company`. This pass eliminates all of them per DoD Gate 3.
+
+### Inventory of remaining §12 reads pre-sweep
+
+| Function | Legacy MV | Count |
+|---|---|---|
+| `getSalesKpis` | `pl_estado_resultados`, `monthly_revenue_by_company` | 2 |
+| `getSalesRevenueTrend` | `invoices_unified` (bounds path), `pl_estado_resultados` (default path) | 2 |
+| `getTopCustomersPage` | `invoices_unified`, `customer_margin_analysis`, `overhead_factor_12m` (KEEP), `company_profile_sat`, `company_profile` | 5 |
+| `getTopCustomers` | `company_profile`, `customer_margin_analysis`, `overhead_factor_12m` (KEEP), `company_profile_sat` | 4 |
+
+### Replacements applied
+
+| Legacy | Replacement | Notes |
+|---|---|---|
+| `pl_estado_resultados` | `gold_pl_statement` | `total_income` is negative (accounting credit); `Math.abs()` for revenue. `net_income` as proxy for `utilidad_operativa` |
+| `monthly_revenue_by_company` | `gold_revenue_monthly` | Grand total: `canonical_company_id IS NULL`. No `ma_3m` col — computed client-side rolling 3-month average. Column is `month_start` (not `month`). Revenue = `resolved_mxn ?? odoo_mxn` |
+| `invoices_unified` | `canonical_invoices` | Fields: `invoice_date_odoo`, `amount_total_mxn_resolved`, `amount_total_mxn`, `estado_sat`, `direction`, `receptor_canonical_company_id` |
+| `company_profile` | `gold_company_360` | PK `canonical_company_id`. Revenue field is `revenue_90d_mxn` (not `revenue_90d`). No `total_revenue` — use `lifetime_value_mxn` |
+| `company_profile_sat` | TODO SP6 stubs | No `total_invoiced_sat`/`total_invoiced_sat_ytd` equivalent in `gold_company_360` |
+| `customer_margin_analysis` | TODO SP6 stubs | No canonical margin equivalent; `margin_12m`/`margin_pct_12m`/`adjusted_margin_pct_12m` nulled |
+
+### SP5-VERIFIED annotations added
+
+- `client_reorder_predictions` ×2 (in `getReorderRiskPage`, `getReorderRisk`)
+- `overhead_factor_12m` ×3 (in `getTopCustomersPage` period path, default path; `getTopCustomers`)
+
+Total: 5 annotation sites
+
+### TODO SP6 stubs added
+
+- `margin_12m` — `customer_margin_analysis` field, no canonical equivalent in gold_company_360 (×3 functions)
+- `margin_pct_12m` — same (×3 functions)
+- `adjusted_margin_pct_12m` — derived from margin_pct_12m (×3 functions)
+- `total_invoiced_sat` — `company_profile_sat` field, not in gold_company_360 (×3 functions)
+- `total_invoiced_sat_ytd` — same (×3 functions)
+
+All stubs return `null`. Consumer pages (/ventas, /empresas/[id]) will show dashes/blank for these fields until SP6 ships canonical margin views.
+
+### Schema drift discovered (T8 broad sweep, beyond prior T8 notes)
+
+17. `gold_company_360.revenue_90d_mxn` (NOT `revenue_90d`) — adapted sort map and selects
+18. `gold_company_360.lifetime_value_mxn` used as `total_revenue_lifetime` proxy (no `total_revenue` col)
+19. `gold_revenue_monthly` has no `ma_3m` column — computed client-side
+20. `canonical_invoices.invoice_date_odoo` is the date field for issued invoices (not `invoice_date`)
+21. `canonical_invoices.receptor_canonical_company_id` is the company FK for received-side (customer) aggregation
+22. `gold_pl_statement.net_income` used as proxy for `utilidad_operativa` (no operating income sub-total)
+
+### Grep gate (full §12 ban list)
+
+Result: 0 banned reads. Only KEEP-annotated `client_reorder_predictions` (×2) and `overhead_factor_12m` (×3) remain.
+
+### Test results
+
+- `operational/sales.ts — no §12 drop-list legacy reads` → 2 passed (broad ban + bronze-table check)
+- Integration tests: 5 skipped (no live env vars)
+- Total: 2 passed, 5 skipped
+
+### Build state
+
+- TypeScript: 0 errors from sales.ts
+- ESLint: 0 errors from sales.ts (warnings only in pre-existing files)
+- Static generation: fails on `/equipo` — pre-existing missing SUPABASE_SERVICE_KEY env var (same as T2/T3/T5/T7)
+
+### Commit: 186bfc6
