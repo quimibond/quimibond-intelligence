@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { StatusBadge } from "@/components/patterns/status-badge";
+import { SeverityBadge } from "@/components/patterns/severity-badge";
 
 describe("StatusBadge (new API: kind + value)", () => {
   it("renders dot variant by default (density=compact)", () => {
@@ -68,5 +69,17 @@ describe("StatusBadge (additional coverage)", () => {
     const el = screen.getByRole("status");
     expect(el.textContent).toContain("En proceso de pago");
     expect(el).toHaveAttribute("data-color", "info");
+  });
+});
+
+describe("SeverityBadge (legacy wrapper)", () => {
+  it("delegates to StatusBadge kind=severity", () => {
+    render(<SeverityBadge level="critical" />);
+    expect(screen.getByRole("status")).toHaveAttribute("data-color", "critical");
+  });
+
+  it("unknown level → generic", () => {
+    render(<SeverityBadge level="whatever" />);
+    expect(screen.getByRole("status").textContent).toContain("whatever");
   });
 });
