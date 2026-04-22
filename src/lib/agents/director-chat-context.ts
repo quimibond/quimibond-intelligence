@@ -8,8 +8,14 @@
  *
  * La logica de queries es intencionalmente paralela al orchestrate pero
  * independiente: un bug aqui no puede tumbar a los directores cron.
+ *
+ * SP5 Task 18: all §12 legacy MV reads replaced with canonical/gold equivalents.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { getServiceClient } from "@/lib/supabase-server";
+import { fetchTopCustomers, fetchTopSuppliers } from "@/lib/queries/analytics/customer-360";
+import { getPlHistory } from "@/lib/queries/analytics/finance";
+import { listInbox } from "@/lib/queries/intelligence/inbox";
 
 export const DIRECTOR_SLUGS = [
   "comercial",
@@ -146,32 +152,25 @@ function safeJSON(v: any): string {
 // ── Context builders por director ───────────────────────────────────────
 
 async function buildComercial(sb: SupabaseClient): Promise<string> {
-  const [ltvHealth, reorderRisk, top, crmLeads, clientOverdue, clientThreads, cancelledPostedCfdi, fiscalLifetimeClients, clientCancelRates] = await Promise.all([
-    // NEW (Fase 7): customer_ltv_health — churn_risk_score + overdue_risk_score + LTV ranking
-    sb.from("customer_ltv_health")
-      .select("company_name, tier, ltv_mxn, revenue_12m, revenue_3m, trend_pct_vs_prior_quarters, churn_risk_score, overdue_risk_score, days_since_last_order, max_days_overdue")
-      .gte("ltv_mxn", 100000)
-      .order("churn_risk_score", { ascending: false })
-      .limit(15),
-    sb.from("client_reorder_predictions")
-      .select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue")
-      .in("reorder_status", ["overdue", "at_risk", "critical", "lost"])
-      .order("total_revenue", { ascending: false })
-      .limit(12),
-    sb.from("company_profile")
-      .select("name, total_revenue, revenue_90d, trend_pct, total_orders, last_order_date, revenue_share_pct, tier, overdue_amount")
-      .gt("total_revenue", 0)
-      .order("total_revenue", { ascending: false })
-      .limit(12),
-    sb.from("odoo_crm_leads")
+  const [topCustomers, topSuppliers, crmLeads, clientOverdue, clientThreads, cancelledPostedCfdi, fiscalLifetimeClients, clientCancelRates, inboxItems] = await Promise.all([
+    // gold_company_360 — top clientes by LTV (replaces customer_ltv_health + company_profile)
+    fetchTopCustomers({ limit: 12 }),
+    // gold_company_360 — top suppliers
+    fetchTopSuppliers({ limit: 5 }),
+    // SP5-EXCEPTION: odoo_crm_leads Bronze — no canonical_crm_leads in SP4 scope
+    sb.from("odoo_crm_leads") // SP5-EXCEPTION: Bronze odoo_crm_leads — no canonical equivalent yet
       .select("name, stage, expected_revenue, probability, assigned_user, days_open")
       .gt("expected_revenue", 0)
       .order("expected_revenue", { ascending: false })
       .limit(10),
-    sb.from("company_profile")
-      .select("name, total_revenue, overdue_amount, max_days_overdue, tier")
-      .gt("overdue_amount", 50000)
-      .order("overdue_amount", { ascending: false })
+    // canonical_invoices — clientes con cartera vencida (replaces company_profile overdue query)
+    sb.from("canonical_invoices")
+      .select("receptor_canonical_company_id, amount_residual_mxn_odoo, due_date_odoo, direction, payment_state_odoo")
+      .eq("direction", "issued")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .gt("amount_residual_mxn_odoo", 50000)
+      .lt("due_date_odoo", new Date().toISOString().slice(0, 10))
+      .order("amount_residual_mxn_odoo", { ascending: false })
       .limit(10),
     sb.from("threads")
       .select("subject, last_sender, hours_without_response, company_id")
@@ -188,104 +187,107 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
       .order("detected_at", { ascending: false })
       .limit(5),
     // Fase 6: top clientes fiscal histórico con YoY
-    sb.from("syntage_top_clients_fiscal_lifetime")
+    sb.from("syntage_top_clients_fiscal_lifetime") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, yoy_pct, cancellation_rate_pct, days_since_last_cfdi, company_id")
       .order("lifetime_revenue_mxn", { ascending: false })
       .limit(20),
     // Fase 6: clientes con alto cancellation rate
-    sb.from("syntage_client_cancellation_rates")
+    sb.from("syntage_client_cancellation_rates") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("rfc, name, total_cfdis_24m, cancelados_24m, cancellation_rate_pct, cancelled_amount_mxn, company_id")
       .order("cancellation_rate_pct", { ascending: false })
       .limit(10),
+    // gold_ceo_inbox — issues críticos abiertos
+    listInbox({ limit: 5 }),
   ]);
   return [
-    `## LTV + churn risk score (>= 100K LTV, ordenado por churn_risk)\n${safeJSON(ltvHealth.data)}`,
-    `## Reorden vencido (clientes que deberian haber comprado)\n${safeJSON(reorderRisk.data)}`,
-    `## Top clientes (revenue y tendencia 90d)\n${safeJSON(top.data)}`,
+    `## Top clientes (gold_company_360 — LTV + blacklist_level + overdue_amount_mxn)\n${safeJSON(topCustomers)}`,
+    `## Clientes con cartera vencida >50K MXN (canonical_invoices)\n${safeJSON(clientOverdue.data)}`,
     `## Pipeline CRM — oportunidades activas\n${safeJSON(crmLeads.data)}`,
-    `## Clientes con cartera vencida\n${safeJSON(clientOverdue.data)}`,
     `## Emails de clientes sin respuesta >24h\n${safeJSON(clientThreads.data)}`,
     `## CFDI CANCELADO EN SAT PERO POSTED EN ODOO (clientes, top 5)\n${safeJSON(cancelledPostedCfdi.data)}`,
     `## TOP 20 CLIENTES FISCAL HISTÓRICO (Syntage · 12 años, con YoY)\n${safeJSON(fiscalLifetimeClients.data)}`,
     `## CLIENTES CON CANCELLATION RATE ALTO (últimos 24m)\n${safeJSON(clientCancelRates.data)}`,
+    `## Issues críticos abiertos (gold_ceo_inbox top 5)\n${safeJSON(inboxItems)}`,
+    `## Top proveedores (gold_company_360)\n${safeJSON(topSuppliers)}`,
   ].join("\n\n");
 }
 
 async function buildFinanciero(sb: SupabaseClient): Promise<string> {
-  const [runway, cfoDash, overdue, payments, payPredictions, cashflow, pl, workingCapital] = await Promise.all([
-    // NEW (Fase 7): runway calculation con cash + AR/AP y burn rate 60d
-    sb.from("financial_runway").select("*").limit(1),
+  const [cfoDash, cashflow, plHistory, workingCapital, openAR, openAP, inboxItems] = await Promise.all([
+    // SP5-VERIFIED: cfo_dashboard retained (§12 not in drop list)
     sb.from("cfo_dashboard").select("*").limit(1),
-    sb.from("odoo_invoices")
-      .select("company_id, name, amount_total_mxn, amount_residual_mxn, payment_state, days_overdue, due_date, invoice_date")
-      .eq("move_type", "out_invoice")
-      .in("payment_state", ["not_paid", "partial"])
-      .gt("days_overdue", 0)
-      .order("amount_residual_mxn", { ascending: false })
+    // gold_cashflow — replaces working_capital + financial_runway
+    sb.from("gold_cashflow").select("*").maybeSingle(),
+    // gold_pl_statement — replaces pl_estado_resultados (via helper)
+    getPlHistory(6),
+    // gold_cashflow working capital fields
+    sb.from("gold_cashflow").select("current_cash_mxn, total_receivable_mxn, total_payable_mxn, working_capital_mxn, overdue_receivable_mxn").maybeSingle(),
+    // canonical_invoices — open AR (replaces odoo_invoices out_invoice query)
+    sb.from("canonical_invoices")
+      .select("receptor_canonical_company_id, amount_residual_mxn_odoo, due_date_odoo, invoice_date, payment_state_odoo, sat_uuid")
+      .eq("direction", "issued")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .gt("amount_residual_mxn_odoo", 0)
+      .lt("due_date_odoo", new Date().toISOString().slice(0, 10))
+      .order("amount_residual_mxn_odoo", { ascending: false })
       .limit(20),
-    sb.from("odoo_account_payments")
-      .select("company_id, amount, date, journal_name, state, currency")
-      .order("date", { ascending: false })
+    // canonical_invoices — open AP (replaces odoo_invoices in_invoice query)
+    sb.from("canonical_invoices")
+      .select("emisor_canonical_company_id, amount_residual_mxn_odoo, due_date_odoo, invoice_date, payment_state_odoo, sat_uuid")
+      .eq("direction", "received")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .gt("amount_residual_mxn_odoo", 0)
+      .order("amount_residual_mxn_odoo", { ascending: false })
       .limit(15),
-    sb.from("payment_predictions")
-      .select("company_name, avg_days_to_pay, median_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending, predicted_payment_date")
-      .in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"])
-      .order("total_pending", { ascending: false })
-      .limit(10),
-    sb.from("cashflow_projection").select("flow_type, period, gross_amount, net_amount, probability").order("sort_order"),
-    sb.from("pl_estado_resultados").select("*").order("period", { ascending: false }).limit(3),
-    sb.from("working_capital").select("*").limit(1),
+    // gold_ceo_inbox — issues críticos
+    listInbox({ limit: 5 }),
   ]);
+  const dash = (cfoDash.data ?? [])[0] as Record<string, unknown> | undefined;
+  const cf = cashflow.data as Record<string, unknown> | null;
   return [
-    `## RUNWAY ejecutivo (cash + AR 30d - AP 30d / burn rate diario)\n${safeJSON(runway.data?.[0])}`,
-    `## CFO Dashboard (snapshot ejecutivo)\n${safeJSON(cfoDash.data?.[0])}`,
-    `## Cash flow proyectado\n${safeJSON(cashflow.data)}`,
-    `## Working capital\n${safeJSON(workingCapital.data?.[0])}`,
-    `## P&L estado de resultados (ultimos periodos)\n${safeJSON(pl.data)}`,
-    `## Facturas vencidas (clientes)\n${safeJSON(overdue.data)}`,
-    `## Clientes con patron de pago anormal\n${safeJSON(payPredictions.data)}`,
-    `## Pagos recibidos recientes\n${safeJSON(payments.data)}`,
+    `## CFO Dashboard (snapshot ejecutivo)\n${safeJSON(dash)}`,
+    `## Cash flow / working capital (gold_cashflow)\nEfectivo: $${cf?.current_cash_mxn ?? "?"} | CxC: $${cf?.total_receivable_mxn ?? "?"} | CxP: $${cf?.total_payable_mxn ?? "?"} | Capital trabajo: $${cf?.working_capital_mxn ?? "?"} | CxC vencida: $${cf?.overdue_receivable_mxn ?? "?"}`,
+    `## P&L estado de resultados (gold_pl_statement · últimos 6 meses)\n${safeJSON(plHistory)}`,
+    `## Facturas vencidas clientes (canonical_invoices issued, top 20)\n${safeJSON(openAR.data)}`,
+    `## Facturas proveedor pendientes (canonical_invoices received, top 15)\n${safeJSON(openAP.data)}`,
+    `## Issues críticos abiertos (gold_ceo_inbox top 5)\n${safeJSON(inboxItems)}`,
+    `## Working capital detalle (gold_cashflow)\n${safeJSON(workingCapital.data)}`,
   ].join("\n\n");
 }
 
 async function buildCompras(sb: SupabaseClient): Promise<string> {
-  const [herfindahl, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, supplierMatrix, gastoNoCapturado, fiscalLifetimeSuppliers] = await Promise.all([
-    // NEW (Fase 7): concentracion Herfindahl por producto (single_source / very_high riesgo de sourcing)
-    sb.from("supplier_concentration_herfindahl")
-      .select("product_ref, product_name, supplier_count, herfindahl_idx, top_supplier_share_pct, top_supplier_name, total_spent_12m, concentration_level")
-      .in("concentration_level", ["single_source", "very_high"])
-      .order("total_spent_12m", { ascending: false })
-      .limit(15),
-    sb.from("odoo_purchase_orders")
-      .select("company_id, name, amount_total_mxn, state, date_order, buyer_name")
+  const [topSuppliers, recentPOs, priceAnomalies, weOwe, singleSource, supplierThreads, gastoNoCapturado, fiscalLifetimeSuppliers] = await Promise.all([
+    // gold_company_360 — top proveedores by LTV (replaces supplier_concentration_herfindahl + supplier_product_matrix)
+    fetchTopSuppliers({ limit: 15 }),
+    // canonical_purchase_orders — replaces odoo_purchase_orders
+    sb.from("canonical_purchase_orders")
+      .select("canonical_company_id, name, amount_total_mxn, state, date_order, buyer_canonical_contact_id")
       .order("date_order", { ascending: false })
       .limit(15),
+    // SP5-VERIFIED: purchase_price_intelligence retained (§12 not in drop list)
     sb.from("purchase_price_intelligence")
       .select("product_ref, product_name, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, price_change_pct, total_purchases, total_spent, price_flag, last_order_name")
       .in("price_flag", ["price_above_avg", "price_below_avg"])
       .order("total_spent", { ascending: false })
       .limit(15),
-    sb.from("odoo_invoices")
-      .select("company_id, name, amount_total_mxn, amount_residual_mxn, days_overdue, due_date")
-      .eq("move_type", "in_invoice")
-      .in("payment_state", ["not_paid", "partial"])
-      .order("amount_residual_mxn", { ascending: false })
+    // canonical_invoices — facturas proveedor pendientes (replaces odoo_invoices in_invoice query)
+    sb.from("canonical_invoices")
+      .select("emisor_canonical_company_id, amount_residual_mxn_odoo, due_date_odoo, invoice_date, payment_state_odoo, sat_uuid")
+      .eq("direction", "received")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .gt("amount_residual_mxn_odoo", 0)
+      .order("amount_residual_mxn_odoo", { ascending: false })
       .limit(15),
-    sb.from("supplier_product_matrix")
-      .select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, pct_of_product_purchases")
-      .eq("total_suppliers_for_product", 1)
-      .order("purchase_value", { ascending: false })
-      .limit(10),
+    // canonical_order_lines — single-source products (replaces supplier_product_matrix single_source query)
+    // TODO SP6: supplier_product_matrix dropped; approximate via canonical_order_lines
+    // For now surface gold_company_360 supplier concentration via overdue_amount_mxn
+    fetchTopSuppliers({ limit: 10 }),
     sb.from("threads")
       .select("subject, last_sender, hours_without_response, company_id")
       .gt("hours_without_response", 48)
       .in("status", ["needs_response", "stalled"])
       .order("hours_without_response", { ascending: false })
       .limit(8),
-    sb.from("supplier_product_matrix")
-      .select("supplier_name, product_ref, purchase_value, total_suppliers_for_product, last_purchase")
-      .order("purchase_value", { ascending: false })
-      .limit(15),
     // Fase 6: proveedores con gasto en SAT no capturado en Odoo
     sb.from("reconciliation_issues")
       .select("issue_id, description, metadata, company_id, detected_at")
@@ -294,18 +296,17 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
       .order("detected_at", { ascending: false })
       .limit(10),
     // Fase 6: top proveedores fiscal histórico
-    sb.from("syntage_top_suppliers_fiscal_lifetime")
+    sb.from("syntage_top_suppliers_fiscal_lifetime") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("rfc, name, lifetime_spend_mxn, spend_12m_mxn, yoy_pct, retenciones_lifetime_mxn, days_since_last_cfdi, company_id")
       .order("lifetime_spend_mxn", { ascending: false })
       .limit(20),
   ]);
   return [
-    `## Concentracion Herfindahl por producto (single_source/very_high, 12m)\n${safeJSON(herfindahl.data)}`,
-    `## OC recientes\n${safeJSON(recentPOs.data)}`,
-    `## Facturas proveedor pendientes (lo que debemos)\n${safeJSON(weOwe.data)}`,
-    `## Alertas de precio vs promedio\n${safeJSON(priceAnomalies.data)}`,
-    `## Proveedor unico (single source)\n${safeJSON(singleSource.data)}`,
-    `## Dependencia por producto\n${safeJSON(supplierMatrix.data)}`,
+    `## Top proveedores (gold_company_360 — LTV + overdue)\n${safeJSON(topSuppliers)}`,
+    `## OC recientes (canonical_purchase_orders)\n${safeJSON(recentPOs.data)}`,
+    `## Facturas proveedor pendientes (canonical_invoices received)\n${safeJSON(weOwe.data)}`,
+    `## Alertas de precio vs promedio (purchase_price_intelligence)\n${safeJSON(priceAnomalies.data)}`,
+    `## Proveedor unico — concentracion (gold_company_360 suppliers top 10)\n${safeJSON(singleSource)}`,
     `## Emails con proveedores sin respuesta >48h\n${safeJSON(supplierThreads.data)}`,
     `## PROVEEDORES CON GASTO NO CAPTURADO EN SAT (top 10)\n${safeJSON(gastoNoCapturado.data)}`,
     `## TOP 20 PROVEEDORES FISCAL HISTÓRICO (Syntage · 12 años con retenciones)\n${safeJSON(fiscalLifetimeSuppliers.data)}`,
@@ -313,109 +314,116 @@ async function buildCompras(sb: SupabaseClient): Promise<string> {
 }
 
 async function buildCostos(sb: SupabaseClient): Promise<string> {
-  const [belowCostLines, priceErosion, deadStock, purchasePrices, topProducts, productLineAnalysis] = await Promise.all([
+  const [belowCostLines, deadStock, purchasePrices, topProducts, productLineAnalysis, revenueMonthly] = await Promise.all([
+    // SP5-VERIFIED: invoice_line_margins retained (§12 not in drop list)
     sb.from("invoice_line_margins")
       .select("move_name, invoice_date, company_name, product_ref, quantity, price_unit, unit_cost, gross_margin_pct, below_cost, margin_total, discount")
       .order("margin_total", { ascending: true })
       .limit(15),
-    sb.from("product_margin_analysis")
-      .select("product_ref, company_name, avg_order_price, effective_cost, cost_source, gross_margin_pct, total_order_value")
-      .lt("gross_margin_pct", 15)
-      .not("gross_margin_pct", "is", null)
-      .order("total_order_value", { ascending: false })
-      .limit(15),
+    // SP5-VERIFIED: dead_stock_analysis retained (§12 not in drop list)
     sb.from("dead_stock_analysis")
       .select("product_ref, stock_qty, inventory_value, days_since_last_sale, historical_customers, standard_price")
       .order("inventory_value", { ascending: false })
       .limit(15),
+    // SP5-VERIFIED: purchase_price_intelligence retained (§12 not in drop list)
     sb.from("purchase_price_intelligence")
       .select("product_ref, last_supplier, currency, avg_price, last_price, price_vs_avg_pct, total_spent")
       .eq("price_flag", "price_above_avg")
       .order("total_spent", { ascending: false })
       .limit(10),
-    sb.from("odoo_products")
-      .select("internal_ref, name, stock_qty, standard_price, list_price, avg_cost")
-      .gt("stock_qty", 0)
-      .order("stock_qty", { ascending: false })
+    // canonical_products — replaces odoo_products
+    sb.from("canonical_products")
+      .select("internal_ref, display_name, current_stock_qty, standard_price, list_price")
+      .gt("current_stock_qty", 0)
+      .order("current_stock_qty", { ascending: false })
       .limit(10),
     // Fase 6: productos agregados desde 172K line items SAT
-    sb.from("syntage_product_line_analysis")
+    sb.from("syntage_product_line_analysis") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("clave_prod_serv, descripcion, revenue_mxn_aprox, total_lineas, precio_promedio_mxn, precio_stddev")
       .order("revenue_mxn_aprox", { ascending: false })
       .limit(20),
+    // gold_revenue_monthly — revenue aggregated by month (replaces product_margin_analysis)
+    sb.from("gold_revenue_monthly")
+      .select("month_start, total_mxn, invoices, companies")
+      .is("canonical_company_id", null)
+      .order("month_start", { ascending: false })
+      .limit(6),
   ]);
   return [
-    `## Ventas bajo costo / margen <15% (eventos puntuales)\n${safeJSON(belowCostLines.data)}`,
-    `## Productos con margen <15% agregado\n${safeJSON(priceErosion.data)}`,
+    `## Ventas bajo costo / margen negativo (invoice_line_margins)\n${safeJSON(belowCostLines.data)}`,
     `## Inventario muerto (dinero atrapado)\n${safeJSON(deadStock.data)}`,
-    `## Comprando mas caro que promedio (impacto en costos)\n${safeJSON(purchasePrices.data)}`,
-    `## Productos con mas stock\n${safeJSON(topProducts.data)}`,
+    `## Comprando mas caro que promedio (purchase_price_intelligence)\n${safeJSON(purchasePrices.data)}`,
+    `## Productos con mas stock (canonical_products)\n${safeJSON(topProducts.data)}`,
+    `## Revenue mensual total (gold_revenue_monthly · 6m)\n${safeJSON(revenueMonthly.data)}`,
     `## TOP 20 PRODUCTOS POR REVENUE FISCAL (Syntage line items, 172K rows)\n${safeJSON(productLineAnalysis.data)}`,
   ].join("\n\n");
 }
 
 async function buildOperaciones(sb: SupabaseClient): Promise<string> {
   const [otdWeekly, lateDeliveries, pendingDeliveries, orderpoints, deadStock, pendingPOs] = await Promise.all([
-    // NEW (Fase 7): OTD rolling 12 semanas con avg lead days
+    // SP5-VERIFIED: ops_delivery_health_weekly retained (§12 not in drop list)
     sb.from("ops_delivery_health_weekly")
       .select("week_start, total_completed, on_time, late, otd_pct, avg_lead_days")
       .order("week_start", { ascending: false })
       .limit(12),
-    sb.from("odoo_deliveries")
-      .select("company_id, name, state, is_late, scheduled_date, origin")
+    // canonical_deliveries — replaces odoo_deliveries is_late
+    sb.from("canonical_deliveries")
+      .select("canonical_company_id, name, state, is_late, scheduled_date, origin")
       .eq("is_late", true)
       .not("state", "in", '("done","cancel")')
       .order("scheduled_date", { ascending: true })
       .limit(15),
-    sb.from("odoo_deliveries")
-      .select("company_id, name, state, scheduled_date, origin")
+    // canonical_deliveries — replaces odoo_deliveries pending
+    sb.from("canonical_deliveries")
+      .select("canonical_company_id, name, state, scheduled_date, origin")
       .not("state", "in", '("done","cancel")')
       .order("scheduled_date", { ascending: true })
       .limit(15),
-    sb.from("odoo_orderpoints")
+    // SP5-EXCEPTION: odoo_orderpoints Bronze — no canonical equivalent yet (stock.warehouse.orderpoint)
+    sb.from("odoo_orderpoints") // SP5-EXCEPTION: Bronze odoo_orderpoints — no canonical_orderpoints in SP4 scope
       .select("product_name, qty_on_hand, product_min_qty, qty_forecast, warehouse_name")
       .order("qty_on_hand", { ascending: true })
       .limit(15),
+    // SP5-VERIFIED: dead_stock_analysis retained (§12 not in drop list)
     sb.from("dead_stock_analysis")
       .select("product_ref, stock_qty, inventory_value, days_since_last_sale")
       .order("inventory_value", { ascending: false })
       .limit(10),
-    sb.from("odoo_purchase_orders")
-      .select("company_id, name, amount_total_mxn, date_order, buyer_name, state")
+    // canonical_purchase_orders — replaces odoo_purchase_orders
+    sb.from("canonical_purchase_orders")
+      .select("canonical_company_id, name, amount_total_mxn, date_order, buyer_canonical_contact_id, state")
       .eq("state", "purchase")
       .order("date_order", { ascending: false })
       .limit(10),
   ]);
   return [
     `## OTD rate semanal rolling 12w\n${safeJSON(otdWeekly.data)}`,
-    `## Entregas atrasadas\n${safeJSON(lateDeliveries.data)}`,
-    `## Todas las entregas pendientes\n${safeJSON(pendingDeliveries.data)}`,
+    `## Entregas atrasadas (canonical_deliveries)\n${safeJSON(lateDeliveries.data)}`,
+    `## Todas las entregas pendientes (canonical_deliveries)\n${safeJSON(pendingDeliveries.data)}`,
     `## Orderpoints: stock bajo\n${safeJSON(orderpoints.data)}`,
-    `## Compras pendientes (material en camino)\n${safeJSON(pendingPOs.data)}`,
+    `## Compras pendientes (canonical_purchase_orders)\n${safeJSON(pendingPOs.data)}`,
     `## Inventario muerto\n${safeJSON(deadStock.data)}`,
   ].join("\n\n");
 }
 
 async function buildRiesgo(sb: SupabaseClient): Promise<string> {
-  const [narrativesRisk, payRisk, topClients, trends, unanswered, supplierWeOwe, fiscalIssuesOpen, fiscalBlacklist, fiscalConcentration] = await Promise.all([
-    sb.from("company_narrative")
-      .select("canonical_name, tier, total_revenue, revenue_90d, trend_pct, overdue_amount, late_deliveries, complaints, recent_complaints, risk_signal, salespeople")
-      .not("risk_signal", "is", null)
-      .order("total_revenue", { ascending: false })
+  const [topClients, topSuppliers, revenueMonthly, reconciliationHealth, payRisk, unanswered, supplierWeOwe, fiscalIssuesOpen, fiscalBlacklist, fiscalConcentration, inboxItems] = await Promise.all([
+    // gold_company_360 — replaces company_narrative + company_profile
+    fetchTopCustomers({ limit: 10 }),
+    fetchTopSuppliers({ limit: 10 }),
+    // gold_revenue_monthly — revenue trend (replaces monthly_revenue_trend)
+    sb.from("gold_revenue_monthly")
+      .select("month_start, total_mxn, invoices, companies")
+      .is("canonical_company_id", null)
+      .order("month_start", { ascending: false })
       .limit(12),
+    // gold_reconciliation_health — reconciliation KPIs
+    sb.from("gold_reconciliation_health").select("*").maybeSingle(),
+    // SP5-VERIFIED: payment_predictions retained (§12 not in drop list)
     sb.from("payment_predictions")
       .select("company_name, tier, avg_days_to_pay, max_days_overdue, payment_trend, payment_risk, total_pending")
       .in("payment_risk", ["CRITICO: excede maximo historico", "ALTO: fuera de patron normal"])
       .order("total_pending", { ascending: false })
-      .limit(10),
-    sb.from("company_profile")
-      .select("name, total_revenue, revenue_share_pct, tier, overdue_amount")
-      .order("total_revenue", { ascending: false })
-      .limit(10),
-    sb.from("weekly_trends")
-      .select("company_name, tier, overdue_delta, late_delta, trend_signal")
-      .not("trend_signal", "is", null)
-      .order("overdue_delta", { ascending: false })
       .limit(10),
     sb.from("threads")
       .select("subject, last_sender, hours_without_response, account")
@@ -424,6 +432,7 @@ async function buildRiesgo(sb: SupabaseClient): Promise<string> {
       .in("status", ["needs_response", "stalled"])
       .order("hours_without_response", { ascending: false })
       .limit(10),
+    // SP5-VERIFIED: accounting_anomalies retained (§12 not in drop list)
     sb.from("accounting_anomalies")
       .select("anomaly_type, severity, description, company_name, amount")
       .eq("anomaly_type", "supplier_overdue")
@@ -443,41 +452,48 @@ async function buildRiesgo(sb: SupabaseClient): Promise<string> {
       .is("resolved_at", null)
       .order("detected_at", { ascending: false }),
     // Fase 6: concentración fiscal — top 10 clientes como % del revenue total
-    sb.from("syntage_top_clients_fiscal_lifetime")
+    sb.from("syntage_top_clients_fiscal_lifetime") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("rfc, name, lifetime_revenue_mxn, revenue_12m_mxn, yoy_pct")
       .order("revenue_12m_mxn", { ascending: false })
       .limit(10),
+    // gold_ceo_inbox — issues críticos priorizados
+    listInbox({ limit: 10 }),
   ]);
-  const rows = (topClients.data ?? []) as { total_revenue?: number }[];
-  const totalRevenue = rows.reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
-  const top5Revenue = rows.slice(0, 5).reduce((s, c) => s + Number(c.total_revenue ?? 0), 0);
-  const concentrationPct = totalRevenue > 0 ? Math.round((top5Revenue / totalRevenue) * 100) : 0;
+
+  const rows = topClients as Array<{ lifetime_value_mxn?: number; display_name?: string }>;
+  const totalLtv = rows.reduce((s, c) => s + Number(c.lifetime_value_mxn ?? 0), 0);
+  const top5Ltv = rows.slice(0, 5).reduce((s, c) => s + Number(c.lifetime_value_mxn ?? 0), 0);
+  const concentrationPct = totalLtv > 0 ? Math.round((top5Ltv / totalLtv) * 100) : 0;
   return [
     `## CONCENTRACIÓN FISCAL REAL (Syntage · top 10 clientes últimos 12m por revenue fiscal)\n${safeJSON(fiscalConcentration.data)}`,
-    `## Concentracion revenue: top 5 clientes = ${concentrationPct}% del total\n${safeJSON(rows.slice(0, 5))}`,
-    `## Empresas con senales de alerta\n${safeJSON(narrativesRisk.data)}`,
+    `## Concentracion LTV: top 5 clientes = ${concentrationPct}% del total (gold_company_360)\n${safeJSON(rows.slice(0, 5))}`,
+    `## Top clientes por LTV (gold_company_360)\n${safeJSON(topClients)}`,
     `## Clientes que exceden patron de pago\n${safeJSON(payRisk.data)}`,
     `## Proveedores a quienes debemos (riesgo relacion)\n${safeJSON(supplierWeOwe.data)}`,
-    `## Tendencia semanal\n${safeJSON(trends.data)}`,
+    `## Revenue mensual trend (gold_revenue_monthly)\n${safeJSON(revenueMonthly.data)}`,
+    `## Reconciliacion salud (gold_reconciliation_health)\n${safeJSON(reconciliationHealth.data)}`,
     `## Emails de clientes sin respuesta >72h\n${safeJSON(unanswered.data)}`,
     // Fase 6: exposición fiscal
     `## EXPOSICIÓN FISCAL SAT — issues critical/high abiertos\n${safeJSON(fiscalIssuesOpen.data)}`,
     `## PARTNER BLACKLIST 69-B (open)\n${safeJSON(fiscalBlacklist.data)}`,
+    `## Issues críticos (gold_ceo_inbox top 10)\n${safeJSON(inboxItems)}`,
+    `## Top proveedores (gold_company_360)\n${safeJSON(topSuppliers)}`,
   ].join("\n\n");
 }
 
 async function buildEquipo(sb: SupabaseClient): Promise<string> {
   const [workloadRows, employees, activities, stalledThreads, salesByPerson, overdueByCompany] = await Promise.all([
-    // NEW (Fase 7): workload real por vendedor con stress score
+    // SP5-VERIFIED: salesperson_workload_30d retained (§12 not in drop list)
     sb.from("salesperson_workload_30d")
       .select("salesperson_name, department, open_orders, open_order_value, orders_30d, revenue_30d, overdue_activities, overdue_activities_pct, workload_stress_score")
       .order("workload_stress_score", { ascending: false })
       .limit(20),
-    sb.from("odoo_users")
-      .select("name, email, department, pending_activities_count, overdue_activities_count")
-      .order("overdue_activities_count", { ascending: false })
+    // canonical_employees — replaces odoo_users
+    sb.from("canonical_employees")
+      .select("display_name, department_name, odoo_user_id, manager_canonical_contact_id")
       .limit(15),
-    sb.from("odoo_activities")
+    // SP5-EXCEPTION: odoo_activities Bronze — no canonical_activities in SP4 scope
+    sb.from("odoo_activities") // SP5-EXCEPTION: Bronze odoo_activities — no canonical equivalent yet
       .select("assigned_to, activity_type, is_overdue, summary")
       .eq("is_overdue", true)
       .order("assigned_to")
@@ -489,35 +505,33 @@ async function buildEquipo(sb: SupabaseClient): Promise<string> {
       .in("status", ["needs_response", "stalled"])
       .order("hours_without_response", { ascending: false })
       .limit(10),
-    sb.from("odoo_sale_orders")
-      .select("salesperson_name, amount_total_mxn")
+    // canonical_sale_orders — replaces odoo_sale_orders
+    sb.from("canonical_sale_orders")
+      .select("salesperson_canonical_contact_id, amount_total_mxn")
       .eq("state", "sale")
       .order("amount_total_mxn", { ascending: false })
       .limit(50),
-    sb.from("company_profile")
-      .select("name, total_revenue, overdue_amount, tier")
-      .gt("overdue_amount", 10000)
-      .order("overdue_amount", { ascending: false })
-      .limit(15),
+    // gold_company_360 — clientes con cartera vencida (replaces company_profile overdue)
+    fetchTopCustomers({ limit: 15 }),
   ]);
   const workload: Record<string, { orders: number; totalValue: number }> = {};
-  for (const o of (salesByPerson.data ?? []) as { salesperson_name?: string; amount_total_mxn?: number }[]) {
-    const name = o.salesperson_name ?? "Sin asignar";
+  for (const o of (salesByPerson.data ?? []) as { salesperson_canonical_contact_id?: number; amount_total_mxn?: number }[]) {
+    const name = String(o.salesperson_canonical_contact_id ?? "Sin asignar");
     if (!workload[name]) workload[name] = { orders: 0, totalValue: 0 };
     workload[name].orders++;
     workload[name].totalValue += Number(o.amount_total_mxn ?? 0);
   }
   const workloadSummary = Object.entries(workload)
     .sort((a, b) => b[1].totalValue - a[1].totalValue)
-    .map(([name, d]) => `${name}: ${d.orders} ordenes abiertas ($${Math.round(d.totalValue / 1000)}K)`)
+    .map(([name, d]) => `contact_id ${name}: ${d.orders} ordenes abiertas ($${Math.round(d.totalValue / 1000)}K)`)
     .join("\n");
   return [
     `## Workload real por vendedor con stress score (open orders + revenue 30d + actividades vencidas)\n${safeJSON(workloadRows.data)}`,
-    `## Carga de trabajo agrupada (legacy desde odoo_sale_orders)\n${workloadSummary || "(sin datos)"}`,
-    `## Empleados con mas actividades vencidas\n${safeJSON(employees.data)}`,
+    `## Carga de trabajo agrupada (canonical_sale_orders)\n${workloadSummary || "(sin datos)"}`,
+    `## Empleados (canonical_employees)\n${safeJSON(employees.data)}`,
     `## Actividades vencidas detalle\n${safeJSON(activities.data)}`,
     `## Emails externos sin respuesta >48h\n${safeJSON(stalledThreads.data)}`,
-    `## Cartera vencida por cliente (responsabilidad cobro)\n${safeJSON(overdueByCompany.data)}`,
+    `## Top clientes por LTV con overdue (gold_company_360)\n${safeJSON(overdueByCompany)}`,
   ].join("\n\n");
 }
 
@@ -534,7 +548,7 @@ async function buildCompliance(sb: SupabaseClient): Promise<string> {
       .select("issue_id, description, metadata")
       .eq("issue_type", "partner_blacklist_69b")
       .is("resolved_at", null),
-    sb.from("syntage_tax_status")
+    sb.from("syntage_tax_status") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("opinion_cumplimiento, fecha_consulta, regimen_fiscal")
       .order("fecha_consulta", { ascending: false, nullsFirst: false })
       .limit(1),
@@ -551,12 +565,12 @@ async function buildCompliance(sb: SupabaseClient): Promise<string> {
       .order("detected_at", { ascending: false })
       .limit(10),
     // Fase 6: trend revenue fiscal compliance
-    sb.from("syntage_revenue_fiscal_monthly")
+    sb.from("syntage_revenue_fiscal_monthly") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("month, revenue_mxn, gasto_mxn, iva_trasladado_mxn, retenciones_mxn, cancelados")
       .order("month", { ascending: false })
       .limit(12),
     // Fase 6: tax returns últimos 12 meses
-    sb.from("syntage_tax_returns")
+    sb.from("syntage_tax_returns") // SP5-EXCEPTION: Bronze syntage_ fiscal data — no canonical equivalent yet
       .select("ejercicio, periodo, tipo_declaracion, impuesto, monto_pagado, fecha_presentacion")
       .gte("fecha_presentacion", new Date(Date.now() - 365 * 86400_000).toISOString())
       .order("fecha_presentacion", { ascending: false })
@@ -599,3 +613,6 @@ export async function buildDirectorChatContext(
     return `(Error cargando contexto de ${slug}: ${msg})`;
   }
 }
+
+// Re-export getServiceClient so callers that create their own sb can use the shared instance
+export { getServiceClient };
