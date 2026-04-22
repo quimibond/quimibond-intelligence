@@ -711,3 +711,56 @@ None discovered. All column names used in lib helpers confirmed correct from pri
 - All empresas routes compiled cleanly.
 
 ### Commit: (see git log)
+
+## Task 14 — Rewire /ventas /compras /cobranza pages (completed 2026-04-21)
+
+Commit: `053195e`
+
+### Inventory per page
+
+| File | Direct .from() calls | Notes |
+|---|---|---|
+| `src/app/ventas/page.tsx` | 0 | All Array.from() — JS utility only |
+| `src/app/ventas/_components/sales-trend-chart.tsx` | 0 | Pure display component |
+| `src/app/ventas/cohorts/page.tsx` | 0 | redirect() stub |
+| `src/app/compras/page.tsx` | 0 | All Array.from() — JS utility only |
+| `src/app/compras/costos-bom/page.tsx` | 0 | Imports from analytics/products.ts |
+| `src/app/compras/price-variance/page.tsx` | 0 | redirect() stub |
+| `src/app/compras/stockouts/page.tsx` | 0 | redirect() stub |
+| `src/app/cobranza/page.tsx` | 0 | All Array.from() — JS utility only |
+| `src/app/cobranza/_components/payment-risk-batch-actions.tsx` | 0 | Pure UI component |
+
+### Key finding: pages were already clean of Supabase reads
+
+All three main pages were already delegating to lib helpers (T08/T09/T11). The only actual bugs were URL routing: `rowHref` props used hardcoded `/companies/${id}` instead of `/empresas/${id}`.
+
+### URL routing fixes applied
+
+- `src/app/ventas/page.tsx`: 3 occurrences (`rowHref` in reorder-risk table, top-customers table, sale-orders table)
+- `src/app/cobranza/page.tsx`: 3 occurrences (`rowHref` in payment-risk table, aging table, invoice list)
+- `src/app/compras/page.tsx`: 0 occurrences (already clean or no company rowHref)
+
+### SP5-EXCEPTION annotations
+
+0 added. No Bronze/odoo_* reads remain in any of the 9 files.
+
+### §12 ban check
+
+Two benign false-positive strings found (not actual queries):
+1. `ventas/page.tsx:1389` — EmptyState `description="customer_cohorts no tiene datos..."` (UI string)
+2. `compras/page.tsx:1180` — EmptyState `description: "No hay datos en supplier_product_matrix."` (UI string)
+3. `compras/page.tsx:1305` — code comment `// Columna de fecha en odoo_purchase_orders: date_order.`
+
+None matched the test regex `from\(['"]${banned}['"]` — only string literals, not queries.
+
+### Test results
+
+- `ops-pages.test.ts`: 27/27 passed
+  - 9 files × 3 tests each: §12 ban + Bronze ban + /empresas/ routing gate
+- Grep gate: 0 Supabase `.from()` calls across all 9 files
+
+### Build
+
+- Pre-existing `/equipo` prerender failure (SUPABASE_SERVICE_KEY missing in build env) — unrelated to T14.
+- No TypeScript errors in ventas/compras/cobranza files.
+- `./src/app/ventas/page.tsx` compiled cleanly in build output.
