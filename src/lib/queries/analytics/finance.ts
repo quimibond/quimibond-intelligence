@@ -451,9 +451,9 @@ export async function getPlHistory(
 }
 
 /**
- * Working Capital Cycle — SP5-VERIFIED: working_capital_cycle view retained.
- * gold_cashflow has no DSO/DPO/DIO/CCC fields; view still reads from odoo_account_balances
- * but is not in the drop list. // TODO SP6: migrate if gold gains DSO fields.
+ * Working Capital Cycle — recomputed from canonical_invoices + gold_pl_statement.
+ * working_capital_cycle view dropped in SP8. DIO/CCC remain null until
+ * canonical_inventory exists (TODO SP6).
  */
 export interface WorkingCapitalCycle {
   revenue12mMxn: number;
@@ -462,7 +462,7 @@ export interface WorkingCapitalCycle {
   grossMarginPct: number;
   arMxn: number;
   apMxn: number;
-  inventoryMxn: number;
+  inventoryMxn: number | null;
   dsoDays: number | null;
   dpoDays: number | null;
   dioDays: number | null;
@@ -471,14 +471,141 @@ export interface WorkingCapitalCycle {
   computedAt: string | null;
 }
 
-export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | null> {
-  // working_capital_cycle view was dropped in SP8. DSO/DPO/DIO are not yet
-  // materialized in any canonical or gold view; return null until SP6 rebuilds.
-  // Frontend already handles null (renders DSO/DPO/DIO widgets as empty).
-  // TODO SP6: compute DSO from canonical_invoices + revenue 12m, DPO from
-  // canonical_payments + COGS 12m, DIO from canonical_inventory + COGS.
-  return null;
+async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null> {
+  const sb = getServiceClient();
+  const now = new Date();
+  const cutoff365 = new Date(now.getTime() - 365 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+  // gold_pl_statement.period is YYYY-MM; pull last 12 months
+  const cutoffMonth = new Date(now.getFullYear(), now.getMonth() - 11, 1)
+    .toISOString()
+    .slice(0, 7);
+
+  const [openAr, openAp, revenue12m, plLast12] = await Promise.all([
+    sb
+      .from("canonical_invoices")
+      .select("amount_residual_mxn_resolved, amount_residual_mxn_odoo")
+      .eq("direction", "issued")
+      .neq("estado_sat", "cancelado")
+      .eq("state_odoo", "posted")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .or("amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"),
+    sb
+      .from("canonical_invoices")
+      .select("amount_residual_mxn_resolved, amount_residual_mxn_odoo")
+      .eq("direction", "received")
+      .neq("estado_sat", "cancelado")
+      .eq("state_odoo", "posted")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .or("amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"),
+    sb
+      .from("canonical_invoices")
+      .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+      .eq("direction", "issued")
+      .eq("state_odoo", "posted")
+      .neq("estado_sat", "cancelado")
+      .gte("invoice_date", cutoff365),
+    sb
+      .from("gold_pl_statement")
+      .select("period, by_level_1, total_expense")
+      .gte("period", cutoffMonth)
+      .order("period", { ascending: false })
+      .limit(12),
+  ]);
+
+  if (openAr.error || openAp.error || revenue12m.error || plLast12.error) {
+    console.error("[getWorkingCapitalCycle] partial query failure", {
+      openAr: openAr.error?.message,
+      openAp: openAp.error?.message,
+      revenue12m: revenue12m.error?.message,
+      plLast12: plLast12.error?.message,
+    });
+    return null;
+  }
+
+  type Resid = {
+    amount_residual_mxn_resolved: number | null;
+    amount_residual_mxn_odoo: number | null;
+  };
+  const residual = (r: Resid): number =>
+    Number(r.amount_residual_mxn_resolved ?? r.amount_residual_mxn_odoo) || 0;
+  const arMxn = (openAr.data ?? []).reduce(
+    (s: number, r) => s + residual(r as Resid),
+    0
+  );
+  const apMxn = (openAp.data ?? []).reduce(
+    (s: number, r) => s + residual(r as Resid),
+    0
+  );
+
+  type Inv = {
+    amount_total_mxn_resolved: number | null;
+    amount_total_mxn_odoo: number | null;
+  };
+  const revenue12mMxn = (revenue12m.data ?? []).reduce(
+    (s: number, r) =>
+      s +
+      (Number((r as Inv).amount_total_mxn_resolved ?? (r as Inv).amount_total_mxn_odoo) ||
+        0),
+    0
+  );
+
+  // COGS = sum of expense_direct_cost balances across last 12 P&L months
+  type PlRow = {
+    period: string | null;
+    total_expense: number | null;
+    by_level_1: Record<string, { balance: number; account_type: string }> | null;
+  };
+  const cogs12mMxn = (plLast12.data ?? []).reduce((sum: number, raw) => {
+    const r = raw as PlRow;
+    if (!r.by_level_1) return sum;
+    let monthCogs = 0;
+    for (const entry of Object.values(r.by_level_1)) {
+      if (entry.account_type === "expense_direct_cost") {
+        monthCogs += Number(entry.balance) || 0;
+      }
+    }
+    return sum + monthCogs;
+  }, 0);
+
+  const grossProfit12mMxn = revenue12mMxn - cogs12mMxn;
+  const grossMarginPct =
+    revenue12mMxn > 0 ? (grossProfit12mMxn / revenue12mMxn) * 100 : 0;
+
+  // DSO/DPO use spot AR/AP balance (typical SMB practice; avoids needing
+  // a historical AR series). Annualize by 365 over 12-month flow.
+  const dsoDays =
+    revenue12mMxn > 0 ? Math.round((arMxn / revenue12mMxn) * 365) : null;
+  const dpoDays =
+    cogs12mMxn > 0 ? Math.round((apMxn / cogs12mMxn) * 365) : null;
+
+  // No canonical_inventory yet → DIO and CCC stay null. Working capital
+  // computed without inventory term.
+  const workingCapitalMxn = arMxn - apMxn;
+
+  return {
+    revenue12mMxn,
+    cogs12mMxn,
+    grossProfit12mMxn,
+    grossMarginPct,
+    arMxn,
+    apMxn,
+    inventoryMxn: null,
+    dsoDays,
+    dpoDays,
+    dioDays: null,
+    cccDays: null,
+    workingCapitalMxn,
+    computedAt: now.toISOString(),
+  };
 }
+
+export const getWorkingCapitalCycle = unstable_cache(
+  _getWorkingCapitalCycleRaw,
+  ["finance-wcc-canonical-v1"],
+  { revalidate: 300, tags: ["finance"] }
+);
 
 /**
  * Projected Cash Flow v2 — método directo 13 semanas.

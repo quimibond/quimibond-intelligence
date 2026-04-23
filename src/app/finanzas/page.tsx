@@ -840,7 +840,7 @@ async function WorkingCapitalCycleSection() {
 
   return (
     <div className="space-y-4">
-      <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+      <StatGrid columns={{ mobile: 2, tablet: 2, desktop: 2 }}>
         <KpiCard
           title="DSO (cobro)"
           value={wcc.dsoDays ?? 0}
@@ -857,24 +857,6 @@ async function WorkingCapitalCycleSection() {
           icon={ArrowUpCircle}
           subtitle="días para pagar"
           tone={cycleTone("dpo", wcc.dpoDays)}
-          size="sm"
-        />
-        <KpiCard
-          title="DIO (inventario)"
-          value={wcc.dioDays ?? 0}
-          format="days"
-          icon={Wallet}
-          subtitle="días de stock"
-          tone={cycleTone("dio", wcc.dioDays)}
-          size="sm"
-        />
-        <KpiCard
-          title="CCC"
-          value={wcc.cccDays ?? 0}
-          format="days"
-          icon={TrendingUp}
-          subtitle="días totales en ciclo"
-          tone={cycleTone("ccc", wcc.cccDays)}
           size="sm"
         />
       </StatGrid>
@@ -907,15 +889,15 @@ async function WorkingCapitalCycleSection() {
         <MetricRow
           label="Capital atrapado operativo"
           value={<Currency amount={wcc.workingCapitalMxn} compact />}
-          hint="AR + inventario − AP"
+          hint="AR − AP (sin inventario)"
         />
       </div>
 
       <p className="text-[10px] text-muted-foreground">
-        Benchmarks textil B2B: DSO ≤30 saludable · DIO ≤60 saludable ·
-        DPO ≥60 saludable · CCC ≤60 saludable. COGS desde
-        odoo_account_balances filtrado por account_type=expense_direct_cost
-        (NO el proxy in_invoices).
+        Benchmarks textil B2B: DSO ≤30 saludable · DPO ≥60 saludable.
+        Fuentes: canonical_invoices (AR/AP + revenue 12m) + gold_pl_statement
+        (COGS 12m = expense_direct_cost). DIO/CCC pendientes de
+        canonical_inventory (SP6).
       </p>
     </div>
   );
