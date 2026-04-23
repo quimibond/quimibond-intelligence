@@ -192,20 +192,28 @@ interface RawDriftRow {
   diff_mxn: number | string | null;
 }
 
+/** Hard cap on drift rows per company page load — empresas muy driftadas
+ *  (miles de filas) se chupan segundos enteros si no limitamos. Para caso
+ *  de uso "revisar drift" los primeros 200 por fecha cubren lo crítico;
+ *  la Auditoría SAT Tab muestra los totales agregados (conteo + MXN) arriba
+ *  así que el usuario sabe si hay más. */
+const DRIFT_ROWS_HARD_CAP = 200;
+
 async function _getCompanyDriftRowsUncached(
   canonicalCompanyId: number,
   opts: { side?: DriftSide; limit?: number } = {},
 ): Promise<CompanyDriftRow[]> {
   const sb = getServiceClient();
+  const limit = Math.min(opts.limit ?? DRIFT_ROWS_HARD_CAP, DRIFT_ROWS_HARD_CAP);
   let q = sb
     .from("gold_company_odoo_sat_drift")
     .select(
       "side, canonical_company_id, display_name, canonical_id, drift_kind, invoice_date, sat_uuid, odoo_invoice_id, odoo_name, sat_mxn, odoo_mxn, diff_mxn",
     )
     .eq("canonical_company_id", canonicalCompanyId)
-    .order("invoice_date", { ascending: false, nullsFirst: false });
+    .order("invoice_date", { ascending: false, nullsFirst: false })
+    .limit(limit);
   if (opts.side) q = q.eq("side", opts.side);
-  if (opts.limit) q = q.limit(opts.limit);
   const { data, error } = await q;
   if (error) throw error;
   const rows = (data ?? []) as unknown as RawDriftRow[];
@@ -265,21 +273,27 @@ export interface CompanyDriftSummary {
 }
 
 /**
- * Batch drift summary lookup for the /empresas list — fetches drift_total +
- * needs_review for many companies in a single round-trip, keyed by id.
- * Consumers iterate over list rows and decorate each with the summary.
+ * Pulls a drift summary map for every company with *any* non-zero drift.
+ * Typical size: ~100-300 rows (only companies with Odoo↔SAT discrepancies),
+ * so it fits in a single round-trip and can be started in parallel with
+ * the main /empresas list query (there's no id-list dependency).
+ *
+ * Swallows errors: consumers treat a missing summary as "clean" (0 drift,
+ * no needs_review) so the list still renders when the hourly refresh job
+ * or the MV is stale.
  */
-async function _getDriftSummaryMapUncached(
-  canonicalCompanyIds: number[],
-): Promise<Record<number, CompanyDriftSummary>> {
-  if (canonicalCompanyIds.length === 0) return {};
+async function _getNonZeroDriftSummaryUncached(): Promise<
+  Record<number, CompanyDriftSummary>
+> {
   const sb = getServiceClient();
   const { data, error } = await sb
     .from("canonical_companies")
     .select(
       "id, drift_total_abs_mxn, drift_needs_review, drift_ap_total_abs_mxn, drift_ap_needs_review" as unknown as "*",
     )
-    .in("id", canonicalCompanyIds);
+    // Only companies with real drift — everything else is noise and would
+    // turn this into a 4k-row scan every render.
+    .or("drift_total_abs_mxn.gt.0,drift_ap_total_abs_mxn.gt.0");
   if (error) throw error;
   const rows = (data ?? []) as unknown as Array<{
     id: number;
@@ -297,6 +311,27 @@ async function _getDriftSummaryMapUncached(
       needs_review:
         Boolean(r.drift_needs_review) || Boolean(r.drift_ap_needs_review),
     };
+  }
+  return out;
+}
+
+export const getNonZeroDriftSummary = unstable_cache(
+  _getNonZeroDriftSummaryUncached,
+  ["company-nonzero-drift-summary"],
+  { revalidate: 300, tags: ["finance", "companies"] },
+);
+
+/** @deprecated since 2026-04-23 — prefer getNonZeroDriftSummary() which
+ *  parallelizes with listCompanies. Kept for callers that need a strict
+ *  subset lookup. */
+async function _getDriftSummaryMapUncached(
+  canonicalCompanyIds: number[],
+): Promise<Record<number, CompanyDriftSummary>> {
+  if (canonicalCompanyIds.length === 0) return {};
+  const all = await _getNonZeroDriftSummaryUncached();
+  const out: Record<number, CompanyDriftSummary> = {};
+  for (const id of canonicalCompanyIds) {
+    if (all[id]) out[id] = all[id];
   }
   return out;
 }
