@@ -35,10 +35,30 @@ describe("TabPicker", () => {
     }
   });
 
-  it("exposes 6 TabKey values including panorama default", () => {
+  it("exposes 7 TabKey values including panorama default + auditoria_sat", () => {
     const keys: TabKey[] = [
-      "panorama", "comercial", "financiero", "operativo", "fiscal", "pagos",
+      "panorama", "comercial", "financiero", "operativo", "fiscal", "pagos", "auditoria_sat",
     ];
-    expect(keys).toHaveLength(6);
+    expect(keys).toHaveLength(7);
+  });
+
+  it("hides auditoria_sat tab when tabs prop excludes it", () => {
+    render(
+      <TabPicker
+        activeTab="panorama"
+        tabs={["panorama", "comercial", "financiero", "operativo", "fiscal", "pagos"]}
+      />,
+    );
+    expect(screen.queryByText(/auditoría sat/i)).toBeNull();
+  });
+
+  it("shows auditoria_sat tab when included in tabs prop", () => {
+    render(
+      <TabPicker
+        activeTab="auditoria_sat"
+        tabs={["panorama", "comercial", "financiero", "operativo", "fiscal", "pagos", "auditoria_sat"]}
+      />,
+    );
+    expect(screen.getAllByText(/auditoría sat/i).length).toBeGreaterThan(0);
   });
 });

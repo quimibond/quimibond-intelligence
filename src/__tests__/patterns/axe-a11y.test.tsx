@@ -8,6 +8,11 @@ import * as React from "react";
 //  imports "server-only" — not available in jsdom. Existing pattern tests use the same approach.)
 import { CompanyListClient, type CompanyListRow } from "@/app/empresas/_components/CompanyListClient";
 import { PanoramaTab } from "@/app/empresas/[id]/_components/PanoramaTab";
+import { AuditoriaSatTab } from "@/app/empresas/[id]/_components/AuditoriaSatTab";
+import type {
+  CompanyDriftAggregates,
+  CompanyDriftRow,
+} from "@/lib/queries/canonical/company-drift";
 import { StatusBadge } from "@/components/patterns/status-badge";
 import { Chart } from "@/components/patterns/chart";
 import { TrendSpark } from "@/components/patterns/trend-spark";
@@ -262,6 +267,91 @@ describe("axe-core a11y scan — SP6 new/consolidated components", () => {
     ];
     const { container } = render(
       <CompanyListClient items={rows} hasFilters={false} />
+    );
+    const results = await runAxe(container);
+    assertNoCriticalViolations(results);
+  });
+
+  it("AuditoriaSatTab (empty + populated AR + populated AP + category flags)", async () => {
+    const emptyAgg: CompanyDriftAggregates = {
+      canonical_company_id: 1448,
+      display_name: "Contitech",
+      rfc: "CON010101XXX",
+      drift_sat_only_count: 0,
+      drift_sat_only_mxn: 0,
+      drift_odoo_only_count: 0,
+      drift_odoo_only_mxn: 0,
+      drift_matched_diff_count: 0,
+      drift_matched_abs_mxn: 0,
+      drift_total_abs_mxn: 0,
+      drift_needs_review: false,
+      drift_last_computed_at: "2026-04-23T00:00:00Z",
+      drift_ap_sat_only_count: 0,
+      drift_ap_sat_only_mxn: 0,
+      drift_ap_odoo_only_count: 0,
+      drift_ap_odoo_only_mxn: 0,
+      drift_ap_matched_diff_count: 0,
+      drift_ap_matched_abs_mxn: 0,
+      drift_ap_total_abs_mxn: 0,
+      drift_ap_needs_review: false,
+      is_foreign: false,
+      is_bank: false,
+      is_government: false,
+      is_payroll_entity: false,
+    };
+    const arAgg: CompanyDriftAggregates = {
+      ...emptyAgg,
+      canonical_company_id: 918,
+      display_name: "ENTRETELAS BRINCO",
+      drift_sat_only_count: 43,
+      drift_sat_only_mxn: 24_500_000,
+      drift_total_abs_mxn: 24_500_000,
+      drift_needs_review: true,
+    };
+    const apFlaggedAgg: CompanyDriftAggregates = {
+      ...emptyAgg,
+      canonical_company_id: 1689,
+      display_name: "ICOMATEX",
+      drift_ap_odoo_only_count: 2,
+      drift_ap_odoo_only_mxn: 10_800_000,
+      drift_ap_total_abs_mxn: 10_800_000,
+      drift_ap_needs_review: true,
+      is_foreign: true,
+    };
+    const arRow: CompanyDriftRow = {
+      side: "customer",
+      canonical_company_id: 918,
+      display_name: "ENTRETELAS BRINCO",
+      canonical_id: 101,
+      drift_kind: "sat_only",
+      invoice_date: "2025-03-15",
+      sat_uuid: "11111111-2222-3333-4444-555555555555",
+      odoo_invoice_id: null,
+      odoo_name: null,
+      sat_mxn: 120_000,
+      odoo_mxn: null,
+      diff_mxn: 120_000,
+    };
+    const apRow: CompanyDriftRow = {
+      side: "supplier",
+      canonical_company_id: 1689,
+      display_name: "ICOMATEX",
+      canonical_id: 202,
+      drift_kind: "odoo_only",
+      invoice_date: "2025-06-01",
+      sat_uuid: null,
+      odoo_invoice_id: 5001,
+      odoo_name: "INV/2025/06/0001",
+      sat_mxn: null,
+      odoo_mxn: 5_400_000,
+      diff_mxn: -5_400_000,
+    };
+    const { container } = render(
+      <div>
+        <AuditoriaSatTab aggregates={emptyAgg} rows={[]} />
+        <AuditoriaSatTab aggregates={arAgg} rows={[arRow]} />
+        <AuditoriaSatTab aggregates={apFlaggedAgg} rows={[apRow]} />
+      </div>,
     );
     const results = await runAxe(container);
     assertNoCriticalViolations(results);

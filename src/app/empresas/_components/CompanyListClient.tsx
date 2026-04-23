@@ -19,6 +19,10 @@ export interface CompanyListRow {
   revenue_ytd_mxn: number | null;
   overdue_amount_mxn: number | null;
   open_company_issues_count: number | null;
+  /** Drift total AR+AP (absolute MXN, sin IVA). 0 when clean. */
+  drift_total_mxn?: number | null;
+  /** True when either AR or AP drift needs human review (not suppressed by category flags). */
+  drift_needs_review?: boolean | null;
 }
 
 export interface CompanyListClientProps {
@@ -80,7 +84,7 @@ export function CompanyListClient({ items, hasFilters, className }: CompanyListC
                     </div>
                   </div>
                 </div>
-                <div className="mt-2 grid grid-cols-3 gap-2 text-xs">
+                <div className="mt-2 grid grid-cols-4 gap-2 text-xs">
                   <div>
                     <div className="opacity-60">LTV</div>
                     <div className="font-semibold tabular-nums">{fmtMxn(r.lifetime_value_mxn)}</div>
@@ -98,6 +102,28 @@ export function CompanyListClient({ items, hasFilters, className }: CompanyListC
                       )}
                     >
                       {fmtMxn(r.overdue_amount_mxn)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-1 opacity-60">
+                      Drift
+                      {r.drift_needs_review && (
+                        <span
+                          aria-label="Requiere revisión"
+                          title="Drift Odoo↔SAT requiere revisión"
+                          className="inline-block size-1.5 rounded-full bg-status-critical"
+                        />
+                      )}
+                    </div>
+                    <div
+                      className={cn(
+                        "font-semibold tabular-nums",
+                        r.drift_needs_review && "text-status-critical"
+                      )}
+                    >
+                      {r.drift_total_mxn == null || r.drift_total_mxn === 0
+                        ? "—"
+                        : fmtMxn(r.drift_total_mxn)}
                     </div>
                   </div>
                 </div>

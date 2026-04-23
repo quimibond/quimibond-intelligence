@@ -71,4 +71,32 @@ describe("CompanyListClient", () => {
     );
     expect(screen.getByText(/\$45,000,000/)).toBeInTheDocument();
   });
+
+  it("shows drift dash when drift_total_mxn is 0 or null", () => {
+    render(
+      <CompanyListClient
+        items={[makeRow(1, { drift_total_mxn: 0, drift_needs_review: false })]}
+        hasFilters={false}
+      />,
+    );
+    const dashes = screen.getAllByText(/^—$/);
+    expect(dashes.length).toBeGreaterThan(0);
+  });
+
+  it("shows drift amount and red pill when needs_review is true", () => {
+    const { container } = render(
+      <CompanyListClient
+        items={[
+          makeRow(1, {
+            drift_total_mxn: 10_800_000,
+            drift_needs_review: true,
+          }),
+        ]}
+        hasFilters={false}
+      />,
+    );
+    expect(screen.getByText(/\$10,800,000/)).toBeInTheDocument();
+    // Red dot pill
+    expect(container.querySelector(".bg-status-critical")).not.toBeNull();
+  });
 });
