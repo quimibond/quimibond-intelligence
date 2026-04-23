@@ -955,3 +955,37 @@ export async function fetchPortfolioKpis(): Promise<PortfolioKpis> {
     blacklist_count: blacklistCount ?? 0,
   };
 }
+
+export interface RevenueTrendPoint {
+  month_start: string;
+  total_mxn: number;
+}
+
+/**
+ * Revenue trend for a single company over the last N months.
+ * Reads gold_revenue_monthly filtered by canonical_company_id.
+ * Returns points in chronological order (oldest first).
+ */
+export async function fetchCompanyRevenueTrend(
+  canonicalCompanyId: number,
+  months: number = 12,
+): Promise<RevenueTrendPoint[]> {
+  const sb = getServiceClient();
+  const since = new Date();
+  since.setUTCMonth(since.getUTCMonth() - months);
+  since.setUTCDate(1);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const { data, error } = await sb
+    .from("gold_revenue_monthly")
+    .select("month_start, total_mxn")
+    .eq("canonical_company_id", canonicalCompanyId)
+    .gte("month_start", since.toISOString())
+    .order("month_start", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    month_start: r.month_start ?? "",
+    total_mxn: r.total_mxn ?? 0,
+  }));
+}
