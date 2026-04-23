@@ -47,12 +47,11 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
   // Rebuilt 2026-04-23 (sp6-03 follow-up): cfo_dashboard view was dropped
   // in SP8. Compose snapshot from canonical sources via 4 parallel queries.
   const sb = getServiceClient();
-  const today = new Date();
-  const cutoff30 = new Date(today.getTime() - 30 * 86400000)
+  const now = new Date();
+  const cutoff30 = new Date(now.getTime() - 30 * 86400000)
     .toISOString()
     .slice(0, 10);
-
-  const today = new Date().toISOString().slice(0, 10);
+  const today = now.toISOString().slice(0, 10);
 
   const [bank, openAr, openAp, sales30, payments30] = await Promise.all([
     // 1. Cash + debt position from bank balances (split by currency for MXN vs USD)
