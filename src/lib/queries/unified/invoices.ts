@@ -428,6 +428,13 @@ async function _getOverdueInvoicesPageRaw(
           .toISOString()
           .slice(0, 10);
         orParts.push(`due_date_odoo.lt.${d121}`);
+      } else if (b === "90+") {
+        // 90+ merges old 91-120 + 120+ buckets into a single half-open lt filter.
+        // Used by SP6-03 /cobranza UI which dropped the 90+ split.
+        const d90 = new Date(now.getTime() - 90 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(`due_date_odoo.lt.${d90}`);
       }
     }
     if (orParts.length > 0) query = query.or(orParts.join(","));
@@ -446,7 +453,7 @@ async function _getOverdueInvoicesPageRaw(
 
 export async function getOverdueInvoicesPage(
   params: TableParams & {
-    bucket?: string[]; // "1-30" | "31-60" | "61-90" | "91-120" | "120+"
+    bucket?: string[]; // "1-30" | "31-60" | "61-90" | "91-120" | "120+" | "90+"
     salesperson?: string[];
   }
 ): Promise<OverdueInvoicePage> {
