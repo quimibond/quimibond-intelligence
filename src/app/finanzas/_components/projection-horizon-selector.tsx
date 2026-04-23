@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 interface Props {
@@ -30,27 +31,32 @@ export function ProjectionHorizonSelector({ paramName, value, className }: Props
 
   return (
     <div
+      role="group"
+      aria-label="Horizonte de proyección"
       className={cn(
-        "inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5 text-xs",
+        "inline-flex items-center rounded-md border border-border bg-muted/30 p-0.5",
         className
       )}
-      role="group"
     >
-      {OPTIONS.map((opt) => (
-        <button
-          key={opt.value}
-          type="button"
-          onClick={() => apply(opt.value)}
-          className={cn(
-            "rounded px-2.5 py-1 font-medium transition-colors",
-            opt.value === value
-              ? "bg-card text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {opt.label}
-        </button>
-      ))}
+      {OPTIONS.map((opt) => {
+        const active = opt.value === value;
+        return (
+          <Button
+            key={opt.value}
+            type="button"
+            variant={active ? "secondary" : "ghost"}
+            size="sm"
+            className={cn(
+              "h-7 rounded px-2.5 text-xs",
+              active ? "shadow-sm" : "text-muted-foreground hover:text-foreground"
+            )}
+            onClick={() => apply(opt.value)}
+            aria-pressed={active}
+          >
+            {opt.label}
+          </Button>
+        );
+      })}
     </div>
   );
 }

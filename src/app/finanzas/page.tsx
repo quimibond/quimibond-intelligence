@@ -30,6 +30,14 @@ import {
 } from "@/components/patterns";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 
 import {
   getCashKpis,
@@ -419,21 +427,18 @@ function ContributorsTable({
             />
           </div>
         ) : (
-          <table className="w-full text-sm">
-            <thead className="bg-muted/30 text-xs uppercase text-muted-foreground">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Empresa</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-right font-medium">Vencido</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Empresa</TableHead>
+                <TableHead className="text-right">Total</TableHead>
+                <TableHead className="text-right">Vencido</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {rows.map((r, i) => (
-                <tr
-                  key={r.companyId ?? r.companyName ?? i}
-                  className="hover:bg-accent/20"
-                >
-                  <td className="px-4 py-2">
+                <TableRow key={r.companyId ?? r.companyName ?? i}>
+                  <TableCell>
                     {r.companyId ? (
                       <Link
                         href={`/empresas/${r.companyId}`}
@@ -447,12 +452,12 @@ function ContributorsTable({
                     <div className="text-[11px] text-muted-foreground">
                       {r.invoiceCount} factura{r.invoiceCount === 1 ? "" : "s"}
                     </div>
-                  </td>
-                  <td className="px-4 py-2 text-right tabular-nums">
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
                     <Currency amount={r.totalMxn} />
-                  </td>
-                  <td
-                    className={`px-4 py-2 text-right tabular-nums ${
+                  </TableCell>
+                  <TableCell
+                    className={`text-right tabular-nums ${
                       r.overdueMxn > 0 ? "text-danger" : "text-muted-foreground"
                     }`}
                   >
@@ -461,11 +466,11 @@ function ContributorsTable({
                     ) : (
                       "—"
                     )}
-                  </td>
-                </tr>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         )}
       </CardContent>
     </Card>
