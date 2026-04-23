@@ -13,6 +13,7 @@ import {
   listCompanies,
   fetchPortfolioKpis,
 } from "@/lib/queries/_shared/companies";
+import { getDriftSummaryMap } from "@/lib/queries/canonical/company-drift";
 import { CompanyFilterBar } from "./_components/CompanyFilterBar";
 import {
   CompanyListClient,
@@ -36,6 +37,7 @@ const searchSchema = z.object({
       "-revenue_ytd_mxn",
       "-overdue_amount_mxn",
       "-open_company_issues_count",
+      "-drift_total_mxn",
       "display_name",
     ])
     .catch("-ltv_mxn"),
@@ -72,9 +74,25 @@ export default async function EmpresasPage({
     }),
   ]);
 
-  const filtered = (params.shadowOnly
+  const filteredRaw = params.shadowOnly
     ? rows.filter((r) => Boolean(r.has_shadow_flag))
-    : rows) as CompanyListRow[];
+    : rows;
+
+  // Enrich with drift aggregates (AR+AP total + needs_review) — separate
+  // query because drift_* lives on canonical_companies, not gold_company_360.
+  // Swallow errors so the list renders even if the drift MV is stale.
+  const driftMap = await getDriftSummaryMap(
+    filteredRaw.map((r) => r.canonical_company_id),
+  ).catch(() => ({} as Record<number, { total_abs_mxn: number; needs_review: boolean }>));
+
+  const filtered: CompanyListRow[] = filteredRaw.map((r) => {
+    const d = driftMap[r.canonical_company_id];
+    return {
+      ...r,
+      drift_total_mxn: d?.total_abs_mxn ?? 0,
+      drift_needs_review: d?.needs_review ?? false,
+    } as CompanyListRow;
+  });
 
   const sortKey = params.sort;
   const sorted = [...filtered].sort((a, b) => {
@@ -90,6 +108,8 @@ export default async function EmpresasPage({
           (b.open_company_issues_count ?? 0) -
           (a.open_company_issues_count ?? 0)
         );
+      case "-drift_total_mxn":
+        return (b.drift_total_mxn ?? 0) - (a.drift_total_mxn ?? 0);
       case "display_name":
         return (a.display_name ?? "").localeCompare(b.display_name ?? "");
     }

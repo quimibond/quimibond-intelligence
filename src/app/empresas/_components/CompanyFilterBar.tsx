@@ -23,6 +23,7 @@ type SortKey =
   | "-revenue_ytd_mxn"
   | "-overdue_amount_mxn"
   | "-open_company_issues_count"
+  | "-drift_total_mxn"
   | "display_name";
 
 export interface CompanyFilterBarProps {
@@ -50,6 +51,7 @@ const SORT_LABELS: Record<SortKey, string> = {
   "-revenue_ytd_mxn": "Revenue YTD (↓)",
   "-overdue_amount_mxn": "Cartera vencida (↓)",
   "-open_company_issues_count": "Issues pendientes (↓)",
+  "-drift_total_mxn": "Drift Odoo↔SAT (↓)",
   display_name: "Nombre (A-Z)",
 };
 

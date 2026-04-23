@@ -33,9 +33,13 @@ function fmtMxn(n: number): string {
 }
 
 export function CompanyKpiHero({ canonical, company360, trend, className }: CompanyKpiHeroProps) {
-  const kpis = [
-    { label: "LTV", value: fmtMxn(company360.lifetime_value_mxn) },
-    { label: "YTD", value: fmtMxn(company360.revenue_ytd_mxn) },
+  const kpis: Array<{ label: string; value: string; hint?: string }> = [
+    {
+      label: "LTV",
+      value: fmtMxn(company360.lifetime_value_mxn),
+      hint: "Lifetime sin IVA (convención Syntage)",
+    },
+    { label: "YTD", value: fmtMxn(company360.revenue_ytd_mxn), hint: "Revenue año en curso, sin IVA" },
     { label: "Vencida", value: fmtMxn(company360.overdue_amount_mxn) },
     { label: "Pendientes", value: String(company360.open_company_issues_count) },
   ];
@@ -57,7 +61,11 @@ export function CompanyKpiHero({ canonical, company360, trend, className }: Comp
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {kpis.map((k) => (
-          <figure key={k.label} className="rounded-md border bg-background p-3">
+          <figure
+            key={k.label}
+            className="rounded-md border bg-background p-3"
+            title={k.hint}
+          >
             <figcaption className="text-xs text-muted-foreground">{k.label}</figcaption>
             <div className="mt-1 text-lg font-semibold tabular-nums">{k.value}</div>
           </figure>

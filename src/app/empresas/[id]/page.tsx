@@ -26,14 +26,37 @@ import { FinancieroTab } from "./_components/FinancieroTab";
 import { OperativoTab } from "./_components/OperativoTab";
 import { FiscalTab } from "./_components/FiscalTab";
 import { PagosTab } from "./_components/PagosTab";
+import { AuditoriaSatTab } from "./_components/AuditoriaSatTab";
+import {
+  getCompanyDrift,
+  getCompanyDriftRows,
+  shouldShowDriftTab,
+} from "@/lib/queries/canonical/company-drift";
 
 export const dynamic = "force-dynamic";
 
 const detailSchema = z.object({
   tab: z
-    .enum(["panorama", "comercial", "financiero", "operativo", "fiscal", "pagos"])
+    .enum([
+      "panorama",
+      "comercial",
+      "financiero",
+      "operativo",
+      "fiscal",
+      "pagos",
+      "auditoria_sat",
+    ])
     .catch("panorama"),
 });
+
+const BASE_TAB_ORDER: TabKey[] = [
+  "panorama",
+  "comercial",
+  "financiero",
+  "operativo",
+  "fiscal",
+  "pagos",
+];
 
 export async function generateMetadata({
   params,
@@ -85,19 +108,26 @@ export default async function EmpresaDetailPage({
   const raw = await searchParams;
   const { tab } = parseSearchParams(raw, detailSchema);
 
-  const [canonical, c360, trend, receivables, legacyDetail] = await Promise.all([
-    fetchCompanyById(id),
-    fetchCompany360(id),
-    fetchCompanyRevenueTrend(id, 12).catch(() => [] as Array<{ month_start: string; total_mxn: number }>),
-    fetchCompanyReceivables(id).catch(
-      () =>
-        [] as Array<{
-          fiscal_days_to_due_date: number | null;
-          amount_residual_mxn_odoo: number | null;
-        }>
-    ),
-    getCompanyDetail(id).catch(() => null),
-  ]);
+  const [canonical, c360, trend, receivables, legacyDetail, driftAggregates] =
+    await Promise.all([
+      fetchCompanyById(id),
+      fetchCompany360(id),
+      fetchCompanyRevenueTrend(id, 12).catch(
+        () => [] as Array<{ month_start: string; total_mxn: number }>,
+      ),
+      fetchCompanyReceivables(id).catch(
+        () =>
+          [] as Array<{
+            fiscal_days_to_due_date: number | null;
+            amount_residual_mxn_odoo: number | null;
+          }>,
+      ),
+      getCompanyDetail(id).catch(() => null),
+      // Drift fields may be null on empresas recién creadas where the hourly
+      // refresh job hasn't computed the aggregates yet — swallow errors so
+      // the rest of the page still renders (see memory feedback_server_component_top_level_throws).
+      getCompanyDrift(id).catch(() => null),
+    ]);
 
   if (!canonical || !c360) notFound();
 
@@ -180,7 +210,20 @@ export default async function EmpresaDetailPage({
 
   const trendSeries = (trend ?? []).map((t) => t.total_mxn ?? 0);
 
-  const activeTab: TabKey = tab;
+  const showDriftTab = shouldShowDriftTab(driftAggregates);
+  const visibleTabs: TabKey[] = showDriftTab
+    ? [...BASE_TAB_ORDER, "auditoria_sat"]
+    : BASE_TAB_ORDER;
+
+  // Clamp the active tab to what's visible — if the URL asks for "auditoria_sat"
+  // but the company has no drift, fall back to panorama instead of rendering
+  // an orphan panel.
+  const activeTab: TabKey = visibleTabs.includes(tab) ? tab : "panorama";
+
+  const driftRows =
+    showDriftTab && activeTab === "auditoria_sat"
+      ? await getCompanyDriftRows(id).catch(() => [])
+      : [];
 
   return (
     <PageLayout>
@@ -197,7 +240,7 @@ export default async function EmpresaDetailPage({
         company360={c360ForHero}
         trend={trendSeries}
       />
-      <TabPicker activeTab={activeTab} />
+      <TabPicker activeTab={activeTab} tabs={visibleTabs} />
       <Suspense fallback={<Skeleton className="h-48 w-full" />}>
         {activeTab === "panorama" && <PanoramaTab detail={newTabDetail} />}
         {activeTab === "financiero" && <FinancieroTab detail={newTabDetail} />}
@@ -211,6 +254,9 @@ export default async function EmpresaDetailPage({
         {activeTab === "fiscal" && <FiscalTab companyId={id} />}
         {activeTab === "pagos" && legacyDetail && (
           <PagosTab company={legacyDetail} />
+        )}
+        {activeTab === "auditoria_sat" && driftAggregates && (
+          <AuditoriaSatTab aggregates={driftAggregates} rows={driftRows} />
         )}
       </Suspense>
     </PageLayout>

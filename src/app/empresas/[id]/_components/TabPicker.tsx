@@ -21,7 +21,8 @@ export type TabKey =
   | "financiero"
   | "operativo"
   | "fiscal"
-  | "pagos";
+  | "pagos"
+  | "auditoria_sat";
 
 const TAB_ORDER: TabKey[] = [
   "panorama",
@@ -30,6 +31,7 @@ const TAB_ORDER: TabKey[] = [
   "operativo",
   "fiscal",
   "pagos",
+  "auditoria_sat",
 ];
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -39,13 +41,20 @@ const TAB_LABELS: Record<TabKey, string> = {
   operativo: "Operativo",
   fiscal: "Fiscal",
   pagos: "Pagos",
+  auditoria_sat: "Auditoría SAT",
 };
 
 interface Props {
   activeTab: TabKey;
+  /**
+   * Subset of tabs to render — used to conditionally hide the "Auditoría SAT"
+   * tab when a company has zero Odoo↔SAT drift.
+   */
+  tabs?: TabKey[];
 }
 
-export function TabPicker({ activeTab }: Props) {
+export function TabPicker({ activeTab, tabs }: Props) {
+  const visibleTabs = tabs ?? TAB_ORDER;
   const router = useRouter();
   const pathname = usePathname();
 
@@ -69,7 +78,7 @@ export function TabPicker({ activeTab }: Props) {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            {TAB_ORDER.map((k) => (
+            {visibleTabs.map((k) => (
               <SelectItem key={k} value={k}>
                 {TAB_LABELS[k]}
               </SelectItem>
@@ -82,7 +91,7 @@ export function TabPicker({ activeTab }: Props) {
       <div className="hidden md:block">
         <Tabs value={activeTab} onValueChange={(v) => goto(v as TabKey)}>
           <TabsList>
-            {TAB_ORDER.map((k) => (
+            {visibleTabs.map((k) => (
               <TabsTrigger key={k} value={k} onClick={() => goto(k)}>
                 {TAB_LABELS[k]}
               </TabsTrigger>
