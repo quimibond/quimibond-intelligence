@@ -147,8 +147,9 @@ export function IssueDetailClient({ item }: Props) {
         </section>
       </div>
 
-      {/* Mobile sticky bottom bar — single toolbar matching /acciones/i */}
+      {/* Mobile sticky bottom bar */}
       <div
+        data-testid="mobile-action-bar"
         role="toolbar"
         aria-label="Acciones"
         className="fixed bottom-0 inset-x-0 z-40 border-t bg-background/95 backdrop-blur p-3 lg:hidden"
@@ -173,10 +174,10 @@ export function IssueDetailClient({ item }: Props) {
         </div>
       </div>
 
-      {/* Desktop sticky sidebar — aria-hidden so jsdom doesn't see duplicate roles
-          (lg:block is CSS-only; jsdom renders this regardless of breakpoint) */}
+      {/* Desktop sticky sidebar */}
       <aside
-        aria-hidden="true"
+        data-testid="desktop-action-bar"
+        role="toolbar"
         aria-label="Acciones (escritorio)"
         className="hidden lg:sticky lg:top-4 lg:block lg:self-start lg:space-y-4"
       >
@@ -190,9 +191,7 @@ export function IssueDetailClient({ item }: Props) {
           <MetricRow label="Edad" value={`${item.age_days}d`} />
           <MetricRow label="Asignado" value={item.assignee_name ?? "—"} />
         </div>
-        {/* Desktop sidebar buttons — all aria-hidden to avoid duplicate button names
-            with the mobile sticky bar (jsdom renders both since lg:hidden is CSS-only) */}
-        <div className="flex flex-col gap-2" aria-hidden="true">
+        <div className="flex flex-col gap-2">
           <Button onClick={handlePrimary} disabled={isPending} tabIndex={-1}>
             {primary.label}
           </Button>

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { IssueDetailClient, type IssueDetailItem } from "@/app/inbox/insight/[id]/_components/IssueDetailClient";
 
@@ -42,22 +42,25 @@ describe("IssueDetailClient", () => {
   it("renders issue header with severity badge and description", () => {
     render(<IssueDetailClient item={makeItem()} />);
     expect(screen.getByText(/factura sin uuid/i)).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveAttribute("data-color", "critical");
+    expect(screen.getAllByRole("status")[0]).toHaveAttribute("data-color", "critical");
   });
 
   it("primary action label matches action_cta = operationalize", () => {
-    render(<IssueDetailClient item={makeItem()} />);
-    expect(screen.getByRole("button", { name: /operacionalizar/i })).toBeInTheDocument();
+    const { container } = render(<IssueDetailClient item={makeItem()} />);
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
+    expect(within(mobileBar).getByRole("button", { name: /operacionalizar/i })).toBeInTheDocument();
   });
 
   it("primary action defaults to Resolver when action_cta is null", () => {
-    render(<IssueDetailClient item={makeItem({ action_cta: null })} />);
-    expect(screen.getByRole("button", { name: /resolver/i })).toBeInTheDocument();
+    const { container } = render(<IssueDetailClient item={makeItem({ action_cta: null })} />);
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
+    expect(within(mobileBar).getByRole("button", { name: /resolver/i })).toBeInTheDocument();
   });
 
   it("clicking primary action calls correct API endpoint for operationalize", async () => {
-    render(<IssueDetailClient item={makeItem()} />);
-    fireEvent.click(screen.getByRole("button", { name: /operacionalizar/i }));
+    const { container } = render(<IssueDetailClient item={makeItem()} />);
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
+    fireEvent.click(within(mobileBar).getByRole("button", { name: /operacionalizar/i }));
     await waitFor(() => expect(global.fetch).toHaveBeenCalled());
     const [url, options] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0];
     expect(url).toBe("/api/inbox/action/operationalize");
@@ -65,13 +68,24 @@ describe("IssueDetailClient", () => {
   });
 
   it("navigates back to /inbox after successful resolve", async () => {
-    render(<IssueDetailClient item={makeItem({ action_cta: null })} />);
-    fireEvent.click(screen.getByRole("button", { name: /resolver/i }));
+    const { container } = render(<IssueDetailClient item={makeItem({ action_cta: null })} />);
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
+    fireEvent.click(within(mobileBar).getByRole("button", { name: /resolver/i }));
     await waitFor(() => expect(pushMock).toHaveBeenCalledWith("/inbox"));
   });
 
-  it("has a sticky action bar region identifiable by role=toolbar", () => {
-    render(<IssueDetailClient item={makeItem()} />);
-    expect(screen.getByRole("toolbar", { name: /acciones/i })).toBeInTheDocument();
+  it("has a mobile sticky action bar region", () => {
+    const { container } = render(<IssueDetailClient item={makeItem()} />);
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]');
+    expect(mobileBar).not.toBeNull();
+    expect(mobileBar).toHaveAttribute("role", "toolbar");
+    expect(mobileBar).toHaveAttribute("aria-label", "Acciones");
+  });
+
+  it("has a desktop sticky action bar region", () => {
+    const { container } = render(<IssueDetailClient item={makeItem()} />);
+    const desktopBar = container.querySelector('[data-testid="desktop-action-bar"]');
+    expect(desktopBar).not.toBeNull();
+    expect(desktopBar).toHaveAttribute("role", "toolbar");
   });
 });
