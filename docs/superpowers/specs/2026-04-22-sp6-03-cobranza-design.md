@@ -44,6 +44,7 @@ Rediseñar las 6 secciones de `/cobranza` con foundation primitives, preservando
 - **No cambios** a helpers en `src/lib/queries/*` excepto:
   - Agregar `fetchCobranzaKpis` si el KPI shape necesario no existe en helpers actuales (composición de `getCfoSnapshot()` + `getPaymentRiskKpis()` también es válida).
   - Extender `getOverdueInvoicesPage(bucket)` para aceptar el valor `"90+"` (mergeando 91-120 + 120+) además de los buckets actuales (back-compat).
+  - Implementar `getOverdueSalespeopleOptions()` (actualmente retorna `[]` con SP6-TODO): query a `canonical_contacts` joined desde `canonical_invoices.salesperson_contact_id` filtrando solo invoices vencidas. Retorna `string[]` único de nombres ordenado alfabéticamente.
 - **No toca** `payment-risk-batch-actions.tsx` — componente existente con `navigator.clipboard` se reusa.
 - **No tocar** páginas fuera de `/cobranza`.
 - **No** real-time subscriptions, bulk email sending, CEI deep-dive breakdown.
@@ -179,6 +180,39 @@ Pseudocódigo del nuevo branch en el dispatcher:
 
 El JSDoc del helper debe actualizarse para listar `"90+"` como valor aceptado.
 
+### 6.6 Salesperson dropdown options
+
+`getOverdueSalespeopleOptions()` actualmente retorna `[]` (stub SP6-TODO). El implementer debe verificar primero la columna real en `canonical_contacts` (`display_name` o `full_name` o `name`) antes de escribir el query.
+
+Implementación esperada (server-only, cached):
+
+```typescript
+async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
+  const sb = getServiceClient();
+  const today = new Date().toISOString().slice(0, 10);
+  // Join via FK: canonical_invoices.salesperson_contact_id → canonical_contacts.id
+  const { data } = await sb
+    .from("canonical_invoices")
+    .select("salesperson:canonical_contacts!salesperson_contact_id(display_name)")
+    .eq("direction", "issued")
+    .in("payment_state_odoo", ["not_paid", "partial"])
+    .lt("due_date_odoo", today)
+    .gt("amount_residual_mxn_odoo", 0)
+    .not("salesperson_contact_id", "is", null);
+
+  const names = new Set<string>();
+  for (const r of (data ?? []) as Array<{ salesperson: { display_name: string | null } | null }>) {
+    const name = r.salesperson?.display_name?.trim();
+    if (name) names.add(name);
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b, "es"));
+}
+```
+
+Casos a verificar al implementar:
+- Confirmar nombre exacto de la columna name en `canonical_contacts` (puede ser `display_name`, `full_name`, etc.). Si la sintaxis embed `salesperson:canonical_contacts!fk_name(...)` falla, usar 2-pass query (primero IDs únicos, luego batch fetch de nombres).
+- El test de overdue-filter-bar.test.tsx debe mockear retornando una lista no-vacía para validar el dropdown (separado del test del helper en sí).
+
 ---
 
 ## 7. Testing strategy
@@ -229,10 +263,10 @@ Cada uno: 0 critical violations.
 - Cambios a helpers existentes en `queries/` **excepto**:
   - Agregar `fetchCobranzaKpis` si es necesario.
   - Extender `getOverdueInvoicesPage(bucket)` para aceptar `"90+"` (back-compat con buckets actuales).
+  - Implementar `getOverdueSalespeopleOptions()` con join a `canonical_contacts.display_name` via `salesperson_contact_id` (in-scope, ver §6.6).
 - Cambios a páginas fuera de `/cobranza`.
 - Real-time subscriptions / bulk email sending / CEI cohort-by-customer deep-dive.
 - Nuevos componentes en `src/components/patterns/` (foundation estable).
-- **Salesperson dropdown filter** — `getOverdueSalespeopleOptions()` retorna `[]` (stub SP6-TODO). Decisión pendiente del usuario: implementar join `canonical_contacts` ahora, o renderizar dropdown disabled hasta SP7. Ver routing audit §3.3.
 
 ---
 
