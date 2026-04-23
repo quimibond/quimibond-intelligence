@@ -13,7 +13,7 @@ import {
   listCompanies,
   fetchPortfolioKpis,
 } from "@/lib/queries/_shared/companies";
-import { getDriftSummaryMap } from "@/lib/queries/canonical/company-drift";
+import { getNonZeroDriftSummary } from "@/lib/queries/canonical/company-drift";
 import { CompanyFilterBar } from "./_components/CompanyFilterBar";
 import {
   CompanyListClient,
@@ -61,7 +61,11 @@ export default async function EmpresasPage({
   const raw = await searchParams;
   const params = parseSearchParams(raw, searchSchema);
 
-  const [kpis, rows] = await Promise.all([
+  // Fetch all three in parallel. getNonZeroDriftSummary is id-list-free
+  // (pulls every company with non-zero drift in one shot, typically
+  // ~100-300 rows) so it runs alongside listCompanies instead of after it,
+  // saving one round-trip on every /empresas render.
+  const [kpis, rows, driftMap] = await Promise.all([
     fetchPortfolioKpis(),
     listCompanies({
       search: params.q || undefined,
@@ -72,18 +76,14 @@ export default async function EmpresasPage({
       limit: params.limit,
       offset: (params.page - 1) * params.limit,
     }),
+    getNonZeroDriftSummary().catch(
+      () => ({}) as Record<number, { total_abs_mxn: number; needs_review: boolean }>,
+    ),
   ]);
 
   const filteredRaw = params.shadowOnly
     ? rows.filter((r) => Boolean(r.has_shadow_flag))
     : rows;
-
-  // Enrich with drift aggregates (AR+AP total + needs_review) — separate
-  // query because drift_* lives on canonical_companies, not gold_company_360.
-  // Swallow errors so the list renders even if the drift MV is stale.
-  const driftMap = await getDriftSummaryMap(
-    filteredRaw.map((r) => r.canonical_company_id),
-  ).catch(() => ({} as Record<number, { total_abs_mxn: number; needs_review: boolean }>));
 
   const filtered: CompanyListRow[] = filteredRaw.map((r) => {
     const d = driftMap[r.canonical_company_id];
