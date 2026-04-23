@@ -345,33 +345,49 @@ export async function getUnifiedReconciliationCounts(
 
 /** Raw implementation; exported for tests. */
 export async function _getUnifiedRefreshStalenessRaw(): Promise<UnifiedRefreshStaleness> {
-  const supabase = getServiceClient();
-  const { data, error } = await supabase.rpc(
-    "get_syntage_reconciliation_summary"
-  );
-  if (error) throw new Error(error.message);
-  const d = (data ?? {}) as {
-    invoices_unified_refreshed_at?: string | null;
-    payments_unified_refreshed_at?: string | null;
+  // Defensive: this RPC has historically referenced legacy MVs that get
+  // dropped in cleanup sprints (e.g. SP5 task 29 dropped invoices_unified +
+  // payments_unified). A throw here cascades into every Server Component
+  // that awaits this helper at the top of the page (e.g. /cobranza, /).
+  // Always degrade to "unknown freshness" instead of breaking the page.
+  const NEUTRAL: UnifiedRefreshStaleness = {
+    invoicesRefreshedAt: null,
+    paymentsRefreshedAt: null,
+    minutesSinceRefresh: 99999,
   };
-  const invRef = d.invoices_unified_refreshed_at ?? null;
-  const payRef = d.payments_unified_refreshed_at ?? null;
-  const refs = [invRef, payRef].filter((x): x is string => x != null);
-  if (refs.length === 0)
-    return {
-      invoicesRefreshedAt: null,
-      paymentsRefreshedAt: null,
-      minutesSinceRefresh: 99999,
+  try {
+    const supabase = getServiceClient();
+    const { data, error } = await supabase.rpc(
+      "get_syntage_reconciliation_summary"
+    );
+    if (error) {
+      console.error(
+        "[getUnifiedRefreshStaleness] RPC error:",
+        error.message
+      );
+      return NEUTRAL;
+    }
+    const d = (data ?? {}) as {
+      invoices_unified_refreshed_at?: string | null;
+      payments_unified_refreshed_at?: string | null;
     };
-  const oldestRef = refs.sort()[0];
-  const minutesSinceRefresh = Math.round(
-    (Date.now() - new Date(oldestRef).getTime()) / 60_000
-  );
-  return {
-    invoicesRefreshedAt: invRef,
-    paymentsRefreshedAt: payRef,
-    minutesSinceRefresh,
-  };
+    const invRef = d.invoices_unified_refreshed_at ?? null;
+    const payRef = d.payments_unified_refreshed_at ?? null;
+    const refs = [invRef, payRef].filter((x): x is string => x != null);
+    if (refs.length === 0) return NEUTRAL;
+    const oldestRef = refs.sort()[0];
+    const minutesSinceRefresh = Math.round(
+      (Date.now() - new Date(oldestRef).getTime()) / 60_000
+    );
+    return {
+      invoicesRefreshedAt: invRef,
+      paymentsRefreshedAt: payRef,
+      minutesSinceRefresh,
+    };
+  } catch (err) {
+    console.error("[getUnifiedRefreshStaleness] threw:", err);
+    return NEUTRAL;
+  }
 }
 
 export const getUnifiedRefreshStaleness = unstable_cache(
