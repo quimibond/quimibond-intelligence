@@ -191,7 +191,11 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
     new Date(now.getFullYear(), now.getMonth() - 1, 1)
   );
 
-  const [curr, prev, ap, cfo] = await Promise.all([
+  const cutoff30 = new Date(now.getTime() - 30 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+
+  const [curr, prev, ap, payments30] = await Promise.all([
     // Current month POs from canonical
     sb
       .from("canonical_purchase_orders")
@@ -210,8 +214,13 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
       .select("amount_residual_mxn_odoo")
       .eq("direction", "received")
       .in("payment_state_odoo", ["not_paid", "partial"]),
-    // SP5-VERIFIED: cfo_dashboard retained per §12 KEEP
-    sb.from("cfo_dashboard").select("pagos_prov_30d").maybeSingle(),
+    // Last-30d outgoing payments — replaces cfo_dashboard.pagos_prov_30d
+    // (cfo_dashboard view was dropped in SP8; aggregate canonical_payments instead).
+    sb
+      .from("canonical_payments")
+      .select("amount_mxn_resolved, amount_mxn_odoo")
+      .eq("direction", "sent")
+      .gte("payment_date_resolved", cutoff30),
   ]);
 
   const monthTotal = ((curr.data ?? []) as Array<{
@@ -223,6 +232,17 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
   const supplierPayable = ((ap.data ?? []) as Array<{
     amount_residual_mxn_odoo: number | null;
   }>).reduce((a, r) => a + (Number(r.amount_residual_mxn_odoo) || 0), 0);
+
+  // canonical_payments amounts are signed positive for outflows in the
+  // 'sent' direction, so no Math.abs needed (unlike old cfo_dashboard.pagos_prov_30d).
+  const pagosProv30d = ((payments30.data ?? []) as Array<{
+    amount_mxn_resolved: number | null;
+    amount_mxn_odoo: number | null;
+  }>).reduce(
+    (a, r) =>
+      a + (Number(r.amount_mxn_resolved ?? r.amount_mxn_odoo) || 0),
+    0
+  );
 
   // TODO SP6: single-source risk (supplier_concentration_herfindahl dropped;
   // replace with client-side aggregation from canonical_order_lines once SP6
@@ -239,16 +259,7 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
         : 0,
     poCount: (curr.data ?? []).length,
     supplierPayable,
-    // `cfo_dashboard.pagos_prov_30d` viene signado en negativo (outflow).
-    // En `/compras` se renderiza como KPI "Pagos 30d" con `format=currency`
-    // — sin Math.abs se lee como "-$25.1M" (pérdida). La magnitud del
-    // volumen de egresos es lo relevante aquí; el signo lo guarda
-    // `finance.ts` para `/finanzas` donde sí se usa en `cobros + pagos`.
-    pagosProv30d: Math.abs(
-      Number(
-        (cfo.data as { pagos_prov_30d: number | null } | null)?.pagos_prov_30d,
-      ) || 0,
-    ),
+    pagosProv30d,
     singleSourceCount,
     singleSourceSpent,
   };

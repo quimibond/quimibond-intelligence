@@ -5,9 +5,9 @@ import { getServiceClient } from "@/lib/supabase-server";
  * pnl.ts — P&L queries.
  *
  * Gold layer: gold_pl_statement (period, total_income, total_expense, net_income, by_level_1)
- * Bronze layer: odoo_account_balances — account-level trial balance for PnlPorCuentaSection
- *   SP5-VERIFIED: odoo_account_balances is Bronze authoritative for account-level P&L detail —
- *   no canonical equivalent in SP4 scope; gold_pl_statement is period-aggregate only.
+ * Canonical layer: canonical_account_balances — account-level trial balance for PnlPorCuentaSection
+ *   (Pattern B passthrough view that wraps odoo_account_balances + odoo_chart_of_accounts).
+ *   Same shape as Bronze; isolates frontend from any future restructure of the underlying tables.
  *
  * NOTE: gold_pl_statement.total_income is stored as a negative number (accounting sign).
  * For display, use revenue_display = Math.abs(total_income).
@@ -83,9 +83,8 @@ export interface PnlByAccountRow {
 
 export async function getMostRecentPeriod(): Promise<string | null> {
   const sb = getServiceClient();
-  // SP5-VERIFIED: odoo_account_balances is Bronze authoritative for account-level P&L detail
   const { data, error } = await sb
-    .from("odoo_account_balances") // SP5-EXCEPTION: odoo_account_balances is Bronze-authoritative for account-level P&L detail; no canonical equivalent exists in SP4 scope. TODO SP6.
+    .from("canonical_account_balances")
     .select("period")
     .order("period", { ascending: false })
     .limit(1);
@@ -95,8 +94,7 @@ export async function getMostRecentPeriod(): Promise<string | null> {
 
 /**
  * getPnlByAccount — account-level trial balance for a given period.
- * Reads odoo_account_balances (Bronze) which has account_code/name/type denormalized.
- * SP5-VERIFIED: Bronze read — no canonical equivalent for account-level detail in SP4 scope.
+ * Reads canonical_account_balances (Pattern B passthrough view over Bronze).
  */
 export async function getPnlByAccount(
   period?: string,
@@ -107,9 +105,8 @@ export async function getPnlByAccount(
   const targetPeriod = period ?? (await getMostRecentPeriod());
   if (!targetPeriod) return [];
 
-  // SP5-VERIFIED: odoo_account_balances Bronze authoritative for account-level P&L detail
   const { data, error } = await sb
-    .from("odoo_account_balances") // SP5-EXCEPTION: odoo_account_balances is Bronze-authoritative for account-level P&L detail; no canonical equivalent exists in SP4 scope. TODO SP6.
+    .from("canonical_account_balances")
     .select("account_code, account_name, account_type, period, debit, credit, balance")
     .eq("period", targetPeriod)
     .order("account_code", { ascending: true })

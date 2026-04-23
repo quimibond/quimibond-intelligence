@@ -438,43 +438,12 @@ export interface WorkingCapitalCycle {
 }
 
 export async function getWorkingCapitalCycle(): Promise<WorkingCapitalCycle | null> {
-  const sb = getServiceClient();
-  // SP5-VERIFIED: working_capital_cycle retained (gold_cashflow has no DSO/DPO/DIO fields)
-  const { data } = await sb
-    .from("working_capital_cycle")
-    .select("*")
-    .maybeSingle();
-  if (!data) return null;
-  const d = data as {
-    revenue_12m_mxn: number | null;
-    cogs_12m_mxn: number | null;
-    gross_profit_12m_mxn: number | null;
-    gross_margin_pct: number | null;
-    ar_mxn: number | null;
-    ap_mxn: number | null;
-    inventory_mxn: number | null;
-    dso_days: number | null;
-    dpo_days: number | null;
-    dio_days: number | null;
-    ccc_days: number | null;
-    working_capital_mxn: number | null;
-    computed_at: string | null;
-  };
-  return {
-    revenue12mMxn: Number(d.revenue_12m_mxn) || 0,
-    cogs12mMxn: Number(d.cogs_12m_mxn) || 0,
-    grossProfit12mMxn: Number(d.gross_profit_12m_mxn) || 0,
-    grossMarginPct: Number(d.gross_margin_pct) || 0,
-    arMxn: Number(d.ar_mxn) || 0,
-    apMxn: Number(d.ap_mxn) || 0,
-    inventoryMxn: Number(d.inventory_mxn) || 0,
-    dsoDays: d.dso_days != null ? Number(d.dso_days) : null,
-    dpoDays: d.dpo_days != null ? Number(d.dpo_days) : null,
-    dioDays: d.dio_days != null ? Number(d.dio_days) : null,
-    cccDays: d.ccc_days != null ? Number(d.ccc_days) : null,
-    workingCapitalMxn: Number(d.working_capital_mxn) || 0,
-    computedAt: d.computed_at,
-  };
+  // working_capital_cycle view was dropped in SP8. DSO/DPO/DIO are not yet
+  // materialized in any canonical or gold view; return null until SP6 rebuilds.
+  // Frontend already handles null (renders DSO/DPO/DIO widgets as empty).
+  // TODO SP6: compute DSO from canonical_invoices + revenue 12m, DPO from
+  // canonical_payments + COGS 12m, DIO from canonical_inventory + COGS.
+  return null;
 }
 
 /**

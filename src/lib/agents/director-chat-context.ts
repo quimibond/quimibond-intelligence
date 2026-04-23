@@ -14,7 +14,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { getServiceClient } from "@/lib/supabase-server";
 import { fetchTopCustomers, fetchTopSuppliers } from "@/lib/queries/analytics/customer-360";
-import { getPlHistory } from "@/lib/queries/analytics/finance";
+import { getCfoSnapshot, getPlHistory } from "@/lib/queries/analytics/finance";
 import { listInbox } from "@/lib/queries/intelligence/inbox";
 
 export const DIRECTOR_SLUGS = [
@@ -214,8 +214,8 @@ async function buildComercial(sb: SupabaseClient): Promise<string> {
 
 async function buildFinanciero(sb: SupabaseClient): Promise<string> {
   const [cfoDash, cashflow, plHistory, workingCapital, openAR, openAP, inboxItems] = await Promise.all([
-    // SP5-VERIFIED: cfo_dashboard retained (§12 not in drop list)
-    sb.from("cfo_dashboard").select("*").limit(1),
+    // cfo_dashboard view was dropped (SP8); use the rebuilt canonical helper.
+    getCfoSnapshot(),
     // gold_cashflow — replaces working_capital + financial_runway
     sb.from("gold_cashflow").select("*").maybeSingle(),
     // gold_pl_statement — replaces pl_estado_resultados (via helper)
@@ -242,10 +242,9 @@ async function buildFinanciero(sb: SupabaseClient): Promise<string> {
     // gold_ceo_inbox — issues críticos
     listInbox({ limit: 5 }),
   ]);
-  const dash = (cfoDash.data ?? [])[0] as Record<string, unknown> | undefined;
   const cf = cashflow.data as Record<string, unknown> | null;
   return [
-    `## CFO Dashboard (snapshot ejecutivo)\n${safeJSON(dash)}`,
+    `## CFO Dashboard (snapshot ejecutivo)\n${safeJSON(cfoDash)}`,
     `## Cash flow / working capital (gold_cashflow)\nEfectivo: $${cf?.current_cash_mxn ?? "?"} | CxC: $${cf?.total_receivable_mxn ?? "?"} | CxP: $${cf?.total_payable_mxn ?? "?"} | Capital trabajo: $${cf?.working_capital_mxn ?? "?"} | CxC vencida: $${cf?.overdue_receivable_mxn ?? "?"}`,
     `## P&L estado de resultados (gold_pl_statement · últimos 6 meses)\n${safeJSON(plHistory)}`,
     `## Facturas vencidas clientes (canonical_invoices issued, top 20)\n${safeJSON(openAR.data)}`,

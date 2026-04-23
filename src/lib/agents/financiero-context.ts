@@ -11,7 +11,7 @@
 // - odoo_bank_balances: SP5-EXCEPTION — Bronze, no canonical_bank_balances read here
 //
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getPlHistory } from "@/lib/queries/analytics/finance";
+import { getCfoSnapshot, getPlHistory } from "@/lib/queries/analytics/finance";
 
 function safeJSON(v: unknown): string {
   try { return JSON.stringify(v, null, 2); } catch { return "[]"; }
@@ -130,8 +130,8 @@ export async function buildFinancieroContextEstrategico(
   profileSection: string
 ): Promise<string> {
   const [cfoDash, plReport, cashflow, balanceSheet, anomalies, validationCoverage, revenueFiscalTrend, taxReturns12m] = await Promise.all([
-    // SP5-VERIFIED: cfo_dashboard retained (§12 not in drop list)
-    sb.from("cfo_dashboard").select("*").limit(1),
+    // cfo_dashboard view was dropped (SP8); use the rebuilt canonical helper.
+    getCfoSnapshot(),
     // gold_pl_statement via helper (replaces pl_estado_resultados)
     getPlHistory(6),
     // gold_cashflow — replaces working_capital + financial_runway
@@ -160,7 +160,7 @@ export async function buildFinancieroContextEstrategico(
       .limit(24),
   ]);
 
-  const dash = (cfoDash.data ?? [])[0] as Record<string, unknown> | undefined;
+  const dash = cfoDash;
   const cf = cashflow.data as Record<string, unknown> | null;
   const bs = balanceSheet.data as Record<string, unknown> | null;
 
@@ -169,8 +169,8 @@ export async function buildFinancieroContextEstrategico(
 Cuando reportes revenue o CxC, separa "posted Y validado SAT" de "posted sin UUID".
 Los números SAT son la foto que verá Hacienda.
 
-## RESUMEN EJECUTIVO CFO (cfo_dashboard)
-Efectivo total MXN: $${dash?.efectivo_total_mxn ?? "?"} | Solo MXN: $${dash?.efectivo_mxn ?? "?"} | Solo USD: $${dash?.efectivo_usd ?? "?"} | Deuda tarjetas: $${dash?.deuda_tarjetas ?? "?"} | Posición neta: $${dash?.posicion_neta ?? "?"} | CxC: $${dash?.cuentas_por_cobrar ?? "?"} | CxP: $${dash?.cuentas_por_pagar ?? "?"} | Cartera vencida: $${dash?.cartera_vencida ?? "?"} | Ventas 30d: $${dash?.ventas_30d ?? "?"} | Cobros 30d: $${dash?.cobros_30d ?? "?"}
+## RESUMEN EJECUTIVO CFO (canonical sources via getCfoSnapshot)
+Efectivo total MXN: $${dash?.efectivoTotalMxn ?? "?"} | Solo MXN: $${dash?.efectivoMxn ?? "?"} | Solo USD: $${dash?.efectivoUsd ?? "?"} | Deuda tarjetas: $${dash?.deudaTarjetas ?? "?"} | Posición neta: $${dash?.posicionNeta ?? "?"} | CxC: $${dash?.cuentasPorCobrar ?? "?"} | CxP: $${dash?.cuentasPorPagar ?? "?"} | Cartera vencida: $${dash?.carteraVencida ?? "?"} | Ventas 30d: $${dash?.ventas30d ?? "?"} | Cobros 30d: $${dash?.cobros30d ?? "?"}
 
 ## CAPITAL DE TRABAJO (gold_cashflow)
 Efectivo: $${cf?.current_cash_mxn ?? "?"} | CxC: $${cf?.total_receivable_mxn ?? "?"} | CxP: $${cf?.total_payable_mxn ?? "?"} | Capital de trabajo: $${cf?.working_capital_mxn ?? "?"}
