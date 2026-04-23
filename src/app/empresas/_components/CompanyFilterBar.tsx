@@ -46,10 +46,10 @@ const TYPE_LABELS: Record<TypeFilter, string> = {
 const TYPE_ORDER: TypeFilter[] = ["all", "customer", "supplier"];
 
 const SORT_LABELS: Record<SortKey, string> = {
-  "-ltv_mxn": "LTV (desc)",
-  "-revenue_ytd_mxn": "YTD (desc)",
-  "-overdue_amount_mxn": "Cartera vencida (desc)",
-  "-open_company_issues_count": "Issues pendientes (desc)",
+  "-ltv_mxn": "Facturación lifetime (↓)",
+  "-revenue_ytd_mxn": "Revenue YTD (↓)",
+  "-overdue_amount_mxn": "Cartera vencida (↓)",
+  "-open_company_issues_count": "Issues pendientes (↓)",
   display_name: "Nombre (A-Z)",
 };
 
