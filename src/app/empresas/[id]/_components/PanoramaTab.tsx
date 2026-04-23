@@ -1,332 +1,124 @@
-import { Suspense } from "react";
-import { AlertTriangle, FileCheck, TrendingUp, Truck } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Currency,
-  DateDisplay,
-  EmptyState,
-  EvidencePackView,
-  KpiCard,
-  StatGrid,
-} from "@/components/patterns";
-import { SeverityBadge } from "@/components/patterns/severity-badge";
-import { Skeleton } from "@/components/ui/skeleton";
-import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
-import { getCompanyEvidencePack } from "@/lib/queries/intelligence/evidence";
-import { getCustomer360, getCompanyInsights } from "@/lib/queries/analytics/customer-360";
-import type { CompanyDetail } from "@/lib/queries/_shared/companies";
+import { Mail, Sparkles } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { SectionHeader } from "@/components/patterns/section-header";
+import { AgingBuckets, type AgingData } from "@/components/patterns/aging-buckets";
+import { Chart } from "@/components/patterns/chart";
 
-interface Props {
-  company: CompanyDetail;
+export interface PanoramaRecentOrder {
+  canonical_id: string;
+  name: string | null;
+  amount_total_mxn: number | null;
+  date_order: string | null;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// KPI grid (from company detail — already fetched)
-// ──────────────────────────────────────────────────────────────────────────
-function PanoramaKpis({ company }: { company: CompanyDetail }) {
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">KPIs clave</CardTitle>
-          <DataSourceBadge source="odoo" refresh="1h" />
-        </div>
-      </CardHeader>
-      <CardContent>
-        <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 3 }}>
-          <KpiCard
-            title="Revenue 12m"
-            value={company.revenue12m || company.totalRevenue}
-            format="currency"
-            compact
-            icon={TrendingUp}
-            trend={
-              company.trendPct !== 0
-                ? { value: company.trendPct, good: "up" }
-                : undefined
-            }
-          />
-          <KpiCard
-            title="Cartera vencida"
-            value={company.overdueAmount}
-            format="currency"
-            compact
-            icon={AlertTriangle}
-            subtitle={
-              company.maxDaysOverdue
-                ? `máx ${company.maxDaysOverdue} días`
-                : "—"
-            }
-            tone={company.overdueAmount > 0 ? "danger" : "default"}
-          />
-          <KpiCard
-            title="OTD"
-            value={company.otdRate}
-            format="percent"
-            icon={Truck}
-            subtitle={`${company.lateDeliveries} tardías`}
-            tone={
-              company.otdRate == null
-                ? "default"
-                : company.otdRate >= 90
-                  ? "success"
-                  : company.otdRate >= 75
-                    ? "warning"
-                    : "danger"
-            }
-          />
-        </StatGrid>
-      </CardContent>
-    </Card>
-  );
+export interface PanoramaEvidenceItem {
+  kind: "email" | "fact";
+  key: string;
+  title: string;
+  body: string;
+  at: string;
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-// SAT fiscal LTV (from company_profile_sat)
-// ──────────────────────────────────────────────────────────────────────────
-function SatLtvSection({ company }: { company: CompanyDetail }) {
-  const hasSatData = company.totalInvoicedSat != null;
-  if (!hasSatData) return null;
+export interface PanoramaTabProps {
+  detail: {
+    aging?: AgingData | null;
+    revenueTrend?: Array<{ month_start: string; total_mxn: number }> | null;
+    recentSaleOrders?: PanoramaRecentOrder[] | null;
+    recentEvidence?: PanoramaEvidenceItem[] | null;
+  };
+}
+
+function fmtMxn(n: number | null | undefined): string {
+  if (n == null) return "—";
+  return new Intl.NumberFormat("es-MX", {
+    style: "currency",
+    currency: "MXN",
+    maximumFractionDigits: 0,
+  }).format(n);
+}
+
+function agingTotal(a?: AgingData | null): number {
+  if (!a) return 0;
+  return a.current + a.d1_30 + a.d31_60 + a.d61_90 + a.d90_plus;
+}
+
+export function PanoramaTab({ detail }: PanoramaTabProps) {
+  const { aging, revenueTrend, recentSaleOrders, recentEvidence } = detail;
 
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">LTV fiscal (SAT)</CardTitle>
-          <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-            Syntage
-          </span>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          CFDIs vigentes, subtotal × tipo de cambio. Cuadra con Syntage al centavo.
-          Distinto de &ldquo;Pedidos Odoo&rdquo; (que son pedidos confirmados en ERP).
-        </p>
-      </CardHeader>
-      <CardContent className="space-y-1.5 text-sm">
-        {company.totalInvoicedSat != null && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">LTV facturado (sin IVA)</span>
-            <Currency amount={company.totalInvoicedSat} compact={false} />
-          </div>
-        )}
-        {company.totalInvoicedSatGross != null && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">LTV facturado (con IVA)</span>
-            <Currency amount={company.totalInvoicedSatGross} compact={false} />
-          </div>
-        )}
-        {company.totalInvoicedSatYtd != null && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">Facturado YTD (sin IVA)</span>
-            <Currency amount={company.totalInvoicedSatYtd} compact={false} />
-          </div>
-        )}
-        {company.totalCancelledInvoiced != null && company.totalCancelledInvoiced > 0 && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">Canceladas (lifetime)</span>
-            <span className="tabular-nums font-medium text-warning-foreground">
-              <Currency amount={company.totalCancelledInvoiced} compact={false} />
-            </span>
-          </div>
-        )}
-        {company.totalCreditNotes != null && company.totalCreditNotes > 0 && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">Notas de crédito (tipo E)</span>
-            <Currency amount={company.totalCreditNotes} compact={false} />
-          </div>
-        )}
-        {company.isSupplier && company.totalReceivedSat != null && company.totalReceivedSat > 0 && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">Compra SAT (proveedor)</span>
-            <Currency amount={company.totalReceivedSat} compact={false} />
-          </div>
-        )}
-        {company.totalRevenue > 0 && (
-          <div className="flex items-center justify-between py-1.5 last:border-0">
-            <span className="text-muted-foreground">Pedidos confirmados (Odoo)</span>
-            <span
-              className="tabular-nums text-muted-foreground"
-              title="Pedidos confirmados en ERP. Puede diferir de facturación SAT."
-            >
-              <Currency amount={company.totalRevenue} compact={false} />
-            </span>
-          </div>
-        )}
-        {company.lastSatInvoiceDate && (
-          <div className="flex items-center justify-between py-1.5 last:border-0">
-            <span className="text-muted-foreground">Último CFDI emitido</span>
-            <DateDisplay date={company.lastSatInvoiceDate} relative />
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
+    <div className="space-y-6">
+      {aging && agingTotal(aging) > 0 && (
+        <section className="space-y-3">
+          <SectionHeader title="Cartera abierta" />
+          <Card className="p-4">
+            <AgingBuckets data={aging} ariaLabel="Aging de cartera de este cliente" />
+          </Card>
+        </section>
+      )}
 
-// ──────────────────────────────────────────────────────────────────────────
-// Fiscal summary (from analytics_customer_360)
-// ──────────────────────────────────────────────────────────────────────────
-async function FiscalSummarySection({ companyId }: { companyId: number }) {
-  const c360 = await getCustomer360(companyId);
-  if (!c360) return null;
+      <section className="space-y-3">
+        <SectionHeader title="Revenue 12 meses" />
+        <Card className="p-4">
+          {revenueTrend && revenueTrend.length > 1 ? (
+            <Chart
+              type="area"
+              data={revenueTrend}
+              xKey="month_start"
+              series={[{ key: "total_mxn", label: "Ingresos", color: "positive" }]}
+              ariaLabel="Ingresos mensuales 12 meses"
+              height={200}
+            />
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              Sin datos de ingresos en los últimos 12 meses.
+            </p>
+          )}
+        </Card>
+      </section>
 
-  const hasIssues =
-    (c360.fiscal_issues_open ?? 0) > 0 ||
-    (c360.fiscal_issues_critical ?? 0) > 0;
-  const hasRate = c360.cancellation_rate != null;
-  if (!hasIssues && !hasRate) return null;
+      <section className="space-y-3">
+        <SectionHeader title="Pedidos recientes" />
+        <Card className="p-4">
+          {recentSaleOrders && recentSaleOrders.length > 0 ? (
+            <ul className="space-y-2 text-sm">
+              {recentSaleOrders.slice(0, 3).map((o) => (
+                <li key={o.canonical_id} className="flex items-center justify-between gap-2">
+                  <span className="font-medium">{o.name ?? "(sin folio)"}</span>
+                  <span className="tabular-nums text-muted-foreground">
+                    {fmtMxn(o.amount_total_mxn)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Sin pedidos recientes.</p>
+          )}
+        </Card>
+      </section>
 
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Resumen fiscal SAT</CardTitle>
-          <DataSourceBadge source="syntage" />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-2 text-sm">
-        {hasIssues && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">Issues de reconciliación</span>
-            <div className="flex gap-2 items-center">
-              {(c360.fiscal_issues_critical ?? 0) > 0 && (
-                <SeverityBadge level="critical" />
-              )}
-              <span className="tabular-nums font-medium">
-                {c360.fiscal_issues_open ?? 0} abiertos
-              </span>
-            </div>
-          </div>
-        )}
-        {hasRate && (
-          <div className="flex items-center justify-between py-1.5 border-b last:border-0">
-            <span className="text-muted-foreground">Tasa de cancelación</span>
-            <span className="tabular-nums font-medium">
-              {((c360.cancellation_rate ?? 0) * 100).toFixed(1)}%
-            </span>
-          </div>
-        )}
-        {c360.last_cfdi && (
-          <div className="flex items-center justify-between py-1.5 last:border-0">
-            <span className="text-muted-foreground">Último CFDI</span>
-            <DateDisplay date={c360.last_cfdi} relative />
-          </div>
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// IA Insights (last 3 for this company)
-// ──────────────────────────────────────────────────────────────────────────
-async function InsightsSection({ companyId }: { companyId: number }) {
-  const insights = await getCompanyInsights(companyId, 3);
-  if (insights.length === 0) return null;
-
-  return (
-    <Card>
-      <CardHeader className="pb-2">
-        <div className="flex items-center justify-between gap-2">
-          <CardTitle className="text-base">Insights IA recientes</CardTitle>
-          <DataSourceBadge source="ia" />
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        {insights.map((ins) => (
-          <div
-            key={ins.id}
-            className="flex flex-col gap-1 border-b pb-3 last:border-0 last:pb-0"
-          >
-            <div className="flex items-start justify-between gap-2">
-              <span className="text-sm font-medium leading-snug">
-                {ins.title ?? "—"}
-              </span>
-              {ins.severity && (
-                <SeverityBadge level={ins.severity} />
-              )}
-            </div>
-            {ins.description && (
-              <p className="text-xs text-muted-foreground line-clamp-2">
-                {ins.description}
-              </p>
-            )}
-            <div className="flex items-center gap-2 mt-0.5">
-              {ins.agent_name && (
-                <span className="text-[10px] text-muted-foreground">
-                  {ins.agent_name}
-                </span>
-              )}
-              {ins.created_at && (
-                <span className="text-[10px] text-muted-foreground">
-                  · <DateDisplay date={ins.created_at} relative />
-                </span>
-              )}
-            </div>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Evidence pack (overview)
-// ──────────────────────────────────────────────────────────────────────────
-async function OverviewEvidenceSection({
-  companyId,
-}: {
-  companyId: number;
-}) {
-  const pack = await getCompanyEvidencePack(companyId);
-  if (!pack) {
-    return (
-      <EmptyState
-        icon={AlertTriangle}
-        title="Sin evidence pack"
-        description="No se pudo cargar el company_evidence_pack para esta empresa."
-      />
-    );
-  }
-  if (pack.is_self) {
-    return (
-      <EmptyState
-        icon={AlertTriangle}
-        title="Esta es la propia Quimibond"
-        description="Empresa interna. Las facturas y órdenes aquí son inter-company."
-      />
-    );
-  }
-  return <EvidencePackView pack={pack} />;
-}
-
-function OverviewSkeleton() {
-  return (
-    <div className="space-y-3">
-      {Array.from({ length: 4 }).map((_, i) => (
-        <Skeleton key={i} className="h-24 rounded-xl" />
-      ))}
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Panorama tab — main export
-// ──────────────────────────────────────────────────────────────────────────
-export function PanoramaTab({ company }: Props) {
-  return (
-    <div className="space-y-4">
-      <PanoramaKpis company={company} />
-      <SatLtvSection company={company} />
-      <Suspense fallback={<Skeleton className="h-32 rounded-xl" />}>
-        <FiscalSummarySection companyId={company.id} />
-      </Suspense>
-      <Suspense fallback={<Skeleton className="h-40 rounded-xl" />}>
-        <InsightsSection companyId={company.id} />
-      </Suspense>
-      <Suspense fallback={<OverviewSkeleton />}>
-        <OverviewEvidenceSection companyId={company.id} />
-      </Suspense>
+      <section className="space-y-3">
+        <SectionHeader title="Actividad reciente" />
+        <Card className="p-4">
+          {recentEvidence && recentEvidence.length > 0 ? (
+            <ol className="space-y-2">
+              {recentEvidence.slice(0, 5).map((ev) => {
+                const Icon = ev.kind === "email" ? Mail : Sparkles;
+                return (
+                  <li key={ev.key} className="flex gap-2 text-sm">
+                    <Icon aria-hidden="true" className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0">
+                      <div className="font-medium">{ev.title}</div>
+                      <div className="text-xs text-muted-foreground">{ev.body}</div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
+          ) : (
+            <p className="text-sm text-muted-foreground">Sin actividad reciente.</p>
+          )}
+        </Card>
+      </section>
     </div>
   );
 }
