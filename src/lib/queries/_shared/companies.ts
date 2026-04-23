@@ -918,3 +918,40 @@ export async function getCompanyActivities(
     .limit(limit);
   return (data ?? []) as CompanyActivityRow[];
 }
+
+export interface PortfolioKpis {
+  lifetime_value_mxn_total: number;
+  customers_count: number;
+  suppliers_count: number;
+  blacklist_count: number;
+}
+
+/**
+ * Portfolio-level aggregates over gold_company_360.
+ * Used by the /empresas list header — NOT filtered by user filters
+ * (those only affect the table, KPIs stay portfolio-wide).
+ */
+export async function fetchPortfolioKpis(): Promise<PortfolioKpis> {
+  const sb = getServiceClient();
+
+  const [
+    { count: customersCount },
+    { count: suppliersCount },
+    { count: blacklistCount },
+    { data: sumRows },
+  ] = await Promise.all([
+    sb.from("gold_company_360").select("canonical_company_id", { head: true, count: "exact" }).eq("is_customer", true),
+    sb.from("gold_company_360").select("canonical_company_id", { head: true, count: "exact" }).eq("is_supplier", true),
+    sb.from("gold_company_360").select("canonical_company_id", { head: true, count: "exact" }).neq("blacklist_level", "none"),
+    sb.from("gold_company_360").select("lifetime_value_mxn"),
+  ]);
+
+  const ltvTotal = (sumRows ?? []).reduce((acc, r) => acc + (r.lifetime_value_mxn ?? 0), 0);
+
+  return {
+    lifetime_value_mxn_total: ltvTotal,
+    customers_count: customersCount ?? 0,
+    suppliers_count: suppliersCount ?? 0,
+    blacklist_count: blacklistCount ?? 0,
+  };
+}
