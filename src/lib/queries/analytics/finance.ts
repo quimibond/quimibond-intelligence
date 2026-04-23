@@ -52,34 +52,61 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
     .toISOString()
     .slice(0, 10);
 
-  const [bank, companies, sales30, payments30] = await Promise.all([
+  const today = new Date().toISOString().slice(0, 10);
+
+  const [bank, openAr, openAp, sales30, payments30] = await Promise.all([
     // 1. Cash + debt position from bank balances (split by currency for MXN vs USD)
     sb
       .from("canonical_bank_balances")
       .select("currency, classification, current_balance, current_balance_mxn"),
-    // 2. AR / AP / overdue / morosos from canonical_companies aggregations
+    // 2. Live open AR aggregation from canonical_invoices (canonical_companies.total_receivable_mxn
+    //    is NEVER populated — column exists but no writer fills it. Aggregate inline.)
     sb
-      .from("canonical_companies")
+      .from("canonical_invoices")
       .select(
-        "is_customer, is_supplier, total_receivable_mxn, total_payable_mxn, overdue_amount_mxn, overdue_count"
+        "receptor_canonical_company_id, amount_residual_mxn_resolved, amount_residual_mxn_odoo, due_date_resolved, due_date_odoo"
+      )
+      .eq("direction", "issued")
+      .neq("estado_sat", "cancelado")
+      .eq("state_odoo", "posted")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .or(
+        "amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"
       ),
-    // 3. Last-30d issued invoices for ventas30d
+    // 3. Live open AP aggregation
+    sb
+      .from("canonical_invoices")
+      .select(
+        "amount_residual_mxn_resolved, amount_residual_mxn_odoo"
+      )
+      .eq("direction", "received")
+      .neq("estado_sat", "cancelado")
+      .eq("state_odoo", "posted")
+      .in("payment_state_odoo", ["not_paid", "partial"])
+      .or(
+        "amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"
+      ),
+    // 4. Last-30d issued invoices for ventas30d
     sb
       .from("canonical_invoices")
       .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
       .eq("direction", "issued")
       .gte("invoice_date", cutoff30),
-    // 4. Last-30d payments split by direction for cobros / pagos_prov
+    // 5. Last-30d payments split by direction for cobros / pagos_prov
     sb
       .from("canonical_payments")
       .select("direction, amount_mxn_resolved, amount_mxn_odoo")
       .gte("payment_date_resolved", cutoff30),
   ]);
 
-  if (bank.error || companies.error || sales30.error || payments30.error) {
+  if (
+    bank.error || openAr.error || openAp.error ||
+    sales30.error || payments30.error
+  ) {
     console.error("[getCfoSnapshot] partial query failure", {
       bank: bank.error?.message,
-      companies: companies.error?.message,
+      openAr: openAr.error?.message,
+      openAp: openAp.error?.message,
       sales30: sales30.error?.message,
       payments30: payments30.error?.message,
     });
@@ -108,24 +135,32 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
   const deudaTarjetas = Math.abs(sumCol(debt, "current_balance_mxn"));
   const posicionNeta = efectivoTotalMxn - deudaTarjetas;
 
-  // ── AR / AP / morosos from canonical_companies
-  type Comp = {
-    is_customer: boolean | null;
-    is_supplier: boolean | null;
-    total_receivable_mxn: number | null;
-    total_payable_mxn: number | null;
-    overdue_amount_mxn: number | null;
-    overdue_count: number | null;
+  // ── AR / AP / morosos: live aggregation from canonical_invoices
+  type OpenInv = {
+    receptor_canonical_company_id?: number | null;
+    amount_residual_mxn_resolved: number | null;
+    amount_residual_mxn_odoo: number | null;
+    due_date_resolved?: string | null;
+    due_date_odoo?: string | null;
   };
-  const comps = (companies.data ?? []) as Comp[];
-  const customers = comps.filter((c) => c.is_customer === true);
-  const suppliers = comps.filter((c) => c.is_supplier === true);
-  const cuentasPorCobrar = sumCol(customers, "total_receivable_mxn");
-  const cuentasPorPagar = sumCol(suppliers, "total_payable_mxn");
-  const carteraVencida = sumCol(customers, "overdue_amount_mxn");
-  const clientesMorosos = customers.filter(
-    (c) => Number(c.overdue_count ?? 0) > 0
-  ).length;
+  const arRows = (openAr.data ?? []) as OpenInv[];
+  const apRows = (openAp.data ?? []) as OpenInv[];
+  const arAmount = (r: OpenInv): number =>
+    Number(r.amount_residual_mxn_resolved ?? r.amount_residual_mxn_odoo) || 0;
+  const cuentasPorCobrar = arRows.reduce((s, r) => s + arAmount(r), 0);
+  const cuentasPorPagar = apRows.reduce((s, r) => s + arAmount(r), 0);
+
+  // Vencida = AR with due_date < today
+  const overdueRows = arRows.filter((r) => {
+    const due = r.due_date_resolved ?? r.due_date_odoo;
+    return due != null && due < today;
+  });
+  const carteraVencida = overdueRows.reduce((s, r) => s + arAmount(r), 0);
+  const clientesMorosos = new Set(
+    overdueRows
+      .map((r) => r.receptor_canonical_company_id)
+      .filter((id): id is number => id != null)
+  ).size;
 
   // ── 30d revenue: prefer resolved (Odoo+SAT reconciled), fall back to Odoo-only
   type Inv = {
