@@ -6,6 +6,8 @@ import * as React from "react";
 // Import from individual files to avoid server-only transitive import via barrel index
 // (company-link, evidence-pack, period-selector, invoice-detail all pull in _helpers.ts which
 //  imports "server-only" — not available in jsdom. Existing pattern tests use the same approach.)
+import { CompanyListClient, type CompanyListRow } from "@/app/empresas/_components/CompanyListClient";
+import { PanoramaTab } from "@/app/empresas/[id]/_components/PanoramaTab";
 import { StatusBadge } from "@/components/patterns/status-badge";
 import { Chart } from "@/components/patterns/chart";
 import { TrendSpark } from "@/components/patterns/trend-spark";
@@ -209,6 +211,74 @@ describe("axe-core a11y scan — SP6 new/consolidated components", () => {
       attachments: [],
     };
     const { container } = render(<IssueDetailClient item={item} />);
+    const results = await runAxe(container);
+    assertNoCriticalViolations(results);
+  });
+
+  it("CompanyListClient (populated)", async () => {
+    const rows: CompanyListRow[] = [
+      {
+        canonical_company_id: 1,
+        display_name: "Empresa Normal",
+        rfc: "AAA010101AAA",
+        is_customer: true,
+        is_supplier: false,
+        has_shadow_flag: false,
+        blacklist_level: "none",
+        lifetime_value_mxn: 1_000_000,
+        revenue_ytd_mxn: 250_000,
+        overdue_amount_mxn: 0,
+        open_company_issues_count: 0,
+      },
+      {
+        canonical_company_id: 2,
+        display_name: "Empresa Blacklist",
+        rfc: "BBB010101BBB",
+        is_customer: true,
+        is_supplier: false,
+        has_shadow_flag: false,
+        blacklist_level: "69b_definitivo",
+        lifetime_value_mxn: 2_000_000,
+        revenue_ytd_mxn: 500_000,
+        overdue_amount_mxn: 340_000,
+        open_company_issues_count: 5,
+      },
+      {
+        canonical_company_id: 3,
+        display_name: "Empresa Shadow",
+        rfc: "CCC010101CCC",
+        is_customer: false,
+        is_supplier: true,
+        has_shadow_flag: true,
+        blacklist_level: "none",
+        lifetime_value_mxn: 0,
+        revenue_ytd_mxn: 0,
+        overdue_amount_mxn: 0,
+        open_company_issues_count: 0,
+      },
+    ];
+    const { container } = render(
+      <CompanyListClient items={rows} hasFilters={false} />
+    );
+    const results = await runAxe(container);
+    assertNoCriticalViolations(results);
+  });
+
+  it("PanoramaTab (fully populated)", async () => {
+    const detail = {
+      aging: { current: 500_000, d1_30: 100_000, d31_60: 40_000, d61_90: 10_000, d90_plus: 5_000 },
+      revenueTrend: [
+        { month_start: "2025-06-01", total_mxn: 100_000 },
+        { month_start: "2025-07-01", total_mxn: 120_000 },
+      ],
+      recentSaleOrders: [
+        { canonical_id: "so-1", name: "SO/2026/0123", amount_total_mxn: 45_000, date_order: "2026-04-10" },
+      ],
+      recentEvidence: [
+        { kind: "email" as const, key: "e1", title: "past_due_mention", body: "pago vencido", at: "2026-04-18T00:00:00Z" },
+      ],
+    };
+    const { container } = render(<PanoramaTab detail={detail} />);
     const results = await runAxe(container);
     assertNoCriticalViolations(results);
   });
