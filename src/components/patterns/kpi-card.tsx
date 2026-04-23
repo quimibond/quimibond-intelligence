@@ -7,6 +7,10 @@ import { cn } from "@/lib/utils";
 import { formatValue, type FormatKind } from "@/lib/formatters";
 import { TrendIndicator } from "./trend-indicator";
 import { MiniChart } from "./mini-chart";
+import type { SourceKind, MetricDefinition, Comparison, KpiResult } from "@/lib/kpi";
+import { SourceBadge } from "./source-badge";
+import { MetricTooltip } from "./metric-tooltip";
+import { DriftPill } from "./drift-pill";
 
 interface KpiTrend {
   value: number;
@@ -38,6 +42,16 @@ interface KpiCardProps {
     variant?: "area" | "line";
     height?: number;
   };
+  /** SP13 — canonical data source for this KPI. */
+  source?: SourceKind;
+  /** SP13 — metric definition shown in MetricTooltip next to the title. */
+  definition?: MetricDefinition;
+  /** SP13 — comparison vs prior period. Replaces `trend` when both present. */
+  comparison?: Comparison | null;
+  /** SP13 — multi-source breakdown rendered as DriftPill. */
+  sources?: KpiResult["sources"];
+  /** SP13 — ISO date the value was computed. */
+  asOfDate?: string;
 }
 
 const sparkColorForTone: Record<
@@ -136,6 +150,11 @@ export function KpiCard({
   tone = "default",
   className,
   sparkline,
+  source,
+  definition,
+  comparison,
+  sources,
+  asOfDate,
 }: KpiCardProps) {
   const sz = sizeConfig[size];
   const styles = toneStyles[tone];
@@ -164,20 +183,30 @@ export function KpiCard({
             sz.title
           )}
         >
-          {title}
+          {definition ? (
+            <MetricTooltip definition={definition}>{title}</MetricTooltip>
+          ) : (
+            title
+          )}
         </p>
-        {Icon && (
-          <div
-            className={cn(
-              "flex shrink-0 items-center justify-center rounded-full transition-colors",
-              sz.iconBox,
-              styles.iconBg
-            )}
-            aria-hidden
-          >
-            <Icon className={sz.icon} />
-          </div>
-        )}
+        <div className="flex shrink-0 items-center gap-1.5">
+          {source && <SourceBadge source={source} />}
+          {sources && sources.length >= 2 && source && (
+            <DriftPill sources={sources} primary={source} />
+          )}
+          {Icon && (
+            <div
+              className={cn(
+                "flex shrink-0 items-center justify-center rounded-full transition-colors",
+                sz.iconBox,
+                styles.iconBg
+              )}
+              aria-hidden
+            >
+              <Icon className={sz.icon} />
+            </div>
+          )}
+        </div>
       </CardHeader>
 
       <CardContent className={cn("flex flex-1 flex-col gap-1.5", sz.contentPx)}>
@@ -191,9 +220,23 @@ export function KpiCard({
           >
             {displayValue}
           </span>
-          {trend && (
+          {comparison ? (
+            <span className={cn(
+              "inline-flex items-center gap-0.5 text-xs tabular-nums",
+              comparison.direction === "up" ? "text-success"
+              : comparison.direction === "down" ? "text-danger"
+              : "text-muted-foreground"
+            )}>
+              {comparison.deltaPct == null
+                ? "n/a"
+                : `${comparison.deltaPct > 0 ? "+" : ""}${comparison.deltaPct.toFixed(1)}%`}
+              <span className="text-muted-foreground text-[10px]">
+                {" "}{comparison.label}
+              </span>
+            </span>
+          ) : trend ? (
             <TrendIndicator value={trend.value} good={trend.good ?? "up"} />
-          )}
+          ) : null}
         </div>
 
         {(subtitle || clickable) && (

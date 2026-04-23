@@ -93,3 +93,17 @@ export { TrendSpark } from "./trend-spark";
 export { InboxCard, type InboxCardIssue, type InboxActionCta, type InboxCardSeverity } from "./inbox-card";
 export { SwipeStack } from "./swipe-stack";
 export { CompanyKpiHero, type CompanyKpiHeroCanonical, type CompanyKpiHero360 } from "./company-kpi-hero";
+
+// SP13 primitives
+export { SourceBadge, type SourceBadgeProps } from "./source-badge";
+export { DriftPill, type DriftPillProps } from "./drift-pill";
+export { MetricTooltip, type MetricTooltipProps } from "./metric-tooltip";
+export { ComparisonCell, type ComparisonCellProps } from "./comparison-cell";
+export { DriftAlert, type DriftAlertProps } from "./drift-alert";
+export {
+  HistorySelector,
+  parseHistoryRange,
+  type HistoryRange,
+  type HistorySelectorProps,
+} from "./history-selector";
+export { QuestionSection, type QuestionSectionProps } from "./question-section";
