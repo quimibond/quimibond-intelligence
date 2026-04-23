@@ -480,10 +480,12 @@ async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
     .gt("amount_residual_mxn_odoo", 0)
     .not("salesperson_contact_id", "is", null);
 
+  // Supabase generated types for embedded relations return an array even for
+  // one-to-one FKs; runtime payload is the same single object PostgREST emits.
+  // Cast through `unknown` to bypass the false-positive structural mismatch.
   const names = new Set<string>();
-  for (const r of (data ?? []) as Array<{
-    salesperson: { display_name: string | null } | null;
-  }>) {
+  type Row = { salesperson: { display_name: string | null } | null };
+  for (const r of ((data ?? []) as unknown) as Row[]) {
     const name = r.salesperson?.display_name?.trim();
     if (name) names.add(name);
   }

@@ -186,7 +186,12 @@ async function PaymentRiskSectionAsync({
   page: number;
   limit: number;
 }) {
-  const data = await getPaymentPredictionsPage({ page, size: limit });
+  const data = await getPaymentPredictionsPage({
+    page,
+    size: limit,
+    sortDir: "desc",
+    facets: {},
+  });
   return <PaymentRiskSection rows={data.rows} />;
 }
 
@@ -197,7 +202,12 @@ async function CompanyAgingSectionAsync({
   page: number;
   limit: number;
 }) {
-  const data = await getCompanyAgingPage({ page, size: limit });
+  const data = await getCompanyAgingPage({
+    page,
+    size: limit,
+    sortDir: "desc",
+    facets: {},
+  });
   return <CompanyAgingSection rows={data.rows} />;
 }
 

@@ -2,11 +2,12 @@
 
 import { Flame } from "lucide-react";
 
-import {
-  Currency,
-  EmptyState,
-  StatusBadge,
-} from "@/components/patterns";
+// Import from individual files: this is a Client Component, and the
+// `@/components/patterns` barrel re-exports CompanyLink + InvoiceDetailView
+// which transitively pull in `import "server-only"` modules.
+import { Currency } from "@/components/patterns/currency";
+import { EmptyState } from "@/components/patterns/empty-state";
+import { StatusBadge } from "@/components/patterns/status-badge";
 import { RowCheckbox } from "@/components/patterns/row-checkbox";
 import { SelectionProvider } from "@/components/patterns/selection-context";
 import type { PaymentPredictionRow } from "@/lib/queries/unified/invoices";

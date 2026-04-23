@@ -34,6 +34,8 @@ export async function OverdueSection({ params }: OverdueSectionProps) {
       q: params.q,
       bucket,
       salesperson: params.salesperson ? [params.salesperson] : undefined,
+      sortDir: "desc",
+      facets: {},
     }),
     getOverdueSalespeopleOptions(),
   ]);
