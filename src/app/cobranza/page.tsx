@@ -2,43 +2,44 @@ import { Suspense } from "react";
 import { z } from "zod";
 
 import {
-  PageLayout,
+  DriftAlert,
+  HistorySelector,
   PageHeader,
+  PageLayout,
+  QuestionSection,
   SectionNav,
   StatGrid,
 } from "@/components/patterns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import { RefreshStalenessBadge } from "@/components/patterns/refresh-staleness-badge";
 
-import {
-  getCompanyAgingPage,
-  getPaymentPredictionsPage,
-  invoicesReceivableAging,
-} from "@/lib/queries/unified/invoices";
 import { getUnifiedRefreshStaleness } from "@/lib/queries/unified";
+import { getAgingBuckets, getDsoTrend } from "@/lib/queries/sp13/cobranza";
 import { parseSearchParams } from "@/lib/url-state";
 
-import { CobranzaHeroKpis } from "./_components/CobranzaHeroKpis";
-import { CeiSection } from "./_components/CeiSection";
-import { AgingSection } from "./_components/AgingSection";
-import { adaptAging } from "./_components/aging-adapter";
-import { PaymentRiskSection } from "./_components/PaymentRiskSection";
-import { CompanyAgingSection } from "./_components/CompanyAgingSection";
-import { OverdueSection } from "./_components/OverdueSection";
+import { ArHeroKpis } from "./_components/ArHeroKpis";
+import { ArAgingRow } from "./_components/ArAgingRow";
+import { ArByCompanyTable } from "./_components/ArByCompanyTable";
+import { ActionListSection } from "./_components/ActionListSection";
+import { DsoTrendChart } from "./_components/DsoTrendChart";
+import { OpenInvoicesTable } from "./_components/OpenInvoicesTable";
 
 export const revalidate = 60;
 export const metadata = { title: "Cobranza" };
 
 const searchSchema = z.object({
-  aging: z.enum(["1-30", "31-60", "61-90", "90+"]).optional().catch(undefined),
+  // HistorySelector param (currently cosmetic — AR is always snapshot).
+  period: z.enum(["mtd", "ytd", "ltm", "3y", "5y", "all"]).catch("mtd"),
+  // Shared bucket filter between AgingBuckets + Companies table + Open invoices.
+  bucket: z.enum(["1-30", "31-60", "61-90", "90+"]).optional().catch(undefined),
+  risk: z.enum(["critical"]).optional().catch(undefined),
   q: z.string().trim().max(100).catch(""),
-  salesperson: z.string().trim().max(120).optional().catch(undefined),
-  page: z.coerce.number().int().min(1).catch(1),
-  prPage: z.coerce.number().int().min(1).catch(1),
+  invQ: z.string().trim().max(100).catch(""),
+  invBucket: z.enum(["1-30", "31-60", "61-90", "90+"]).optional().catch(undefined),
+  estadoSat: z.enum(["vigente", "cancelado"]).optional().catch(undefined),
   caPage: z.coerce.number().int().min(1).catch(1),
-  limit: z.coerce.number().int().min(10).max(200).catch(50),
+  invPage: z.coerce.number().int().min(1).catch(1),
+  size: z.coerce.number().int().min(10).max(200).catch(25),
 });
 
 type SearchParams = Record<string, string | string[] | undefined>;
@@ -56,14 +57,8 @@ export default async function CobranzaPage({
     <PageLayout>
       <PageHeader
         title="Cobranza"
-        subtitle="¿Quién me debe, cuánto, y quién va a pagar mal?"
-        actions={
-          <DataSourceBadge
-            source="unified"
-            coverage="Odoo operativo + SAT validado"
-            refresh="15min"
-          />
-        }
+        subtitle="¿Quién me debe, quién no paga, a quién cobrar hoy?"
+        actions={<HistorySelector paramName="period" defaultRange="mtd" />}
       />
 
       <RefreshStalenessBadge
@@ -71,144 +66,113 @@ export default async function CobranzaPage({
         invoicesRefreshedAt={staleness.invoicesRefreshedAt}
       />
 
+      <DriftAlert
+        severity="info"
+        title="Algunos estados de pago pueden estar desfasados"
+        description="SP10 payment merge pendiente (F2/F3). Facturas pagadas solo en SAT o solo en Odoo pueden mostrarse como abiertas aquí hasta que el merge termine."
+      />
+
       <SectionNav
         items={[
-          { id: "kpis", label: "Resumen" },
-          { id: "cei", label: "CEI" },
-          { id: "buckets", label: "Aging buckets" },
-          { id: "payment-risk", label: "Riesgo de pago" },
-          { id: "company-aging", label: "Cartera por cliente" },
-          { id: "overdue", label: "Facturas vencidas" },
+          { id: "ar", label: "Cartera" },
+          { id: "companies", label: "Empresas con deuda" },
+          { id: "action", label: "Cobrar hoy" },
+          { id: "dso", label: "DSO" },
+          { id: "invoices", label: "Facturas" },
         ]}
       />
 
-      <section id="kpis" className="scroll-mt-24 space-y-4">
+      {/* C1+C2 — Hero */}
+      <section id="ar" className="scroll-mt-24 space-y-4">
         <Suspense fallback={<KpiFallback />}>
-          <CobranzaHeroKpis />
+          <ArHeroKpis />
+        </Suspense>
+        <Suspense fallback={<Skeleton className="h-24 rounded-md" />}>
+          <AgingRowAsync bucket={params.bucket} />
         </Suspense>
       </section>
 
-      <section id="cei" className="scroll-mt-24">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Collection Effectiveness Index (CEI)
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              % del facturado cobrado por cohort mensual.
-            </p>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<RowsFallback rows={6} />}>
-              <CeiSection />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </section>
+      {/* C3+C5 — Empresas con deuda (+ riesgo) */}
+      <QuestionSection
+        id="companies"
+        question="¿Quién me debe más y quién está en riesgo?"
+        subtext="Ordenado por AR vencido. Filtra por aging o riesgo IA para acotar la lista."
+      >
+        <Suspense fallback={<RowsFallback rows={6} />}>
+          <ArByCompanyTable
+            page={params.caPage}
+            size={params.size}
+            bucket={params.bucket}
+            risk={params.risk === "critical" ? "critical" : undefined}
+            q={params.q || undefined}
+          />
+        </Suspense>
+      </QuestionSection>
 
-      <section id="buckets" className="scroll-mt-24">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Aging buckets</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<Skeleton className="h-24 rounded-md" />}>
-              <AgingSectionAsync currentAging={params.aging} />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </section>
+      {/* C6 — Action list */}
+      <QuestionSection
+        id="action"
+        question="¿Qué cobrar HOY con prioridad?"
+        subtext="Top 20 priorizados por (monto × probabilidad de no pago × factor de días vencidos)."
+      >
+        <Suspense fallback={<RowsFallback rows={6} />}>
+          <ActionListSection top={20} />
+        </Suspense>
+      </QuestionSection>
 
-      <section id="payment-risk" className="scroll-mt-24">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">
-              Clientes con patrón anormal de pago
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<RowsFallback rows={4} />}>
-              <PaymentRiskSectionAsync page={params.prPage} limit={params.limit} />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </section>
+      {/* C8 — DSO trend */}
+      <QuestionSection
+        id="dso"
+        question="¿Cómo va el DSO?"
+        subtext="Proxy mensual: promedio ponderado de días de cobro sobre las asignaciones de pago del mes."
+      >
+        <Suspense fallback={<Skeleton className="h-[260px] rounded-md" />}>
+          <DsoTrendAsync />
+        </Suspense>
+      </QuestionSection>
 
-      <section id="company-aging" className="scroll-mt-24">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Cartera por cliente</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<RowsFallback rows={5} />}>
-              <CompanyAgingSectionAsync page={params.caPage} limit={params.limit} />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section id="overdue" className="scroll-mt-24">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Facturas vencidas</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<RowsFallback rows={6} />}>
-              <OverdueSection
-                params={{
-                  aging: params.aging,
-                  q: params.q,
-                  salesperson: params.salesperson,
-                  page: params.page,
-                  limit: params.limit,
-                }}
-              />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </section>
+      {/* C7 — Open invoices table */}
+      <QuestionSection
+        id="invoices"
+        question="¿Qué facturas individuales están abiertas?"
+        subtext="Todas las facturas emitidas no pagadas. Ordena por residual descendiendo por default."
+      >
+        <Suspense fallback={<RowsFallback rows={8} />}>
+          <OpenInvoicesTable
+            page={params.invPage}
+            size={params.size}
+            q={params.invQ || undefined}
+            bucket={params.invBucket}
+            estadoSat={params.estadoSat}
+          />
+        </Suspense>
+      </QuestionSection>
     </PageLayout>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Async wrappers — colocated here because they are tiny one-shot fetchers
+// Async wrappers
 // ──────────────────────────────────────────────────────────────────────────
-async function AgingSectionAsync({ currentAging }: { currentAging?: string }) {
-  const raw = await invoicesReceivableAging();
-  return <AgingSection data={adaptAging(raw)} currentAging={currentAging} />;
+async function AgingRowAsync({ bucket }: { bucket?: string }) {
+  const r = await getAgingBuckets();
+  return (
+    <ArAgingRow
+      data={{
+        current: r.totals.current,
+        d1_30: r.totals.d1_30,
+        d31_60: r.totals.d31_60,
+        d61_90: r.totals.d61_90,
+        d90_plus: r.totals.d90_plus,
+      }}
+      currentBucket={bucket}
+    />
+  );
 }
 
-async function PaymentRiskSectionAsync({
-  page,
-  limit,
-}: {
-  page: number;
-  limit: number;
-}) {
-  const data = await getPaymentPredictionsPage({
-    page,
-    size: limit,
-    sortDir: "desc",
-    facets: {},
-  });
-  return <PaymentRiskSection rows={data.rows} />;
-}
-
-async function CompanyAgingSectionAsync({
-  page,
-  limit,
-}: {
-  page: number;
-  limit: number;
-}) {
-  const data = await getCompanyAgingPage({
-    page,
-    size: limit,
-    sortDir: "desc",
-    facets: {},
-  });
-  return <CompanyAgingSection rows={data.rows} />;
+async function DsoTrendAsync() {
+  const data = await getDsoTrend(12);
+  return <DsoTrendChart data={data} targetDays={45} />;
 }
 
 // ──────────────────────────────────────────────────────────────────────────
