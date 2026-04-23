@@ -221,19 +221,16 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 5. Refresh materialized views ───────────────────────────────────
-    // SP5/SP8 dropped: company_profile, company_handlers, product_intelligence,
-    // reorder_predictions, company_narrative, purchase_intelligence. Their
-    // refresh_* RPCs still exist as orphans — calling them would error silently.
-    try {
-      await supabase.rpc("refresh_accounting_anomalies");
-    } catch {
-      /* may not exist */
-    }
-    try {
-      await supabase.rpc("refresh_cashflow_projection");
-    } catch {
-      /* may not exist */
-    }
+    // SP5/SP8 dropped company_profile, company_handlers, company_narrative
+    // (RPCs DROPped in migration cleanup_orphan_refresh_rpcs).
+    // refresh_product_intelligence rewritten to refresh only surviving MVs:
+    // customer_product_matrix, dead_stock_analysis, inventory_velocity,
+    // payment_predictions.
+    try { await supabase.rpc("refresh_accounting_anomalies"); } catch { /* may not exist */ }
+    try { await supabase.rpc("refresh_cashflow_projection"); } catch { /* may not exist */ }
+    try { await supabase.rpc("refresh_product_intelligence"); } catch { /* may not exist */ }
+    try { await supabase.rpc("refresh_purchase_intelligence"); } catch { /* may not exist */ }
+    try { await supabase.rpc("refresh_reorder_predictions"); } catch { /* may not exist */ }
 
     // ── 6. Call RPCs for additional cleanup ─────────────────────────────
     try { await supabase.rpc("resolve_all_company_links"); } catch { /* may not exist */ }
