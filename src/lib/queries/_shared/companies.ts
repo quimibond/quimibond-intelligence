@@ -918,3 +918,74 @@ export async function getCompanyActivities(
     .limit(limit);
   return (data ?? []) as CompanyActivityRow[];
 }
+
+export interface PortfolioKpis {
+  lifetime_value_mxn_total: number;
+  customers_count: number;
+  suppliers_count: number;
+  blacklist_count: number;
+}
+
+/**
+ * Portfolio-level aggregates over gold_company_360.
+ * Used by the /empresas list header — NOT filtered by user filters
+ * (those only affect the table, KPIs stay portfolio-wide).
+ */
+export async function fetchPortfolioKpis(): Promise<PortfolioKpis> {
+  const sb = getServiceClient();
+
+  const [
+    { count: customersCount },
+    { count: suppliersCount },
+    { count: blacklistCount },
+    { data: sumRows },
+  ] = await Promise.all([
+    sb.from("gold_company_360").select("canonical_company_id", { head: true, count: "exact" }).eq("is_customer", true),
+    sb.from("gold_company_360").select("canonical_company_id", { head: true, count: "exact" }).eq("is_supplier", true),
+    sb.from("gold_company_360").select("canonical_company_id", { head: true, count: "exact" }).neq("blacklist_level", "none"),
+    sb.from("gold_company_360").select("lifetime_value_mxn"),
+  ]);
+
+  const ltvTotal = (sumRows ?? []).reduce((acc, r) => acc + (r.lifetime_value_mxn ?? 0), 0);
+
+  return {
+    lifetime_value_mxn_total: ltvTotal,
+    customers_count: customersCount ?? 0,
+    suppliers_count: suppliersCount ?? 0,
+    blacklist_count: blacklistCount ?? 0,
+  };
+}
+
+export interface RevenueTrendPoint {
+  month_start: string;
+  total_mxn: number;
+}
+
+/**
+ * Revenue trend for a single company over the last N months.
+ * Reads gold_revenue_monthly filtered by canonical_company_id.
+ * Returns points in chronological order (oldest first).
+ */
+export async function fetchCompanyRevenueTrend(
+  canonicalCompanyId: number,
+  months: number = 12,
+): Promise<RevenueTrendPoint[]> {
+  const sb = getServiceClient();
+  const since = new Date();
+  since.setUTCMonth(since.getUTCMonth() - months);
+  since.setUTCDate(1);
+  since.setUTCHours(0, 0, 0, 0);
+
+  const { data, error } = await sb
+    .from("gold_revenue_monthly")
+    .select("month_start, total_mxn")
+    .eq("canonical_company_id", canonicalCompanyId)
+    .gte("month_start", since.toISOString())
+    .order("month_start", { ascending: true });
+
+  if (error) throw error;
+  return (data ?? []).map((r) => ({
+    month_start: r.month_start ?? "",
+    total_mxn: r.total_mxn ?? 0,
+  }));
+}
