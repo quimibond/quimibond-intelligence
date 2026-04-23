@@ -159,13 +159,27 @@ function serializeError(err: unknown): {
 } {
   if (err instanceof Error) {
     const e = err as Error & { code?: string; details?: string; hint?: string };
+    // Detect the "[object Object]" trap: someone upstream did `throw new Error(obj)`;
+    // the Error constructor ran String(obj) and produced a useless message. Salvage
+    // the real content by serializing every enumerable+non-enumerable property.
+    let message = e.message;
+    if (!message || message === "[object Object]" || message === "undefined") {
+      let rawJson = "";
+      try {
+        rawJson = JSON.stringify(err, Object.getOwnPropertyNames(err)).slice(0, 500);
+      } catch {
+        rawJson = String(err);
+      }
+      message = `${e.name || "Error"} (raw: ${rawJson})`;
+    }
     return {
-      message: e.message,
+      message,
       name: e.name,
       code: e.code,
       details: e.details,
       hint: e.hint,
       stack: e.stack?.split("\n").slice(0, 5).join("\n"),
+      raw: err,
     };
   }
   if (err && typeof err === "object") {
