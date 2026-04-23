@@ -466,8 +466,28 @@ export async function getOverdueInvoicesPage(
 // Returning empty array until SP6 adds canonical_contacts join.
 // ──────────────────────────────────────────────────────────────────────────
 async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
-  // SP6-TODO: join canonical_contacts via salesperson_contact_id for name resolution
-  return [];
+  const sb = getServiceClient();
+  const today = new Date().toISOString().slice(0, 10);
+  // Join via FK fk_ci_sp: canonical_invoices.salesperson_contact_id → canonical_contacts.id.
+  // Use Supabase embed syntax. If the embed alias resolution ever fails (e.g., ambiguous
+  // FK), fall back to a 2-pass query: distinct ids → batch fetch display_names.
+  const { data } = await sb
+    .from("canonical_invoices")
+    .select("salesperson:canonical_contacts!fk_ci_sp(display_name)")
+    .eq("direction", "issued")
+    .in("payment_state_odoo", ["not_paid", "partial"])
+    .lt("due_date_odoo", today)
+    .gt("amount_residual_mxn_odoo", 0)
+    .not("salesperson_contact_id", "is", null);
+
+  const names = new Set<string>();
+  for (const r of (data ?? []) as Array<{
+    salesperson: { display_name: string | null } | null;
+  }>) {
+    const name = r.salesperson?.display_name?.trim();
+    if (name) names.add(name);
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b, "es"));
 }
 
 export const getOverdueSalespeopleOptions = unstable_cache(
