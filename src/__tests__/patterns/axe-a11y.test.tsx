@@ -1,5 +1,5 @@
 import { render } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import axe from "axe-core";
 import * as React from "react";
 
@@ -14,6 +14,16 @@ import type { InboxCardIssue } from "@/components/patterns/inbox-card";
 import { SwipeStack } from "@/components/patterns/swipe-stack";
 import { AgingBuckets } from "@/components/patterns/aging-buckets";
 import { CompanyKpiHero } from "@/components/patterns/company-kpi-hero";
+import { IssueDetailClient, type IssueDetailItem } from "@/app/inbox/insight/[id]/_components/IssueDetailClient";
+
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/app/inbox/actions", () => ({
+  addManualNote: vi.fn(async () => ({ ok: true })),
+  setInsightState: vi.fn(async () => ({ ok: true })),
+  markInsightSeen: vi.fn(async () => {}),
+}));
+
+global.fetch = vi.fn(async () => new Response(JSON.stringify({ ok: true }), { status: 200 })) as unknown as typeof fetch;
 
 async function runAxe(node: Element | Document): Promise<axe.AxeResults> {
   return axe.run(node, {
@@ -171,6 +181,34 @@ describe("axe-core a11y scan — SP6 new/consolidated components", () => {
         <CompanyKpiHero canonical={{ ...canonical, has_shadow_flag: true }} company360={company360} />
       </div>
     );
+    const results = await runAxe(container);
+    assertNoCriticalViolations(results);
+  });
+
+  it("IssueDetailClient (full detail view)", async () => {
+    const item: IssueDetailItem = {
+      issue_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      issue_type: "invoice.posted_without_uuid",
+      severity: "critical",
+      priority_score: 87,
+      impact_mxn: 125000,
+      age_days: 4,
+      description: "Factura sin UUID timbrado",
+      canonical_entity_type: "canonical_invoice",
+      canonical_entity_id: "inv-42",
+      action_cta: "operationalize",
+      assignee_canonical_contact_id: 5,
+      assignee_name: "Sandra Davila",
+      assignee_email: "sandra@quimibond.com",
+      detected_at: "2026-04-18T09:00:00Z",
+      invariant_key: null,
+      metadata: null,
+      email_signals: [],
+      ai_extracted_facts: [],
+      manual_notes: [],
+      attachments: [],
+    };
+    const { container } = render(<IssueDetailClient item={item} />);
     const results = await runAxe(container);
     assertNoCriticalViolations(results);
   });
