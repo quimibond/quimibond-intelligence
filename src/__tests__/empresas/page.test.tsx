@@ -1,72 +1,108 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-const { listCompaniesMock, fetchPortfolioKpisMock } = vi.hoisted(() => ({
-  listCompaniesMock: vi.fn(async (_: unknown) => [] as unknown[]),
-  fetchPortfolioKpisMock: vi.fn(async () => ({
-    lifetime_value_mxn_total: 847_000_000,
-    customers_count: 2197,
-    suppliers_count: 312,
-    blacklist_count: 17,
+const {
+  getPortfolioKpisMock,
+  getTopLtvCustomersMock,
+  getDriftingCompaniesMock,
+  getCompaniesPageMock,
+} = vi.hoisted(() => ({
+  getPortfolioKpisMock: vi.fn(async () => ({
+    activeCustomers: 156,
+    activeSuppliers: 42,
+    dormant: 88,
+    blacklist: 17,
+  })),
+  getTopLtvCustomersMock: vi.fn(async () => [] as unknown[]),
+  getDriftingCompaniesMock: vi.fn(async () => [] as unknown[]),
+  getCompaniesPageMock: vi.fn<(args?: unknown) => Promise<{
+    rows: unknown[];
+    total: number;
+    page: number;
+    limit: number;
+  }>>(async () => ({
+    rows: [],
+    total: 0,
+    page: 1,
+    limit: 25,
   })),
 }));
 
-vi.mock("@/lib/queries/_shared/companies", () => ({
-  listCompanies: listCompaniesMock,
-  fetchPortfolioKpis: fetchPortfolioKpisMock,
+vi.mock("@/lib/queries/sp13/empresas", () => ({
+  getPortfolioKpis: getPortfolioKpisMock,
+  getTopLtvCustomers: getTopLtvCustomersMock,
+  getDriftingCompanies: getDriftingCompaniesMock,
+  getCompaniesPage: getCompaniesPageMock,
 }));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
   usePathname: () => "/empresas",
+  useSearchParams: () => new URLSearchParams(),
 }));
 
 import EmpresasPage from "@/app/empresas/page";
 
+async function renderPage(search: Record<string, string> = {}) {
+  const ui = await EmpresasPage({ searchParams: Promise.resolve(search) });
+  const { container } = render(ui);
+  // Each async server sub-component resolves inside Suspense. We let them
+  // flush by awaiting a microtask.
+  await new Promise((r) => setTimeout(r, 0));
+  return container;
+}
+
 describe("/empresas page", () => {
-  it("renders 4 KPIs from fetchPortfolioKpis", async () => {
-    listCompaniesMock.mockResolvedValue([]);
-    const ui = await EmpresasPage({ searchParams: Promise.resolve({}) });
-    render(ui);
-    expect(fetchPortfolioKpisMock).toHaveBeenCalled();
-    expect(screen.getAllByText(/LTV/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Clientes/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Proveedores/i).length).toBeGreaterThanOrEqual(1);
-    expect(screen.getAllByText(/Lista negra/i).length).toBeGreaterThanOrEqual(1);
+  it("renders the SP13 question-framed subtitle", async () => {
+    await renderPage();
+    expect(
+      screen.getByText(/¿Quiénes son, quién importa, quién tiene problemas\?/),
+    ).toBeInTheDocument();
   });
 
-  it("calls listCompanies with parsed filters from searchParams", async () => {
-    listCompaniesMock.mockClear();
-    listCompaniesMock.mockResolvedValue([]);
-    await EmpresasPage({
-      searchParams: Promise.resolve({ type: "customer", blacklist: "69b_definitivo", q: "contitech" }),
-    });
-    expect(listCompaniesMock).toHaveBeenCalledWith(
+  it("invokes all four SP13 queries with default params", async () => {
+    getPortfolioKpisMock.mockClear();
+    getTopLtvCustomersMock.mockClear();
+    getDriftingCompaniesMock.mockClear();
+    getCompaniesPageMock.mockClear();
+    await renderPage();
+    expect(getPortfolioKpisMock).toHaveBeenCalled();
+    expect(getTopLtvCustomersMock).toHaveBeenCalledWith(5);
+    expect(getDriftingCompaniesMock).toHaveBeenCalledWith(5);
+    expect(getCompaniesPageMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        onlyCustomers: true,
-        blacklistLevel: "69b_definitivo",
-        search: "contitech",
-      })
+        page: 1,
+        limit: 25,
+        sort: "-ltv",
+      }),
     );
   });
 
-  it("coerces invalid type via zod to 'all' (no onlyCustomers/onlySuppliers)", async () => {
-    listCompaniesMock.mockClear();
-    listCompaniesMock.mockResolvedValue([]);
-    await EmpresasPage({ searchParams: Promise.resolve({ type: "bogus" }) });
-    const call = listCompaniesMock.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(call.onlyCustomers).toBeFalsy();
-    expect(call.onlySuppliers).toBeFalsy();
+  it("parses filter searchParams and forwards them to getCompaniesPage", async () => {
+    getCompaniesPageMock.mockClear();
+    await renderPage({
+      type: "cliente",
+      tier: "A",
+      activity: "activa",
+      q: "contitech",
+      page: "2",
+    });
+    expect(getCompaniesPageMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "cliente",
+        tier: "A",
+        activity: "activa",
+        search: "contitech",
+        page: 2,
+      }),
+    );
   });
 
-  it("filters rows client-side when shadowOnly=true", async () => {
-    listCompaniesMock.mockResolvedValue([
-      { canonical_company_id: 1, display_name: "Shadow X", has_shadow_flag: true, rfc: "AAA", is_customer: true, is_supplier: false, blacklist_level: "none", lifetime_value_mxn: 0, revenue_ytd_mxn: 0, overdue_amount_mxn: 0, open_company_issues_count: 0 },
-      { canonical_company_id: 2, display_name: "Normal Y", has_shadow_flag: false, rfc: "BBB", is_customer: true, is_supplier: false, blacklist_level: "none", lifetime_value_mxn: 0, revenue_ytd_mxn: 0, overdue_amount_mxn: 0, open_company_issues_count: 0 },
-    ]);
-    const ui = await EmpresasPage({ searchParams: Promise.resolve({ shadowOnly: "true" }) });
-    render(ui);
-    expect(screen.getByText(/Shadow X/)).toBeInTheDocument();
-    expect(screen.queryByText(/Normal Y/)).toBeNull();
+  it("coerces invalid type via zod to 'all' (not forwarded as filter)", async () => {
+    getCompaniesPageMock.mockClear();
+    await renderPage({ type: "bogus" });
+    const firstCall = getCompaniesPageMock.mock.calls[0];
+    const call = (firstCall?.[0] ?? {}) as unknown as Record<string, unknown>;
+    expect(call.type).toBeUndefined();
   });
 });
