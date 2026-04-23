@@ -34,14 +34,16 @@ Rediseñar las 6 secciones de `/cobranza` con foundation primitives, preservando
 
 1. **Resumen KPIs (§1)** — `StatGrid` + 4 `KpiCard`: AR total, vencida, 90+ días, DSO. Helper nuevo `fetchCobranzaKpis()` si no existe uno directo.
 2. **CEI (§2)** — `Chart type="bar"` horizontal con cohorts + `StatusBadge kind="severity"` según `health_status`. Existing `getCollectionEffectivenessIndex()`.
-3. **Aging buckets (§3)** — `<AgingBuckets>` foundation primitive con `onBucketClick` que hace `router.push(?aging=BUCKET)`. Adapter desde `getArAging()` (hyphen keys) a shape del componente (`d1_30` etc).
+3. **Aging buckets (§3)** — `<AgingBuckets>` foundation primitive con `onBucketClick` que hace `router.push(?aging=BUCKET)`. Adapter desde `invoicesReceivableAging()` (hyphen keys + `current`) a shape del componente (`d1_30` etc). El bucket `current` es no-clickable (no aplica a tabla de vencidas).
 4. **Riesgo de pago (§4)** — Cards con `StatusBadge` severity + checkbox selection → `BatchActionBar`. `payment-risk-batch-actions.tsx` existente **preservado sin cambios**.
 5. **Cartera por cliente (§5)** — Card list con mini `<AgingBuckets>` por cliente (cartera bar compacta) + link a `/empresas/[id]`. Helper `getCompanyAgingPage()`.
 6. **Facturas vencidas (§6)** — Card list con filtros: chip aging removible (sincronizado con `?aging=`), search debounced, salesperson dropdown. Helper `getOverdueInvoicesPage()`.
 
 ### 3.2 Qué NO hace
 
-- **No cambios** a helpers en `src/lib/queries/*` excepto agregar `fetchCobranzaKpis` si el KPI shape necesario no existe en helpers actuales.
+- **No cambios** a helpers en `src/lib/queries/*` excepto:
+  - Agregar `fetchCobranzaKpis` si el KPI shape necesario no existe en helpers actuales (composición de `getCfoSnapshot()` + `getPaymentRiskKpis()` también es válida).
+  - Extender `getOverdueInvoicesPage(bucket)` para aceptar el valor `"90+"` (mergeando 91-120 + 120+) además de los buckets actuales (back-compat).
 - **No toca** `payment-risk-batch-actions.tsx` — componente existente con `navigator.clipboard` se reusa.
 - **No tocar** páginas fuera de `/cobranza`.
 - **No** real-time subscriptions, bulk email sending, CEI deep-dive breakdown.
@@ -107,15 +109,18 @@ CobranzaPage (Server) — reads searchParams, dispatches 6 Suspense boundaries
 
 ### 6.2 AgingSection (Client wrapper)
 
+`current` no filtra la tabla de vencidas (no tiene sentido) → early-return en `onBucketClick`. Los demás buckets sí emiten URL state.
+
 ```tsx
 "use client";
 import { useRouter, usePathname } from "next/navigation";
 import { AgingBuckets, type AgingBucketKey, type AgingData } from "@/components/patterns/aging-buckets";
 import { toSearchString } from "@/lib/url-state";
 
-// Map AgingBucketKey ("d1_30" etc) back to URL value ("1-30" etc)
-const KEY_TO_URL: Record<AgingBucketKey, string> = {
-  current: "current", d1_30: "1-30", d31_60: "31-60", d61_90: "61-90", d90_plus: "90+",
+// Map AgingBucketKey ("d1_30" etc) back to URL value ("1-30" etc).
+// `current` está omitido — no filtra tabla de vencidas.
+const KEY_TO_URL: Partial<Record<AgingBucketKey, string>> = {
+  d1_30: "1-30", d31_60: "31-60", d61_90: "61-90", d90_plus: "90+",
 };
 
 export function AgingSection({ data, currentAging }: { data: AgingData; currentAging?: string }) {
@@ -127,6 +132,7 @@ export function AgingSection({ data, currentAging }: { data: AgingData; currentA
       ariaLabel="Aging de cartera"
       onBucketClick={(bucket) => {
         const urlValue = KEY_TO_URL[bucket];
+        if (!urlValue) return; // `current` no filtra tabla de vencidas
         const next = currentAging === urlValue ? undefined : urlValue;
         const qs = toSearchString({ aging: next }, { dropEqual: {} });
         router.push(`${pathname}${qs}#overdue`);
@@ -142,7 +148,7 @@ Renderiza 3 controls: aging chip removible (si `params.aging` set), search input
 
 ### 6.4 Aging data adapter
 
-`getArAging()` retorna `{ current, "1-30", "31-60", "61-90", "90+" }`. Adaptar a `{ current, d1_30, d31_60, d61_90, d90_plus }` que espera `<AgingBuckets>`:
+`invoicesReceivableAging()` retorna `{ current, "1-30", "31-60", "61-90", "90+" }` (hyphen keys). Adaptar a `{ current, d1_30, d31_60, d61_90, d90_plus }` que espera `<AgingBuckets>`:
 
 ```typescript
 function adaptAging(b: Record<string, number>): AgingData {
@@ -156,9 +162,22 @@ function adaptAging(b: Record<string, number>): AgingData {
 }
 ```
 
+> **Por qué `invoicesReceivableAging()` y no `getArAging()`:** `getArAging()` retorna `[{ bucket, count, amount_mxn }]` con buckets separados `91-120` + `120+` y sin `current`. Requiere fabricar `current` y mergear los dos top-buckets. `invoicesReceivableAging()` ya tiene la shape correcta a un rename de keys. Ver routing audit `docs/superpowers/plans/2026-04-22-sp6-routing-audit.md` §3.1.
+
 ### 6.5 Overdue filter → server
 
-`getOverdueInvoicesPage()` ya soporta filtros. Verificar al implementar si tiene parámetro `agingBucket` — si no, agregarlo (mínimo, 1 param + `where` clause). El implementer debe primero leer el helper para confirmar signature antes de escribir código que asuma.
+`getOverdueInvoicesPage(bucket?: string[])` actualmente acepta `["1-30", "31-60", "61-90", "91-120", "120+"]` y traduce a `due_date_odoo` ranges via `or()` filters. **Extender el helper** para aceptar también `"90+"` (= `due_date_odoo < today - 90 días`, que es la unión de `91-120` + `120+`). El UI envía siempre `90+` desde URL state; los valores antiguos `91-120`/`120+` siguen funcionando back-compat.
+
+Pseudocódigo del nuevo branch en el dispatcher:
+
+```typescript
+} else if (b === "90+") {
+  const d90 = new Date(now.getTime() - 90 * 86400000).toISOString().slice(0, 10);
+  orParts.push(`due_date_odoo.lt.${d90}`);
+}
+```
+
+El JSDoc del helper debe actualizarse para listar `"90+"` como valor aceptado.
 
 ---
 
@@ -207,10 +226,13 @@ Cada uno: 0 critical violations.
 ## 9. Non-goals (explicit)
 
 - Cambios a `payment-risk-batch-actions.tsx` (preservar).
-- Cambios a helpers existentes en `queries/` excepto agregar `fetchCobranzaKpis` si es necesario.
+- Cambios a helpers existentes en `queries/` **excepto**:
+  - Agregar `fetchCobranzaKpis` si es necesario.
+  - Extender `getOverdueInvoicesPage(bucket)` para aceptar `"90+"` (back-compat con buckets actuales).
 - Cambios a páginas fuera de `/cobranza`.
 - Real-time subscriptions / bulk email sending / CEI cohort-by-customer deep-dive.
 - Nuevos componentes en `src/components/patterns/` (foundation estable).
+- **Salesperson dropdown filter** — `getOverdueSalespeopleOptions()` retorna `[]` (stub SP6-TODO). Decisión pendiente del usuario: implementar join `canonical_contacts` ahora, o renderizar dropdown disabled hasta SP7. Ver routing audit §3.3.
 
 ---
 
@@ -228,5 +250,6 @@ Cada uno: 0 critical violations.
 - Foundation spec: `docs/superpowers/specs/2026-04-22-frontend-revamp-sp6-foundation-design.md`.
 - sp6-01 /inbox: `docs/superpowers/specs/2026-04-22-sp6-01-inbox-design.md`.
 - sp6-02 /empresas: `docs/superpowers/specs/2026-04-22-sp6-02-empresas-design.md`.
-- Helpers existentes: `src/lib/queries/unified/invoices.ts` (getArAging, getCompanyAgingPage, getOverdueInvoicesPage, getPaymentPredictionsPage), `src/lib/queries/analytics/index.ts` (getCollectionEffectivenessIndex).
+- Helpers existentes: `src/lib/queries/unified/invoices.ts` (`invoicesReceivableAging`, `getCompanyAgingPage`, `getOverdueInvoicesPage`, `getPaymentPredictionsPage`, `getOverdueSalespeopleOptions`), `src/lib/queries/analytics/index.ts` (`getCollectionEffectiveness`), `src/lib/queries/analytics/finance.ts` (`getCfoSnapshot`).
+- Routing audit (consolidado de findings sp6-01/02/03): `docs/superpowers/plans/2026-04-22-sp6-routing-audit.md`.
 - Foundation primitives: `AgingBuckets`, `Chart`, `StatusBadge`, `StatGrid`, `KpiCard`, `SectionNav`, `BatchActionBar`.
