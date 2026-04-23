@@ -18,7 +18,10 @@ import { AgingBuckets } from "@/components/patterns/aging-buckets";
 import { CompanyKpiHero } from "@/components/patterns/company-kpi-hero";
 import { IssueDetailClient, type IssueDetailItem } from "@/app/inbox/insight/[id]/_components/IssueDetailClient";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("next/navigation", () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+  usePathname: () => "/cobranza",
+}));
 vi.mock("@/app/inbox/actions", () => ({
   addManualNote: vi.fn(async () => ({ ok: true })),
   setInsightState: vi.fn(async () => ({ ok: true })),
@@ -281,5 +284,69 @@ describe("axe-core a11y scan — SP6 new/consolidated components", () => {
     const { container } = render(<PanoramaTab detail={detail} />);
     const results = await runAxe(container);
     assertNoCriticalViolations(results);
+  });
+
+  it("AgingSection (clickable buckets) — 0 critical violations", async () => {
+    const { AgingSection } = await import("@/app/cobranza/_components/AgingSection");
+    const { container } = render(
+      <AgingSection
+        data={{
+          current: 100,
+          d1_30: 200,
+          d31_60: 300,
+          d61_90: 400,
+          d90_plus: 500,
+        }}
+      />
+    );
+    const results = await runAxe(container);
+    assertNoCriticalViolations(results);
+  });
+
+  it("OverdueSection (populated, with filter bar + invoice list) — 0 critical violations", async () => {
+    vi.doMock("@/lib/queries/unified/invoices", () => ({
+      getOverdueInvoicesPage: vi.fn().mockResolvedValue({
+        rows: [
+          {
+            id: 1,
+            name: "INV/2026/03/0001",
+            company_id: 101,
+            company_name: "Acme SA",
+            amount_total_mxn: 50_000,
+            amount_residual_mxn: 50_000,
+            currency: "MXN",
+            days_overdue: 30,
+            due_date: "2026-03-22",
+            invoice_date: "2026-02-22",
+            payment_state: "not_paid",
+            salesperson_name: null,
+            uuid_sat: null,
+            estado_sat: null,
+          },
+        ],
+        total: 1,
+      }),
+      getOverdueSalespeopleOptions: vi.fn().mockResolvedValue(["Sandra Davila"]),
+    }));
+    vi.doMock("@/lib/queries/_shared/_helpers", () => ({
+      sanitizeCompanyName: (name: string | null | undefined) => name ?? null,
+      joinedCompanyName: (companies: unknown) => null,
+    }));
+    vi.resetModules();
+    const { OverdueSection } = await import("@/app/cobranza/_components/OverdueSection");
+    const ui = await OverdueSection({
+      params: {
+        aging: "31-60",
+        q: "",
+        salesperson: undefined,
+        page: 1,
+        limit: 50,
+      },
+    });
+    const { container } = render(ui);
+    const results = await runAxe(container);
+    assertNoCriticalViolations(results);
+    vi.doUnmock("@/lib/queries/unified/invoices");
+    vi.doUnmock("@/lib/queries/_shared/_helpers");
   });
 });

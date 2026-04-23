@@ -428,6 +428,13 @@ async function _getOverdueInvoicesPageRaw(
           .toISOString()
           .slice(0, 10);
         orParts.push(`due_date_odoo.lt.${d121}`);
+      } else if (b === "90+") {
+        // 90+ merges old 91-120 + 120+ buckets into a single half-open lt filter.
+        // Used by SP6-03 /cobranza UI which dropped the 90+ split.
+        const d90 = new Date(now.getTime() - 90 * 86400000)
+          .toISOString()
+          .slice(0, 10);
+        orParts.push(`due_date_odoo.lt.${d90}`);
       }
     }
     if (orParts.length > 0) query = query.or(orParts.join(","));
@@ -446,7 +453,7 @@ async function _getOverdueInvoicesPageRaw(
 
 export async function getOverdueInvoicesPage(
   params: TableParams & {
-    bucket?: string[]; // "1-30" | "31-60" | "61-90" | "91-120" | "120+"
+    bucket?: string[]; // "1-30" | "31-60" | "61-90" | "91-120" | "120+" | "90+"
     salesperson?: string[];
   }
 ): Promise<OverdueInvoicePage> {
@@ -459,8 +466,28 @@ export async function getOverdueInvoicesPage(
 // Returning empty array until SP6 adds canonical_contacts join.
 // ──────────────────────────────────────────────────────────────────────────
 async function _getOverdueSalespeopleOptionsRaw(): Promise<string[]> {
-  // SP6-TODO: join canonical_contacts via salesperson_contact_id for name resolution
-  return [];
+  const sb = getServiceClient();
+  const today = new Date().toISOString().slice(0, 10);
+  // Join via FK fk_ci_sp: canonical_invoices.salesperson_contact_id → canonical_contacts.id.
+  // Use Supabase embed syntax. If the embed alias resolution ever fails (e.g., ambiguous
+  // FK), fall back to a 2-pass query: distinct ids → batch fetch display_names.
+  const { data } = await sb
+    .from("canonical_invoices")
+    .select("salesperson:canonical_contacts!fk_ci_sp(display_name)")
+    .eq("direction", "issued")
+    .in("payment_state_odoo", ["not_paid", "partial"])
+    .lt("due_date_odoo", today)
+    .gt("amount_residual_mxn_odoo", 0)
+    .not("salesperson_contact_id", "is", null);
+
+  const names = new Set<string>();
+  for (const r of (data ?? []) as Array<{
+    salesperson: { display_name: string | null } | null;
+  }>) {
+    const name = r.salesperson?.display_name?.trim();
+    if (name) names.add(name);
+  }
+  return Array.from(names).sort((a, b) => a.localeCompare(b, "es"));
 }
 
 export const getOverdueSalespeopleOptions = unstable_cache(
