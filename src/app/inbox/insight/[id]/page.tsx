@@ -26,6 +26,7 @@ import {
 } from "@/lib/queries/intelligence/evidence-helpers";
 import { markInsightSeen } from "../../actions";
 import { InsightActions } from "./_components/insight-actions";
+import { IssueDetailClient } from "./_components/IssueDetailClient";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function InsightDetailPage({
   if (UUID_RE.test(idParam)) {
     const item = await fetchInboxItem(idParam);
     if (!item) return notFound();
-    // Render a lightweight detail view for reconciliation issues
+    // SP6-01: rich detail rendered by IssueDetailClient (evidence + actions).
     return (
       <div className="space-y-5 pb-24 md:pb-6">
         <PageHeader
@@ -80,6 +81,7 @@ export default async function InsightDetailPage({
             </div>
           }
         />
+        <IssueDetailClient item={item} />
       </div>
     );
   }
@@ -271,7 +273,7 @@ export default async function InsightDetailPage({
             <Card>
               <CardContent className="py-4">
                 <Suspense fallback={<Skeleton className="h-48" />}>
-                  <TimelineSection companyId={insight.company_id} />
+                  <CompanyTimelineSection companyId={insight.company_id} />
                 </Suspense>
               </CardContent>
             </Card>
@@ -282,7 +284,7 @@ export default async function InsightDetailPage({
               Evidencia cruzada
             </h2>
             <Suspense fallback={<EvidencePackSkeleton />}>
-              <EvidenceSection companyId={insight.company_id} />
+              <CompanyEvidenceSectionLegacy companyId={insight.company_id} />
             </Suspense>
           </section>
         </>
@@ -314,7 +316,7 @@ function EvidencePackSkeleton() {
   );
 }
 
-async function TimelineSection({ companyId }: { companyId: number }) {
+async function CompanyTimelineSection({ companyId }: { companyId: number }) {
   const pack = await getCompanyEvidencePack(companyId);
   if (!pack) return null;
   const events = buildTimelineFromEvidencePack(pack);
@@ -328,7 +330,7 @@ async function TimelineSection({ companyId }: { companyId: number }) {
   return <EvidenceTimeline events={events} />;
 }
 
-async function EvidenceSection({ companyId }: { companyId: number }) {
+async function CompanyEvidenceSectionLegacy({ companyId }: { companyId: number }) {
   const pack = await getCompanyEvidencePack(companyId);
   if (!pack) {
     return (
