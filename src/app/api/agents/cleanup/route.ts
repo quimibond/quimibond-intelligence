@@ -13,7 +13,7 @@
  * 1. Enriches companies (industry, business_type) using Claude
  * 2. Links orphan emails to contacts/companies
  * 3. Deduplicates active insights
- * 4. Refreshes the company_profile materialized view
+ * 4. Refreshes accounting_anomalies + cashflow_projection materialized views
  * 5. Fills missing contact names from Odoo data
  *
  * Runs every 30 minutes via /api/agents/cleanup
@@ -42,7 +42,6 @@ export async function POST(request: NextRequest) {
     emails_linked: 0,
     insights_deduped: 0,
     contacts_filled: 0,
-    profile_refreshed: false,
     errors: [] as string[],
   };
 
@@ -222,37 +221,9 @@ export async function POST(request: NextRequest) {
     }
 
     // ── 5. Refresh materialized views ───────────────────────────────────
-    try {
-      await supabase.rpc("refresh_company_profile");
-      results.profile_refreshed = true;
-    } catch {
-      // ignore if view doesn't exist yet
-    }
-    try {
-      await supabase.rpc("refresh_company_handlers");
-    } catch {
-      // ignore if view doesn't exist yet
-    }
-    try {
-      await supabase.rpc("refresh_product_intelligence");
-    } catch {
-      // ignore if views don't exist yet
-    }
-    try {
-      await supabase.rpc("refresh_reorder_predictions");
-    } catch {
-      // ignore if view doesn't exist yet
-    }
-    try {
-      await supabase.rpc("refresh_company_narrative");
-    } catch {
-      /* may not exist */
-    }
-    try {
-      await supabase.rpc("refresh_purchase_intelligence");
-    } catch {
-      /* may not exist */
-    }
+    // SP5/SP8 dropped: company_profile, company_handlers, product_intelligence,
+    // reorder_predictions, company_narrative, purchase_intelligence. Their
+    // refresh_* RPCs still exist as orphans — calling them would error silently.
     try {
       await supabase.rpc("refresh_accounting_anomalies");
     } catch {

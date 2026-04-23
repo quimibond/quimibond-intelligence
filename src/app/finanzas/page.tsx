@@ -477,7 +477,7 @@ async function CfoKpisSection() {
       <EmptyState
         icon={AlertTriangle}
         title="Sin datos del CFO dashboard"
-        description="La vista cfo_dashboard no devolvió resultados."
+        description="canonical_invoices / gold_cashflow_v2 no devolvieron resultados."
       />
     );
   }
@@ -650,7 +650,7 @@ async function PlHistorySection({
       <EmptyState
         icon={TrendingUp}
         title="Sin datos de P&L"
-        description="La vista pl_estado_resultados no tiene datos recientes."
+        description="gold_pl_statement no tiene datos recientes."
         compact
       />
     );
@@ -831,8 +831,8 @@ async function WorkingCapitalCycleSection() {
     return (
       <EmptyState
         icon={Scale}
-        title="Sin datos de ciclo de capital"
-        description="working_capital_cycle no devolvió resultados."
+        title="DSO / DPO / DIO — disponibles en SP6"
+        description="La vista working_capital_cycle fue retirada en SP8. Pendiente recomputar desde canonical_invoices + canonical_payments + canonical_inventory."
         compact
       />
     );
