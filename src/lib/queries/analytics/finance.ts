@@ -38,38 +38,136 @@ export interface CfoSnapshot {
   clientesMorosos: number;
 }
 
+/** Sums numeric column from rows, treating null/NaN as 0. */
+function sumCol<T>(rows: T[], col: keyof T): number {
+  return rows.reduce((s, r) => s + (Number(r[col]) || 0), 0);
+}
+
 async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
+  // Rebuilt 2026-04-23 (sp6-03 follow-up): cfo_dashboard view was dropped
+  // in SP8. Compose snapshot from canonical sources via 4 parallel queries.
   const sb = getServiceClient();
-  // SP5-VERIFIED: cfo_dashboard retained (§12 not in drop list)
-  const { data } = await sb.from("cfo_dashboard").select("*").maybeSingle();
-  if (!data) return null;
-  const d = data as {
-    efectivo_mxn: number | null;
-    efectivo_usd: number | null;
-    efectivo_total_mxn: number | null;
-    deuda_tarjetas: number | null;
-    posicion_neta: number | null;
-    cuentas_por_cobrar: number | null;
-    cuentas_por_pagar: number | null;
-    cartera_vencida: number | null;
-    ventas_30d: number | null;
-    cobros_30d: number | null;
-    pagos_prov_30d: number | null;
-    clientes_morosos: number | null;
+  const today = new Date();
+  const cutoff30 = new Date(today.getTime() - 30 * 86400000)
+    .toISOString()
+    .slice(0, 10);
+
+  const [bank, companies, sales30, payments30] = await Promise.all([
+    // 1. Cash + debt position from bank balances (split by currency for MXN vs USD)
+    sb
+      .from("canonical_bank_balances")
+      .select("currency, classification, current_balance, current_balance_mxn"),
+    // 2. AR / AP / overdue / morosos from canonical_companies aggregations
+    sb
+      .from("canonical_companies")
+      .select(
+        "is_customer, is_supplier, total_receivable_mxn, total_payable_mxn, overdue_amount_mxn, overdue_count"
+      ),
+    // 3. Last-30d issued invoices for ventas30d
+    sb
+      .from("canonical_invoices")
+      .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+      .eq("direction", "issued")
+      .gte("invoice_date", cutoff30),
+    // 4. Last-30d payments split by direction for cobros / pagos_prov
+    sb
+      .from("canonical_payments")
+      .select("direction, amount_mxn_resolved, amount_mxn_odoo")
+      .gte("payment_date_resolved", cutoff30),
+  ]);
+
+  if (bank.error || companies.error || sales30.error || payments30.error) {
+    console.error("[getCfoSnapshot] partial query failure", {
+      bank: bank.error?.message,
+      companies: companies.error?.message,
+      sales30: sales30.error?.message,
+      payments30: payments30.error?.message,
+    });
+    return null;
+  }
+
+  // ── Cash position
+  type Bank = {
+    currency: string | null;
+    classification: string | null;
+    current_balance: number | null;
+    current_balance_mxn: number | null;
   };
+  const banks = (bank.data ?? []) as Bank[];
+  const cash = banks.filter((b) => b.classification === "cash");
+  const debt = banks.filter((b) => b.classification === "debt");
+  const efectivoMxn = sumCol(
+    cash.filter((c) => (c.currency ?? "MXN").toUpperCase() === "MXN"),
+    "current_balance_mxn"
+  );
+  const efectivoUsd = sumCol(
+    cash.filter((c) => (c.currency ?? "").toUpperCase() === "USD"),
+    "current_balance"
+  );
+  const efectivoTotalMxn = sumCol(cash, "current_balance_mxn");
+  const deudaTarjetas = Math.abs(sumCol(debt, "current_balance_mxn"));
+  const posicionNeta = efectivoTotalMxn - deudaTarjetas;
+
+  // ── AR / AP / morosos from canonical_companies
+  type Comp = {
+    is_customer: boolean | null;
+    is_supplier: boolean | null;
+    total_receivable_mxn: number | null;
+    total_payable_mxn: number | null;
+    overdue_amount_mxn: number | null;
+    overdue_count: number | null;
+  };
+  const comps = (companies.data ?? []) as Comp[];
+  const customers = comps.filter((c) => c.is_customer === true);
+  const suppliers = comps.filter((c) => c.is_supplier === true);
+  const cuentasPorCobrar = sumCol(customers, "total_receivable_mxn");
+  const cuentasPorPagar = sumCol(suppliers, "total_payable_mxn");
+  const carteraVencida = sumCol(customers, "overdue_amount_mxn");
+  const clientesMorosos = customers.filter(
+    (c) => Number(c.overdue_count ?? 0) > 0
+  ).length;
+
+  // ── 30d revenue: prefer resolved (Odoo+SAT reconciled), fall back to Odoo-only
+  type Inv = {
+    amount_total_mxn_resolved: number | null;
+    amount_total_mxn_odoo: number | null;
+  };
+  const sales = (sales30.data ?? []) as Inv[];
+  const ventas30d = sales.reduce(
+    (s, r) =>
+      s + (Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn_odoo) || 0),
+    0
+  );
+
+  // ── 30d collections / supplier-payments by direction
+  type Pay = {
+    direction: string | null;
+    amount_mxn_resolved: number | null;
+    amount_mxn_odoo: number | null;
+  };
+  const pays = (payments30.data ?? []) as Pay[];
+  const payAmt = (p: Pay): number =>
+    Number(p.amount_mxn_resolved ?? p.amount_mxn_odoo) || 0;
+  const cobros30d = pays
+    .filter((p) => p.direction === "received")
+    .reduce((s, p) => s + payAmt(p), 0);
+  const pagosProv30d = pays
+    .filter((p) => p.direction === "sent")
+    .reduce((s, p) => s + payAmt(p), 0);
+
   return {
-    efectivoMxn: Number(d.efectivo_mxn) || 0,
-    efectivoUsd: Number(d.efectivo_usd) || 0,
-    efectivoTotalMxn: Number(d.efectivo_total_mxn) || 0,
-    deudaTarjetas: Number(d.deuda_tarjetas) || 0,
-    posicionNeta: Number(d.posicion_neta) || 0,
-    cuentasPorCobrar: Number(d.cuentas_por_cobrar) || 0,
-    cuentasPorPagar: Number(d.cuentas_por_pagar) || 0,
-    carteraVencida: Number(d.cartera_vencida) || 0,
-    ventas30d: Number(d.ventas_30d) || 0,
-    cobros30d: Number(d.cobros_30d) || 0,
-    pagosProv30d: Number(d.pagos_prov_30d) || 0,
-    clientesMorosos: Number(d.clientes_morosos) || 0,
+    efectivoMxn,
+    efectivoUsd,
+    efectivoTotalMxn,
+    deudaTarjetas,
+    posicionNeta,
+    cuentasPorCobrar,
+    cuentasPorPagar,
+    carteraVencida,
+    ventas30d,
+    cobros30d,
+    pagosProv30d,
+    clientesMorosos,
   };
 }
 
