@@ -1217,25 +1217,26 @@ async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
           }}
         />
         <KpiCard
-          title="COGS ajustado (BOM materia prima)"
-          value={data.cogsBomMaterialMxn}
+          title="COGS ajustado (BOM recursiva → MP)"
+          value={data.cogsRecursiveMpMxn}
           format="currency"
           compact
           icon={Receipt}
           source="canonical"
           tone="info"
           subtitle={
-            data.grossMarginMaterialPct == null
+            data.grossMarginRecursivePct == null
               ? "sin ingresos en el período"
-              : `margen material ${data.grossMarginMaterialPct.toFixed(1)}% · cobertura BOM ${data.bomCoveragePct.toFixed(0)}%`
+              : `margen material ${data.grossMarginRecursivePct.toFixed(1)}% · BOM flat ref ${formatCurrencyMXN(data.cogsBomFlatMxn, { compact: true })} · cobertura ${data.bomCoveragePct.toFixed(0)}%`
           }
           definition={{
-            title: "COGS ajustado a materia prima",
+            title: "COGS ajustado recursivo a materia prima",
             description:
-              "Σ(quantity × bom.standard_cost_per_unit) sobre líneas de factura emitidas en el período. Considera SOLO el costo de los componentes de la BOM, sin labor ni overhead.",
+              "Para cada producto vendido, explota la BOM primaria recursivamente hasta llegar a hojas (componentes sin BOM = materia prima comprada) y suma qty × avg_cost_mxn de cada hoja. Solo MP pura, sin labor ni overhead de sub-ensambles.",
             formula:
-              "SUM(line.quantity × mv_bom_standard_cost.standard_cost_per_unit)",
-            table: "odoo_invoice_lines + mv_bom_standard_cost",
+              "Σ(line.quantity × get_bom_raw_material_cost_per_unit(product_id))",
+            table:
+              "odoo_invoice_lines + mrp_boms + mrp_bom_lines + canonical_products",
           }}
         />
         <KpiCard
