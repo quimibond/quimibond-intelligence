@@ -122,3 +122,67 @@ Tables audited and confirmed **clean**:
 - The upstream reason the bug existed in the first place — whatever backfill
   originally populated `amount_residual_mxn_resolved` — was not identified
   (no current function writes the column). Likely a one-off migration.
+
+## 2026-04-24 · Sweep: stale FKs, null mxn, uppercase UUIDs, neg costs
+
+Systematic audit across every `canonical_*` table looking for FK orphans,
+NULL gaps, sign-convention violations, and case-sensitivity leaks. Silver
+fixes applied directly.
+
+### Findings + remediation
+
+| # | Check | Pre | Fix | Post | Guard |
+|---|---|---|---|---|---|
+| 1 | `canonical_payment_allocations.invoice_canonical_id` pointing to raw SAT UUIDs instead of canonical `odoo:<id>` after MDM re-canonicalisation | 13,129 orphans | UPDATE remap via `sat_uuid` lookup | 22 orphans (pending SAT ingestion) | `trg_canonical_invoices_sync_allocations` self-heals on canonical_id change + `trg_canonical_payment_allocations_resolve` on INSERT |
+| 2 | `canonical_products.avg_cost_mxn` negative | 2 | Clamp to 0 | 0 | `canonical_products_clamp_negatives_trg` prevents regression |
+| 3 | `canonical_invoices.amount_residual_mxn_resolved` drift vs `amount_residual_mxn_odoo` | 58+ | UPDATE to match | 0 | (already guarded by earlier trigger) |
+| 4 | `canonical_invoices.amount_total_mxn_resolved` NULL when odoo/sat populated | 2 | Backfill from COALESCE | 0 | Extended `trg_canonical_invoices_resolve_residual_mxn` |
+| 5 | `canonical_invoices.sat_uuid` with uppercase letters (breaks case-insensitive joins) | 11 | LOWER where no collision | 1 (manual MDM merge pending) | Same trigger lowercases on INSERT/UPDATE |
+| 6 | `canonical_credit_notes.amount_total_mxn_resolved` NULL when odoo populated | 1 | Backfill from COALESCE | 0 | `canonical_credit_notes_resolve_mxn_trg` prevents regression |
+
+### Clean (no action needed)
+
+- `canonical_payments` — no FX bug, no NULL leaks
+- `canonical_tax_events` — all amounts positive, no nulls
+- `canonical_bank_balances` — classification consistent with sign
+- `canonical_companies` — zero FK orphans on every reference (invoices /
+  payments / orders / deliveries / credit notes all intact)
+- `canonical_sale_orders` / `canonical_purchase_orders` — zero orphans
+- `canonical_order_lines` — zero orphans to products or companies
+- `gold_company_360` — no negative revenue / LTV / null overdue
+- `gold_pl_statement`, `gold_balance_sheet`, `gold_revenue_monthly` — clean
+
+### Non-bugs (data quality but reflects real process, not silver fault)
+
+- 48 invoices with `due_date` < `invoice_date` (all AP Net-0 terms — legit)
+- 2 products with negative `stock_qty` (Odoo shipped beyond on-hand —
+  Odoo process issue, not silver)
+- 3,216 products with `list_price_mxn < avg_cost_mxn` (mostly list_price=1
+  defaults on unsold SKUs — Odoo data gap)
+- 4,179 order lines over-invoiced and 4,203 over-delivered (textile
+  over-run tolerance + a handful of Odoo data-entry errors)
+- 76 companies sharing RFC `XAXX010101000` / `XEXX010101000` (Mexican
+  "PUBLICO EN GENERAL" / foreign generic — one real-world customer each,
+  legit MDM design)
+
+### Final gold_cashflow snapshot (post-audit)
+
+| Metric | Value |
+|---|---|
+| `total_receivable_mxn` | $25,008,200 |
+| `overdue_receivable_mxn` | $8,673,281 |
+| `total_payable_mxn` | $23,182,934 |
+| `working_capital_mxn` | $5,202,251 |
+
+### Triggers installed (all BEFORE-row, SECURITY INVOKER)
+
+1. `canonical_invoices_resolve_residual_mxn_trg` — keeps
+   `amount_residual_mxn_resolved = amount_residual_mxn_odoo`, fills
+   `amount_total_mxn_resolved` from COALESCE, lowercases `sat_uuid`.
+2. `trg_canonical_invoices_sync_allocations` — on canonical_id change,
+   re-points all allocation rows.
+3. `trg_canonical_payment_allocations_resolve` — on INSERT/UPDATE of
+   allocation, resolves `invoice_canonical_id` via canonical_id or sat_uuid.
+4. `canonical_products_clamp_negatives_trg` — floors cost and price at 0.
+5. `canonical_credit_notes_resolve_mxn_trg` — fills
+   `amount_total_mxn_resolved` from COALESCE on INSERT/UPDATE.
