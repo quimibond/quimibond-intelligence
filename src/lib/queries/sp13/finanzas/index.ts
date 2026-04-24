@@ -60,4 +60,15 @@ export {
   type CogsMonthlyPoint,
   type CogsMonthlyTrend,
 } from "./cogs-monthly";
+export {
+  getMpLeavesInventory,
+  getBomComposition,
+  getTopProductsWithComposition,
+  type MpLeafRow,
+  type MpLeavesInventory,
+  type BomCompositionLeaf,
+  type BomCompositionResult,
+  type TopProductWithComposition,
+  type TopProductsSummary,
+} from "./mp-quality";
 export { periodBoundsForRange, daysBetween } from "./_period";
