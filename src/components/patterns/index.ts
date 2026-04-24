@@ -100,10 +100,13 @@ export { DriftPill, type DriftPillProps } from "./drift-pill";
 export { MetricTooltip, type MetricTooltipProps } from "./metric-tooltip";
 export { ComparisonCell, type ComparisonCellProps } from "./comparison-cell";
 export { DriftAlert, type DriftAlertProps } from "./drift-alert";
+export { HistorySelector, type HistorySelectorProps } from "./history-selector";
+// Pure helpers live in history-range.ts so server components can use them
+// through the barrel without crossing the "use client" boundary.
 export {
-  HistorySelector,
   parseHistoryRange,
+  HISTORY_RANGES,
+  HISTORY_RANGE_LABEL,
   type HistoryRange,
-  type HistorySelectorProps,
-} from "./history-selector";
+} from "./history-range";
 export { QuestionSection, type QuestionSectionProps } from "./question-section";

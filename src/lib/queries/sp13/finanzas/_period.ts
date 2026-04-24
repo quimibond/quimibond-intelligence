@@ -1,4 +1,4 @@
-import type { HistoryRange } from "@/components/patterns/history-selector";
+import type { HistoryRange } from "@/components/patterns/history-range";
 
 /** ISO date bounds (YYYY-MM-DD) + YYYY-MM month bounds for a HistoryRange. */
 export interface PeriodBounds {

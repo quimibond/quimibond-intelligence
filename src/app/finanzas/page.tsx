@@ -23,11 +23,11 @@ import {
   KpiCard,
   QuestionSection,
   HistorySelector,
-  parseHistoryRange,
   DriftAlert,
   Currency,
   EmptyState,
 } from "@/components/patterns";
+import { parseHistoryRange } from "@/components/patterns/history-range";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -51,7 +51,7 @@ import {
   parseProjectionHorizon,
 } from "@/lib/queries/sp13/finanzas";
 import { formatCurrencyMXN } from "@/lib/formatters";
-import type { HistoryRange } from "@/components/patterns/history-selector";
+import type { HistoryRange } from "@/components/patterns/history-range";
 
 import { PnlWaterfallChart } from "./_components/pnl-waterfall-chart";
 import { CashProjectionChart } from "./_components/cash-projection-chart";
