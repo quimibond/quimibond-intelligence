@@ -43,7 +43,7 @@ export function periodBoundsForRange(
       from: toIso(from),
       to: toIso(to),
       fromMonth: toIso(from).slice(0, 7),
-      toMonth: toIso(to).slice(0, 7),
+      toMonth: lastInclusiveMonth(to),
       label: historyRangeLabel(range),
     };
   }
@@ -57,7 +57,7 @@ export function periodBoundsForRange(
       from: toIso(from),
       to: toIso(to),
       fromMonth: toIso(from).slice(0, 7),
-      toMonth: toIso(to).slice(0, 7),
+      toMonth: lastInclusiveMonth(to),
       label: historyRangeLabel(range),
     };
   }
@@ -102,7 +102,7 @@ export function periodBoundsForRange(
     from: toIso(from),
     to: toIso(to),
     fromMonth: toIso(from).slice(0, 7),
-    toMonth: toIso(to).slice(0, 7),
+    toMonth: lastInclusiveMonth(to),
     label,
   };
 }
@@ -112,6 +112,18 @@ function toIso(d: Date): string {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
+}
+
+/**
+ * Último mes INCLUSIVO de un rango. `to` es exclusivo (1er día del siguiente),
+ * así que el último mes real es el del día previo. Evita que `.lte("period", toMonth)`
+ * incluya el siguiente mes cuando el rango termina justo en un cambio de mes
+ * (ej. "m:2026-03" con to=2026-04-01 → lastMonth="2026-03", no "2026-04").
+ */
+function lastInclusiveMonth(toExclusive: Date): string {
+  const d = new Date(toExclusive);
+  d.setDate(d.getDate() - 1);
+  return toIso(d).slice(0, 7);
 }
 
 /** Number of days between two ISO dates (inclusive of the start day). */
