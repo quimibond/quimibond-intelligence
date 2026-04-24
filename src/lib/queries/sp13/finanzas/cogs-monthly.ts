@@ -142,13 +142,12 @@ async function _getCogsMonthlyRaw(range: HistoryRange): Promise<CogsMonthlyTrend
   };
 }
 
-export async function getCogsMonthly(range: HistoryRange): Promise<CogsMonthlyTrend> {
-  return _getCogsMonthlyRaw(range);
-}
-
-export const getCogsMonthlyCached = (range: HistoryRange) =>
+// Default export is cached (10 min TTL) to speed up period switches.
+export const getCogsMonthly = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsMonthlyRaw(range),
     ["sp13-finanzas-cogs-monthly", range],
-    { revalidate: 60, tags: ["finanzas"] }
+    { revalidate: 600, tags: ["finanzas"] }
   )();
+
+export const getCogsMonthlyCached = getCogsMonthly;

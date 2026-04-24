@@ -117,15 +117,12 @@ async function _getCogsPerProductRaw(
   };
 }
 
-export async function getCogsPerProduct(
-  range: HistoryRange
-): Promise<CogsPerProductSummary> {
-  return _getCogsPerProductRaw(range);
-}
-
-export const getCogsPerProductCached = (range: HistoryRange) =>
+// Default export is cached (10 min TTL) to speed up period switches.
+export const getCogsPerProduct = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsPerProductRaw(range),
     ["sp13-finanzas-cogs-per-product", range],
-    { revalidate: 60, tags: ["finanzas"] }
+    { revalidate: 600, tags: ["finanzas"] }
   )();
+
+export const getCogsPerProductCached = getCogsPerProduct;

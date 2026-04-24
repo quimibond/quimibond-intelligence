@@ -215,13 +215,20 @@ async function _getTopProductsWithCompositionRaw(
 ): Promise<TopProductsSummary> {
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
-  const { data, error } = await sb.rpc("get_cogs_per_product", {
-    p_date_from: bounds.from,
-    p_date_to: bounds.to,
-  });
+  // RPC batch: 1 roundtrip retorna top N productos + composición JSON.
+  // Antes hacíamos 1 RPC + N llamadas a get_bom_composition (21 roundtrips
+  // para top 20). El batch agrupa todo con CROSS JOIN LATERAL + jsonb_agg.
+  const { data, error } = await sb.rpc(
+    "get_top_products_composition_batch",
+    {
+      p_date_from: bounds.from,
+      p_date_to: bounds.to,
+      p_limit: limit,
+    }
+  );
   if (error) {
     console.error(
-      "[getTopProductsWithComposition] cogs_per_product failed",
+      "[getTopProductsWithComposition] batch rpc failed",
       error.message
     );
     return {
@@ -232,7 +239,19 @@ async function _getTopProductsWithCompositionRaw(
       totalCogsRecursiveMxn: 0,
     };
   }
-  type Row = {
+  type CompJson = {
+    leafProductId: number;
+    leafRef: string | null;
+    leafName: string | null;
+    qtyPerUnit: number | string;
+    avgCostMxn: number | string | null;
+    costContributionMxn: number | string;
+    pctOfTotal: number | string;
+    depth: number;
+    path: string;
+    hasCost: boolean;
+  };
+  type BatchRow = {
     odoo_product_id: number;
     product_ref: string | null;
     product_name: string | null;
@@ -242,41 +261,34 @@ async function _getTopProductsWithCompositionRaw(
     cogs_recursive_total_mxn: number | string;
     margin_pct: number | string | null;
     flags: string[] | null;
+    composition: CompJson[] | null;
+    leaves_without_cost: number | string;
   };
-  const all = (data ?? []) as Row[];
-  // Filter: exclude machine / assets without ref
-  const filtered = all.filter(
-    (p) =>
-      p.product_ref &&
-      Number(p.revenue_invoice_mxn) > 0 &&
-      Number(p.qty_sold) > 0
-  );
-  filtered.sort(
-    (a, b) => Number(b.revenue_invoice_mxn) - Number(a.revenue_invoice_mxn)
-  );
-  const top = filtered.slice(0, limit);
-
-  // Fetch composition for each top product in parallel
-  const compositions = await Promise.all(
-    top.map((p) => getBomComposition(p.odoo_product_id))
-  );
-
-  const rows: TopProductWithComposition[] = top.map((p, i) => {
-    const comp = compositions[i];
-    return {
-      productId: Number(p.odoo_product_id),
-      productRef: p.product_ref,
-      productName: p.product_name,
-      qtySold: Number(p.qty_sold) || 0,
-      revenueInvoiceMxn: Number(p.revenue_invoice_mxn) || 0,
-      cogsRecursiveUnitMxn: Number(p.cogs_recursive_unit_mxn) || 0,
-      cogsRecursiveTotalMxn: Number(p.cogs_recursive_total_mxn) || 0,
-      marginPct: p.margin_pct == null ? null : Number(p.margin_pct),
-      flags: p.flags ?? [],
-      composition: comp.leaves,
-      leavesWithoutCostInBom: comp.leavesWithoutCost,
-    };
-  });
+  const batch = (data ?? []) as BatchRow[];
+  const rows: TopProductWithComposition[] = batch.map((p) => ({
+    productId: Number(p.odoo_product_id),
+    productRef: p.product_ref,
+    productName: p.product_name,
+    qtySold: Number(p.qty_sold) || 0,
+    revenueInvoiceMxn: Number(p.revenue_invoice_mxn) || 0,
+    cogsRecursiveUnitMxn: Number(p.cogs_recursive_unit_mxn) || 0,
+    cogsRecursiveTotalMxn: Number(p.cogs_recursive_total_mxn) || 0,
+    marginPct: p.margin_pct == null ? null : Number(p.margin_pct),
+    flags: p.flags ?? [],
+    composition: (p.composition ?? []).map((c) => ({
+      leafProductId: Number(c.leafProductId),
+      leafRef: c.leafRef,
+      leafName: c.leafName,
+      qtyPerUnit: Number(c.qtyPerUnit),
+      avgCostMxn: c.avgCostMxn == null ? null : Number(c.avgCostMxn),
+      costContributionMxn: Number(c.costContributionMxn) || 0,
+      pctOfTotal: Number(c.pctOfTotal) || 0,
+      depth: Number(c.depth),
+      path: c.path,
+      hasCost: Boolean(c.hasCost),
+    })),
+    leavesWithoutCostInBom: Number(p.leaves_without_cost) || 0,
+  }));
 
   const totalRevenueMxn = rows.reduce((s, r) => s + r.revenueInvoiceMxn, 0);
   const totalCogsRecursiveMxn = rows.reduce(

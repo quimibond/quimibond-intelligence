@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import type { HistoryRange } from "@/components/patterns/history-range";
 import { periodBoundsForRange } from "./_period";
@@ -264,11 +265,17 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
   };
 }
 
-export async function getPnlKpis(range: HistoryRange): Promise<PnlKpis> {
-  return _getPnlKpisRaw(range);
-}
+// Cached (10 min TTL). Evita pegar a Supabase en cada cambio de período
+// cuando ya tenemos el KPI set para ese range cacheado. El waterfall usa
+// los mismos agregados que KPIs — los compartimos via la misma llamada.
+export const getPnlKpis = (range: HistoryRange) =>
+  unstable_cache(
+    () => _getPnlKpisRaw(range),
+    ["sp13-finanzas-pnl-kpis", range],
+    { revalidate: 600, tags: ["finanzas"] }
+  )();
 
-export async function getPnlWaterfall(
+async function _getPnlWaterfallRaw(
   range: HistoryRange
 ): Promise<WaterfallPoint[]> {
   const agg = await fetchPlAggregates(range);
@@ -288,3 +295,10 @@ export async function getPnlWaterfall(
     { label: "Utilidad neta", value: round2(t.utilidadNeta), kind: "total" },
   ];
 }
+
+export const getPnlWaterfall = (range: HistoryRange) =>
+  unstable_cache(
+    () => _getPnlWaterfallRaw(range),
+    ["sp13-finanzas-pnl-waterfall", range],
+    { revalidate: 600, tags: ["finanzas"] }
+  )();

@@ -263,18 +263,21 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   };
 }
 
-export async function getCogsComparison(
-  range: HistoryRange
-): Promise<CogsComparison> {
-  return _getCogsComparisonRaw(range);
-}
+// Default export is cached (10 min TTL) to speed up period switches.
+// Tests import _getCogsComparisonForTests for the uncached implementation.
+export const getCogsComparison = (range: HistoryRange) =>
+  unstable_cache(
+    () => _getCogsComparisonRaw(range),
+    ["sp13-finanzas-cogs-comparison", range],
+    { revalidate: 600, tags: ["finanzas"] }
+  )();
 
 export { _getCogsComparisonRaw as _getCogsComparisonForTests };
 
-// Cached version — keyed by range
+// Alias para compatibilidad con callers previos.
 export const getCogsComparisonCached = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
     ["sp13-finanzas-cogs-comparison", range],
-    { revalidate: 60, tags: ["finanzas"] }
+    { revalidate: 600, tags: ["finanzas"] }
   )();
