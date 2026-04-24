@@ -365,7 +365,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="info"
           href="/cobranza"
-          subtitle={`vencido ${formatCurrencyMXN(wc.arOverdueMxn, { compact: true })} · ${wc.arInvoiceCount} facturas`}
+          subtitle={`vencido ${formatCurrencyMXN(wc.arOverdueMxn, { compact: true })} · ${wc.arCompaniesCount} clientes`}
         />
         <KpiCard
           title="AP — yo debo"
@@ -376,7 +376,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="warning"
           href="/compras"
-          subtitle={`vencido ${formatCurrencyMXN(wc.apOverdueMxn, { compact: true })} · ${wc.apInvoiceCount} facturas`}
+          subtitle={`${wc.apCompaniesCount} proveedores abiertos`}
         />
         <KpiCard
           title="Neto (AR − AP)"
@@ -469,9 +469,11 @@ function ContributorsTable({
                     ) : (
                       <span className="font-medium">{r.companyName}</span>
                     )}
-                    <div className="text-[11px] text-muted-foreground">
-                      {r.invoiceCount} factura{r.invoiceCount === 1 ? "" : "s"}
-                    </div>
+                    {r.invoiceCount > 0 && (
+                      <div className="text-[11px] text-muted-foreground">
+                        {r.invoiceCount} factura{r.invoiceCount === 1 ? "" : "s"} vencida{r.invoiceCount === 1 ? "" : "s"}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     <Currency amount={r.totalMxn} />
