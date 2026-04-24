@@ -430,7 +430,7 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
               }
             />
             <KpiCard
-              title="Utilidad bruta ajustada (MP)"
+              title="Margen contributivo material"
               value={utilidadBrutaAjustada}
               format="currency"
               compact
@@ -440,36 +440,43 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
               subtitle={
                 cogs.grossMarginRecursivePct == null
                   ? "sin ingresos"
-                  : `margen material ${cogs.grossMarginRecursivePct.toFixed(1)}%`
+                  : `${cogs.grossMarginRecursivePct.toFixed(1)}% · lo que deja cada peso vendido después de material`
               }
               definition={{
-                title: "Utilidad bruta ajustada a materia prima",
+                title: "Margen contributivo material",
                 description:
-                  "Ventas 4xx − COGS recursivo MP. Es la utilidad sin mano de obra, energía ni overhead. Mide la creación de valor del material antes del costo de transformar.",
+                  "Ventas 4xx − Costo primo real (BOM recursiva a MP). Es lo que queda para cubrir mano de obra, overhead de fábrica, depreciación y gastos operativos. NO es utilidad — es contribución bruta del material.",
                 formula:
                   "ventas_producto_4xx - Σ(line.qty × costo_MP_recursivo)",
                 table: "derived",
               }}
             />
             <KpiCard
-              title="Overhead real"
-              value={cogs.overheadMxn}
+              title="CAPA pendiente del mes"
+              value={kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn}
               format="currency"
               compact
               icon={Flame}
               source="pl"
-              tone={cogs.overheadMxn > 0 ? "warning" : "danger"}
+              tone={
+                Math.abs(kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn) < 100000
+                  ? "success"
+                  : kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn > 0
+                    ? "warning"
+                    : "info"
+              }
               subtitle={
-                cogs.cogsCapaValoracionMxn > 0
-                  ? `${cogs.overheadPctOfRaw.toFixed(1)}% del raw · ajuste aplicado ${formatCurrencyMXN(cogs.cogsCapaValoracionMxn, { compact: true })}`
-                  : `${cogs.overheadPctOfRaw.toFixed(1)}% del raw · sin ajuste aún`
+                kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn > 0
+                  ? `501.01 tiene ${formatCurrencyMXN(kpis.cogs501_01Mxn, { compact: true })} vs MP real ${formatCurrencyMXN(cogs.cogsRecursiveMpMxn, { compact: true })} · te falta CAPA`
+                  : `501.01 ${formatCurrencyMXN(kpis.cogs501_01Mxn, { compact: true })} < MP real · CAPA en exceso`
               }
               definition={{
-                title: "Overhead real implícito",
+                title: "CAPA de valoración pendiente",
                 description:
-                  "COGS raw (pre-ajuste) − COGS recursivo MP. Representa mano de obra, energía, depreciación y overhead que se cargaron a 501.xx pero no son material puro. Comparar contra el ajuste de capa: si el ajuste es menor que el overhead, el P&L sigue sobre-valorando el costo de ventas.",
-                formula: "cogs_raw - cogs_recursive_mp",
-                table: "derived",
+                  "Diferencia entre el saldo actual de 501.01 (post-CAPA aplicada) y el costo primo real de la BOM recursiva. Positivo = overhead aún pegado a 501.01 que deberías remover con CAPA. Negativo = te pasaste. Cero = CAPA perfecta.",
+                formula: "501.01_actual − cogs_recursivo_mp",
+                table:
+                  "canonical_account_balances + get_cogs_recursive_mp",
               }}
             />
             <KpiCard
@@ -498,24 +505,28 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
-                P&L contable vs solo material (recursivo)
+                P&L limpio — costo primo real (BOM recursiva)
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                La columna &ldquo;recursivo&rdquo; reemplaza el COGS contable por el costo
-                de material puro (BOM hasta hojas). La Δ es el overhead de
-                fabricación (mano de obra directa, energéticos, renta fábrica,
-                depreciación maquinaria) que está pegado a 501/504 y no se
-                elimina con tu CAPA de valoración.
+                501.01 reemplazado por costo primo real de la BOM recursiva hasta
+                materia prima. Los demás costos (mano de obra 501.06, overhead
+                fábrica 504.01, depreciación 504.08-23, gastos op 6xx) quedan
+                en su cuenta. La CAPA de valoración deshace la duplicación que
+                Odoo mete automáticamente a 501.01.
               </p>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <PnlCompareTable
+              <PnlLimpioTable
                 ventas={kpis.ingresosPl}
-                cogsContable={cogs.cogsContableMxn}
-                cogsRecursivo={cogs.cogsRecursiveMpMxn}
-                capaValoracion={cogs.cogsCapaValoracionMxn}
-                gastosOp={kpis.gastosOperativos}
+                costoPrimo={cogs.cogsRecursiveMpMxn}
+                cogs501_01Actual={kpis.cogs501_01Mxn}
+                mod={kpis.mod501_06Mxn}
+                compras={kpis.compras502Mxn}
+                overhead={kpis.overhead504_01Mxn}
+                depFabrica={kpis.depFabrica504Mxn}
+                gastosOp={kpis.gastosOp6xxMxn + kpis.depCorpoMxn}
                 otros={kpis.otrosIngresosNetoMxn}
+                netaContable={kpis.utilidadNeta}
               />
             </CardContent>
           </Card>
@@ -564,136 +575,133 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
   );
 }
 
-/* Tabla comparativa P&L: contable vs solo material (recursivo) ───────── */
-function PnlCompareTable({
+/* Tabla P&L limpio con costo primo real (BOM recursiva) ───────────────── */
+function PnlLimpioTable({
   ventas,
-  cogsContable,
-  cogsRecursivo,
-  capaValoracion,
+  costoPrimo,
+  cogs501_01Actual,
+  mod,
+  compras,
+  overhead,
+  depFabrica,
   gastosOp,
   otros,
+  netaContable,
 }: {
   ventas: number;
-  cogsContable: number;
-  cogsRecursivo: number;
-  capaValoracion: number;
+  costoPrimo: number;
+  cogs501_01Actual: number;
+  mod: number;
+  compras: number;
+  overhead: number;
+  depFabrica: number;
   gastosOp: number;
   otros: number;
+  netaContable: number;
 }) {
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
   const pct = (num: number, den: number) =>
     den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—";
 
-  const bruta_c = ventas - cogsContable;
-  const bruta_r = ventas - cogsRecursivo;
-  const ebit_c = bruta_c - gastosOp;
-  const ebit_r = bruta_r - gastosOp;
-  const neta_c = ebit_c + otros;
-  const neta_r = ebit_r + otros;
+  // 501.01 residual = lo que tiene 501.01 y NO es MP (CAPA pendiente o exceso)
+  // Si positivo: falta CAPA. Si negativo: te pasaste.
+  const residual501_01 = cogs501_01Actual - costoPrimo;
 
-  // Overhead implícito pre-CAPA = COGS raw − MP. Mide todo lo que la
-  // CAPA debería remover + lo que se queda pegado.
-  const cogsRaw = cogsContable + capaValoracion;
-  const overheadImpPre = cogsRaw - cogsRecursivo;
-  const overheadImpPost = cogsContable - cogsRecursivo;
+  const margenContributivo = ventas - costoPrimo;
+  const ebit = margenContributivo - mod - compras - overhead - depFabrica - gastosOp;
+  const neta = ebit + otros;
 
-  const rows: Array<{
+  // Diferencia vs neta contable (debe ser exactamente el residual).
+  const deltaNeta = neta - netaContable;
+
+  type Row = {
     label: string;
-    c: number;
-    r: number;
+    amount: number;
     total?: boolean;
-    pct?: boolean;
-    tone?: "pos" | "neg" | "muted";
+    subtotal?: boolean;
     note?: string;
-  }> = [
-    { label: "Ventas de producto (4xx)", c: ventas, r: ventas },
-    { label: "− COGS", c: -cogsContable, r: -cogsRecursivo, tone: "neg" },
+    muted?: boolean;
+  };
+  const rows: Row[] = [
+    { label: "Ventas de producto (4xx)", amount: ventas, total: true },
+    { label: "− Costo primo real (BOM recursiva → MP)", amount: -costoPrimo },
     {
-      label: "= Utilidad bruta",
-      c: bruta_c,
-      r: bruta_r,
-      total: true,
-      note:
-        "Contable: con overhead pegado a 501/504. Recursivo: solo material puro.",
+      label: "= Margen contributivo material",
+      amount: margenContributivo,
+      subtotal: true,
+      note: `${pct(margenContributivo, ventas)} del ingreso. Cada peso vendido deja esto para cubrir MOD, overhead y gastos.`,
     },
-    { label: "Margen %", c: bruta_c, r: bruta_r, pct: true, tone: "muted" },
-    { label: "− Gastos op (6xx + dep.)", c: -gastosOp, r: -gastosOp, tone: "neg" },
-    { label: "= EBIT", c: ebit_c, r: ebit_r, total: true },
-    {
-      label: "+ Otros ingresos (7xx)",
-      c: otros,
-      r: otros,
-      tone: otros >= 0 ? "pos" : "neg",
-    },
-    { label: "= Utilidad neta", c: neta_c, r: neta_r, total: true },
+    { label: "− Mano de obra directa (501.06)", amount: -mod },
+    { label: "− Compras de importación (502)", amount: -compras },
+    { label: "− Overhead fábrica (504.01 renta/energía/servicios)", amount: -overhead },
+    { label: "− Depreciación fábrica (504.08-23)", amount: -depFabrica },
+    { label: "− Gastos operativos (6xx + 613 dep.)", amount: -gastosOp },
+    { label: "= EBIT", amount: ebit, subtotal: true, note: pct(ebit, ventas) },
+    { label: "+ Otros ingresos (7xx: FX, intereses, venta activo)", amount: otros },
+    { label: "= UTILIDAD NETA (P&L limpio)", amount: neta, total: true },
   ];
 
   return (
     <Table>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-[40%]">Concepto</TableHead>
-          <TableHead className="text-right">Contable</TableHead>
-          <TableHead className="text-right">Solo MP (recursivo)</TableHead>
-          <TableHead className="text-right">Δ (overhead implícito)</TableHead>
+          <TableHead className="w-[70%]">Concepto</TableHead>
+          <TableHead className="text-right">Monto</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
-        {rows.map((row, i) => {
-          const delta = row.r - row.c;
-          const cText = row.pct ? pct(row.c, ventas) : fmt(row.c);
-          const rText = row.pct ? pct(row.r, ventas) : fmt(row.r);
-          const dText = row.pct
-            ? `${(((row.r - row.c) / ventas) * 100).toFixed(1)} pp`
-            : fmt(delta);
-          return (
-            <TableRow
-              key={i}
-              className={row.total ? "font-semibold bg-muted/40" : ""}
+        {rows.map((r, i) => (
+          <TableRow
+            key={i}
+            className={
+              r.total
+                ? "font-semibold bg-muted/60"
+                : r.subtotal
+                  ? "font-medium bg-muted/30"
+                  : ""
+            }
+          >
+            <TableCell>
+              {r.label}
+              {r.note && (
+                <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
+                  {r.note}
+                </p>
+              )}
+            </TableCell>
+            <TableCell
+              className={`text-right tabular-nums ${r.amount < 0 && !r.total && !r.subtotal ? "text-muted-foreground" : ""}`}
             >
-              <TableCell>
-                {row.label}
-                {row.note && (
-                  <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
-                    {row.note}
-                  </p>
-                )}
-              </TableCell>
-              <TableCell
-                className={`text-right tabular-nums ${row.tone === "neg" ? "text-destructive" : row.tone === "muted" ? "text-muted-foreground" : ""}`}
-              >
-                {cText}
-              </TableCell>
-              <TableCell
-                className={`text-right tabular-nums ${row.tone === "neg" ? "text-destructive" : row.tone === "muted" ? "text-muted-foreground" : ""}`}
-              >
-                {rText}
-              </TableCell>
-              <TableCell className="text-right tabular-nums text-muted-foreground">
-                {dText}
-              </TableCell>
-            </TableRow>
-          );
-        })}
-        <TableRow className="border-t-2">
+              {fmt(r.amount)}
+            </TableCell>
+          </TableRow>
+        ))}
+        <TableRow className="border-t-2 bg-warning/5">
           <TableCell>
-            <span className="text-xs text-muted-foreground">
-              Overhead implícito TOTAL (raw − MP)
+            <span className="text-xs font-medium">
+              Δ vs P&L contable
             </span>
             <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-              Costo contable pre-CAPA vs material puro. Lo que &ldquo;debería&rdquo;
-              removerse de 501.xx para dejarlo en material puro (tu CAPA ya
-              removió {fmt(capaValoracion)}).
+              501.01 contable actual = {fmt(cogs501_01Actual)}, MP real = {fmt(costoPrimo)}.
+              Residual de {fmt(residual501_01)} es {residual501_01 > 0
+                ? "CAPA pendiente que te falta remover"
+                : "CAPA en exceso (removiste de más)"}.
+              Neta contable: {fmt(netaContable)} · Neta limpia: {fmt(neta)}.
             </p>
           </TableCell>
-          <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
-            pre-CAPA {fmt(overheadImpPre)}
-          </TableCell>
-          <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
-            post-CAPA {fmt(overheadImpPost)}
-          </TableCell>
-          <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
-            falta {fmt(overheadImpPost)}
+          <TableCell className="text-right tabular-nums text-xs">
+            <span
+              className={
+                Math.abs(deltaNeta) < 1
+                  ? "text-muted-foreground"
+                  : deltaNeta > 0
+                    ? "text-success"
+                    : "text-destructive"
+              }
+            >
+              {deltaNeta > 0 ? "+" : ""}
+              {fmt(deltaNeta)}
+            </span>
           </TableCell>
         </TableRow>
       </TableBody>

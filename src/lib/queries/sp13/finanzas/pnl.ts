@@ -6,39 +6,49 @@ import { periodBoundsForRange } from "./_period";
 /**
  * F3 — P&L KPIs + waterfall for a given HistoryRange.
  *
- * Sources (todo desde canonical_account_balances — una sola verdad):
- * - Ingresos split por account_code prefix:
- *     4xx → ventas de producto (ingresos de verdad)
- *     7xx → otros ingresos netos (FX, intereses, venta de activo, pérdidas financieras)
- * - COGS y gastos op split por account_type individual:
- *     expense_direct_cost  → COGS
- *     expense              → gastos operativos
- *     expense_depreciation → gastos operativos (incluye 504.08/09/10/11/23
- *                            depreciación maquinaria + amortización instalaciones
- *                            que erroneamente `gold_pl_statement.by_level_1`
- *                            agrupa bajo 504 como expense_direct_cost. Ese
- *                            agregado prefix-level perdía el type real y
- *                            sumaba $435k/mes al COGS en marzo 2026).
- * - net_income se deriva localmente de (4xx + 7xx) − (cogs + opex); NO se
- *   toma de gold_pl_statement para evitar drift.
- * - canonical_invoices (SAT revenue for the same window; drift detection).
+ * Single source of truth: canonical_account_balances con filtros por
+ * account_code prefix (para ingresos) y account_type por-row (para egresos).
+ * Nunca usamos gold_pl_statement.by_level_1 — agrupa a prefix y pierde la
+ * distinción entre expense_direct_cost y expense_depreciation dentro del
+ * mismo prefijo (504.01 vs 504.08-23).
+ *
+ * Breakdown por cuenta para "P&L limpio con costo primo real":
+ *   501.01  Cost of sales (debería ser solo MP; residuo vs BOM = CAPA pendiente)
+ *   501.06  Mano de obra directa
+ *   502     Compras importación
+ *   504.01  Overhead fábrica (renta, energía, servicios)
+ *   504.08-23 Depreciación fábrica
+ *   6xx     Gastos operativos admin/ventas
+ *   613     Depreciación CORPO
  *
  * SIGN CONVENTION (Mexican chart of accounts):
- * - income accounts  → balance stored NEGATIVE (credit) → negate for display
- * - expense accounts → balance stored POSITIVE (debit) → keep as-is
+ * - income accounts  → balance stored NEGATIVE → negate for display
+ * - expense accounts → balance stored POSITIVE → keep as-is
  */
 export interface PnlKpis {
   period: HistoryRange;
   periodLabel: string;
-  ingresosPl: number; // ventas de producto (cuenta 4xx) — denominador de margen
-  otrosIngresosNetoMxn: number; // neto de cuenta 7xx (gains - losses financieros/otros)
+  // Ingresos
+  ingresosPl: number; // cuenta 4xx — ventas de producto
+  otrosIngresosNetoMxn: number; // cuenta 7xx neto
   ingresosSat: number;
+  // COGS totales (legacy — suma de todas las expense_direct_cost)
   costoVentas: number;
+  // COGS breakdown por cuenta
+  cogs501_01Mxn: number; // Cost of sales (debería ser solo MP)
+  mod501_06Mxn: number; // Mano de obra directa
+  compras502Mxn: number; // Compras importación
+  overhead504_01Mxn: number; // Overhead fábrica
+  depFabrica504Mxn: number; // Depreciación maquinaria/edificio fábrica
+  // Gastos op
   gastosOperativos: number;
+  gastosOp6xxMxn: number; // 6xx expense
+  depCorpoMxn: number; // 613 expense_depreciation
+  // Totales / derivados
   utilidadBruta: number;
   utilidadNeta: number;
   netIncome: number;
-  driftPct: number | null; // abs((pl − sat) / max(pl,sat)) × 100
+  driftPct: number | null;
   monthsCovered: number;
 }
 
@@ -50,63 +60,104 @@ export interface WaterfallPoint {
 
 type PeriodWindow = {
   fromMonth: string;
-  toMonth: string; // YYYY-MM inclusive
+  toMonth: string;
   label: string;
   monthsCovered: number;
 };
 
-type RawRow = { balance: number | null; period: string | null };
+type RawRow = {
+  balance: number | null;
+  period: string | null;
+  account_code: string | null;
+  account_type: string | null;
+};
 
-/**
- * Single-source aggregate: lee canonical_account_balances con filtros por
- * account_code prefix (para ingresos) y account_type (para egresos). No
- * usa `gold_pl_statement.by_level_1` porque agrupa a nivel prefix y pierde
- * la distinción entre expense_direct_cost y expense_depreciation dentro
- * del mismo prefijo (ej. 504.01.xxx vs 504.08/09/10/11/23).
- */
-async function fetchPlAggregates(range: HistoryRange): Promise<{
+type Aggregates = {
   window: PeriodWindow;
   ventasProducto: number;
   otrosIngresosNeto: number;
-  costoVentas: number;
-  gastosOperativos: number;
-}> {
+  // expense breakdown
+  cogs501_01: number;
+  mod501_06: number;
+  compras502: number;
+  overhead504_01: number;
+  depFabrica504: number;
+  gastosOp6xx: number;
+  depCorpo613: number;
+};
+
+async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
   const toMonth = bounds.toMonth.slice(0, 7);
-  const base = () =>
+
+  // Two queries cover everything: all income + all expense rows for the period.
+  // Split by account_code + account_type locally. Cheap (~230 rows/mes × N meses).
+  const [incRes, expRes] = await Promise.all([
     sb
       .from("canonical_account_balances")
-      .select("balance, period")
+      .select("balance, period, account_code, account_type")
+      .eq("balance_sheet_bucket", "income")
       .eq("deprecated", false)
       .gte("period", bounds.fromMonth)
-      .lte("period", toMonth);
-
-  const [rev4Res, rev7Res, cogsRes, opexExpenseRes, opexDepRes] = await Promise.all([
-    base().eq("balance_sheet_bucket", "income").like("account_code", "4%"),
-    base().eq("balance_sheet_bucket", "income").like("account_code", "7%"),
-    base().eq("account_type", "expense_direct_cost"),
-    base().eq("account_type", "expense"),
-    base().eq("account_type", "expense_depreciation"),
+      .lte("period", toMonth),
+    sb
+      .from("canonical_account_balances")
+      .select("balance, period, account_code, account_type")
+      .eq("balance_sheet_bucket", "expense")
+      .eq("deprecated", false)
+      .gte("period", bounds.fromMonth)
+      .lte("period", toMonth),
   ]);
 
-  const sumBal = (rows: RawRow[] | null, negate = false) =>
-    (rows ?? []).reduce((s, r) => s + (Number(r.balance) || 0), 0) *
-    (negate ? -1 : 1);
+  const incRows = (incRes.data ?? []) as RawRow[];
+  const expRows = (expRes.data ?? []) as RawRow[];
 
-  const ventasProducto = sumBal(rev4Res.data as RawRow[] | null, true);
-  const otrosIngresosNeto = sumBal(rev7Res.data as RawRow[] | null, true);
-  const costoVentas = sumBal(cogsRes.data as RawRow[] | null);
-  const gastosOperativos =
-    sumBal(opexExpenseRes.data as RawRow[] | null) +
-    sumBal(opexDepRes.data as RawRow[] | null);
+  // Ingresos split por account_code prefix
+  let ventasProducto = 0;
+  let otrosIngresosNeto = 0;
+  for (const r of incRows) {
+    const bal = Number(r.balance) || 0;
+    const code = r.account_code ?? "";
+    if (code.startsWith("4")) ventasProducto -= bal; // negate (stored credit)
+    else if (code.startsWith("7")) otrosIngresosNeto -= bal;
+  }
 
-  // monthsCovered = distinct periods seen in ANY of the queries
-  const periods = new Set<string>();
-  for (const res of [rev4Res, rev7Res, cogsRes, opexExpenseRes, opexDepRes]) {
-    for (const r of (res.data ?? []) as RawRow[]) {
-      if (r.period) periods.add(r.period);
+  // Expenses split por prefix + account_type individual
+  let cogs501_01 = 0;
+  let mod501_06 = 0;
+  let compras502 = 0;
+  let overhead504_01 = 0;
+  let depFabrica504 = 0;
+  let gastosOp6xx = 0;
+  let depCorpo613 = 0;
+
+  for (const r of expRows) {
+    const bal = Number(r.balance) || 0;
+    const code = r.account_code ?? "";
+    const type = r.account_type ?? "";
+    if (code.startsWith("501.01")) cogs501_01 += bal;
+    else if (code.startsWith("501.06")) mod501_06 += bal;
+    else if (code.startsWith("502")) compras502 += bal;
+    else if (code.startsWith("504")) {
+      if (type === "expense_depreciation") depFabrica504 += bal;
+      else overhead504_01 += bal; // 504.01.xxxx
+    } else if (code.startsWith("6")) {
+      if (type === "expense_depreciation") depCorpo613 += bal;
+      else gastosOp6xx += bal;
+    } else {
+      // Fallback: cuentas 5xx restantes que no cumplan arriba van a gastos op
+      // por tipo. Esto cubre cualquier cuenta nueva sin explotar el P&L.
+      if (type === "expense_direct_cost") cogs501_01 += bal;
+      else if (type === "expense_depreciation") depCorpo613 += bal;
+      else gastosOp6xx += bal;
     }
+  }
+
+  // monthsCovered = distinct periods seen
+  const periods = new Set<string>();
+  for (const r of [...incRows, ...expRows]) {
+    if (r.period) periods.add(r.period);
   }
 
   return {
@@ -118,8 +169,13 @@ async function fetchPlAggregates(range: HistoryRange): Promise<{
     },
     ventasProducto,
     otrosIngresosNeto,
-    costoVentas,
-    gastosOperativos,
+    cogs501_01,
+    mod501_06,
+    compras502,
+    overhead504_01,
+    depFabrica504,
+    gastosOp6xx,
+    depCorpo613,
   };
 }
 
@@ -127,15 +183,35 @@ function round2(n: number) {
   return Math.round(n * 100) / 100;
 }
 
+function deriveTotals(agg: Aggregates) {
+  const costoVentas =
+    agg.cogs501_01 +
+    agg.mod501_06 +
+    agg.compras502 +
+    agg.overhead504_01 +
+    agg.depFabrica504;
+  const gastosOperativos = agg.gastosOp6xx + agg.depCorpo613;
+  const utilidadBruta = agg.ventasProducto - costoVentas;
+  const utilidadNeta =
+    agg.ventasProducto +
+    agg.otrosIngresosNeto -
+    costoVentas -
+    gastosOperativos;
+  return { costoVentas, gastosOperativos, utilidadBruta, utilidadNeta };
+}
+
 async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
   const sb = getServiceClient();
   const agg = await fetchPlAggregates(range);
+  const t = deriveTotals(agg);
 
   // SAT revenue for the same window (emitidas dentro del rango)
   const bounds = periodBoundsForRange(range);
   const { data: satData, error: satErr } = await sb
     .from("canonical_invoices")
-    .select("amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo, invoice_date")
+    .select(
+      "amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo, invoice_date"
+    )
     .eq("direction", "issued")
     .neq("estado_sat", "cancelado")
     .gte("invoice_date", bounds.from)
@@ -159,16 +235,6 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     0
   );
 
-  const utilidadBruta = agg.ventasProducto - agg.costoVentas;
-  // net_income = ingresos totales − gastos totales. Reconstruido local en
-  // vez de leerse de gold_pl_statement (que no separa 504 depreciation
-  // correctamente). Positivo = utilidad, negativo = pérdida.
-  const utilidadNeta =
-    agg.ventasProducto +
-    agg.otrosIngresosNeto -
-    agg.costoVentas -
-    agg.gastosOperativos;
-
   const maxSide = Math.max(agg.ventasProducto, ingresosSat);
   const driftPct =
     maxSide > 0
@@ -180,13 +246,20 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     periodLabel: agg.window.label,
     ingresosPl: round2(agg.ventasProducto),
     otrosIngresosNetoMxn: round2(agg.otrosIngresosNeto),
-    costoVentas: round2(agg.costoVentas),
-    gastosOperativos: round2(agg.gastosOperativos),
-    utilidadBruta: round2(utilidadBruta),
-    utilidadNeta: round2(utilidadNeta),
-    netIncome: round2(utilidadNeta),
-    monthsCovered: agg.window.monthsCovered,
     ingresosSat: round2(ingresosSat),
+    costoVentas: round2(t.costoVentas),
+    cogs501_01Mxn: round2(agg.cogs501_01),
+    mod501_06Mxn: round2(agg.mod501_06),
+    compras502Mxn: round2(agg.compras502),
+    overhead504_01Mxn: round2(agg.overhead504_01),
+    depFabrica504Mxn: round2(agg.depFabrica504),
+    gastosOperativos: round2(t.gastosOperativos),
+    gastosOp6xxMxn: round2(agg.gastosOp6xx),
+    depCorpoMxn: round2(agg.depCorpo613),
+    utilidadBruta: round2(t.utilidadBruta),
+    utilidadNeta: round2(t.utilidadNeta),
+    netIncome: round2(t.utilidadNeta),
+    monthsCovered: agg.window.monthsCovered,
     driftPct,
   };
 }
@@ -199,24 +272,19 @@ export async function getPnlWaterfall(
   range: HistoryRange
 ): Promise<WaterfallPoint[]> {
   const agg = await fetchPlAggregates(range);
-  const utilidadBruta = agg.ventasProducto - agg.costoVentas;
-  const ebit = utilidadBruta - agg.gastosOperativos;
-  const utilidadNeta =
-    agg.ventasProducto +
-    agg.otrosIngresosNeto -
-    agg.costoVentas -
-    agg.gastosOperativos;
+  const t = deriveTotals(agg);
+  const ebit = t.utilidadBruta - t.gastosOperativos;
   return [
     { label: "Ventas de producto", value: round2(agg.ventasProducto), kind: "positive" },
-    { label: "COGS", value: round2(-agg.costoVentas), kind: "negative" },
-    { label: "Utilidad bruta", value: round2(utilidadBruta), kind: "total" },
-    { label: "Gastos op.", value: round2(-agg.gastosOperativos), kind: "negative" },
+    { label: "COGS", value: round2(-t.costoVentas), kind: "negative" },
+    { label: "Utilidad bruta", value: round2(t.utilidadBruta), kind: "total" },
+    { label: "Gastos op.", value: round2(-t.gastosOperativos), kind: "negative" },
     { label: "EBIT", value: round2(ebit), kind: "total" },
     {
       label: "Otros ingresos",
       value: round2(agg.otrosIngresosNeto),
       kind: agg.otrosIngresosNeto >= 0 ? "positive" : "negative",
     },
-    { label: "Utilidad neta", value: round2(utilidadNeta), kind: "total" },
+    { label: "Utilidad neta", value: round2(t.utilidadNeta), kind: "total" },
   ];
 }
