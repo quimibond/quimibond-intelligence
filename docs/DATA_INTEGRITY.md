@@ -212,6 +212,28 @@ Passing baseline: 45 / 45 (after calibrating tolerances for pre-existing
 historical quirks — `canonical_inventory.duplicate_product` (MV join
 produces 4 dup products in Toluca), `canonical_purchase_orders.approved_before_ordered` (14 retroactive 2022 POs)).
 
+### 2026-04-24 sweep 3 — closing the 3 fixable failures
+
+After registering the 45 checks, 6 had non-zero fail counts (3 within
+tolerance, 3 over). The 3 fixable ones were closed in silver:
+
+| # | Bug | Root cause | Fix |
+|---|---|---|---|
+| 1 | `canonical_sale_orders.invalid_currency` (1 row, currency='001') | Bronze data entry on `odoo_sale_orders.PV13053`. Order is domestic textile, MXN. | UPDATE odoo_sale_orders + odoo_order_lines SET currency='MXN' WHERE odoo_order_id=13107; refresh canonical_sale_orders + canonical_order_lines MVs |
+| 2 | `canonical_invoices.sat_uuid_uppercase` (1 row colliding with lowercase twin) | Two DIFFERENT invoices (GVAR/2025/02/012 Odoo-only and GVAR/2025/02/099 SAT-stamped) shared a UUID. The Odoo-only one had a phantom uppercase UUID — likely a manual entry error. | UPDATE canonical_invoices SET sat_uuid=NULL WHERE canonical_id='odoo:691167' (it has no real SAT record) |
+| 3 | `canonical_inventory.duplicate_product` (4 products × 3 rows) | Check definition was wrong. `canonical_inventory` is a view JOINing `canonical_products` with `odoo_orderpoints` — a product LEGITIMATELY appears once per orderpoint (Toluca has 3 sub-locations: INSPECCIÓN, PT PQ TOLUCA, PT PQ CENTRO). | Redefined check to `(canonical_product_id, odoo_orderpoint_id)` composite uniqueness. |
+
+After fixes: 42/45 fully clean (0 failures), 3/45 with within-tolerance
+failures that are NOT bugs:
+
+- `canonical_payment_allocations.orphan_invoice` (22) — SAT UUIDs not yet
+  ingested; self-heals on next syntage cron
+- `canonical_purchase_orders.approved_before_ordered` (14) — 2022 backdated
+  POs, historical Odoo entry
+- `canonical_sale_orders.wild_margin` (191) — `margin_percent` math edge
+  case when `amount_untaxed` is near zero (division explodes); not a data
+  bug, fix would be a SQL NULLIF guard in the source MV
+
 ### Triggers installed (all BEFORE-row, SECURITY INVOKER)
 
 1. `canonical_invoices_resolve_residual_mxn_trg` — keeps
