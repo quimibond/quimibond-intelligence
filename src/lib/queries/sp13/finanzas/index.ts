@@ -50,4 +50,14 @@ export {
   type PnlAccountRow,
 } from "./pnl-by-account";
 export { getCogsComparison, type CogsComparison } from "./cogs-adjusted";
+export {
+  getCogsPerProduct,
+  type CogsPerProductRow,
+  type CogsPerProductSummary,
+} from "./cogs-per-product";
+export {
+  getCogsMonthly,
+  type CogsMonthlyPoint,
+  type CogsMonthlyTrend,
+} from "./cogs-monthly";
 export { periodBoundsForRange, daysBetween } from "./_period";

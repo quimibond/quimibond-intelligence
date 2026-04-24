@@ -46,6 +46,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 
 import {
   getCashKpis,
@@ -62,8 +68,12 @@ import {
   getTaxEvents,
   getPnlByAccount,
   getCogsComparison,
+  getCogsMonthly,
+  getCogsPerProduct,
   parseProjectionHorizon,
   type AnomalyRow,
+  type CogsMonthlyPoint,
+  type CogsPerProductRow,
 } from "@/lib/queries/sp13/finanzas";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import type { HistoryRange } from "@/components/patterns/history-range";
@@ -109,7 +119,6 @@ export default async function FinanzasPage({
           { id: "hero", label: "Snapshot" },
           { id: "balance-sheet", label: "Balance" },
           { id: "pnl", label: "P&L" },
-          { id: "cogs-adjusted", label: "COGS ajustado" },
           { id: "pnl-by-account", label: "Gastos por cuenta" },
           { id: "working-capital", label: "Capital trabajo" },
           { id: "fx", label: "FX" },
@@ -153,13 +162,6 @@ export default async function FinanzasPage({
         fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
       >
         <WorkingCapitalBlock />
-      </Suspense>
-
-      {/* F-COGS comparison */}
-      <Suspense
-        fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
-      >
-        <CogsComparisonBlock range={plPeriod} />
       </Suspense>
 
       {/* F-PnL by account */}
@@ -292,20 +294,26 @@ async function HeroKpis() {
   );
 }
 
-/* ── F3 P&L ──────────────────────────────────────────────────────────── */
+/* ── F3 P&L — contable vs ajustado a materia prima ───────────────────── */
 async function PnlBlock({ range }: { range: HistoryRange }) {
-  const [kpis, waterfall] = await Promise.all([
+  const [kpis, waterfall, cogs, monthly, perProduct] = await Promise.all([
     getPnlKpis(range),
     getPnlWaterfall(range),
+    getCogsComparison(range),
+    getCogsMonthly(range),
+    getCogsPerProduct(range),
   ]);
 
   const hasData = kpis.monthsCovered > 0;
+  const utilidadBrutaContable = cogs.revenueMxn - cogs.cogsContableMxn;
+  const utilidadBrutaAjustada = cogs.revenueMxn - cogs.cogsRecursiveMpMxn;
+  const assetSaleGap = cogs.revenueInvoicesMxn - cogs.revenueMxn;
 
   return (
     <QuestionSection
       id="pnl"
-      question="¿Cómo va mi P&L?"
-      subtext={`Ingresos, costos y utilidad · ${kpis.periodLabel}`}
+      question="¿Cómo va mi P&L contable vs el real (sin overhead)?"
+      subtext={`Ventas de producto (cuenta 4xx) · COGS contable (501.xx) vs COGS recursivo a materia prima · ${cogs.periodLabel}`}
       actions={<HistorySelector paramName="pl_period" defaultRange="mtd" />}
     >
       {!hasData ? (
@@ -316,71 +324,364 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
         />
       ) : (
         <>
-          <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
+          {/* Fila 1 — Ingresos split: 4xx vs 7xx */}
+          <StatGrid columns={{ mobile: 1, tablet: 4, desktop: 4 }}>
             <KpiCard
-              title="Ingresos"
+              title="Ventas de producto"
               value={kpis.ingresosPl}
               format="currency"
               compact
               icon={TrendingUp}
               source="pl"
-              sources={[
-                {
-                  source: "pl",
-                  value: kpis.ingresosPl,
-                  diffFromPrimary: 0,
-                  diffPct: 0,
-                },
-                {
-                  source: "sat",
-                  value: kpis.ingresosSat,
-                  diffFromPrimary: kpis.ingresosSat - kpis.ingresosPl,
-                  diffPct:
-                    kpis.ingresosPl > 0
-                      ? ((kpis.ingresosSat - kpis.ingresosPl) / kpis.ingresosPl) * 100
-                      : 0,
-                },
-              ]}
               tone="success"
               subtitle={
-                kpis.driftPct == null
-                  ? undefined
-                  : `drift SAT vs P&L: ${kpis.driftPct.toFixed(1)}%`
+                assetSaleGap > 1_000_000
+                  ? `+${formatCurrencyMXN(assetSaleGap, { compact: true })} venta de activo (7xx) NO incluida`
+                  : kpis.driftPct == null
+                    ? undefined
+                    : `drift SAT vs P&L: ${kpis.driftPct.toFixed(1)}%`
+              }
+              definition={{
+                title: "Ventas de producto (cuenta 4xx)",
+                description:
+                  "Ingresos por venta de producto exclusivamente. Excluye cuenta 7xx (otros ingresos: FX, intereses, venta de activo fijo).",
+                formula:
+                  "SUM(-balance) WHERE balance_sheet_bucket='income' AND account_code LIKE '4%'",
+                table: "canonical_account_balances",
+              }}
+            />
+            <KpiCard
+              title="Otros ingresos netos"
+              value={kpis.otrosIngresosNetoMxn}
+              format="currency"
+              compact
+              icon={Globe2}
+              source="pl"
+              tone={kpis.otrosIngresosNetoMxn >= 0 ? "info" : "warning"}
+              subtitle="FX, intereses, venta de activo (cuenta 7xx)"
+              definition={{
+                title: "Otros ingresos netos (cuenta 7xx)",
+                description:
+                  "Ganancia/pérdida cambiaria, intereses, utilidad/pérdida en venta de activo fijo. Se separan porque no son ventas y distorsionan el margen bruto.",
+                formula:
+                  "SUM(-balance) WHERE balance_sheet_bucket='income' AND account_code LIKE '7%'",
+                table: "canonical_account_balances",
+              }}
+            />
+            <KpiCard
+              title="COGS contable"
+              value={cogs.cogsContableMxn}
+              format="currency"
+              compact
+              icon={Receipt}
+              source="pl"
+              tone="warning"
+              subtitle={
+                cogs.cogsCapaValoracionMxn > 0
+                  ? `raw ${formatCurrencyMXN(cogs.cogsContableRawMxn, { compact: true })} − capa ${formatCurrencyMXN(cogs.cogsCapaValoracionMxn, { compact: true })}`
+                  : "sin ajuste de capa en el período"
+              }
+              definition={{
+                title: "COGS contable (cuenta 501.xx)",
+                description:
+                  "Costo de ventas contable actual. Ya refleja el ajuste manual del diario CAPA DE VALORACIÓN si se aplicó. El raw = contable + capa.",
+                formula: "SUM(balance) WHERE account_type='expense_direct_cost'",
+                table: "canonical_account_balances",
+              }}
+            />
+            <KpiCard
+              title="COGS ajustado (BOM → MP)"
+              value={cogs.cogsRecursiveMpMxn}
+              format="currency"
+              compact
+              icon={Receipt}
+              source="canonical"
+              tone="info"
+              subtitle={
+                cogs.bomCoveragePct < 95
+                  ? `⚠ cobertura BOM ${cogs.bomCoveragePct.toFixed(0)}%`
+                  : `cobertura ${cogs.bomCoveragePct.toFixed(0)}% · ${cogs.invoiceLinesWithBom}/${cogs.invoiceLinesTotal} líneas`
+              }
+              definition={{
+                title: "COGS ajustado recursivo a materia prima",
+                description:
+                  "Σ(qty × costo_MP_recursivo) por producto vendido. Explota la BOM primaria hasta llegar a hojas (MP comprada) y suma qty × avg_cost_mxn. Solo material, sin labor ni overhead de sub-ensambles.",
+                formula:
+                  "Σ(line.qty × get_bom_raw_material_cost_per_unit(product_id))",
+                table: "odoo_invoice_lines + mrp_boms + canonical_products",
+              }}
+            />
+          </StatGrid>
+
+          {/* Fila 2 — Utilidad bruta & overhead */}
+          <StatGrid columns={{ mobile: 1, tablet: 4, desktop: 4 }}>
+            <KpiCard
+              title="Utilidad bruta contable"
+              value={utilidadBrutaContable}
+              format="currency"
+              compact
+              icon={Scale}
+              source="pl"
+              tone={utilidadBrutaContable > 0 ? "success" : "danger"}
+              subtitle={
+                cogs.grossMarginContablePct == null
+                  ? "sin ingresos"
+                  : `margen ${cogs.grossMarginContablePct.toFixed(1)}% · post ajuste capa`
               }
             />
             <KpiCard
-              title="Costos + Gastos"
-              value={kpis.costoVentas + kpis.gastosOperativos}
+              title="Utilidad bruta ajustada (MP)"
+              value={utilidadBrutaAjustada}
               format="currency"
               compact
-              icon={TrendingDown}
+              icon={Scale}
+              source="canonical"
+              tone={utilidadBrutaAjustada > 0 ? "success" : "danger"}
+              subtitle={
+                cogs.grossMarginRecursivePct == null
+                  ? "sin ingresos"
+                  : `margen material ${cogs.grossMarginRecursivePct.toFixed(1)}%`
+              }
+              definition={{
+                title: "Utilidad bruta ajustada a materia prima",
+                description:
+                  "Ventas 4xx − COGS recursivo MP. Es la utilidad sin mano de obra, energía ni overhead. Mide la creación de valor del material antes del costo de transformar.",
+                formula:
+                  "ventas_producto_4xx - Σ(line.qty × costo_MP_recursivo)",
+                table: "derived",
+              }}
+            />
+            <KpiCard
+              title="Overhead real"
+              value={cogs.overheadMxn}
+              format="currency"
+              compact
+              icon={Flame}
               source="pl"
-              tone="warning"
-              subtitle={`COGS ${formatCurrencyMXN(kpis.costoVentas, { compact: true })} · Op ${formatCurrencyMXN(kpis.gastosOperativos, { compact: true })}`}
+              tone={cogs.overheadMxn > 0 ? "warning" : "danger"}
+              subtitle={
+                cogs.cogsCapaValoracionMxn > 0
+                  ? `${cogs.overheadPctOfRaw.toFixed(1)}% del raw · ajuste aplicado ${formatCurrencyMXN(cogs.cogsCapaValoracionMxn, { compact: true })}`
+                  : `${cogs.overheadPctOfRaw.toFixed(1)}% del raw · sin ajuste aún`
+              }
+              definition={{
+                title: "Overhead real implícito",
+                description:
+                  "COGS raw (pre-ajuste) − COGS recursivo MP. Representa mano de obra, energía, depreciación y overhead que se cargaron a 501.xx pero no son material puro. Comparar contra el ajuste de capa: si el ajuste es menor que el overhead, el P&L sigue sobre-valorando el costo de ventas.",
+                formula: "cogs_raw - cogs_recursive_mp",
+                table: "derived",
+              }}
             />
             <KpiCard
               title="Utilidad neta"
               value={kpis.utilidadNeta}
               format="currency"
               compact
-              icon={Scale}
+              icon={TrendingDown}
               source="pl"
               tone={kpis.utilidadNeta >= 0 ? "success" : "danger"}
-              subtitle={`${kpis.monthsCovered} mes${kpis.monthsCovered === 1 ? "" : "es"} del período`}
+              subtitle={`${kpis.monthsCovered} mes${kpis.monthsCovered === 1 ? "" : "es"} · gastos op ${formatCurrencyMXN(kpis.gastosOperativos, { compact: true })}`}
             />
           </StatGrid>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-base">Waterfall: cómo llego de Ingresos a Utilidad neta</CardTitle>
+              <CardTitle className="text-base">
+                Waterfall: cómo llego de Ventas a Utilidad neta
+              </CardTitle>
             </CardHeader>
             <CardContent>
               <PnlWaterfallChart data={waterfall} />
             </CardContent>
           </Card>
+
+          <Accordion
+            type="multiple"
+            defaultValue={[]}
+            className="rounded-lg border bg-card"
+          >
+            <AccordionItem value="monthly">
+              <AccordionTrigger className="px-4">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  Serie mensual · contable vs ajustado
+                  {monthly.points.some((p) => p.status !== "ok") && (
+                    <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning">
+                      {monthly.points.filter((p) => p.status !== "ok").length} meses con alertas
+                    </Badge>
+                  )}
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-4 pb-4">
+                <CogsMonthlyTable points={monthly.points} />
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem value="per-product">
+              <AccordionTrigger className="px-4">
+                <span className="flex items-center gap-2 text-sm font-medium">
+                  Desglose por producto · {perProduct.rows.length} SKUs
+                  {Object.values(perProduct.flagCounts).some((n) => n > 0) && (
+                    <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning">
+                      {Object.entries(perProduct.flagCounts)
+                        .map(([f, n]) => `${n} ${f}`)
+                        .join(" · ")}
+                    </Badge>
+                  )}
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-4 pb-4">
+                <CogsPerProductTable rows={perProduct.rows} />
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
         </>
       )}
     </QuestionSection>
+  );
+}
+
+/* Tabla mensual contable vs ajustado ─────────────────────────────────── */
+function CogsMonthlyTable({ points }: { points: CogsMonthlyPoint[] }) {
+  if (points.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Sin datos en el período.
+      </p>
+    );
+  }
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Mes</TableHead>
+            <TableHead className="text-right">Ventas 4xx</TableHead>
+            <TableHead className="text-right">Factura</TableHead>
+            <TableHead className="text-right">COGS cont.</TableHead>
+            <TableHead className="text-right">Capa</TableHead>
+            <TableHead className="text-right">COGS MP</TableHead>
+            <TableHead className="text-right">Overhead</TableHead>
+            <TableHead className="text-right">Margen cont.</TableHead>
+            <TableHead className="text-right">Margen MP</TableHead>
+            <TableHead>Status</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {points.map((p) => (
+            <TableRow key={p.period}>
+              <TableCell className="font-mono text-xs">{p.period}</TableCell>
+              <TableCell className="text-right">{fmt(p.revenueProductMxn)}</TableCell>
+              <TableCell className="text-right text-muted-foreground">
+                {fmt(p.revenueInvoicesMxn)}
+              </TableCell>
+              <TableCell className="text-right">{fmt(p.cogsContableMxn)}</TableCell>
+              <TableCell className="text-right text-muted-foreground">
+                {p.cogsCapaValoracionMxn > 0 ? fmt(p.cogsCapaValoracionMxn) : "—"}
+              </TableCell>
+              <TableCell className="text-right">{fmt(p.cogsRecursiveMpMxn)}</TableCell>
+              <TableCell className="text-right">{fmt(p.overheadMxn)}</TableCell>
+              <TableCell className="text-right">{pct(p.marginContablePct)}</TableCell>
+              <TableCell className="text-right">{pct(p.marginRecursivePct)}</TableCell>
+              <TableCell>
+                <Badge
+                  variant="outline"
+                  className={
+                    p.status === "alert"
+                      ? "border-destructive/40 bg-destructive/10 text-destructive"
+                      : p.status === "warn"
+                        ? "border-warning/40 bg-warning/10 text-warning"
+                        : "border-success/40 bg-success/10 text-success"
+                  }
+                >
+                  {p.status}
+                </Badge>
+                {p.note && (
+                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                    {p.note}
+                  </p>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+/* Tabla por producto con flags ──────────────────────────────────────── */
+function CogsPerProductTable({ rows }: { rows: CogsPerProductRow[] }) {
+  if (rows.length === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Sin ventas de producto en el período.
+      </p>
+    );
+  }
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const sorted = [...rows].sort(
+    (a, b) => Math.abs(b.revenueInvoiceMxn) - Math.abs(a.revenueInvoiceMxn)
+  );
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead>Ref</TableHead>
+            <TableHead>Nombre</TableHead>
+            <TableHead className="text-right">Qty</TableHead>
+            <TableHead className="text-right">Ingreso</TableHead>
+            <TableHead className="text-right">COGS MP</TableHead>
+            <TableHead className="text-right">Margen</TableHead>
+            <TableHead>Flags</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {sorted.map((r) => (
+            <TableRow key={r.productId}>
+              <TableCell className="font-mono text-xs">
+                {r.productRef ?? (
+                  <span className="text-muted-foreground italic">sin ref</span>
+                )}
+              </TableCell>
+              <TableCell className="max-w-[280px] truncate text-xs text-muted-foreground">
+                {r.productName ?? ""}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.qtySold.toLocaleString("es-MX", { maximumFractionDigits: 1 })}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {fmt(r.revenueInvoiceMxn)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {fmt(r.cogsRecursiveTotalMxn)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
+              </TableCell>
+              <TableCell className="whitespace-nowrap text-xs">
+                {r.flags.length === 0 ? (
+                  <span className="text-muted-foreground">—</span>
+                ) : (
+                  <span className="flex flex-wrap gap-1">
+                    {r.flags.map((f) => (
+                      <Badge
+                        key={f}
+                        variant="outline"
+                        className="border-warning/40 bg-warning/10 text-[10px] text-warning"
+                      >
+                        {f.replace(/_/g, " ")}
+                      </Badge>
+                    ))}
+                  </span>
+                )}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -1177,120 +1478,3 @@ async function TaxBlock({ range }: { range: HistoryRange }) {
   );
 }
 
-/* ── F-COGS: Contable raw vs Ajustado a materia prima (BOM recursiva) ─ */
-async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
-  const data = await getCogsComparison(range);
-  const coverageTone: "success" | "warning" | "danger" =
-    data.bomCoveragePct >= 95
-      ? "success"
-      : data.bomCoveragePct >= 80
-        ? "warning"
-        : "danger";
-
-  return (
-    <QuestionSection
-      id="cogs-adjusted"
-      question="¿Cuál es el costo primo real (material puro) vs overhead?"
-      subtext={`Contable raw (501.01 + capa de valoración) vs BOM recursivo a materia prima · margen vs ventas de producto (cuenta 4xx: ${formatCurrencyMXN(data.revenueMxn, { compact: true })}) · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
-    >
-      <StatGrid columns={{ mobile: 1, tablet: 4, desktop: 4 }}>
-        <KpiCard
-          title="COGS contable actual"
-          value={data.cogsContableMxn}
-          format="currency"
-          compact
-          icon={Landmark}
-          source="pl"
-          tone="default"
-          subtitle={
-            data.grossMarginContablePct == null
-              ? "sin ingresos"
-              : `margen ${data.grossMarginContablePct.toFixed(1)}% · después de capa de valoración`
-          }
-          definition={{
-            title: "COGS contable actual",
-            description:
-              "Saldo actual de cuentas expense_direct_cost. Ya refleja los asientos de CAPA DE VALORACIÓN del período (si se hicieron).",
-            formula:
-              "SUM(balance) WHERE account_type='expense_direct_cost'",
-            table: "canonical_account_balances",
-          }}
-        />
-        <KpiCard
-          title="COGS contable RAW"
-          value={data.cogsContableRawMxn}
-          format="currency"
-          compact
-          icon={Landmark}
-          source="pl"
-          tone="warning"
-          subtitle={
-            data.cogsCapaValoracionMxn > 0
-              ? `+${formatCurrencyMXN(data.cogsCapaValoracionMxn, { compact: true })} devueltos del ajuste`
-              : "sin ajuste de capa en el período"
-          }
-          definition={{
-            title: "COGS contable RAW (antes del ajuste)",
-            description:
-              "El user hace credits a 501.01 via diario CAPA DE VALORACIÓN para sacar overhead. Raw = actual + capa devuelta. Es lo que estaría en el P&L si no se hubiera hecho el ajuste.",
-            formula: "cogs_contable + SUM(CAPA DE VALORACIÓN.amount_total)",
-            table: "canonical_account_balances + odoo_account_entries_stock",
-          }}
-        />
-        <KpiCard
-          title="COGS ajustado (BOM recursiva → MP)"
-          value={data.cogsRecursiveMpMxn}
-          format="currency"
-          compact
-          icon={Receipt}
-          source="canonical"
-          tone="info"
-          subtitle={
-            data.grossMarginRecursivePct == null
-              ? "sin ingresos en el período"
-              : `margen material ${data.grossMarginRecursivePct.toFixed(1)}% · BOM flat ref ${formatCurrencyMXN(data.cogsBomFlatMxn, { compact: true })} · cobertura ${data.bomCoveragePct.toFixed(0)}%`
-          }
-          definition={{
-            title: "COGS ajustado recursivo a materia prima",
-            description:
-              "Para cada producto vendido, explota la BOM primaria recursivamente hasta llegar a hojas (componentes sin BOM = materia prima comprada) y suma qty × avg_cost_mxn de cada hoja. Solo MP pura, sin labor ni overhead de sub-ensambles.",
-            formula:
-              "Σ(line.quantity × get_bom_raw_material_cost_per_unit(product_id))",
-            table:
-              "odoo_invoice_lines + mrp_boms + mrp_bom_lines + canonical_products",
-          }}
-        />
-        <KpiCard
-          title="Overhead real"
-          value={data.overheadMxn}
-          format="currency"
-          compact
-          icon={Scale}
-          source="pl"
-          tone={coverageTone}
-          subtitle={
-            data.bomCoveragePct < 95
-              ? `⚠ cobertura BOM ${data.bomCoveragePct.toFixed(0)}%`
-              : `${data.overheadPctOfRaw.toFixed(1)}% del raw · vs ajuste ${formatCurrencyMXN(data.cogsCapaValoracionMxn, { compact: true })}`
-          }
-          definition={{
-            title: "Overhead real implícito",
-            description:
-              "COGS raw (pre-ajuste) − COGS recursivo MP. Es lo que debería sacarse del 501.01 para dejarlo solo en material. Compara contra la capa de valoración que efectivamente se aplicó: si son similares, el ajuste del user está bien calibrado; si difieren, hay sobre/sub-corrección.",
-            formula: "cogs_raw - cogs_recursive_mp",
-            table: "derived",
-          }}
-        />
-      </StatGrid>
-
-      {data.bomCoveragePct < 95 && (
-        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-foreground">
-          Solo {data.invoiceLinesWithBom} de {data.invoiceLinesTotal} líneas
-          tienen BOM ({data.bomCoveragePct.toFixed(0)}% cobertura). Productos
-          sin BOM no cuentan en el cálculo material-only, lo que infla
-          artificialmente el overhead. Completa los BOMs faltantes en Odoo.
-        </div>
-      )}
-    </QuestionSection>
-  );
-}

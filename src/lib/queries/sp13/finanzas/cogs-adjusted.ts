@@ -79,7 +79,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
 
-  const [cogsAcctRes, capaRes, recursiveRes, bomFlatLinesRes, ventasAcctRes] =
+  const [cogsAcctRes, capaRes, recursiveRes, bomFlatLinesRes, invoiceRevRes] =
     await Promise.all([
       // 1a. COGS contable actual (501.01 post-adjustment ya aplicado)
       sb
@@ -97,30 +97,28 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
         .eq("journal_name", "CAPA DE VALORACIÓN")
         .gte("date", bounds.from)
         .lt("date", bounds.to),
-      // 2. COGS recursive MP (RPC que explota BOM hasta hojas)
+      // 2. COGS recursivo MP + revenue 4xx canonical (ambos vienen del RPC
+      //    ahora que get_cogs_recursive_mp usa get_product_sales_revenue).
       sb.rpc("get_cogs_recursive_mp", {
         p_date_from: bounds.from,
         p_date_to: bounds.to,
       }),
-      // 3. Flat BOM reference
+      // 3. Flat BOM reference (legacy MV — solo para tarjeta de referencia)
       sb
         .from("odoo_invoice_lines")
         .select("odoo_product_id, quantity")
         .eq("move_type", "out_invoice")
         .gte("invoice_date", bounds.from)
         .lt("invoice_date", bounds.to),
-      // 4. Ventas de producto: SOLO cuentas 4xx (ingresos por venta).
-      //    Excluye 7xx "otros ingresos" (ej. venta de maquinaria en marzo
-      //    donde el P&L solo reconoce la utilidad, no el precio de venta).
-      //    canonical_account_balances guarda income en negativo → se niega.
+      // 4. Revenue invoice-basis (para detectar venta de activos: el gap
+      //    vs cuenta 4xx revela máquina/equipo vendidos facturados pero
+      //    cuyo P&L solo reconoce la utilidad en 7xx).
       sb
-        .from("canonical_account_balances")
-        .select("balance")
-        .eq("balance_sheet_bucket", "income")
-        .eq("deprecated", false)
-        .like("account_code", "4%")
-        .gte("period", bounds.fromMonth)
-        .lte("period", bounds.toMonth.slice(0, 7)),
+        .from("odoo_invoice_lines")
+        .select("price_subtotal_mxn")
+        .eq("move_type", "out_invoice")
+        .gte("invoice_date", bounds.from)
+        .lt("invoice_date", bounds.to),
     ]);
 
   type AcctRow = { balance: number | null; period: string };
@@ -160,14 +158,16 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   };
   const linesTotal = Number(rec.lines_total) || 0;
   const linesWithCost = Number(rec.lines_with_cost) || 0;
-  const revenueInvoices = Number(rec.revenue_mxn) || 0;
+  // RPC ya devuelve revenue 4xx (cuenta de producto).
+  const revenue = Number(rec.revenue_mxn) || 0;
   const cogsRecursive = Number(rec.cogs_recursive_mp) || 0;
 
-  // Ventas reales de producto (cuenta 4xx). Se niega porque income se
-  // almacena como crédito (negativo).
-  type VentasRow = { balance: number | null };
-  const revenue = -((ventasAcctRes.data ?? []) as VentasRow[]).reduce(
-    (s, r) => s + (Number(r.balance) || 0),
+  // Invoice-basis revenue (incluye venta de activos fijos). Se calcula
+  // sumando todas las líneas — la triplete IEPS (lista+, descuento-, neta+)
+  // se cancela aritméticamente a la neta.
+  type InvRow = { price_subtotal_mxn: number | null };
+  const revenueInvoices = ((invoiceRevRes.data ?? []) as InvRow[]).reduce(
+    (s, r) => s + (Number(r.price_subtotal_mxn) || 0),
     0
   );
 
