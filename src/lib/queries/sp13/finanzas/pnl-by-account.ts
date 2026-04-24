@@ -11,12 +11,13 @@ import { periodBoundsForRange } from "./_period";
  * for the selected period. Aggregated per account_code with display name
  * and account_type. Returns top-N accounts by abs(balance).
  *
- * Buckets we care about for P&L:
- * - income (revenue accounts, balance is negative by convention; abs for display)
- * - expense (cost of goods + operating expenses)
- *
- * Sign convention: income balances are stored negative (credit), expenses
- * positive (debit). UI shows abs(balance) so both look like positive amounts.
+ * Sign convention in canonical_account_balances:
+ * - income accounts  → balance stored NEGATIVE (credit); NEGATED for display
+ *   so real revenue is POSITIVE. Income accounts with POSITIVE balance
+ *   (rare — reversals / contra-income) show as NEGATIVE "ingreso", which
+ *   is correct: they reduce revenue.
+ * - expense accounts → balance stored POSITIVE (debit); kept as-is so
+ *   expenses are positive amounts.
  */
 export interface PnlAccountRow {
   accountCode: string;
@@ -91,11 +92,12 @@ async function _getPnlByAccountRaw(
     agg.set(code, existing);
   }
 
-  // Convert: income balances are stored negative → flip for display
+  // Flip income sign: stored negative → positive revenue; stored positive
+  // (reversal) → negative "ingreso" (reduces revenue). Expenses kept as-is.
   const rows = [...agg.values()]
     .map((r) => ({
       ...r,
-      balanceMxn: r.bucket === "income" ? Math.abs(r.balanceMxn) : r.balanceMxn,
+      balanceMxn: r.bucket === "income" ? -r.balanceMxn : r.balanceMxn,
     }))
     .filter((r) => Math.abs(r.balanceMxn) > 0)
     .sort((a, b) => Math.abs(b.balanceMxn) - Math.abs(a.balanceMxn))

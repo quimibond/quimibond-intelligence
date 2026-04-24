@@ -406,7 +406,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="warning"
           href="/compras"
-          subtitle={`${wc.apCompaniesCount} proveedores abiertos`}
+          subtitle={`vencido ${formatCurrencyMXN(wc.apOverdueMxn, { compact: true })} · ${wc.apCompaniesCount} proveedores · ${wc.apOverdueCount} fx vencidas`}
         />
         <KpiCard
           title="Neto (AR − AP)"

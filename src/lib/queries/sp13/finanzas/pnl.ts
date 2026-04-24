@@ -11,6 +11,16 @@ import { periodBoundsForRange } from "./_period";
  * - gold_pl_statement (period YYYY-MM, total_income/total_expense/net_income,
  *   by_level_1 JSON with account_type breakdown)
  * - canonical_invoices (SAT revenue for the same window; drift detection)
+ *
+ * SIGN CONVENTION (Mexican chart of accounts in canonical_account_balances):
+ * - income accounts  → balance stored NEGATIVE (credit side)
+ * - expense accounts → balance stored POSITIVE (debit side)
+ * - gold_pl_statement.net_income = total_income + total_expense
+ *   → POSITIVE value in that column means LOSS
+ *   → NEGATIVE value in that column means PROFIT
+ *
+ * For UI presentation we flip the sign so "utilidad neta" follows normal
+ * CFO convention: positive = profit, negative = loss.
  */
 export interface PnlKpis {
   period: HistoryRange;
@@ -71,10 +81,10 @@ function aggregatePl(rows: PlRow[]): Omit<PnlKpis, "period" | "periodLabel" | "i
   let ingresos = 0;
   let costoVentas = 0;
   let gastosOperativos = 0;
-  let netIncome = 0;
+  let netIncomeStored = 0;
   for (const r of rows) {
     ingresos += Math.abs(Number(r.total_income) || 0);
-    netIncome += Number(r.net_income) || 0;
+    netIncomeStored += Number(r.net_income) || 0;
     if (r.by_level_1) {
       for (const entry of Object.values(r.by_level_1)) {
         const bal = Number(entry.balance) || 0;
@@ -88,13 +98,16 @@ function aggregatePl(rows: PlRow[]): Omit<PnlKpis, "period" | "periodLabel" | "i
       gastosOperativos += exp * 0.3;
     }
   }
+  // Flip sign: stored net_income is positive-for-loss. Display as
+  // profit-positive / loss-negative.
+  const utilidadNeta = -netIncomeStored;
   return {
     ingresosPl: Math.round(ingresos * 100) / 100,
     costoVentas: Math.round(costoVentas * 100) / 100,
     gastosOperativos: Math.round(gastosOperativos * 100) / 100,
     utilidadBruta: Math.round((ingresos - costoVentas) * 100) / 100,
-    utilidadNeta: Math.round(netIncome * 100) / 100,
-    netIncome: Math.round(netIncome * 100) / 100,
+    utilidadNeta: Math.round(utilidadNeta * 100) / 100,
+    netIncome: Math.round(utilidadNeta * 100) / 100,
     monthsCovered: rows.length,
   };
 }

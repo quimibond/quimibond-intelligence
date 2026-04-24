@@ -13,10 +13,12 @@ import { periodBoundsForRange } from "./_period";
  * - tax_return: declaraciones presentadas con monto pagado
  * - electronic_accounting: balanzas / catálogos enviados al SAT (cumplimiento)
  *
- * The period filter narrows by the natural date for each event type:
- * - retention.retention_fecha_emision
- * - tax_return.return_ejercicio (year-only filter)
- * - electronic_accounting.acct_ejercicio (year-only filter)
+ * Period filter: "when did the event happen" not "what period does it cover".
+ * A tax_return for Feb 2026 presented on 2026-03-18 shows in March, not Feb,
+ * because March is when cash left the company.
+ * - retention     → retention_fecha_emision   ∈ [from, to)
+ * - tax_return    → return_fecha_presentacion ∈ [from, to)  (fallback: year only)
+ * - electronic_accounting → acct_ejercicio year range
  */
 export interface TaxRetentionRow {
   uuid: string | null;
@@ -63,14 +65,18 @@ async function _getTaxEventsRaw(range: HistoryRange): Promise<TaxEventsSummary> 
       .eq("event_type", "retention")
       .gte("retention_fecha_emision", bounds.from)
       .lt("retention_fecha_emision", bounds.to),
+    // Filter by fecha_presentacion (when the cash actually went out).
+    // Rows without fecha_presentacion fall back to year-only bounds so
+    // very old / unfiled declarations don't disappear entirely.
     sb
       .from("canonical_tax_events")
       .select(
         "return_ejercicio, return_periodo, return_numero_operacion, return_fecha_presentacion, return_tipo_declaracion, return_monto_pagado"
       )
       .eq("event_type", "tax_return")
-      .gte("return_ejercicio", yearFrom)
-      .lte("return_ejercicio", yearTo),
+      .or(
+        `and(return_fecha_presentacion.gte.${bounds.from},return_fecha_presentacion.lt.${bounds.to}),and(return_fecha_presentacion.is.null,return_ejercicio.gte.${yearFrom},return_ejercicio.lte.${yearTo})`
+      ),
     sb
       .from("canonical_tax_events")
       .select("acct_ejercicio")

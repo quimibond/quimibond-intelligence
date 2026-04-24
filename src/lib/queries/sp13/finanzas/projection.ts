@@ -8,19 +8,25 @@ import { getServiceClient } from "@/lib/supabase-server";
  * Sources:
  * - `canonical_bank_balances` → saldo inicial (classification='cash').
  * - `cashflow_projection` → pre-computed invoice-level projections with
- *   `collection_probability` derived from each counterparty's historical
- *   payment behaviour. We prefer `expected_amount` (already weighted) over
- *   raw `amount_residual` so the runway reflects *probable* cobranza.
+ *   `collection_probability` derived from aging bucket (fresh 95%, 1-30d
+ *   85%, 31-60d 70%, 61-90d 50%, 90+ 25%). We use `expected_amount`
+ *   (residual × probability) for inflows and raw `amount_residual` for
+ *   outflows (we owe the full thing).
  *
  * flow_type column values:
  *   - `receivable_detail` → AR rows per invoice (inflow)
  *   - `payable_detail`    → AP rows per invoice (outflow)
- *   - `receivable_by_month` → aggregated monthly totals (ignored here; we
- *     need day-level resolution)
+ *   - `receivable_by_month` → aggregated monthly totals (ignored here)
  *
- * Markers: cualquier flujo con expected_amount ≥ 50k MXN se emite como
- * marker visible. Los invoices sobrevencidos (days_overdue>0) marcan como
- * "en riesgo" — se mantienen pero con etiqueta.
+ * IMPORTANT — past-due invoices:
+ * `cashflow_projection.projected_date` = `i.due_date` (original due date).
+ * Past-due invoices have projected_date < today. Rather than drop them
+ * (losing the overdue AR from the projection), we clamp their date to
+ * today. This models "we expect to collect the overdue balance going
+ * forward, starting now" — the probability weighting already discounts
+ * them (25% for 90+ days overdue) so we don't double-count optimism.
+ *
+ * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
  */
 export interface CashProjectionPoint {
   date: string;
@@ -71,13 +77,15 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     sb
       .from("canonical_bank_balances")
       .select("classification, current_balance_mxn"),
+    // Include ALL past-due invoices + future invoices up to horizon. Past-due
+    // dates get clamped to today below (we expect to collect them going
+    // forward, already probability-weighted by aging bucket).
     sb
       .from("cashflow_projection")
       .select(
         "company_id, flow_type, projected_date, amount_residual, expected_amount, collection_probability, invoice_name, days_overdue"
       )
       .in("flow_type", ["receivable_detail", "payable_detail"])
-      .gte("projected_date", todayIso)
       .lte("projected_date", endIso),
   ]);
 
@@ -112,8 +120,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   let overdueInflowCount = 0;
 
   for (const r of projRows) {
-    const date = r.projected_date;
-    if (!date) continue;
+    const origDate = r.projected_date;
+    if (!origDate) continue;
+    // Clamp past-due dates to today — we still expect to collect these,
+    // starting from now. The expected_amount is already discounted by aging
+    // bucket so we're not over-counting.
+    const date = origDate < todayIso ? todayIso : origDate;
     const isInflow = r.flow_type === "receivable_detail";
     const nominal = Number(r.amount_residual) || 0;
     const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
@@ -129,7 +141,8 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       }
       if ((r.days_overdue ?? 0) > 0) overdueInflowCount++;
     } else {
-      // AP is paid in full (no probability weighting — you still owe it)
+      // AP is paid in full (no probability weighting — you still owe it).
+      // Past-due AP also clamps to today (we owe now, already late).
       outflowByDay.set(date, (outflowByDay.get(date) ?? 0) + nominal);
       totalOutflow += nominal;
     }

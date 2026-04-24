@@ -5,14 +5,17 @@ import { getServiceClient } from "@/lib/supabase-server";
 /**
  * F2 — Runway estimate.
  *
- * burnRate = promedio mensual de |total_expense| últimos 3 meses, /30d.
+ * burnRate = promedio mensual de |total_expense| de los 3 meses completos
+ * anteriores al mes en curso, /30d. Excluye el mes actual porque está
+ * parcialmente incompleto y distorsiona el promedio hacia abajo.
+ *
  * `runwayCashOnly` = cash / burnRate.
  * `runwayWithAr`   = (cash + AR abierto) / burnRate.
  *
  * Sources (gold-only):
  * - `gold_cashflow.current_cash_mxn`      → saldo en efectivo
  * - `gold_cashflow.total_receivable_mxn`  → AR abierto autoritativo
- * - `gold_pl_statement.total_expense`     → burn rate a 90 días
+ * - `gold_pl_statement.total_expense`     → burn rate (3 meses cerrados)
  */
 export interface RunwayKpis {
   burnRateDaily: number;
@@ -21,14 +24,20 @@ export interface RunwayKpis {
   runwayWithArDays: number | null;
   cashMxn: number;
   arOpenMxn: number;
+  burnWindow: { from: string; to: string; monthsCovered: number };
 }
 
 async function _getRunwayKpisRaw(): Promise<RunwayKpis> {
   const sb = getServiceClient();
   const now = new Date();
-  const cutoffMonth = new Date(now.getFullYear(), now.getMonth() - 3, 1)
-    .toISOString()
-    .slice(0, 7);
+  // Closed-month window: last 3 months BEFORE the current one.
+  // Current month (partial) would skew the average down.
+  const endYear = now.getFullYear();
+  const endMonth = now.getMonth(); // 0-indexed — this is the first month to exclude
+  const startDate = new Date(endYear, endMonth - 3, 1);
+  const endDate = new Date(endYear, endMonth, 0); // last day of prior month
+  const from = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, "0")}`;
+  const to = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, "0")}`;
 
   const [cashflow, plLast3] = await Promise.all([
     sb
@@ -38,9 +47,9 @@ async function _getRunwayKpisRaw(): Promise<RunwayKpis> {
     sb
       .from("gold_pl_statement")
       .select("period, total_expense")
-      .gte("period", cutoffMonth)
-      .order("period", { ascending: false })
-      .limit(3),
+      .gte("period", from)
+      .lte("period", to)
+      .order("period", { ascending: false }),
   ]);
 
   type Cashflow = {
@@ -70,6 +79,7 @@ async function _getRunwayKpisRaw(): Promise<RunwayKpis> {
     runwayWithArDays: runwayWithAr == null ? null : Math.round(runwayWithAr),
     cashMxn: cash,
     arOpenMxn: arOpen,
+    burnWindow: { from, to, monthsCovered },
   };
 }
 
