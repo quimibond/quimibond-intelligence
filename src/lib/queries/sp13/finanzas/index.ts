@@ -21,4 +21,15 @@ export {
 } from "./projection";
 export { getBankDetail, type BankAccountDetail } from "./bank-detail";
 export { getDriftSummary, type DriftSummary, type DriftMonth } from "./drift";
+export {
+  getBalanceSheet,
+  type BalanceSheetSnapshot,
+  type BalanceSheetBucket,
+} from "./balance-sheet";
+export {
+  getAnomaliesSummary,
+  type AnomaliesSummary,
+  type AnomalyRow,
+  type AnomalySeverity,
+} from "./anomalies";
 export { periodBoundsForRange, daysBetween } from "./_period";

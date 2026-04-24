@@ -1,14 +1,17 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowDownCircle,
   ArrowUpCircle,
   Banknote,
+  Building2,
   CalendarClock,
   CreditCard,
   FileX,
   Flame,
   Inbox,
+  Landmark,
   Scale,
   TrendingDown,
   TrendingUp,
@@ -26,7 +29,9 @@ import {
   DriftAlert,
   Currency,
   EmptyState,
+  StatusBadge,
 } from "@/components/patterns";
+import { Badge } from "@/components/ui/badge";
 import { parseHistoryRange } from "@/components/patterns/history-range";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,7 +53,10 @@ import {
   getCashProjection,
   getBankDetail,
   getDriftSummary,
+  getBalanceSheet,
+  getAnomaliesSummary,
   parseProjectionHorizon,
+  type AnomalyRow,
 } from "@/lib/queries/sp13/finanzas";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import type { HistoryRange } from "@/components/patterns/history-range";
@@ -82,12 +90,17 @@ export default async function FinanzasPage({
       />
 
       <Suspense fallback={null}>
+        <AnomaliesBanner />
+      </Suspense>
+
+      <Suspense fallback={null}>
         <DriftBanner range={period} />
       </Suspense>
 
       <SectionNav
         items={[
           { id: "hero", label: "Snapshot" },
+          { id: "balance-sheet", label: "Balance" },
           { id: "pnl", label: "P&L" },
           { id: "working-capital", label: "Capital trabajo" },
           { id: "projection", label: "Proyección" },
@@ -109,6 +122,13 @@ export default async function FinanzasPage({
           <HeroKpis />
         </Suspense>
       </section>
+
+      {/* F3.5 — Balance general */}
+      <Suspense
+        fallback={<Skeleton className="h-[220px] w-full rounded-lg" />}
+      >
+        <BalanceSheetBlock />
+      </Suspense>
 
       {/* F3 — P&L */}
       <Suspense
@@ -486,7 +506,11 @@ async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
     <QuestionSection
       id="projection"
       question="¿Qué va a pasar con el efectivo?"
-      subtext="Saldo proyectado basado en due dates del AR/AP abierto"
+      subtext={
+        proj.avgCollectionProbability != null
+          ? `Saldo proyectado · AR ponderado por probabilidad histórica (avg ${Math.round(proj.avgCollectionProbability * 100)}%)`
+          : "Saldo proyectado basado en due dates del AR/AP abierto"
+      }
       actions={<ProjectionHorizonSelector paramName="proj_horizon" value={horizon} />}
     >
       <Card>
@@ -522,6 +546,20 @@ async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
               Saldo mínimo proyectado <Currency amount={proj.minBalance} /> el {proj.minBalanceDate}
               {" "}cruza el piso configurable de{" "}
               <Currency amount={proj.safetyFloor} />.
+            </div>
+          )}
+
+          {proj.overdueInflowCount > 0 && (
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+              <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">
+                <AlertTriangle className="mr-1 size-3" aria-hidden />
+                {proj.overdueInflowCount} entradas ya vencidas
+              </Badge>
+              <span>
+                Entradas esperadas (ponderadas):{" "}
+                <Currency amount={proj.totalInflow} /> de{" "}
+                <Currency amount={proj.totalInflowNominal} /> nominales.
+              </span>
             </div>
           )}
         </CardContent>
@@ -566,4 +604,168 @@ function SummaryStat({
 async function BankDetailBlock() {
   const accounts = await getBankDetail();
   return <BankDetailExpand accounts={accounts} />;
+}
+
+/* ── Anomalies banner ────────────────────────────────────────────────── */
+async function AnomaliesBanner() {
+  const anom = await getAnomaliesSummary();
+  const hotCount = anom.criticalCount + anom.highCount;
+  if (hotCount === 0) return null;
+
+  const severity: "critical" | "warning" =
+    anom.criticalCount > 0 ? "critical" : "warning";
+
+  const title =
+    anom.criticalCount > 0
+      ? `${anom.criticalCount} anomalía${anom.criticalCount === 1 ? "" : "s"} crítica${anom.criticalCount === 1 ? "" : "s"} · ${anom.highCount} de alta prioridad`
+      : `${anom.highCount} anomalía${anom.highCount === 1 ? "" : "s"} de alta prioridad`;
+
+  const description = buildAnomaliesDescription(anom.topItems);
+
+  return (
+    <DriftAlert
+      severity={severity}
+      title={title}
+      description={description}
+      action={{ label: "Ver todo", href: "/sistema?tab=anomalies" }}
+    />
+  );
+}
+
+function buildAnomaliesDescription(items: AnomalyRow[]): string {
+  if (items.length === 0) return "Revisa el panel de anomalías para el detalle.";
+  return items
+    .slice(0, 2)
+    .map((it) => it.description || `${it.anomalyType} · ${it.companyName ?? "—"}`)
+    .join(" · ");
+}
+
+/* ── F3.5 Balance sheet ──────────────────────────────────────────────── */
+async function BalanceSheetBlock() {
+  const bs = await getBalanceSheet();
+  const fresh = isFresh(bs?.asOfDate, 48);
+
+  return (
+    <QuestionSection
+      id="balance-sheet"
+      question="¿Cómo está mi balance?"
+      subtext={
+        bs
+          ? `Activo · pasivo · capital al cierre de ${formatPeriod(bs.period)}`
+          : undefined
+      }
+      actions={
+        bs?.asOfDate ? (
+          <span title={bs.asOfDate}>
+            <StatusBadge
+              kind="staleness"
+              value={fresh ? "fresh" : "stale"}
+              density="regular"
+            />
+          </span>
+        ) : null
+      }
+    >
+      {!bs ? (
+        <EmptyState
+          icon={FileX}
+          title="Sin balance disponible"
+          description="El refresco de gold_balance_sheet no ha corrido todavía."
+        />
+      ) : (
+        <>
+          <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
+            <KpiCard
+              title="Activo total"
+              value={bs.totalAssetsMxn}
+              format="currency"
+              compact
+              icon={Building2}
+              source="pl"
+              tone="info"
+              subtitle={`${bucketAccountCount(bs.buckets, "asset")} cuentas`}
+              definition={{
+                title: "Activo total",
+                description:
+                  "Suma de cuentas tipo asset (caja, bancos, cuentas por cobrar, inventario, activo fijo, etc.)",
+                formula: "SUM(balance WHERE balance_sheet_bucket='asset')",
+                table: "gold_balance_sheet",
+              }}
+            />
+            <KpiCard
+              title="Pasivo total"
+              value={bs.totalLiabilitiesMxn}
+              format="currency"
+              compact
+              icon={Landmark}
+              source="pl"
+              tone="warning"
+              subtitle={`${bucketAccountCount(bs.buckets, "liability")} cuentas · D/E ${bs.debtToEquityRatio ?? "—"}`}
+              definition={{
+                title: "Pasivo total",
+                description:
+                  "Suma de cuentas tipo liability (CxP, impuestos por pagar, pasivos de largo plazo).",
+                formula: "|SUM(balance WHERE balance_sheet_bucket='liability')|",
+                table: "gold_balance_sheet",
+              }}
+            />
+            <KpiCard
+              title="Capital"
+              value={bs.totalEquityMxn}
+              format="currency"
+              compact
+              icon={Scale}
+              source="pl"
+              tone={bs.totalEquityMxn >= 0 ? "success" : "danger"}
+              subtitle={`Liquidez ${bs.liquidityRatio ?? "—"}× · Util. vida ${formatCurrencyMXN(bs.netIncomeLifetimeMxn, { compact: true })}`}
+              definition={{
+                title: "Capital contable",
+                description: "Patrimonio de la empresa. Equity = Assets − Liabilities.",
+                formula: "|SUM(balance WHERE balance_sheet_bucket='equity')|",
+                table: "gold_balance_sheet",
+              }}
+            />
+          </StatGrid>
+          {Math.abs(bs.unbalancedAmountMxn) > 1 && (
+            <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs">
+              ⚠ Balance descuadrado por {formatCurrencyMXN(bs.unbalancedAmountMxn, { compact: true })} — revisa asientos sin contrapartida.
+            </div>
+          )}
+        </>
+      )}
+    </QuestionSection>
+  );
+}
+
+function bucketAccountCount(
+  buckets: Array<{ bucket: string; accountsCount: number }>,
+  kind: string
+): number {
+  return buckets.find((b) => b.bucket === kind)?.accountsCount ?? 0;
+}
+
+function formatPeriod(period: string): string {
+  const months = [
+    "ene",
+    "feb",
+    "mar",
+    "abr",
+    "may",
+    "jun",
+    "jul",
+    "ago",
+    "sep",
+    "oct",
+    "nov",
+    "dic",
+  ];
+  const [y, m] = period.split("-");
+  const idx = Number(m) - 1;
+  return `${months[idx] ?? m} ${y?.slice(2) ?? ""}`;
+}
+
+function isFresh(isoTimestamp: string | null | undefined, hoursWindow = 24): boolean {
+  if (!isoTimestamp) return false;
+  const age = Date.now() - new Date(isoTimestamp).getTime();
+  return age < hoursWindow * 3600000;
 }
