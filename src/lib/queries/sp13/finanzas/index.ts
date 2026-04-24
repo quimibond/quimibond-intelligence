@@ -71,4 +71,10 @@ export {
   type TopProductWithComposition,
   type TopProductsSummary,
 } from "./mp-quality";
+export {
+  getCashReconciliation,
+  type CashReconciliation,
+  type CashCategoryRow,
+  type CashFlowDirection,
+} from "./cash-reconciliation";
 export { periodBoundsForRange, daysBetween } from "./_period";
