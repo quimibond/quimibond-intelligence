@@ -42,7 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
+import { formatCurrencyMXN, formatNumber, formatRelative } from "@/lib/formatters";
 
 import { SyntageHealthPanel } from "@/components/domain/system/SyntageHealthPanel";
 import { SyntageReconciliationPanel } from "@/components/domain/system/SyntageReconciliationPanel";
@@ -69,6 +69,10 @@ import {
   type PipelineLogRow,
 } from "@/lib/queries/_shared/system";
 import { parseTableParams } from "@/lib/queries/_shared/table-params";
+import {
+  getDataIntegrityStatus,
+  type IntegrityCheckStatus,
+} from "@/lib/queries/system/data-integrity";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -177,6 +181,24 @@ export default async function SystemPage({
         </TabsContent>
 
         <TabsContent value="quality" className="mt-4 space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                Data integrity — checks agregados (nightly 06:30 UTC)
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                Sweep de columnas y FKs sobre canonical_* / gold_*. Si un check
+                supera su tolerancia, el fix va en silver (SQL), no en el
+                frontend. Ver docs/DATA_INTEGRITY.md.
+              </p>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[200px]" />}>
+                <DataIntegrityPanel />
+              </Suspense>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader>
               <CardTitle className="text-base">
@@ -1080,5 +1102,138 @@ function LogLine({ log }: { log: PipelineLogRow }) {
         </div>
       </div>
     </div>
+  );
+}
+
+async function DataIntegrityPanel() {
+  const { total, failing, passing, errors, lastRunAt, checks } =
+    await getDataIntegrityStatus();
+
+  if (total === 0) {
+    return (
+      <EmptyState
+        icon={ShieldCheck}
+        title="Sin checks configurados"
+        description="Registra chequeos en data_integrity_checks."
+        compact
+      />
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+        <span>
+          Último run:{" "}
+          {lastRunAt ? (
+            <span className="font-medium text-foreground">
+              {formatRelative(lastRunAt)}
+            </span>
+          ) : (
+            <span className="text-warning">sin corrida</span>
+          )}
+        </span>
+        <span>·</span>
+        <Badge variant={failing > 0 ? "destructive" : "success"} className="text-[10px]">
+          {failing} fallando
+        </Badge>
+        <Badge variant="secondary" className="text-[10px]">
+          {passing} ok
+        </Badge>
+        {errors > 0 && (
+          <Badge variant="outline" className="border-warning/40 text-[10px] text-warning">
+            {errors} error
+          </Badge>
+        )}
+      </div>
+
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-[28%]">Check</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead>Severidad</TableHead>
+              <TableHead className="text-right">Fallas</TableHead>
+              <TableHead className="text-right">Tolerancia</TableHead>
+              <TableHead className="text-right">Δ vs anterior</TableHead>
+              <TableHead>Estado</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {checks.map((c) => (
+              <IntegrityRow key={c.checkKey} check={c} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function IntegrityRow({ check }: { check: IntegrityCheckStatus }) {
+  const status: "fail" | "error" | "pass" = check.errorMessage
+    ? "error"
+    : check.exceededTolerance
+      ? "fail"
+      : "pass";
+  return (
+    <TableRow>
+      <TableCell>
+        <div className="font-mono text-[11px]">{check.checkKey}</div>
+        <div className="text-[11px] text-muted-foreground">{check.description}</div>
+      </TableCell>
+      <TableCell>
+        <Badge variant="secondary" className="text-[10px]">
+          {check.category}
+        </Badge>
+      </TableCell>
+      <TableCell>
+        <Badge
+          variant={
+            check.severity === "critical"
+              ? "destructive"
+              : check.severity === "warning"
+                ? "warning"
+                : "secondary"
+          }
+          className="text-[10px]"
+        >
+          {check.severity}
+        </Badge>
+      </TableCell>
+      <TableCell className="text-right tabular-nums">{check.failCount}</TableCell>
+      <TableCell className="text-right tabular-nums text-muted-foreground">
+        {check.toleranceCount}
+      </TableCell>
+      <TableCell
+        className={`text-right tabular-nums ${
+          check.delta == null
+            ? "text-muted-foreground"
+            : check.delta > 0
+              ? "text-danger"
+              : check.delta < 0
+                ? "text-success"
+                : "text-muted-foreground"
+        }`}
+      >
+        {check.delta == null ? "—" : check.delta > 0 ? `+${check.delta}` : check.delta}
+      </TableCell>
+      <TableCell>
+        {status === "fail" ? (
+          <Badge variant="destructive" className="text-[10px]">
+            Falla
+          </Badge>
+        ) : status === "error" ? (
+          <Badge variant="outline" className="border-warning/40 text-[10px] text-warning">
+            Error SQL
+          </Badge>
+        ) : (
+          <Badge variant="success" className="text-[10px]">
+            OK
+          </Badge>
+        )}
+      </TableCell>
+    </TableRow>
   );
 }

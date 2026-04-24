@@ -174,6 +174,25 @@ fixes applied directly.
 | `total_payable_mxn` | $23,182,934 |
 | `working_capital_mxn` | $5,202,251 |
 
+### Automated regression monitoring (2026-04-24)
+
+All 16 checks are registered in `public.data_integrity_checks` and run daily
+via pg_cron `data_integrity_daily` (06:30 UTC) → `run_data_integrity_checks()`.
+Each run writes a row to `public.data_integrity_runs` with fail count, delta
+vs previous run, and a boolean `exceeded_tolerance`.
+
+Adding a new check:
+
+```sql
+INSERT INTO data_integrity_checks (check_key, category, severity, table_name, description, sql_count, tolerance_count)
+VALUES ('canonical_foo.bar', 'null', 'warning', 'canonical_foo', '...', 'SELECT COUNT(*)::bigint FROM ...', 0);
+```
+
+Ad-hoc run: `SELECT * FROM run_data_integrity_checks();`
+
+Frontend surface: `/sistema?tab=quality` → first card shows every check with
+fail count, delta, status, severity and category badge.
+
 ### Triggers installed (all BEFORE-row, SECURITY INVOKER)
 
 1. `canonical_invoices_resolve_residual_mxn_trg` — keeps
