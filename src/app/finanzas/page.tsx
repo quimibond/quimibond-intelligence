@@ -8,10 +8,13 @@ import {
   Building2,
   CalendarClock,
   CreditCard,
+  FileText,
   FileX,
   Flame,
+  Globe2,
   Inbox,
   Landmark,
+  Receipt,
   Scale,
   TrendingDown,
   TrendingUp,
@@ -55,6 +58,9 @@ import {
   getDriftSummary,
   getBalanceSheet,
   getAnomaliesSummary,
+  getFxExposure,
+  getTaxEvents,
+  getPnlByAccount,
   parseProjectionHorizon,
   type AnomalyRow,
 } from "@/lib/queries/sp13/finanzas";
@@ -102,7 +108,10 @@ export default async function FinanzasPage({
           { id: "hero", label: "Snapshot" },
           { id: "balance-sheet", label: "Balance" },
           { id: "pnl", label: "P&L" },
+          { id: "pnl-by-account", label: "Gastos por cuenta" },
           { id: "working-capital", label: "Capital trabajo" },
+          { id: "fx", label: "FX" },
+          { id: "tax", label: "Fiscal" },
           { id: "projection", label: "Proyección" },
           { id: "bank-detail", label: "Detalle bancario" },
         ]}
@@ -142,6 +151,27 @@ export default async function FinanzasPage({
         fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
       >
         <WorkingCapitalBlock />
+      </Suspense>
+
+      {/* F-PnL by account */}
+      <Suspense
+        fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
+      >
+        <PnlByAccountBlock range={plPeriod} />
+      </Suspense>
+
+      {/* F-FX */}
+      <Suspense
+        fallback={<Skeleton className="h-[200px] w-full rounded-lg" />}
+      >
+        <FxExposureBlock />
+      </Suspense>
+
+      {/* F-Tax */}
+      <Suspense
+        fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
+      >
+        <TaxBlock range={period} />
       </Suspense>
 
       {/* F5 — Projection */}
@@ -774,4 +804,366 @@ function isFresh(isoTimestamp: string | null | undefined, hoursWindow = 24): boo
   if (!isoTimestamp) return false;
   const age = Date.now() - new Date(isoTimestamp).getTime();
   return age < hoursWindow * 3600000;
+}
+
+/* ── F-PnL by account ───────────────────────────────────────────────── */
+async function PnlByAccountBlock({ range }: { range: HistoryRange }) {
+  const data = await getPnlByAccount(range, 20);
+  const incomeRows = data.rows.filter((r) => r.bucket === "income");
+  const expenseRows = data.rows.filter((r) => r.bucket === "expense");
+
+  return (
+    <QuestionSection
+      id="pnl-by-account"
+      question="¿En qué cuentas se me va el dinero?"
+      subtext={`Top 20 cuentas con movimiento · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
+    >
+      {data.rows.length === 0 ? (
+        <EmptyState
+          icon={FileX}
+          title="Sin movimiento contable en el período"
+          description="Ajusta el rango o revisa la sincronización de cuentas."
+        />
+      ) : (
+        <div className="grid gap-3 lg:grid-cols-2">
+          <PnlAccountTable
+            title="Top ingresos"
+            rows={incomeRows}
+            total={data.totalIncomeMxn}
+            tone="success"
+          />
+          <PnlAccountTable
+            title="Top gastos / costos"
+            rows={expenseRows}
+            total={data.totalExpenseMxn}
+            tone="warning"
+          />
+        </div>
+      )}
+    </QuestionSection>
+  );
+}
+
+function PnlAccountTable({
+  title,
+  rows,
+  total,
+  tone,
+}: {
+  title: string;
+  rows: Array<{
+    accountCode: string;
+    accountName: string;
+    accountType: string | null;
+    balanceMxn: number;
+  }>;
+  total: number;
+  tone: "success" | "warning";
+}) {
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-center justify-between gap-2">
+        <CardTitle className="text-sm">{title}</CardTitle>
+        <span
+          className={`text-xs font-semibold tabular-nums ${
+            tone === "success" ? "text-success" : "text-warning"
+          }`}
+        >
+          {formatCurrencyMXN(total, { compact: true })}
+        </span>
+      </CardHeader>
+      <CardContent className="px-0 pb-0">
+        {rows.length === 0 ? (
+          <div className="px-4 py-6">
+            <EmptyState compact icon={Inbox} title="Sin movimiento" />
+          </div>
+        ) : (
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cuenta</TableHead>
+                <TableHead className="text-right">Saldo MXN</TableHead>
+                <TableHead className="text-right">% del total</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {rows.map((r) => {
+                const pct = total > 0 ? (r.balanceMxn / total) * 100 : 0;
+                return (
+                  <TableRow key={r.accountCode}>
+                    <TableCell>
+                      <div className="font-mono text-[11px] text-muted-foreground">
+                        {r.accountCode}
+                      </div>
+                      <div className="text-sm">{r.accountName}</div>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <Currency amount={r.balanceMxn} />
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                      {pct.toFixed(1)}%
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
+            </TableBody>
+          </Table>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+/* ── F-FX exposure ──────────────────────────────────────────────────── */
+async function FxExposureBlock() {
+  const fx = await getFxExposure();
+  const hasExposure = fx.exposure.length > 0;
+
+  return (
+    <QuestionSection
+      id="fx"
+      question="¿Cuánta exposición tengo en moneda extranjera?"
+      subtext="Tipo de cambio actual + AR/AP abierto en USD/EUR"
+    >
+      <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
+        {fx.rates.map((r) => (
+          <KpiCard
+            key={r.currency}
+            title={`${r.currency}/MXN`}
+            value={r.rate}
+            format="number"
+            icon={Globe2}
+            source="canonical"
+            tone={r.isStale ? "warning" : "default"}
+            subtitle={
+              r.isStale
+                ? `STALE · al ${r.rateDate}`
+                : `al ${r.rateDate}`
+            }
+            definition={{
+              title: `Tipo de cambio ${r.currency}/MXN`,
+              description:
+                "Última tasa registrada en canonical_fx_rates con recency_rank=1.",
+              formula: "MAX(rate) WHERE recency_rank = 1",
+              table: "canonical_fx_rates",
+            }}
+          />
+        ))}
+        <KpiCard
+          title="Exposición neta extranjera"
+          value={fx.netForeignMxn}
+          format="currency"
+          compact
+          icon={Scale}
+          source="canonical"
+          tone={fx.netForeignMxn >= 0 ? "info" : "warning"}
+          subtitle={`AR ${formatCurrencyMXN(fx.arForeignMxn, { compact: true })} − AP ${formatCurrencyMXN(fx.apForeignMxn, { compact: true })}`}
+          definition={{
+            title: "Exposición neta foreign",
+            description:
+              "Diferencia entre AR y AP abierto en monedas distintas a MXN. Una variación del tipo de cambio mueve este número proporcionalmente.",
+            formula: "SUM(AR_mxn WHERE currency!=MXN) − SUM(AP_mxn WHERE currency!=MXN)",
+            table: "canonical_invoices + canonical_fx_rates",
+          }}
+        />
+      </StatGrid>
+
+      {hasExposure && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Detalle por moneda y dirección</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0 pb-0">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Moneda</TableHead>
+                  <TableHead>Dirección</TableHead>
+                  <TableHead className="text-right">Facturas</TableHead>
+                  <TableHead className="text-right">Monto nativo</TableHead>
+                  <TableHead className="text-right">Equivalente MXN</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {fx.exposure.map((e) => (
+                  <TableRow key={`${e.currency}-${e.direction}`}>
+                    <TableCell className="font-mono text-xs">{e.currency}</TableCell>
+                    <TableCell>
+                      <Badge
+                        variant={e.direction === "issued" ? "info" : "warning"}
+                        className="text-[10px]"
+                      >
+                        {e.direction === "issued" ? "AR — me deben" : "AP — yo debo"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {e.invoiceCount}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {e.amountNative.toLocaleString("es-MX", { maximumFractionDigits: 0 })}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      <Currency amount={e.amountMxn} />
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+    </QuestionSection>
+  );
+}
+
+/* ── F-Tax (retenciones + declaraciones SAT) ────────────────────────── */
+async function TaxBlock({ range }: { range: HistoryRange }) {
+  const tax = await getTaxEvents(range);
+
+  return (
+    <QuestionSection
+      id="tax"
+      question="¿Qué pasa con mi situación fiscal?"
+      subtext={`Retenciones recibidas + declaraciones SAT presentadas · ${tax.periodLabel}`}
+    >
+      <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
+        <KpiCard
+          title="Retenciones a favor"
+          value={tax.retentionsTotalMxn}
+          format="currency"
+          compact
+          icon={Receipt}
+          source="sat"
+          tone="success"
+          subtitle={`${tax.retentionsCount} CFDIs de retención`}
+          definition={{
+            title: "Impuestos retenidos por terceros",
+            description:
+              "Suma de monto_total_retenido en CFDIs tipo retención emitidos a Quimibond. Es saldo a favor frente al SAT.",
+            formula: "SUM(monto_total_retenido) WHERE event_type='retention'",
+            table: "canonical_tax_events",
+          }}
+        />
+        <KpiCard
+          title="Pagado al SAT"
+          value={tax.taxReturnsTotalMxn}
+          format="currency"
+          compact
+          icon={Landmark}
+          source="sat"
+          tone="warning"
+          subtitle={`${tax.taxReturnsCount} declaraciones presentadas`}
+          definition={{
+            title: "Declaraciones SAT pagadas",
+            description:
+              "Suma de return_monto_pagado en declaraciones presentadas durante el período.",
+            formula: "SUM(return_monto_pagado) WHERE event_type='tax_return'",
+            table: "canonical_tax_events",
+          }}
+        />
+        <KpiCard
+          title="Contabilidad electrónica"
+          value={tax.electronicAccountingCount}
+          format="number"
+          icon={FileText}
+          source="sat"
+          tone={tax.electronicAccountingCount > 0 ? "success" : "warning"}
+          subtitle="balanzas / catálogos enviados"
+          definition={{
+            title: "Cumplimiento contabilidad electrónica",
+            description:
+              "Balanzas y catálogos de cuentas enviados al SAT — obligación mensual.",
+            formula: "COUNT(*) WHERE event_type='electronic_accounting'",
+            table: "canonical_tax_events",
+          }}
+        />
+      </StatGrid>
+
+      <div className="grid gap-3 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Top retenciones recibidas</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0 pb-0">
+            {tax.topRetentions.length === 0 ? (
+              <div className="px-4 py-6">
+                <EmptyState compact icon={Inbox} title="Sin retenciones en el período" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Emisor</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Monto</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tax.topRetentions.map((r) => (
+                    <TableRow key={r.uuid ?? `${r.emisorRfc}-${r.fechaEmision}`}>
+                      <TableCell>
+                        <div className="text-sm">{r.emisorNombre ?? "—"}</div>
+                        <div className="font-mono text-[11px] text-muted-foreground">
+                          {r.emisorRfc ?? ""}
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-xs">{r.tipoRetencion ?? "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <Currency amount={r.monto} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">Top declaraciones pagadas</CardTitle>
+          </CardHeader>
+          <CardContent className="px-0 pb-0">
+            {tax.topReturns.length === 0 ? (
+              <div className="px-4 py-6">
+                <EmptyState compact icon={Inbox} title="Sin declaraciones en el período" />
+              </div>
+            ) : (
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Período</TableHead>
+                    <TableHead>Tipo</TableHead>
+                    <TableHead className="text-right">Pagado</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {tax.topReturns.map((r, i) => (
+                    <TableRow key={r.numeroOperacion ?? `${r.ejercicio}-${r.periodo}-${i}`}>
+                      <TableCell>
+                        <div className="text-sm">
+                          {r.periodo ?? "—"} {r.ejercicio ?? ""}
+                        </div>
+                        {r.numeroOperacion && (
+                          <div className="font-mono text-[11px] text-muted-foreground">
+                            #{r.numeroOperacion}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-xs">
+                        {r.tipoDeclaracion ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        <Currency amount={r.montoPagado} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </QuestionSection>
+  );
 }

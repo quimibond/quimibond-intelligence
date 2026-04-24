@@ -32,4 +32,21 @@ export {
   type AnomalyRow,
   type AnomalySeverity,
 } from "./anomalies";
+export {
+  getFxExposure,
+  type FxExposureSummary,
+  type FxExposureRow,
+  type FxRateSnapshot,
+} from "./fx-exposure";
+export {
+  getTaxEvents,
+  type TaxEventsSummary,
+  type TaxRetentionRow,
+  type TaxReturnRow,
+} from "./tax-events";
+export {
+  getPnlByAccount,
+  type PnlByAccountSummary,
+  type PnlAccountRow,
+} from "./pnl-by-account";
 export { periodBoundsForRange, daysBetween } from "./_period";
