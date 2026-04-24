@@ -49,4 +49,5 @@ export {
   type PnlByAccountSummary,
   type PnlAccountRow,
 } from "./pnl-by-account";
+export { getCogsComparison, type CogsComparison } from "./cogs-adjusted";
 export { periodBoundsForRange, daysBetween } from "./_period";

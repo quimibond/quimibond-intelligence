@@ -61,6 +61,7 @@ import {
   getFxExposure,
   getTaxEvents,
   getPnlByAccount,
+  getCogsComparison,
   parseProjectionHorizon,
   type AnomalyRow,
 } from "@/lib/queries/sp13/finanzas";
@@ -108,6 +109,7 @@ export default async function FinanzasPage({
           { id: "hero", label: "Snapshot" },
           { id: "balance-sheet", label: "Balance" },
           { id: "pnl", label: "P&L" },
+          { id: "cogs-adjusted", label: "COGS ajustado" },
           { id: "pnl-by-account", label: "Gastos por cuenta" },
           { id: "working-capital", label: "Capital trabajo" },
           { id: "fx", label: "FX" },
@@ -151,6 +153,13 @@ export default async function FinanzasPage({
         fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
       >
         <WorkingCapitalBlock />
+      </Suspense>
+
+      {/* F-COGS comparison */}
+      <Suspense
+        fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
+      >
+        <CogsComparisonBlock range={plPeriod} />
       </Suspense>
 
       {/* F-PnL by account */}
@@ -1164,6 +1173,102 @@ async function TaxBlock({ range }: { range: HistoryRange }) {
           </CardContent>
         </Card>
       </div>
+    </QuestionSection>
+  );
+}
+
+/* ── F-COGS: Contable vs Ajustado a materia prima (BOM) ─────────────── */
+async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
+  const data = await getCogsComparison(range);
+  const coverageTone: "success" | "warning" | "danger" =
+    data.bomCoveragePct >= 95
+      ? "success"
+      : data.bomCoveragePct >= 80
+        ? "warning"
+        : "danger";
+
+  return (
+    <QuestionSection
+      id="cogs-adjusted"
+      question="¿Cuánto es material puro vs overhead en mi costo de ventas?"
+      subtext={`Contable (cuentas 5xx) vs BOM materia prima · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
+    >
+      <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
+        <KpiCard
+          title="COGS contable"
+          value={data.cogsContableMxn}
+          format="currency"
+          compact
+          icon={Landmark}
+          source="pl"
+          tone="warning"
+          subtitle={
+            data.grossMarginContablePct == null
+              ? "sin ingresos en el período"
+              : `margen bruto ${data.grossMarginContablePct.toFixed(1)}%`
+          }
+          definition={{
+            title: "COGS contable",
+            description:
+              "Suma de cuentas con account_type='expense_direct_cost' en el período. Incluye mano de obra directa, depreciación y cualquier costo registrado en 5xx.",
+            formula:
+              "SUM(balance) WHERE account_type='expense_direct_cost'",
+            table: "canonical_account_balances",
+          }}
+        />
+        <KpiCard
+          title="COGS ajustado (BOM materia prima)"
+          value={data.cogsBomMaterialMxn}
+          format="currency"
+          compact
+          icon={Receipt}
+          source="canonical"
+          tone="info"
+          subtitle={
+            data.grossMarginMaterialPct == null
+              ? "sin ingresos en el período"
+              : `margen material ${data.grossMarginMaterialPct.toFixed(1)}% · cobertura BOM ${data.bomCoveragePct.toFixed(0)}%`
+          }
+          definition={{
+            title: "COGS ajustado a materia prima",
+            description:
+              "Σ(quantity × bom.standard_cost_per_unit) sobre líneas de factura emitidas en el período. Considera SOLO el costo de los componentes de la BOM, sin labor ni overhead.",
+            formula:
+              "SUM(line.quantity × mv_bom_standard_cost.standard_cost_per_unit)",
+            table: "odoo_invoice_lines + mv_bom_standard_cost",
+          }}
+        />
+        <KpiCard
+          title="Overhead implícito"
+          value={data.overheadMxn}
+          format="currency"
+          compact
+          icon={Scale}
+          source="pl"
+          tone={coverageTone}
+          subtitle={
+            data.bomCoveragePct < 95
+              ? `⚠ cobertura BOM ${data.bomCoveragePct.toFixed(0)}% — diferencia distorsionada`
+              : `${data.overheadPctOfContable.toFixed(1)}% del COGS contable`
+          }
+          definition={{
+            title: "Overhead implícito",
+            description:
+              "COGS contable − COGS BOM material. Representa labor, depreciación e indirectos absorbidos en la cuenta de costo de ventas.",
+            formula: "cogs_contable - cogs_bom_material",
+            table: "derived",
+          }}
+        />
+      </StatGrid>
+
+      {data.bomCoveragePct < 95 && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-foreground">
+          Solo {data.invoiceLinesWithBom} de {data.invoiceLinesTotal} líneas
+          tienen BOM ({data.bomCoveragePct.toFixed(0)}% cobertura). Productos
+          sin BOM no cuentan en el cálculo material-only, lo que infla
+          artificialmente el overhead. Completa los BOMs faltantes en Odoo.
+        </div>
+      )}
     </QuestionSection>
   );
 }
