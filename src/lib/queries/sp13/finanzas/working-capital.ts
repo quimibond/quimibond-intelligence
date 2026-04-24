@@ -5,20 +5,22 @@ import { getServiceClient } from "@/lib/supabase-server";
 /**
  * F4 — Working capital.
  *
- * IMPORTANT — DATA QUALITY NOTE (2026-04-24):
- * `gold_cashflow.total_receivable_mxn` and `canonical_companies.total_receivable_mxn`
- * both derive from `canonical_invoices.amount_residual_mxn_resolved`, which has
- * a double-FX bug for USD invoices: the resolved column multiplies the residual
- * by the FX rate twice, so $21,561 USD becomes $6.4M MXN instead of $372k.
- * Gold aggregate reports $259M AR when the real number is $25M.
+ * DATA INTEGRITY NOTE (fixed 2026-04-24, see docs/DATA_INTEGRITY.md):
+ * `canonical_invoices.amount_residual_mxn_resolved` used to have a double-FX
+ * bug on USD invoices that propagated to gold_cashflow, canonical_companies,
+ * gold_company_360 and cash_flow_aging. It's been fixed via a one-shot UPDATE
+ * + BEFORE trigger (`canonical_invoices_resolve_residual_mxn_trg`) that keeps
+ * `resolved = odoo`. Gold aggregates now report the true $25M AR instead of
+ * the inflated $259M.
  *
- * Until the silver layer fix lands, this helper ignores the corrupted
- * aggregates and iterates `canonical_invoices.amount_residual_mxn_odoo` — that
- * column is the live Odoo residual translated with a single FX pass (validated
- * against sample USD + MXN invoices, matches /cobranza exactly).
+ * Even with silver fixed, this helper keeps iterating
+ * `amount_residual_mxn_odoo` directly — it's the single source of truth and
+ * doesn't depend on refresh cadence of the downstream aggregates. The
+ * per-company top-10 and the KPI totals come from the same pass so they
+ * cannot disagree.
  *
  * Sources:
- * - canonical_invoices (authoritative open AR/AP per invoice)
+ * - canonical_invoices.amount_residual_mxn_odoo (authoritative residual)
  * - canonical_companies (display_name lookup only)
  * - canonical_invoices 365d totals → DSO / DPO denominators
  */
