@@ -365,7 +365,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="info"
           href="/cobranza"
-          subtitle={`vencido ${formatCurrencyMXN(wc.arOverdueMxn, { compact: true })} · ${wc.arCompaniesCount} clientes`}
+          subtitle={`vencido ${formatCurrencyMXN(wc.arOverdueMxn, { compact: true })} · ${wc.arInvoiceCount} facturas · ${wc.arCompaniesCount} clientes`}
         />
         <KpiCard
           title="AP — yo debo"
@@ -376,7 +376,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="warning"
           href="/compras"
-          subtitle={`${wc.apCompaniesCount} proveedores abiertos`}
+          subtitle={`vencido ${formatCurrencyMXN(wc.apOverdueMxn, { compact: true })} · ${wc.apInvoiceCount} facturas · ${wc.apCompaniesCount} proveedores`}
         />
         <KpiCard
           title="Neto (AR − AP)"
@@ -422,6 +422,7 @@ function ContributorsTable({
     totalMxn: number;
     overdueMxn: number;
     invoiceCount: number;
+    overdueCount: number;
   }>;
   hrefBase: string;
 }) {
@@ -469,11 +470,14 @@ function ContributorsTable({
                     ) : (
                       <span className="font-medium">{r.companyName}</span>
                     )}
-                    {r.invoiceCount > 0 && (
-                      <div className="text-[11px] text-muted-foreground">
-                        {r.invoiceCount} factura{r.invoiceCount === 1 ? "" : "s"} vencida{r.invoiceCount === 1 ? "" : "s"}
-                      </div>
-                    )}
+                    <div className="text-[11px] text-muted-foreground">
+                      {r.invoiceCount} factura{r.invoiceCount === 1 ? "" : "s"}
+                      {r.overdueCount > 0 && (
+                        <span className="text-warning">
+                          {" "}· {r.overdueCount} vencida{r.overdueCount === 1 ? "" : "s"}
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell className="text-right tabular-nums">
                     <Currency amount={r.totalMxn} />

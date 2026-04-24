@@ -5,19 +5,22 @@ import { getServiceClient } from "@/lib/supabase-server";
 /**
  * F4 — Working capital.
  *
- * Sources (both pre-computed by pg_cron → guaranteed consistent):
- * - `gold_cashflow`        → headline totals (AR / AP / cash / debt / working capital).
- *   Single-row materialised snapshot. This is the authoritative number that
- *   matches /cobranza, /compras and the balance sheet.
- * - `canonical_companies`  → per-company aggregates (total_receivable_mxn,
- *   overdue_amount_mxn, overdue_count, total_payable_mxn, revenue_90d_mxn,
- *   display_name). Refreshed hourly by refresh_canonical_company_financials.
+ * IMPORTANT — DATA QUALITY NOTE (2026-04-24):
+ * `gold_cashflow.total_receivable_mxn` and `canonical_companies.total_receivable_mxn`
+ * both derive from `canonical_invoices.amount_residual_mxn_resolved`, which has
+ * a double-FX bug for USD invoices: the resolved column multiplies the residual
+ * by the FX rate twice, so $21,561 USD becomes $6.4M MXN instead of $372k.
+ * Gold aggregate reports $259M AR when the real number is $25M.
  *
- * Previously this helper iterated canonical_invoices and re-filtered by
- * state/estado — which silently excluded Odoo-only invoices whose
- * estado_sat IS NULL (PostgREST neq excludes nulls). That lost ~$3.8M of
- * AR vs. the authoritative gold_cashflow total. Reading the aggregates
- * directly removes the drift.
+ * Until the silver layer fix lands, this helper ignores the corrupted
+ * aggregates and iterates `canonical_invoices.amount_residual_mxn_odoo` — that
+ * column is the live Odoo residual translated with a single FX pass (validated
+ * against sample USD + MXN invoices, matches /cobranza exactly).
+ *
+ * Sources:
+ * - canonical_invoices (authoritative open AR/AP per invoice)
+ * - canonical_companies (display_name lookup only)
+ * - canonical_invoices 365d totals → DSO / DPO denominators
  */
 export interface WorkingCapitalContributor {
   companyId: number | null;
@@ -25,66 +28,60 @@ export interface WorkingCapitalContributor {
   totalMxn: number;
   overdueMxn: number;
   invoiceCount: number;
+  overdueCount: number;
 }
 
 export interface WorkingCapitalSummary {
   arTotalMxn: number;
   arOverdueMxn: number;
-  arCompaniesCount: number;
+  arInvoiceCount: number;
   arOverdueCount: number;
+  arCompaniesCount: number;
   apTotalMxn: number;
   apOverdueMxn: number;
-  apCompaniesCount: number;
+  apInvoiceCount: number;
   apOverdueCount: number;
+  apCompaniesCount: number;
   netoMxn: number;
   topAr: WorkingCapitalContributor[];
   topAp: WorkingCapitalContributor[];
   dsoDays: number | null;
   dpoDays: number | null;
-  asOfDate: string | null;
 }
 
-type CompanyAggregates = {
-  id: number;
-  display_name: string | null;
-  total_receivable_mxn: number | null;
-  overdue_amount_mxn: number | null;
-  overdue_count: number | null;
-  total_payable_mxn: number | null;
+type OpenInvoice = {
+  emisor_canonical_company_id: number | null;
+  receptor_canonical_company_id: number | null;
+  amount_residual_mxn_odoo: number | null;
+  due_date_odoo: string | null;
 };
 
 async function _getWorkingCapitalRaw(): Promise<WorkingCapitalSummary> {
   const sb = getServiceClient();
+  const today = new Date().toISOString().slice(0, 10);
 
-  const [cashflowRes, arCompanies, apCompanies, revenue365, cogs365] =
+  const [arOpen, apOpen, companiesLookup, revenue365, cogs365] =
     await Promise.all([
       sb
-        .from("gold_cashflow")
-        .select("total_receivable_mxn, overdue_receivable_mxn, total_payable_mxn, refreshed_at")
-        .maybeSingle(),
-      // Top AR contributors + count of companies with open AR
-      sb
-        .from("canonical_companies")
+        .from("canonical_invoices")
         .select(
-          "id, display_name, total_receivable_mxn, overdue_amount_mxn, overdue_count, total_payable_mxn"
+          "receptor_canonical_company_id, amount_residual_mxn_odoo, due_date_odoo"
         )
-        .gt("total_receivable_mxn", 0)
-        .order("total_receivable_mxn", { ascending: false }),
-      // Top AP contributors
+        .eq("direction", "issued")
+        .gt("amount_residual_mxn_odoo", 0),
       sb
-        .from("canonical_companies")
+        .from("canonical_invoices")
         .select(
-          "id, display_name, total_receivable_mxn, overdue_amount_mxn, overdue_count, total_payable_mxn"
+          "emisor_canonical_company_id, amount_residual_mxn_odoo, due_date_odoo"
         )
-        .gt("total_payable_mxn", 0)
-        .order("total_payable_mxn", { ascending: false }),
-      // 365d revenue for DSO
+        .eq("direction", "received")
+        .gt("amount_residual_mxn_odoo", 0),
+      sb.from("canonical_companies").select("id, display_name"),
       sb
         .from("canonical_invoices")
         .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
         .eq("direction", "issued")
         .gte("invoice_date", daysAgoIso(365)),
-      // 365d AP flow for DPO
       sb
         .from("canonical_invoices")
         .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
@@ -92,82 +89,123 @@ async function _getWorkingCapitalRaw(): Promise<WorkingCapitalSummary> {
         .gte("invoice_date", daysAgoIso(365)),
     ]);
 
-  type Cashflow = {
-    total_receivable_mxn: number | null;
-    overdue_receivable_mxn: number | null;
-    total_payable_mxn: number | null;
-    refreshed_at: string | null;
-  };
-  const cf = (cashflowRes.data ?? null) as Cashflow | null;
+  const arRows = (arOpen.data ?? []) as OpenInvoice[];
+  const apRows = (apOpen.data ?? []) as OpenInvoice[];
 
-  const arRows = (arCompanies.data ?? []) as CompanyAggregates[];
-  const apRows = (apCompanies.data ?? []) as CompanyAggregates[];
+  type CompanyLookup = { id: number; display_name: string | null };
+  const companyNames = new Map<number, string>();
+  for (const c of (companiesLookup.data ?? []) as CompanyLookup[]) {
+    companyNames.set(c.id, c.display_name ?? `#${c.id}`);
+  }
 
-  const topAr: WorkingCapitalContributor[] = arRows.slice(0, 10).map((r) => ({
-    companyId: r.id,
-    companyName: r.display_name,
-    totalMxn: Number(r.total_receivable_mxn) || 0,
-    overdueMxn: Number(r.overdue_amount_mxn) || 0,
-    invoiceCount: Number(r.overdue_count) || 0,
-  }));
-  const topAp: WorkingCapitalContributor[] = apRows.slice(0, 10).map((r) => ({
-    companyId: r.id,
-    companyName: r.display_name,
-    totalMxn: Number(r.total_payable_mxn) || 0,
-    overdueMxn: 0, // AP overdue not tracked at company level yet
-    invoiceCount: 0,
-  }));
-
-  // Overdue count across all AR companies (not just top-10)
-  const arOverdueCount = arRows.reduce(
-    (s, r) => s + (Number(r.overdue_count) || 0),
-    0
+  // AR: totals + per-company aggregation
+  const ar = aggregate(
+    arRows,
+    (r) => r.receptor_canonical_company_id,
+    today,
+    companyNames
+  );
+  const ap = aggregate(
+    apRows,
+    (r) => r.emisor_canonical_company_id,
+    today,
+    companyNames
   );
 
-  // Headline totals from gold_cashflow (authoritative)
-  const arTotal = Number(cf?.total_receivable_mxn) || 0;
-  const arOverdueTotal = Number(cf?.overdue_receivable_mxn) || 0;
-  const apTotal = Number(cf?.total_payable_mxn) || 0;
-
-  // DSO/DPO: rolling 365d revenue / COGS × AR or AP / revenue or COGS
+  // DSO/DPO denominators — use amount_total_mxn_odoo (same single-FX guarantee)
   type InvoiceTotal = {
     amount_total_mxn_resolved: number | null;
     amount_total_mxn_odoo: number | null;
   };
   const revenue365Mxn = ((revenue365.data ?? []) as InvoiceTotal[]).reduce(
-    (s, r) =>
-      s + (Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn_odoo) || 0),
+    (s, r) => s + (Number(r.amount_total_mxn_odoo ?? r.amount_total_mxn_resolved) || 0),
     0
   );
   const cogs365Mxn = ((cogs365.data ?? []) as InvoiceTotal[]).reduce(
-    (s, r) =>
-      s + (Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn_odoo) || 0),
+    (s, r) => s + (Number(r.amount_total_mxn_odoo ?? r.amount_total_mxn_resolved) || 0),
     0
   );
-  const dsoDays = revenue365Mxn > 0 ? Math.round((arTotal / revenue365Mxn) * 365) : null;
-  const dpoDays = cogs365Mxn > 0 ? Math.round((apTotal / cogs365Mxn) * 365) : null;
+  const dsoDays = revenue365Mxn > 0 ? Math.round((ar.total / revenue365Mxn) * 365) : null;
+  const dpoDays = cogs365Mxn > 0 ? Math.round((ap.total / cogs365Mxn) * 365) : null;
 
   return {
-    arTotalMxn: arTotal,
-    arOverdueMxn: arOverdueTotal,
-    arCompaniesCount: arRows.length,
-    arOverdueCount,
-    apTotalMxn: apTotal,
-    apOverdueMxn: 0,
-    apCompaniesCount: apRows.length,
-    apOverdueCount: 0,
-    netoMxn: arTotal - apTotal,
-    topAr,
-    topAp,
+    arTotalMxn: ar.total,
+    arOverdueMxn: ar.overdue,
+    arInvoiceCount: arRows.length,
+    arOverdueCount: ar.overdueCount,
+    arCompaniesCount: ar.topList.length + ar.tailCount,
+    apTotalMxn: ap.total,
+    apOverdueMxn: ap.overdue,
+    apInvoiceCount: apRows.length,
+    apOverdueCount: ap.overdueCount,
+    apCompaniesCount: ap.topList.length + ap.tailCount,
+    netoMxn: ar.total - ap.total,
+    topAr: ar.topList,
+    topAp: ap.topList,
     dsoDays,
     dpoDays,
-    asOfDate: cf?.refreshed_at ?? null,
+  };
+}
+
+type AggregateResult = {
+  total: number;
+  overdue: number;
+  overdueCount: number;
+  topList: WorkingCapitalContributor[];
+  tailCount: number;
+};
+
+function aggregate(
+  rows: OpenInvoice[],
+  pickCompany: (r: OpenInvoice) => number | null,
+  today: string,
+  companyNames: Map<number, string>
+): AggregateResult {
+  let total = 0;
+  let overdueTotal = 0;
+  let overdueCount = 0;
+  const byCompany = new Map<number, WorkingCapitalContributor>();
+
+  for (const r of rows) {
+    const amt = Number(r.amount_residual_mxn_odoo) || 0;
+    total += amt;
+    const isOverdue = r.due_date_odoo != null && r.due_date_odoo < today;
+    if (isOverdue) {
+      overdueTotal += amt;
+      overdueCount++;
+    }
+    const cid = pickCompany(r);
+    if (cid == null) continue;
+    const existing = byCompany.get(cid) ?? {
+      companyId: cid,
+      companyName: companyNames.get(cid) ?? `#${cid}`,
+      totalMxn: 0,
+      overdueMxn: 0,
+      invoiceCount: 0,
+      overdueCount: 0,
+    };
+    existing.totalMxn += amt;
+    existing.invoiceCount++;
+    if (isOverdue) {
+      existing.overdueMxn += amt;
+      existing.overdueCount++;
+    }
+    byCompany.set(cid, existing);
+  }
+
+  const sorted = [...byCompany.values()].sort((a, b) => b.totalMxn - a.totalMxn);
+  return {
+    total,
+    overdue: overdueTotal,
+    overdueCount,
+    topList: sorted.slice(0, 10),
+    tailCount: Math.max(sorted.length - 10, 0),
   };
 }
 
 export const getWorkingCapital = unstable_cache(
   _getWorkingCapitalRaw,
-  ["sp13-finanzas-working-capital-v2"],
+  ["sp13-finanzas-working-capital-v3-fx-fix"],
   { revalidate: 60, tags: ["finanzas"] }
 );
 
