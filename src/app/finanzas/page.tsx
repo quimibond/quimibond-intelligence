@@ -321,6 +321,27 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
   const utilidadBrutaAjustada = cogs.revenueMxn - cogs.cogsRecursiveMpMxn;
   const assetSaleGap = cogs.revenueInvoicesMxn - cogs.revenueMxn;
 
+  // ── Break-even analysis ────────────────────────────────────────────
+  // Costos fijos del período = todo lo que NO es material (ya está en
+  // sus cuentas propias). No cambian con el volumen de ventas (en el
+  // corto plazo): nómina, renta, energía, dep, admin.
+  const costosFijosFabrica =
+    kpis.mod501_06Mxn +
+    kpis.compras502Mxn +
+    kpis.overhead504_01Mxn +
+    kpis.depFabrica504Mxn;
+  const costosFijosAdmin = kpis.gastosOp6xxMxn + kpis.depCorpoMxn;
+  const costosFijosTotales = costosFijosFabrica + costosFijosAdmin;
+  const margenMaterialPct =
+    cogs.revenueMxn > 0
+      ? (cogs.revenueMxn - cogs.cogsRecursiveMpMxn) / cogs.revenueMxn
+      : 0;
+  const ventasBreakEven =
+    margenMaterialPct > 0 ? costosFijosTotales / margenMaterialPct : 0;
+  const gapBreakEven = cogs.revenueMxn - ventasBreakEven;
+  const cumplimientoPct =
+    ventasBreakEven > 0 ? (cogs.revenueMxn / ventasBreakEven) * 100 : 0;
+
   return (
     <QuestionSection
       id="pnl"
@@ -543,6 +564,18 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
             </CardContent>
           </Card>
 
+          <BreakEvenCard
+            ventasReales={cogs.revenueMxn}
+            ventasBreakEven={ventasBreakEven}
+            gap={gapBreakEven}
+            cumplimientoPct={cumplimientoPct}
+            margenMaterialPct={margenMaterialPct * 100}
+            costosFijosFabrica={costosFijosFabrica}
+            costosFijosAdmin={costosFijosAdmin}
+            costoPrimo={cogs.cogsRecursiveMpMxn}
+            monthsCovered={kpis.monthsCovered}
+          />
+
           <Accordion
             type="multiple"
             defaultValue={[]}
@@ -588,6 +621,171 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
 }
 
 /* Tabla P&L limpio con costo primo real (BOM recursiva) ───────────────── */
+/* Break-even analysis: ventas necesarias para cubrir estructura fija ─ */
+function BreakEvenCard({
+  ventasReales,
+  ventasBreakEven,
+  gap,
+  cumplimientoPct,
+  margenMaterialPct,
+  costosFijosFabrica,
+  costosFijosAdmin,
+  costoPrimo,
+  monthsCovered,
+}: {
+  ventasReales: number;
+  ventasBreakEven: number;
+  gap: number;
+  cumplimientoPct: number;
+  margenMaterialPct: number;
+  costosFijosFabrica: number;
+  costosFijosAdmin: number;
+  costoPrimo: number;
+  monthsCovered: number;
+}) {
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const fmtFull = (n: number) => formatCurrencyMXN(n);
+  const tone: "success" | "warning" | "danger" =
+    cumplimientoPct >= 100
+      ? "success"
+      : cumplimientoPct >= 85
+        ? "warning"
+        : "danger";
+  const toneClass =
+    tone === "success"
+      ? "text-success"
+      : tone === "warning"
+        ? "text-warning"
+        : "text-destructive";
+  const bgClass =
+    tone === "success"
+      ? "bg-success/10 border-success/40"
+      : tone === "warning"
+        ? "bg-warning/10 border-warning/40"
+        : "bg-destructive/10 border-destructive/40";
+  const gapLabel = gap >= 0 ? "Superas break-even por" : "Te falta vender";
+  const gapAbs = Math.abs(gap);
+  const perMonth = monthsCovered > 1 ? monthsCovered : 1;
+
+  const progress = Math.min(Math.max(cumplimientoPct, 0), 150);
+  const progressWidth = Math.min(progress / 1.5, 100); // escala 0-150% → 0-100%
+
+  return (
+    <Card className={`border ${bgClass}`}>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">
+          Punto de equilibrio (break-even)
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Ventas necesarias para cubrir toda la estructura fija (mano de obra,
+          overhead fábrica, depreciación, gastos op) con el margen material
+          actual. Solo aplica al período seleccionado.
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {/* Hero: ventas vs break-even */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Vendiste
+            </div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">
+              {fmt(ventasReales)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              Break-even necesitas
+            </div>
+            <div className="mt-1 text-2xl font-semibold tabular-nums">
+              {fmt(ventasBreakEven)}
+            </div>
+          </div>
+          <div>
+            <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
+              {gapLabel}
+            </div>
+            <div
+              className={`mt-1 text-2xl font-semibold tabular-nums ${toneClass}`}
+            >
+              {fmt(gapAbs)}
+            </div>
+            <div className="text-[11px] text-muted-foreground tabular-nums">
+              cumplimiento {cumplimientoPct.toFixed(1)}%
+              {monthsCovered > 1
+                ? ` · ${fmt(gapAbs / perMonth)}/mes`
+                : ""}
+            </div>
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div>
+          <div className="mb-1 flex items-center justify-between text-[11px] text-muted-foreground">
+            <span>Progreso hacia break-even</span>
+            <span className="tabular-nums">
+              {cumplimientoPct.toFixed(0)}% de 100%
+            </span>
+          </div>
+          <div className="relative h-2 overflow-hidden rounded-full bg-muted">
+            <div
+              className={`absolute left-0 top-0 h-full transition-all ${tone === "success" ? "bg-success" : tone === "warning" ? "bg-warning" : "bg-destructive"}`}
+              style={{ width: `${progressWidth}%` }}
+            />
+            {/* Línea al 100% (break-even marker) */}
+            <div
+              className="absolute top-0 h-full w-px bg-foreground/40"
+              style={{ left: `${100 / 1.5}%` }}
+              aria-hidden
+            />
+          </div>
+          <div
+            className="mt-0.5 flex text-[10px] text-muted-foreground"
+            style={{ paddingLeft: `${100 / 1.5}%` }}
+          >
+            <span>↑ break-even 100%</span>
+          </div>
+        </div>
+
+        {/* Fórmula visible */}
+        <div className="rounded-md border bg-background/60 p-3 text-xs">
+          <div className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            Cómo sale este número
+          </div>
+          <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+            <span className="text-muted-foreground">MOD + overhead fábrica + dep</span>
+            <span className="text-right">{fmt(costosFijosFabrica)}</span>
+            <span className="text-muted-foreground">Gastos op (admin/ventas)</span>
+            <span className="text-right">{fmt(costosFijosAdmin)}</span>
+            <span className="font-medium">= Costos fijos totales</span>
+            <span className="text-right font-medium">
+              {fmt(costosFijosFabrica + costosFijosAdmin)}
+            </span>
+            <span className="text-muted-foreground">÷ Margen material</span>
+            <span className="text-right">{margenMaterialPct.toFixed(1)}%</span>
+            <span className="font-semibold">= Ventas break-even</span>
+            <span className="text-right font-semibold">
+              {fmtFull(ventasBreakEven)}
+            </span>
+          </div>
+          <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+            El margen material ({margenMaterialPct.toFixed(1)}%) viene del
+            costo primo recursivo ({fmt(costoPrimo)} sobre {fmt(ventasReales)}).
+            Cada peso vendido deja ~{margenMaterialPct.toFixed(0)} centavos para
+            cubrir estructura. Con {fmt(costosFijosFabrica + costosFijosAdmin)}
+            {" "}de estructura, necesitas vender{" "}
+            <span className="font-mono">
+              {fmt(costosFijosFabrica + costosFijosAdmin)} ÷{" "}
+              {(margenMaterialPct / 100).toFixed(2)} = {fmt(ventasBreakEven)}
+            </span>
+            .
+          </p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function PnlLimpioTable({
   ventas,
   costoPrimo,
