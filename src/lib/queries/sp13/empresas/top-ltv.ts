@@ -41,27 +41,23 @@ async function _getTopLtvCustomersUncached(
   const rows = data ?? [];
   if (rows.length === 0) return [];
 
-  const ids = rows
-    .map((r) => r.canonical_company_id)
-    .filter((id): id is number => id != null);
-
-  const { data: soData } = await sb
-    .from("canonical_sale_orders")
-    .select("canonical_company_id, salesperson_name, date_order")
-    .in("canonical_company_id", ids)
-    .not("salesperson_name", "is", null)
-    .order("date_order", { ascending: false, nullsFirst: false });
-
-  const salespersonByCompany = new Map<number, string>();
-  for (const so of (soData ?? []) as Array<{
-    canonical_company_id: number | null;
-    salesperson_name: string | null;
-  }>) {
-    if (so.canonical_company_id == null) continue;
-    if (!salespersonByCompany.has(so.canonical_company_id) && so.salesperson_name) {
-      salespersonByCompany.set(so.canonical_company_id, so.salesperson_name);
-    }
-  }
+  // Salesperson = latest canonical_sale_order.salesperson_name per company.
+  // One limit-1 query per company runs in parallel — cheap under 10 and
+  // avoids pulling thousands of orders for whales.
+  const salespersonPairs = await Promise.all(
+    rows.map(async (r) => {
+      const { data: soRow } = await sb
+        .from("canonical_sale_orders")
+        .select("salesperson_name")
+        .eq("canonical_company_id", r.canonical_company_id as number)
+        .not("salesperson_name", "is", null)
+        .order("date_order", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      return [r.canonical_company_id as number, soRow?.salesperson_name ?? null] as const;
+    }),
+  );
+  const salespersonByCompany = new Map<number, string | null>(salespersonPairs);
 
   return rows.map((r) => ({
     canonical_company_id: r.canonical_company_id as number,

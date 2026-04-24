@@ -85,13 +85,19 @@ async function _getDriftingCompaniesUncached(
 ): Promise<DriftingCompany[]> {
   const sb = getServiceClient();
 
+  // Bound the first query: 50 rows is plenty of buffer for client-side
+  // AR+AP ranking when the plan asks for top 5. Unbounded this was scanning
+  // every drifting company in canonical_companies (~100-300 rows) on every
+  // cache miss.
+  const CANDIDATE_POOL = Math.max(50, limit * 10);
   const { data, error } = await sb
     .from("canonical_companies")
     // drift_* / is_foreign|bank|gov|payroll not in generated types yet.
     .select(DRIFT_COLUMNS as unknown as "*")
     .or("drift_total_abs_mxn.gt.0,drift_ap_total_abs_mxn.gt.0")
     .neq("id", QUIMIBOND_SELF_ID)
-    .order("drift_total_abs_mxn", { ascending: false, nullsFirst: false });
+    .order("drift_total_abs_mxn", { ascending: false, nullsFirst: false })
+    .limit(CANDIDATE_POOL);
   if (error) throw error;
 
   const rows = (data ?? []) as unknown as RawDriftCompanyRow[];
@@ -119,24 +125,23 @@ async function _getDriftingCompaniesUncached(
 
   if (ranked.length === 0) return [];
 
-  // Fetch latest invoice_date per company from gold_company_odoo_sat_drift.
-  // Single batched call ordered desc; we keep the first date per company.
-  const ids = ranked.map((r) => r.row.id);
-  const { data: affected } = await sb
-    .from("gold_company_odoo_sat_drift")
-    .select("canonical_company_id, invoice_date")
-    .in("canonical_company_id", ids)
-    .order("invoice_date", { ascending: false, nullsFirst: false });
-
-  const lastByCompany = new Map<number, string>();
-  for (const r of (affected ?? []) as Array<{
-    canonical_company_id: number;
-    invoice_date: string | null;
-  }>) {
-    if (r.invoice_date && !lastByCompany.has(r.canonical_company_id)) {
-      lastByCompany.set(r.canonical_company_id, r.invoice_date);
-    }
-  }
+  // Latest invoice_date per company: one limit-1 query per company in
+  // parallel — cheap at 5 companies and avoids pulling hundreds of drift
+  // rows per whale just to grab a max(invoice_date).
+  const lastPairs = await Promise.all(
+    ranked.map(async ({ row }) => {
+      const { data: affRow } = await sb
+        .from("gold_company_odoo_sat_drift")
+        .select("invoice_date")
+        .eq("canonical_company_id", row.id)
+        .not("invoice_date", "is", null)
+        .order("invoice_date", { ascending: false, nullsFirst: false })
+        .limit(1)
+        .maybeSingle();
+      return [row.id, affRow?.invoice_date ?? null] as const;
+    }),
+  );
+  const lastByCompany = new Map<number, string | null>(lastPairs);
 
   return ranked.map(({ row, arTotal, apTotal, isNoise }) => ({
     canonical_company_id: row.id,

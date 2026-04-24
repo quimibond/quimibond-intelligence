@@ -3,15 +3,20 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
- * SP13 E1 Hero — distribución del portafolio.
+ * SP13 E1 Hero — distribucion del portafolio.
  *
  * Clasificación:
  *   activeCustomers  = is_customer AND last_invoice_date >= NOW() - 12m
  *   activeSuppliers  = is_supplier AND last_invoice_date >= NOW() - 12m
  *   dormant          = (is_customer OR is_supplier) AND last_invoice_date < NOW() - 12m
+ *                      AND lifetime_value_mxn > 0 (para excluir shadows sin negocio)
  *   blacklist        = blacklist_level IN ('69b_presunto','69b_definitivo')
  *
  * Excluye Quimibond self (canonical_company_id = 868).
+ *
+ * 4 COUNT HEAD queries en paralelo sobre gold_company_360 (MV). El refactor
+ * anterior usaba un solo fetch paginado — peor por la transferencia de
+ * ~4k filas y porque Supabase tope default a 1000 rows por page.
  */
 export interface SP13PortfolioKpis {
   activeCustomers: number;
@@ -45,7 +50,8 @@ async function _getPortfolioKpisUncached(): Promise<SP13PortfolioKpis> {
       .eq("is_supplier", true)
       .gte("last_invoice_date", cutoff)
       .neq("canonical_company_id", QUIMIBOND_SELF_ID),
-    // Dormidos: has been a customer o proveedor (LTV>0) pero sin facturación reciente
+    // Dormidos: tuvieron negocio (LTV>0) pero sin facturación últ. 12m.
+    // Single condition AND-chained so PostgREST plans it simply.
     sb
       .from("gold_company_360")
       .select("canonical_company_id", { head: true, count: "exact" })
