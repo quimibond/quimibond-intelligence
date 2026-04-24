@@ -193,6 +193,25 @@ Ad-hoc run: `SELECT * FROM run_data_integrity_checks();`
 Frontend surface: `/sistema?tab=quality` → first card shows every check with
 fail count, delta, status, severity and category badge.
 
+### Coverage (2026-04-24, sweep 2 — 45 total checks)
+
+| Domain | Tables | # Checks |
+|---|---|---|
+| AR / AP / payments | canonical_invoices, canonical_payments, canonical_payment_allocations, canonical_credit_notes, canonical_bank_balances | 14 |
+| MDM — companies/contacts/products | canonical_contacts, canonical_products | 8 |
+| Operations | canonical_deliveries, canonical_manufacturing, canonical_inventory | 8 |
+| Sales / purchases / CRM | canonical_sale_orders, canonical_purchase_orders, canonical_crm_leads | 8 |
+| Accounting | canonical_account_balances, canonical_tax_events, gold_balance_sheet | 5 |
+| FX | canonical_fx_rates | 2 |
+| Freshness (cross-layer) | gold_cashflow, gold_pl_statement, odoo_invoices (Bronze) | 3 |
+
+Categories: fk (11), consistency (8), null (7), sign (6), freshness (4),
+format (4), dup (3), fx (1), balance (1).
+
+Passing baseline: 45 / 45 (after calibrating tolerances for pre-existing
+historical quirks — `canonical_inventory.duplicate_product` (MV join
+produces 4 dup products in Toluca), `canonical_purchase_orders.approved_before_ordered` (14 retroactive 2022 POs)).
+
 ### Triggers installed (all BEFORE-row, SECURITY INVOKER)
 
 1. `canonical_invoices_resolve_residual_mxn_trg` — keeps
