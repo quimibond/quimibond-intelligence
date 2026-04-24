@@ -77,6 +77,10 @@
       "schedule": "30 3 * * *"
     },
     {
+      "path": "/api/pipeline/refresh-cogs-monthly-recent",
+      "schedule": "15 * * * *"
+    },
+    {
       "path": "/api/pipeline/retention",
       "schedule": "0 3 * * 0"
     },
