@@ -5,17 +5,14 @@ import { getServiceClient } from "@/lib/supabase-server";
 /**
  * F2 — Runway estimate.
  *
- * burnRate = average monthly gasto total (|total_expense|) últimos 3 meses,
- * normalizado a /día. `runwayCashOnly` = cash / burnRate.
- * `runwayWithAr` añade AR abierto (asume cobranza normal) al numerador.
+ * burnRate = promedio mensual de |total_expense| últimos 3 meses, /30d.
+ * `runwayCashOnly` = cash / burnRate.
+ * `runwayWithAr`   = (cash + AR abierto) / burnRate.
  *
- * AR SOURCE: canonical_invoices.amount_residual_mxn_odoo (single-FX, validated).
- * Do NOT use gold_cashflow.total_receivable_mxn or amount_residual_mxn_resolved
- * — both have a double-FX bug for USD invoices that inflates the total ~10x.
- * See working-capital.ts header note for the data-quality issue.
- *
- * CASH SOURCE: canonical_bank_balances (classification='cash') — direct,
- * no derived aggregate needed.
+ * Sources (gold-only):
+ * - `gold_cashflow.current_cash_mxn`      → saldo en efectivo
+ * - `gold_cashflow.total_receivable_mxn`  → AR abierto autoritativo
+ * - `gold_pl_statement.total_expense`     → burn rate a 90 días
  */
 export interface RunwayKpis {
   burnRateDaily: number;
@@ -33,39 +30,28 @@ async function _getRunwayKpisRaw(): Promise<RunwayKpis> {
     .toISOString()
     .slice(0, 7);
 
-  const [banks, plLast3, openAr] = await Promise.all([
+  const [cashflow, plLast3] = await Promise.all([
     sb
-      .from("canonical_bank_balances")
-      .select("classification, current_balance_mxn"),
+      .from("gold_cashflow")
+      .select("current_cash_mxn, total_receivable_mxn")
+      .maybeSingle(),
     sb
       .from("gold_pl_statement")
       .select("period, total_expense")
       .gte("period", cutoffMonth)
       .order("period", { ascending: false })
       .limit(3),
-    sb
-      .from("canonical_invoices")
-      .select("amount_residual_mxn_odoo")
-      .eq("direction", "issued")
-      .gt("amount_residual_mxn_odoo", 0),
   ]);
 
-  type Bank = { classification: string | null; current_balance_mxn: number | null };
-  const cash = ((banks.data ?? []) as Bank[])
-    .filter((b) => b.classification === "cash")
-    .reduce((s, b) => s + (Number(b.current_balance_mxn) || 0), 0);
+  type Cashflow = {
+    current_cash_mxn: number | null;
+    total_receivable_mxn: number | null;
+  };
+  const cf = (cashflow.data ?? null) as Cashflow | null;
+  const cash = Number(cf?.current_cash_mxn) || 0;
+  const arOpen = Number(cf?.total_receivable_mxn) || 0;
 
-  const arRows = (openAr.data ?? []) as Array<{
-    amount_residual_mxn_odoo: number | null;
-  }>;
-  const arOpen = arRows.reduce(
-    (s, r) => s + (Number(r.amount_residual_mxn_odoo) || 0),
-    0
-  );
-
-  const plRows = (plLast3.data ?? []) as Array<{
-    total_expense: number | null;
-  }>;
+  const plRows = (plLast3.data ?? []) as Array<{ total_expense: number | null }>;
   const totalExpense = plRows.reduce(
     (s, r) => s + Math.max(0, Number(r.total_expense) || 0),
     0
@@ -89,6 +75,6 @@ async function _getRunwayKpisRaw(): Promise<RunwayKpis> {
 
 export const getRunwayKpis = unstable_cache(
   _getRunwayKpisRaw,
-  ["sp13-finanzas-runway-v2-fx-fix"],
+  ["sp13-finanzas-runway-gold"],
   { revalidate: 60, tags: ["finanzas"] }
 );

@@ -365,7 +365,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="info"
           href="/cobranza"
-          subtitle={`vencido ${formatCurrencyMXN(wc.arOverdueMxn, { compact: true })} · ${wc.arInvoiceCount} facturas · ${wc.arCompaniesCount} clientes`}
+          subtitle={`vencido ${formatCurrencyMXN(wc.arOverdueMxn, { compact: true })} · ${wc.arCompaniesCount} clientes`}
         />
         <KpiCard
           title="AP — yo debo"
@@ -376,7 +376,7 @@ async function WorkingCapitalBlock() {
           source="canonical"
           tone="warning"
           href="/compras"
-          subtitle={`vencido ${formatCurrencyMXN(wc.apOverdueMxn, { compact: true })} · ${wc.apInvoiceCount} facturas · ${wc.apCompaniesCount} proveedores`}
+          subtitle={`${wc.apCompaniesCount} proveedores abiertos`}
         />
         <KpiCard
           title="Neto (AR − AP)"
