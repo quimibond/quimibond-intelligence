@@ -1191,7 +1191,7 @@ async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
     <QuestionSection
       id="cogs-adjusted"
       question="¿Cuál es el costo primo real (material puro) vs overhead?"
-      subtext={`Contable raw (501.01 + capa de valoración) vs BOM recursivo a materia prima · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
+      subtext={`Contable raw (501.01 + capa de valoración) vs BOM recursivo a materia prima · margen vs ventas de producto (cuenta 4xx: ${formatCurrencyMXN(data.revenueMxn, { compact: true })}) · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
     >
       <StatGrid columns={{ mobile: 1, tablet: 4, desktop: 4 }}>
         <KpiCard

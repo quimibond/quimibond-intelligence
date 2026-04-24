@@ -59,8 +59,13 @@ export interface CogsComparison {
   // Legacy flat BOM reference
   cogsBomFlatMxn: number;
 
-  // Revenue for margin context
+  // Revenue for margin context.
+  // revenueMxn         = ventas de producto (cuenta 4xx) — denominador correcto para margen de MP.
+  // revenueInvoicesMxn = total facturado según odoo_invoice_lines (incluye venta de activos
+  //                       como la máquina de marzo, donde la factura refleja precio total
+  //                       pero el P&L solo reconoce la utilidad en 7xx). Solo referencia.
   revenueMxn: number;
+  revenueInvoicesMxn: number;
 
   // Derived metrics
   overheadMxn: number; // raw - recursivo (overhead real que debió removerse)
@@ -74,7 +79,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
 
-  const [cogsAcctRes, capaRes, recursiveRes, bomFlatLinesRes] =
+  const [cogsAcctRes, capaRes, recursiveRes, bomFlatLinesRes, ventasAcctRes] =
     await Promise.all([
       // 1a. COGS contable actual (501.01 post-adjustment ya aplicado)
       sb
@@ -104,6 +109,18 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
         .eq("move_type", "out_invoice")
         .gte("invoice_date", bounds.from)
         .lt("invoice_date", bounds.to),
+      // 4. Ventas de producto: SOLO cuentas 4xx (ingresos por venta).
+      //    Excluye 7xx "otros ingresos" (ej. venta de maquinaria en marzo
+      //    donde el P&L solo reconoce la utilidad, no el precio de venta).
+      //    canonical_account_balances guarda income en negativo → se niega.
+      sb
+        .from("canonical_account_balances")
+        .select("balance")
+        .eq("balance_sheet_bucket", "income")
+        .eq("deprecated", false)
+        .like("account_code", "4%")
+        .gte("period", bounds.fromMonth)
+        .lte("period", bounds.toMonth.slice(0, 7)),
     ]);
 
   type AcctRow = { balance: number | null; period: string };
@@ -143,8 +160,16 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   };
   const linesTotal = Number(rec.lines_total) || 0;
   const linesWithCost = Number(rec.lines_with_cost) || 0;
-  const revenue = Number(rec.revenue_mxn) || 0;
+  const revenueInvoices = Number(rec.revenue_mxn) || 0;
   const cogsRecursive = Number(rec.cogs_recursive_mp) || 0;
+
+  // Ventas reales de producto (cuenta 4xx). Se niega porque income se
+  // almacena como crédito (negativo).
+  type VentasRow = { balance: number | null };
+  const revenue = -((ventasAcctRes.data ?? []) as VentasRow[]).reduce(
+    (s, r) => s + (Number(r.balance) || 0),
+    0
+  );
 
   // Flat BOM reference for comparison (legacy)
   type LineRow = {
@@ -222,6 +247,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
     bomCoveragePct: Math.round(bomCoveragePct * 10) / 10,
     cogsBomFlatMxn: Math.round(cogsBomFlat * 100) / 100,
     revenueMxn: Math.round(revenue * 100) / 100,
+    revenueInvoicesMxn: Math.round(revenueInvoices * 100) / 100,
     overheadMxn: Math.round(overhead * 100) / 100,
     overheadPctOfRaw: Math.round(overheadPctOfRaw * 10) / 10,
     grossMarginContablePct:
