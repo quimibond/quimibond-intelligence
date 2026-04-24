@@ -82,26 +82,31 @@ async function _getCashReconciliationRaw(
   const toPeriod = bounds.toMonth.slice(0, 7);
   const fromPeriod = priorMonthLabel(bounds.fromMonth);
 
-  const [reconcRes, netIncRes] = await Promise.all([
+  const [reconcRes, plMonthsRes] = await Promise.all([
     sb.rpc("get_cash_reconciliation", {
       p_from_period: fromPeriod,
       p_to_period: toPeriod,
     }),
-    // Net income del período: sum de income (4xx+7xx) - expenses (5xx+6xx)
+    // Net income del período: leer de gold_pl_statement (agregado por mes,
+    // <100 rows, no se trunca). Antes leía rows individuales de
+    // canonical_account_balances y PostgREST cortaba a 1000 rows con
+    // rangos largos (>4 meses), produciendo net_income subestimado.
     sb
-      .from("canonical_account_balances")
-      .select("balance, balance_sheet_bucket")
-      .eq("deprecated", false)
-      .in("balance_sheet_bucket", ["income", "expense"])
+      .from("gold_pl_statement")
+      .select("period, net_income")
       .gte("period", bounds.fromMonth)
       .lte("period", toPeriod),
   ]);
 
-  type NetIncRow = { balance: number | null; balance_sheet_bucket: string };
-  const niRows = (netIncRes.data ?? []) as NetIncRow[];
-  // net_income_stored = income (negative) + expense (positive)
-  // net_income_real = -net_income_stored
-  const netIncomeMxn = -niRows.reduce((s, r) => s + (Number(r.balance) || 0), 0);
+  type PlMonth = { period: string; net_income: number | null };
+  const plRows = (plMonthsRes.data ?? []) as PlMonth[];
+  // gold_pl_statement.net_income está en convención stored:
+  //   POSITIVO = pérdida, NEGATIVO = utilidad (misma que canonical)
+  // Negate para display CFO-normal (utilidad positiva, pérdida negativa).
+  const netIncomeMxn = -plRows.reduce(
+    (s, r) => s + (Number(r.net_income) || 0),
+    0
+  );
 
   const rows: CashCategoryRow[] = (
     (reconcRes.data ?? []) as RpcRow[]
