@@ -495,6 +495,31 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
             </CardContent>
           </Card>
 
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">
+                P&L contable vs solo material (recursivo)
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">
+                La columna &ldquo;recursivo&rdquo; reemplaza el COGS contable por el costo
+                de material puro (BOM hasta hojas). La Δ es el overhead de
+                fabricación (mano de obra directa, energéticos, renta fábrica,
+                depreciación maquinaria) que está pegado a 501/504 y no se
+                elimina con tu CAPA de valoración.
+              </p>
+            </CardHeader>
+            <CardContent className="px-0 pb-0">
+              <PnlCompareTable
+                ventas={kpis.ingresosPl}
+                cogsContable={cogs.cogsContableMxn}
+                cogsRecursivo={cogs.cogsRecursiveMpMxn}
+                capaValoracion={cogs.cogsCapaValoracionMxn}
+                gastosOp={kpis.gastosOperativos}
+                otros={kpis.otrosIngresosNetoMxn}
+              />
+            </CardContent>
+          </Card>
+
           <Accordion
             type="multiple"
             defaultValue={[]}
@@ -536,6 +561,143 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
         </>
       )}
     </QuestionSection>
+  );
+}
+
+/* Tabla comparativa P&L: contable vs solo material (recursivo) ───────── */
+function PnlCompareTable({
+  ventas,
+  cogsContable,
+  cogsRecursivo,
+  capaValoracion,
+  gastosOp,
+  otros,
+}: {
+  ventas: number;
+  cogsContable: number;
+  cogsRecursivo: number;
+  capaValoracion: number;
+  gastosOp: number;
+  otros: number;
+}) {
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const pct = (num: number, den: number) =>
+    den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—";
+
+  const bruta_c = ventas - cogsContable;
+  const bruta_r = ventas - cogsRecursivo;
+  const ebit_c = bruta_c - gastosOp;
+  const ebit_r = bruta_r - gastosOp;
+  const neta_c = ebit_c + otros;
+  const neta_r = ebit_r + otros;
+
+  // Overhead implícito pre-CAPA = COGS raw − MP. Mide todo lo que la
+  // CAPA debería remover + lo que se queda pegado.
+  const cogsRaw = cogsContable + capaValoracion;
+  const overheadImpPre = cogsRaw - cogsRecursivo;
+  const overheadImpPost = cogsContable - cogsRecursivo;
+
+  const rows: Array<{
+    label: string;
+    c: number;
+    r: number;
+    total?: boolean;
+    pct?: boolean;
+    tone?: "pos" | "neg" | "muted";
+    note?: string;
+  }> = [
+    { label: "Ventas de producto (4xx)", c: ventas, r: ventas },
+    { label: "− COGS", c: -cogsContable, r: -cogsRecursivo, tone: "neg" },
+    {
+      label: "= Utilidad bruta",
+      c: bruta_c,
+      r: bruta_r,
+      total: true,
+      note:
+        "Contable: con overhead pegado a 501/504. Recursivo: solo material puro.",
+    },
+    { label: "Margen %", c: bruta_c, r: bruta_r, pct: true, tone: "muted" },
+    { label: "− Gastos op (6xx + dep.)", c: -gastosOp, r: -gastosOp, tone: "neg" },
+    { label: "= EBIT", c: ebit_c, r: ebit_r, total: true },
+    {
+      label: "+ Otros ingresos (7xx)",
+      c: otros,
+      r: otros,
+      tone: otros >= 0 ? "pos" : "neg",
+    },
+    { label: "= Utilidad neta", c: neta_c, r: neta_r, total: true },
+  ];
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-[40%]">Concepto</TableHead>
+          <TableHead className="text-right">Contable</TableHead>
+          <TableHead className="text-right">Solo MP (recursivo)</TableHead>
+          <TableHead className="text-right">Δ (overhead implícito)</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {rows.map((row, i) => {
+          const delta = row.r - row.c;
+          const cText = row.pct ? pct(row.c, ventas) : fmt(row.c);
+          const rText = row.pct ? pct(row.r, ventas) : fmt(row.r);
+          const dText = row.pct
+            ? `${(((row.r - row.c) / ventas) * 100).toFixed(1)} pp`
+            : fmt(delta);
+          return (
+            <TableRow
+              key={i}
+              className={row.total ? "font-semibold bg-muted/40" : ""}
+            >
+              <TableCell>
+                {row.label}
+                {row.note && (
+                  <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
+                    {row.note}
+                  </p>
+                )}
+              </TableCell>
+              <TableCell
+                className={`text-right tabular-nums ${row.tone === "neg" ? "text-destructive" : row.tone === "muted" ? "text-muted-foreground" : ""}`}
+              >
+                {cText}
+              </TableCell>
+              <TableCell
+                className={`text-right tabular-nums ${row.tone === "neg" ? "text-destructive" : row.tone === "muted" ? "text-muted-foreground" : ""}`}
+              >
+                {rText}
+              </TableCell>
+              <TableCell className="text-right tabular-nums text-muted-foreground">
+                {dText}
+              </TableCell>
+            </TableRow>
+          );
+        })}
+        <TableRow className="border-t-2">
+          <TableCell>
+            <span className="text-xs text-muted-foreground">
+              Overhead implícito TOTAL (raw − MP)
+            </span>
+            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
+              Costo contable pre-CAPA vs material puro. Lo que &ldquo;debería&rdquo;
+              removerse de 501.xx para dejarlo en material puro (tu CAPA ya
+              removió {fmt(capaValoracion)}).
+            </p>
+          </TableCell>
+          <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+            pre-CAPA {fmt(overheadImpPre)}
+          </TableCell>
+          <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+            post-CAPA {fmt(overheadImpPost)}
+          </TableCell>
+          <TableCell className="text-right text-xs text-muted-foreground tabular-nums">
+            falta {fmt(overheadImpPost)}
+          </TableCell>
+        </TableRow>
+      </TableBody>
+    </Table>
   );
 }
 
