@@ -1177,7 +1177,7 @@ async function TaxBlock({ range }: { range: HistoryRange }) {
   );
 }
 
-/* ── F-COGS: Contable vs Ajustado a materia prima (BOM) ─────────────── */
+/* ── F-COGS: Contable raw vs Ajustado a materia prima (BOM recursiva) ─ */
 async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
   const data = await getCogsComparison(range);
   const coverageTone: "success" | "warning" | "danger" =
@@ -1190,30 +1190,51 @@ async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
   return (
     <QuestionSection
       id="cogs-adjusted"
-      question="¿Cuánto es material puro vs overhead en mi costo de ventas?"
-      subtext={`Contable (cuentas 5xx) vs BOM materia prima · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
+      question="¿Cuál es el costo primo real (material puro) vs overhead?"
+      subtext={`Contable raw (501.01 + capa de valoración) vs BOM recursivo a materia prima · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
     >
-      <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
+      <StatGrid columns={{ mobile: 1, tablet: 4, desktop: 4 }}>
         <KpiCard
-          title="COGS contable"
+          title="COGS contable actual"
           value={data.cogsContableMxn}
+          format="currency"
+          compact
+          icon={Landmark}
+          source="pl"
+          tone="default"
+          subtitle={
+            data.grossMarginContablePct == null
+              ? "sin ingresos"
+              : `margen ${data.grossMarginContablePct.toFixed(1)}% · después de capa de valoración`
+          }
+          definition={{
+            title: "COGS contable actual",
+            description:
+              "Saldo actual de cuentas expense_direct_cost. Ya refleja los asientos de CAPA DE VALORACIÓN del período (si se hicieron).",
+            formula:
+              "SUM(balance) WHERE account_type='expense_direct_cost'",
+            table: "canonical_account_balances",
+          }}
+        />
+        <KpiCard
+          title="COGS contable RAW"
+          value={data.cogsContableRawMxn}
           format="currency"
           compact
           icon={Landmark}
           source="pl"
           tone="warning"
           subtitle={
-            data.grossMarginContablePct == null
-              ? "sin ingresos en el período"
-              : `margen bruto ${data.grossMarginContablePct.toFixed(1)}%`
+            data.cogsCapaValoracionMxn > 0
+              ? `+${formatCurrencyMXN(data.cogsCapaValoracionMxn, { compact: true })} devueltos del ajuste`
+              : "sin ajuste de capa en el período"
           }
           definition={{
-            title: "COGS contable",
+            title: "COGS contable RAW (antes del ajuste)",
             description:
-              "Suma de cuentas con account_type='expense_direct_cost' en el período. Incluye mano de obra directa, depreciación y cualquier costo registrado en 5xx.",
-            formula:
-              "SUM(balance) WHERE account_type='expense_direct_cost'",
-            table: "canonical_account_balances",
+              "El user hace credits a 501.01 via diario CAPA DE VALORACIÓN para sacar overhead. Raw = actual + capa devuelta. Es lo que estaría en el P&L si no se hubiera hecho el ajuste.",
+            formula: "cogs_contable + SUM(CAPA DE VALORACIÓN.amount_total)",
+            table: "canonical_account_balances + odoo_account_entries_stock",
           }}
         />
         <KpiCard
@@ -1240,7 +1261,7 @@ async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
           }}
         />
         <KpiCard
-          title="Overhead implícito"
+          title="Overhead real"
           value={data.overheadMxn}
           format="currency"
           compact
@@ -1249,14 +1270,14 @@ async function CogsComparisonBlock({ range }: { range: HistoryRange }) {
           tone={coverageTone}
           subtitle={
             data.bomCoveragePct < 95
-              ? `⚠ cobertura BOM ${data.bomCoveragePct.toFixed(0)}% — diferencia distorsionada`
-              : `${data.overheadPctOfContable.toFixed(1)}% del COGS contable`
+              ? `⚠ cobertura BOM ${data.bomCoveragePct.toFixed(0)}%`
+              : `${data.overheadPctOfRaw.toFixed(1)}% del raw · vs ajuste ${formatCurrencyMXN(data.cogsCapaValoracionMxn, { compact: true })}`
           }
           definition={{
-            title: "Overhead implícito",
+            title: "Overhead real implícito",
             description:
-              "COGS contable − COGS BOM material. Representa labor, depreciación e indirectos absorbidos en la cuenta de costo de ventas.",
-            formula: "cogs_contable - cogs_bom_material",
+              "COGS raw (pre-ajuste) − COGS recursivo MP. Es lo que debería sacarse del 501.01 para dejarlo solo en material. Compara contra la capa de valoración que efectivamente se aplicó: si son similares, el ajuste del user está bien calibrado; si difieren, hay sobre/sub-corrección.",
+            formula: "cogs_raw - cogs_recursive_mp",
             table: "derived",
           }}
         />
