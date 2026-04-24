@@ -733,62 +733,136 @@ function CogsMonthlyTable({ points }: { points: CogsMonthlyPoint[] }) {
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
   const pct = (n: number | null) => (n == null ? "—" : `${n.toFixed(1)}%`);
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Mes</TableHead>
-            <TableHead className="text-right">Ventas 4xx</TableHead>
-            <TableHead className="text-right">Factura</TableHead>
-            <TableHead className="text-right">COGS cont.</TableHead>
-            <TableHead className="text-right">Capa</TableHead>
-            <TableHead className="text-right">COGS MP</TableHead>
-            <TableHead className="text-right">Overhead</TableHead>
-            <TableHead className="text-right">Margen cont.</TableHead>
-            <TableHead className="text-right">Margen MP</TableHead>
-            <TableHead>Status</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {points.map((p) => (
-            <TableRow key={p.period}>
-              <TableCell className="font-mono text-xs">{p.period}</TableCell>
-              <TableCell className="text-right">{fmt(p.revenueProductMxn)}</TableCell>
-              <TableCell className="text-right text-muted-foreground">
-                {fmt(p.revenueInvoicesMxn)}
-              </TableCell>
-              <TableCell className="text-right">{fmt(p.cogsContableMxn)}</TableCell>
-              <TableCell className="text-right text-muted-foreground">
-                {p.cogsCapaValoracionMxn > 0 ? fmt(p.cogsCapaValoracionMxn) : "—"}
-              </TableCell>
-              <TableCell className="text-right">{fmt(p.cogsRecursiveMpMxn)}</TableCell>
-              <TableCell className="text-right">{fmt(p.overheadMxn)}</TableCell>
-              <TableCell className="text-right">{pct(p.marginContablePct)}</TableCell>
-              <TableCell className="text-right">{pct(p.marginRecursivePct)}</TableCell>
-              <TableCell>
-                <Badge
-                  variant="outline"
-                  className={
-                    p.status === "alert"
-                      ? "border-destructive/40 bg-destructive/10 text-destructive"
-                      : p.status === "warn"
-                        ? "border-warning/40 bg-warning/10 text-warning"
-                        : "border-success/40 bg-success/10 text-success"
-                  }
-                >
-                  {p.status}
-                </Badge>
-                {p.note && (
-                  <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
-                    {p.note}
-                  </p>
-                )}
-              </TableCell>
+    <>
+      {/* Desktop: tabla tradicional con scroll horizontal si aprieta */}
+      <div className="-mx-4 hidden overflow-x-auto px-4 md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Mes</TableHead>
+              <TableHead className="text-right">Ventas 4xx</TableHead>
+              <TableHead className="text-right">Factura</TableHead>
+              <TableHead className="text-right">COGS cont.</TableHead>
+              <TableHead className="text-right">Capa</TableHead>
+              <TableHead className="text-right">COGS MP</TableHead>
+              <TableHead className="text-right">Overhead</TableHead>
+              <TableHead className="text-right">M. cont.</TableHead>
+              <TableHead className="text-right">M. MP</TableHead>
+              <TableHead>Status</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {points.map((p) => (
+              <TableRow key={p.period}>
+                <TableCell className="whitespace-nowrap font-mono text-xs">
+                  {p.period}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(p.revenueProductMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                  {fmt(p.revenueInvoicesMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(p.cogsContableMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                  {p.cogsCapaValoracionMxn > 0
+                    ? fmt(p.cogsCapaValoracionMxn)
+                    : "—"}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(p.cogsRecursiveMpMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(p.overheadMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {pct(p.marginContablePct)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {pct(p.marginRecursivePct)}
+                </TableCell>
+                <TableCell>
+                  <Badge
+                    variant="outline"
+                    className={
+                      p.status === "alert"
+                        ? "border-destructive/40 bg-destructive/10 text-destructive"
+                        : p.status === "warn"
+                          ? "border-warning/40 bg-warning/10 text-warning"
+                          : "border-success/40 bg-success/10 text-success"
+                    }
+                  >
+                    {p.status}
+                  </Badge>
+                  {p.note && (
+                    <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+                      {p.note}
+                    </p>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards verticales, una por mes */}
+      <div className="space-y-2 md:hidden">
+        {points.map((p) => (
+          <div
+            key={p.period}
+            className="rounded-md border bg-background p-3 text-xs"
+          >
+            <div className="mb-2 flex items-center justify-between">
+              <span className="font-mono text-sm font-medium">{p.period}</span>
+              <Badge
+                variant="outline"
+                className={
+                  p.status === "alert"
+                    ? "border-destructive/40 bg-destructive/10 text-destructive"
+                    : p.status === "warn"
+                      ? "border-warning/40 bg-warning/10 text-warning"
+                      : "border-success/40 bg-success/10 text-success"
+                }
+              >
+                {p.status}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+              <span className="text-muted-foreground">Ventas 4xx</span>
+              <span className="text-right font-medium">
+                {fmt(p.revenueProductMxn)}
+              </span>
+              <span className="text-muted-foreground">COGS cont.</span>
+              <span className="text-right">{fmt(p.cogsContableMxn)}</span>
+              <span className="text-muted-foreground">Capa</span>
+              <span className="text-right text-muted-foreground">
+                {p.cogsCapaValoracionMxn > 0
+                  ? fmt(p.cogsCapaValoracionMxn)
+                  : "—"}
+              </span>
+              <span className="text-muted-foreground">COGS MP (BOM)</span>
+              <span className="text-right">{fmt(p.cogsRecursiveMpMxn)}</span>
+              <span className="text-muted-foreground">Overhead</span>
+              <span className="text-right">{fmt(p.overheadMxn)}</span>
+              <span className="text-muted-foreground">Margen contable</span>
+              <span className="text-right">{pct(p.marginContablePct)}</span>
+              <span className="text-muted-foreground">Margen MP</span>
+              <span className="text-right font-medium">
+                {pct(p.marginRecursivePct)}
+              </span>
+            </div>
+            {p.note && (
+              <p className="mt-2 text-[11px] leading-snug text-muted-foreground">
+                {p.note}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -806,64 +880,123 @@ function CogsPerProductTable({ rows }: { rows: CogsPerProductRow[] }) {
     (a, b) => Math.abs(b.revenueInvoiceMxn) - Math.abs(a.revenueInvoiceMxn)
   );
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Ref</TableHead>
-            <TableHead>Nombre</TableHead>
-            <TableHead className="text-right">Qty</TableHead>
-            <TableHead className="text-right">Ingreso</TableHead>
-            <TableHead className="text-right">COGS MP</TableHead>
-            <TableHead className="text-right">Margen</TableHead>
-            <TableHead>Flags</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sorted.map((r) => (
-            <TableRow key={r.productId}>
-              <TableCell className="font-mono text-xs">
-                {r.productRef ?? (
-                  <span className="text-muted-foreground italic">sin ref</span>
-                )}
-              </TableCell>
-              <TableCell className="max-w-[280px] truncate text-xs text-muted-foreground">
-                {r.productName ?? ""}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {r.qtySold.toLocaleString("es-MX", { maximumFractionDigits: 1 })}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {fmt(r.revenueInvoiceMxn)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {fmt(r.cogsRecursiveTotalMxn)}
-              </TableCell>
-              <TableCell className="text-right tabular-nums">
-                {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
-              </TableCell>
-              <TableCell className="whitespace-nowrap text-xs">
-                {r.flags.length === 0 ? (
-                  <span className="text-muted-foreground">—</span>
-                ) : (
-                  <span className="flex flex-wrap gap-1">
-                    {r.flags.map((f) => (
-                      <Badge
-                        key={f}
-                        variant="outline"
-                        className="border-warning/40 bg-warning/10 text-[10px] text-warning"
-                      >
-                        {f.replace(/_/g, " ")}
-                      </Badge>
-                    ))}
-                  </span>
-                )}
-              </TableCell>
+    <>
+      {/* Desktop: tabla horizontal */}
+      <div className="-mx-4 hidden overflow-x-auto px-4 md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ref</TableHead>
+              <TableHead>Nombre</TableHead>
+              <TableHead className="text-right">Qty</TableHead>
+              <TableHead className="text-right">Ingreso</TableHead>
+              <TableHead className="text-right">COGS MP</TableHead>
+              <TableHead className="text-right">Margen</TableHead>
+              <TableHead>Flags</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+          </TableHeader>
+          <TableBody>
+            {sorted.map((r) => (
+              <TableRow key={r.productId}>
+                <TableCell className="whitespace-nowrap font-mono text-xs">
+                  {r.productRef ?? (
+                    <span className="text-muted-foreground italic">sin ref</span>
+                  )}
+                </TableCell>
+                <TableCell className="max-w-[280px] truncate text-xs text-muted-foreground">
+                  {r.productName ?? ""}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {r.qtySold.toLocaleString("es-MX", {
+                    maximumFractionDigits: 1,
+                  })}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(r.revenueInvoiceMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {fmt(r.cogsRecursiveTotalMxn)}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
+                  {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
+                </TableCell>
+                <TableCell className="whitespace-nowrap text-xs">
+                  {r.flags.length === 0 ? (
+                    <span className="text-muted-foreground">—</span>
+                  ) : (
+                    <span className="flex flex-wrap gap-1">
+                      {r.flags.map((f) => (
+                        <Badge
+                          key={f}
+                          variant="outline"
+                          className="border-warning/40 bg-warning/10 text-[10px] text-warning"
+                        >
+                          {f.replace(/_/g, " ")}
+                        </Badge>
+                      ))}
+                    </span>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards por producto */}
+      <div className="space-y-2 md:hidden">
+        {sorted.map((r) => (
+          <div
+            key={r.productId}
+            className="rounded-md border bg-background p-3 text-xs"
+          >
+            <div className="mb-1 flex items-center gap-2">
+              <span className="font-mono text-sm font-medium">
+                {r.productRef ?? (
+                  <span className="italic text-muted-foreground">sin ref</span>
+                )}
+              </span>
+              <span className="truncate text-[11px] text-muted-foreground">
+                {r.productName ?? ""}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+              <span className="text-muted-foreground">Qty</span>
+              <span className="text-right">
+                {r.qtySold.toLocaleString("es-MX", {
+                  maximumFractionDigits: 1,
+                })}
+              </span>
+              <span className="text-muted-foreground">Ingreso</span>
+              <span className="text-right font-medium">
+                {fmt(r.revenueInvoiceMxn)}
+              </span>
+              <span className="text-muted-foreground">COGS MP</span>
+              <span className="text-right">
+                {fmt(r.cogsRecursiveTotalMxn)}
+              </span>
+              <span className="text-muted-foreground">Margen</span>
+              <span className="text-right font-medium">
+                {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
+              </span>
+            </div>
+            {r.flags.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-1">
+                {r.flags.map((f) => (
+                  <Badge
+                    key={f}
+                    variant="outline"
+                    className="border-warning/40 bg-warning/10 text-[10px] text-warning"
+                  >
+                    {f.replace(/_/g, " ")}
+                  </Badge>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -1019,42 +1152,61 @@ function TopProductsCompositionTable({
         const topLeaves = [...r.composition]
           .sort((a, b) => b.costContributionMxn - a.costContributionMxn)
           .slice(0, 20);
+        const qtyFmt = r.qtySold.toLocaleString("es-MX", {
+          maximumFractionDigits: 0,
+        });
         return (
           <details
             key={r.productId}
             className="group rounded-md border bg-background"
           >
-            <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-xs hover:bg-muted/30">
-              <div className="flex min-w-0 flex-1 items-center gap-3">
-                <span className="text-muted-foreground tabular-nums">
+            <summary className="flex cursor-pointer flex-col gap-2 px-3 py-2 text-xs hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
+              {/* Identity row — always visible */}
+              <div className="flex min-w-0 flex-1 items-center gap-2">
+                <span className="shrink-0 text-muted-foreground tabular-nums">
                   #{i + 1}
                 </span>
-                <span className="font-mono font-medium">
+                <span className="shrink-0 font-mono font-medium">
                   {r.productRef ?? "sin_ref"}
                 </span>
                 <span className="truncate text-muted-foreground">
                   {r.productName}
                 </span>
               </div>
-              <div className="flex shrink-0 items-center gap-4 tabular-nums">
-                <span className="text-muted-foreground">
-                  {r.qtySold.toLocaleString("es-MX", {
-                    maximumFractionDigits: 0,
-                  })}
-                </span>
-                <span className="font-medium">
-                  {fmt(r.revenueInvoiceMxn)}
-                </span>
-                <span className="text-muted-foreground">
-                  − {fmt(r.cogsRecursiveTotalMxn)}
-                </span>
-                <span className={`font-medium ${marginTone}`}>
-                  {r.marginPct == null ? "—" : `${r.marginPct.toFixed(1)}%`}
-                </span>
+              {/* Metrics — grid on mobile, inline on desktop */}
+              <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px] tabular-nums sm:flex sm:shrink-0 sm:items-center sm:gap-4 sm:text-xs">
+                <div className="flex items-baseline gap-1 sm:block">
+                  <span className="text-muted-foreground sm:hidden">Qty</span>
+                  <span className="text-muted-foreground">{qtyFmt}</span>
+                </div>
+                <div className="flex items-baseline gap-1 sm:block">
+                  <span className="text-muted-foreground sm:hidden">
+                    Ventas
+                  </span>
+                  <span className="font-medium">
+                    {fmt(r.revenueInvoiceMxn)}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1 sm:block">
+                  <span className="text-muted-foreground sm:hidden">COGS</span>
+                  <span className="text-muted-foreground">
+                    − {fmt(r.cogsRecursiveTotalMxn)}
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1 sm:block">
+                  <span className="text-muted-foreground sm:hidden">
+                    Margen
+                  </span>
+                  <span className={`font-medium ${marginTone}`}>
+                    {r.marginPct == null
+                      ? "—"
+                      : `${r.marginPct.toFixed(1)}%`}
+                  </span>
+                </div>
                 {r.leavesWithoutCostInBom > 0 && (
                   <Badge
                     variant="outline"
-                    className="border-warning/40 bg-warning/10 text-[10px] text-warning"
+                    className="col-span-2 w-fit border-warning/40 bg-warning/10 text-[10px] text-warning sm:col-span-1"
                   >
                     {r.leavesWithoutCostInBom} sin costo
                   </Badge>
@@ -1069,53 +1221,55 @@ function TopProductsCompositionTable({
                 </span>{" "}
                 · {r.composition.length} hojas
               </div>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8">d</TableHead>
-                    <TableHead>Hoja (MP)</TableHead>
-                    <TableHead className="text-right">qty/u</TableHead>
-                    <TableHead className="text-right">$/unidad</TableHead>
-                    <TableHead className="text-right">Contrib.</TableHead>
-                    <TableHead className="text-right">%</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {topLeaves.map((l) => (
-                    <TableRow key={l.leafProductId}>
-                      <TableCell className="text-[10px] text-muted-foreground">
-                        {l.depth}
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-mono text-[11px]">
-                          {l.leafRef ?? "sin_ref"}
-                        </span>
-                        {l.leafName && (
-                          <span className="ml-2 text-[11px] text-muted-foreground">
-                            {l.leafName}
-                          </span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {l.qtyPerUnit.toFixed(5)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        {l.avgCostMxn != null && l.avgCostMxn > 0 ? (
-                          `$${l.avgCostMxn.toFixed(2)}`
-                        ) : (
-                          <span className="text-destructive">n/d</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums">
-                        ${l.costContributionMxn.toFixed(2)}
-                      </TableCell>
-                      <TableCell className="text-right tabular-nums text-muted-foreground">
-                        {l.pctOfTotal.toFixed(1)}%
-                      </TableCell>
+              <div className="-mx-3 overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-8">d</TableHead>
+                      <TableHead>Hoja (MP)</TableHead>
+                      <TableHead className="text-right">qty/u</TableHead>
+                      <TableHead className="text-right">$/unidad</TableHead>
+                      <TableHead className="text-right">Contrib.</TableHead>
+                      <TableHead className="text-right">%</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {topLeaves.map((l) => (
+                      <TableRow key={l.leafProductId}>
+                        <TableCell className="text-[10px] text-muted-foreground">
+                          {l.depth}
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-mono text-[11px]">
+                            {l.leafRef ?? "sin_ref"}
+                          </div>
+                          {l.leafName && (
+                            <div className="text-[11px] text-muted-foreground">
+                              {l.leafName}
+                            </div>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
+                          {l.qtyPerUnit.toFixed(5)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
+                          {l.avgCostMxn != null && l.avgCostMxn > 0 ? (
+                            `$${l.avgCostMxn.toFixed(2)}`
+                          ) : (
+                            <span className="text-destructive">n/d</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums">
+                          ${l.costContributionMxn.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="whitespace-nowrap text-right tabular-nums text-muted-foreground">
+                          {l.pctOfTotal.toFixed(1)}%
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </details>
         );
@@ -1137,36 +1291,38 @@ function MpInventoryTable({
       <p className="text-sm text-muted-foreground">Sin datos de MP.</p>
     );
   }
+  const getToneClass = (flag: string) => {
+    const tone = flagTone(flag);
+    return tone === "danger"
+      ? "border-destructive/40 bg-destructive/10 text-destructive"
+      : tone === "warning"
+        ? "border-warning/40 bg-warning/10 text-warning"
+        : tone === "success"
+          ? "border-success/40 bg-success/10 text-success"
+          : "border-muted/40 bg-muted/10 text-muted-foreground";
+  };
   return (
-    <div className="overflow-x-auto">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Ref</TableHead>
-            <TableHead>Nombre</TableHead>
-            <TableHead>Categoría</TableHead>
-            <TableHead className="text-right">UoM</TableHead>
-            <TableHead className="text-right">avg_cost</TableHead>
-            <TableHead className="text-right">Última compra</TableHead>
-            <TableHead className="text-right">vs última</TableHead>
-            <TableHead className="text-right">BOMs</TableHead>
-            <TableHead>Flag</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => {
-            const tone = flagTone(r.flag);
-            const toneClass =
-              tone === "danger"
-                ? "border-destructive/40 bg-destructive/10 text-destructive"
-                : tone === "warning"
-                  ? "border-warning/40 bg-warning/10 text-warning"
-                  : tone === "success"
-                    ? "border-success/40 bg-success/10 text-success"
-                    : "border-muted/40 bg-muted/10 text-muted-foreground";
-            return (
+    <>
+      {/* Desktop: tabla horizontal con scroll */}
+      <div className="-mx-4 hidden overflow-x-auto px-4 md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Ref</TableHead>
+              <TableHead>Nombre</TableHead>
+              <TableHead>Categoría</TableHead>
+              <TableHead className="text-right">UoM</TableHead>
+              <TableHead className="text-right">avg_cost</TableHead>
+              <TableHead className="text-right">Última compra</TableHead>
+              <TableHead className="text-right">vs última</TableHead>
+              <TableHead className="text-right">BOMs</TableHead>
+              <TableHead>Flag</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
               <TableRow key={r.productId}>
-                <TableCell className="font-mono text-[11px]">
+                <TableCell className="whitespace-nowrap font-mono text-[11px]">
                   {r.productRef ?? (
                     <span className="italic text-muted-foreground">sin_ref</span>
                   )}
@@ -1177,15 +1333,15 @@ function MpInventoryTable({
                 <TableCell className="max-w-[180px] truncate text-[11px] text-muted-foreground">
                   {r.category ?? ""}
                 </TableCell>
-                <TableCell className="text-right text-[11px] text-muted-foreground">
+                <TableCell className="whitespace-nowrap text-right text-[11px] text-muted-foreground">
                   {r.uom ?? ""}
                 </TableCell>
-                <TableCell className="text-right tabular-nums">
+                <TableCell className="whitespace-nowrap text-right tabular-nums">
                   {r.avgCostMxn != null && r.avgCostMxn > 0
                     ? `$${r.avgCostMxn.toFixed(2)}`
                     : "—"}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-[11px]">
+                <TableCell className="whitespace-nowrap text-right tabular-nums text-[11px]">
                   {r.lastPurchaseDate ? (
                     <>
                       <span>
@@ -1204,29 +1360,105 @@ function MpInventoryTable({
                   )}
                 </TableCell>
                 <TableCell
-                  className={`text-right tabular-nums text-[11px] ${r.avgCostVsLastPct != null && Math.abs(r.avgCostVsLastPct) > 25 ? "text-destructive" : "text-muted-foreground"}`}
+                  className={`whitespace-nowrap text-right tabular-nums text-[11px] ${r.avgCostVsLastPct != null && Math.abs(r.avgCostVsLastPct) > 25 ? "text-destructive" : "text-muted-foreground"}`}
                 >
                   {r.avgCostVsLastPct != null
                     ? `${r.avgCostVsLastPct > 0 ? "+" : ""}${r.avgCostVsLastPct.toFixed(1)}%`
                     : "—"}
                 </TableCell>
-                <TableCell className="text-right tabular-nums text-[11px] text-muted-foreground">
+                <TableCell className="whitespace-nowrap text-right tabular-nums text-[11px] text-muted-foreground">
                   {r.timesUsedInBoms}
                 </TableCell>
                 <TableCell>
                   <Badge
                     variant="outline"
-                    className={`text-[10px] ${toneClass}`}
+                    className={`text-[10px] ${getToneClass(r.flag)}`}
                   >
                     {r.flag.replace(/_/g, " ")}
                   </Badge>
                 </TableCell>
               </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
-    </div>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Mobile: cards por MP */}
+      <div className="space-y-2 md:hidden">
+        {rows.map((r) => (
+          <div
+            key={r.productId}
+            className="rounded-md border bg-background p-3 text-xs"
+          >
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-sm font-medium">
+                  {r.productRef ?? (
+                    <span className="italic text-muted-foreground">sin_ref</span>
+                  )}
+                </div>
+                {r.productName && (
+                  <div className="truncate text-[11px] text-muted-foreground">
+                    {r.productName}
+                  </div>
+                )}
+                {r.category && (
+                  <div className="truncate text-[10px] text-muted-foreground/70">
+                    {r.category}
+                  </div>
+                )}
+              </div>
+              <Badge
+                variant="outline"
+                className={`shrink-0 text-[10px] ${getToneClass(r.flag)}`}
+              >
+                {r.flag.replace(/_/g, " ")}
+              </Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 tabular-nums">
+              <span className="text-muted-foreground">avg_cost</span>
+              <span className="text-right font-medium">
+                {r.avgCostMxn != null && r.avgCostMxn > 0
+                  ? `$${r.avgCostMxn.toFixed(2)} / ${r.uom ?? ""}`
+                  : "—"}
+              </span>
+              <span className="text-muted-foreground">Última compra</span>
+              <span className="text-right">
+                {r.lastPurchaseDate ? (
+                  <>
+                    {r.lastPurchasePrice != null
+                      ? `$${r.lastPurchasePrice.toFixed(2)}`
+                      : "—"}
+                    <span className="ml-1 text-[10px] text-muted-foreground">
+                      {r.daysSincePurchase != null
+                        ? `(${r.daysSincePurchase}d)`
+                        : ""}
+                    </span>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">nunca</span>
+                )}
+              </span>
+              {r.avgCostVsLastPct != null && (
+                <>
+                  <span className="text-muted-foreground">Desvío vs última</span>
+                  <span
+                    className={`text-right ${Math.abs(r.avgCostVsLastPct) > 25 ? "text-destructive" : "text-muted-foreground"}`}
+                  >
+                    {r.avgCostVsLastPct > 0 ? "+" : ""}
+                    {r.avgCostVsLastPct.toFixed(1)}%
+                  </span>
+                </>
+              )}
+              <span className="text-muted-foreground">Uso en BOMs</span>
+              <span className="text-right text-muted-foreground">
+                {r.timesUsedInBoms}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </>
   );
 }
 
