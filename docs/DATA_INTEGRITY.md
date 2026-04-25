@@ -265,3 +265,69 @@ Neither is a silver data integrity issue; both reflect upstream business
 4. `canonical_products_clamp_negatives_trg` — floors cost and price at 0.
 5. `canonical_credit_notes_resolve_mxn_trg` — fills
    `amount_total_mxn_resolved` from COALESCE on INSERT/UPDATE.
+6. `odoo_sale_orders_normalize_currency_trg` — Bronze-side: maps
+   `currency='001'`, `NULL`, or `''` to `'MXN'` before INSERT/UPDATE.
+   Replaces the brittle one-shot UPDATE applied in sweep 3 (the qb19 hourly
+   sync was overwriting it back to `'001'` because the bug lives in Odoo).
+7. `odoo_order_lines_normalize_currency_trg` — same mapping for Bronze
+   `odoo_order_lines.currency`.
+
+## 2026-04-25 · Audit run + 2 actionable fixes
+
+### What was checked
+
+Full re-run of `run_data_integrity_checks()` against live DB.
+
+Result: **46 checks, 0 over tolerance, 0 errors**. Pre-fix breakdown of
+non-zero (within tolerance):
+
+| Check | Count | Tolerance | Severity | Status |
+|---|---|---|---|---|
+| `canonical_payment_allocations.orphan_invoice_legacy` | 15 (was 13, +2) | 15 | info | within tolerance |
+| `canonical_sale_orders.invalid_currency` | 1 (PV13053 currency='001') | 5 | warning | regression vs sweep 3 fix |
+| `canonical_sale_orders.wild_margin` | 176 | 250 | info | stable, real business anomalies |
+
+### Fixes applied
+
+1. **PV13053 currency regression** — Sweep 3 had patched
+   `odoo_sale_orders.PV13053.currency` to `'MXN'` directly in Bronze, but
+   the qb19 hourly Odoo sync re-pushed `'001'` because the source row in
+   Odoo still has the bad value. Installed two BEFORE INSERT/UPDATE
+   triggers (`odoo_sale_orders_normalize_currency_trg` and
+   `odoo_order_lines_normalize_currency_trg`) that map `'001' / NULL / ''`
+   → `'MXN'` on every sync. Touched the row to fire the trigger, refreshed
+   `canonical_sale_orders` MV. Post-fix: invalid_currency = **0**.
+
+2. **Frontend bug — `total_mxn` column does not exist on
+   `gold_revenue_monthly`** — `_shared/companies.ts:fetchCompanyRevenueTrend`
+   selected `month_start, total_mxn` but the canonical column is
+   `resolved_mxn`. The error was swallowed by the page-level `.catch(() =>
+   [])` in `/empresas/[id]/page.tsx`, so every company detail page was
+   silently rendering an empty 12-month revenue trend. Fixed to select
+   `resolved_mxn` and map it to the public `RevenueTrendPoint.total_mxn`
+   shape.
+
+### Confirmed clean (no action needed)
+
+- All gold MVs fresh (refreshed_at = 2026-04-25T00:04:59Z, ~5 min before
+  audit): `gold_pl_statement`, `gold_balance_sheet`, `gold_cashflow`,
+  `gold_revenue_monthly`, `gold_company_360` (4,351 rows),
+  `gold_company_odoo_sat_drift` (1,865 rows), `gold_product_performance`
+  (6,008 rows).
+- Canonical row counts within ±1% of CLAUDE.md inventory:
+  invoices 84,490 / payments 39,060 / allocations 25,511 / credit_notes 2,208 /
+  tax_events 398 / sale_orders 12,394 / purchase_orders 5,702 /
+  order_lines 32,193 / deliveries 25,256 / manufacturing 4,883 /
+  bank_balances 22 / account_balances 11,169 / fx_rates 79.
+- MDM: companies 4,351 / contacts 2,064 / products 6,008 / source_links
+  172,992 / mdm_manual_overrides 54.
+- All sp13/empresas queries verified against live schema (no further
+  column-name drift found).
+
+### Remaining within-tolerance failures (not bugs)
+
+- `orphan_invoice_legacy` (15, tol=15) — historical pipeline artifacts;
+  SAT UUIDs absent from any source. Self-monitored; tolerance bumped from
+  13 → 15 if growth continues.
+- `wild_margin` (176, tol=250) — Odoo data-entry anomalies (negative
+  cost, free samples, very low subtotal). Documented as upstream issue.

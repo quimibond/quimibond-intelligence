@@ -965,6 +965,11 @@ export interface RevenueTrendPoint {
  * Revenue trend for a single company over the last N months.
  * Reads gold_revenue_monthly filtered by canonical_company_id.
  * Returns points in chronological order (oldest first).
+ *
+ * gold_revenue_monthly does not expose a `total_mxn` column — the canonical
+ * choice is `resolved_mxn` (best dual-source: SAT preferred, falls back to
+ * Odoo). Selecting the wrong column previously failed silently because the
+ * page-level `.catch(() => [])` in /empresas/[id] swallowed the 400.
  */
 export async function fetchCompanyRevenueTrend(
   canonicalCompanyId: number,
@@ -978,7 +983,7 @@ export async function fetchCompanyRevenueTrend(
 
   const { data, error } = await sb
     .from("gold_revenue_monthly")
-    .select("month_start, total_mxn")
+    .select("month_start, resolved_mxn")
     .eq("canonical_company_id", canonicalCompanyId)
     .gte("month_start", since.toISOString())
     .order("month_start", { ascending: true });
@@ -986,6 +991,6 @@ export async function fetchCompanyRevenueTrend(
   if (error) throw error;
   return (data ?? []).map((r) => ({
     month_start: r.month_start ?? "",
-    total_mxn: r.total_mxn ?? 0,
+    total_mxn: Number(r.resolved_mxn) || 0,
   }));
 }
