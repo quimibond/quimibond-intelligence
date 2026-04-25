@@ -78,4 +78,9 @@ export {
   type CashCategoryRow,
   type CashFlowDirection,
 } from "./cash-reconciliation";
+export {
+  getPnlNormalized,
+  type PnlNormalizedSummary,
+  type PnlAdjustment,
+} from "./pnl-normalized";
 export { periodBoundsForRange, daysBetween } from "./_period";

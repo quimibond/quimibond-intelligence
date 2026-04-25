@@ -81,6 +81,8 @@ import {
   type TopProductWithComposition,
   type CashCategoryRow,
   type BalanceSheetCategoryRow,
+  getPnlNormalized,
+  type PnlAdjustment,
 } from "@/lib/queries/sp13/finanzas";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
@@ -320,13 +322,15 @@ async function HeroKpis() {
 
 /* ── F3 P&L — contable vs ajustado a materia prima ───────────────────── */
 async function PnlBlock({ range }: { range: HistoryRange }) {
-  const [kpis, waterfall, cogs, monthly, perProduct] = await Promise.all([
-    getPnlKpis(range),
-    getPnlWaterfall(range),
-    getCogsComparison(range),
-    getCogsMonthly(range),
-    getCogsPerProduct(range),
-  ]);
+  const [kpis, waterfall, cogs, monthly, perProduct, normalized] =
+    await Promise.all([
+      getPnlKpis(range),
+      getPnlWaterfall(range),
+      getCogsComparison(range),
+      getCogsMonthly(range),
+      getCogsPerProduct(range),
+      getPnlNormalized(range),
+    ]);
 
   const hasData = kpis.monthsCovered > 0;
   const utilidadBrutaContable = cogs.revenueMxn - cogs.cogsContableMxn;
@@ -576,6 +580,14 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
             </CardContent>
           </Card>
 
+          <PnlNormalizedCard
+            reportedNeta={normalized.reportedNetIncomeMxn}
+            normalizedNeta={normalized.normalizedNetIncomeMxn}
+            totalImpact={normalized.totalAdjustmentImpactMxn}
+            adjustments={normalized.adjustments}
+            ventas={cogs.revenueMxn}
+          />
+
           <BreakEvenCard
             ventasReales={cogs.revenueMxn}
             ventasBreakEven={ventasBreakEven}
@@ -633,6 +645,201 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
 }
 
 /* Tabla P&L limpio con costo primo real (BOM recursiva) ───────────────── */
+/* P&L normalizado: separar operación core de one-offs y year-end ───── */
+function PnlNormalizedCard({
+  reportedNeta,
+  normalizedNeta,
+  totalImpact,
+  adjustments,
+  ventas,
+}: {
+  reportedNeta: number;
+  normalizedNeta: number;
+  totalImpact: number;
+  adjustments: PnlAdjustment[];
+  ventas: number;
+}) {
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const fmtFull = (n: number) => formatCurrencyMXN(n);
+  const detected = adjustments.filter((a) => a.detected);
+
+  if (detected.length === 0) {
+    return (
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base">P&L normalizado</CardTitle>
+          <p className="text-xs text-muted-foreground">
+            En este período no detectamos ajustes year-end ni one-offs
+            significativos. La utilidad reportada ({fmt(reportedNeta)})
+            refleja la operación core sin distorsiones contables.
+          </p>
+        </CardHeader>
+      </Card>
+    );
+  }
+
+  const reportedPct = ventas > 0 ? (reportedNeta / ventas) * 100 : 0;
+  const normalizedPct = ventas > 0 ? (normalizedNeta / ventas) * 100 : 0;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">
+          P&L normalizado · operación core vs one-offs
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Quitando ventas de activo, ajustes year-end de inventario, catch-up
+          de depreciación y otros ingresos extraordinarios para ver la
+          tendencia operativa real (recurrente).
+        </p>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {/* Hero: reportada → normalizada */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="rounded-md border bg-muted/30 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Utilidad reportada
+            </div>
+            <div
+              className={cn(
+                "mt-1 text-xl font-semibold tabular-nums",
+                reportedNeta >= 0 ? "text-foreground" : "text-destructive"
+              )}
+            >
+              {fmt(reportedNeta)}
+            </div>
+            <div className="text-[10px] text-muted-foreground tabular-nums">
+              {reportedPct >= 0 ? "+" : ""}
+              {reportedPct.toFixed(1)}% de ventas
+            </div>
+          </div>
+          <div className="rounded-md border bg-muted/30 px-3 py-3">
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              ± Ajustes one-off
+            </div>
+            <div
+              className={cn(
+                "mt-1 text-xl font-semibold tabular-nums",
+                totalImpact > 0
+                  ? "text-success"
+                  : totalImpact < 0
+                    ? "text-destructive"
+                    : "text-muted-foreground"
+              )}
+            >
+              {totalImpact >= 0 ? "+" : ""}
+              {fmt(totalImpact)}
+            </div>
+            <div className="text-[10px] text-muted-foreground">
+              {detected.length} ajuste{detected.length === 1 ? "" : "s"}{" "}
+              detectado{detected.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <div
+            className={cn(
+              "rounded-md border px-3 py-3",
+              normalizedNeta >= 0
+                ? "border-success/40 bg-success/10"
+                : "border-destructive/40 bg-destructive/10"
+            )}
+          >
+            <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+              Utilidad normalizada (operación)
+            </div>
+            <div
+              className={cn(
+                "mt-1 text-xl font-bold tabular-nums",
+                normalizedNeta >= 0 ? "text-success" : "text-destructive"
+              )}
+            >
+              {fmt(normalizedNeta)}
+            </div>
+            <div className="text-[10px] text-muted-foreground tabular-nums">
+              {normalizedPct >= 0 ? "+" : ""}
+              {normalizedPct.toFixed(1)}% de ventas
+            </div>
+          </div>
+        </div>
+
+        {/* Lista de ajustes detectados */}
+        <div className="overflow-hidden rounded-md border bg-card">
+          <div className="divide-y">
+            <div className="flex items-center justify-between gap-3 bg-muted/30 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground sm:px-4">
+              <span>Ajuste detectado</span>
+              <span>Impacto en utilidad</span>
+            </div>
+            <div className="flex items-center justify-between gap-3 px-3 py-2 text-sm sm:px-4">
+              <div className="min-w-0 flex-1">
+                <div>Utilidad reportada</div>
+              </div>
+              <div className="shrink-0 text-right tabular-nums font-medium">
+                {fmtFull(reportedNeta)}
+              </div>
+            </div>
+            {detected.map((a) => {
+              const isAdded = a.impactOnUtilityMxn > 0;
+              return (
+                <div
+                  key={a.category}
+                  className="flex items-start gap-3 px-3 py-2 text-sm sm:px-4"
+                >
+                  <span
+                    className={cn(
+                      "w-3 shrink-0 text-center font-mono text-base font-medium",
+                      isAdded ? "text-success" : "text-destructive"
+                    )}
+                    aria-hidden
+                  >
+                    {isAdded ? "+" : "−"}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="font-medium">{a.categoryLabel}</div>
+                    <div className="text-[11px] leading-snug text-muted-foreground">
+                      {a.reason}
+                    </div>
+                    <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                      Cuentas: {a.accountCodes.join(", ")} · monto bruto{" "}
+                      {fmt(a.amountMxn)}
+                    </div>
+                  </div>
+                  <div
+                    className={cn(
+                      "shrink-0 text-right text-sm font-medium tabular-nums",
+                      isAdded ? "text-success" : "text-destructive"
+                    )}
+                  >
+                    {isAdded ? "+" : "−"}
+                    {fmt(Math.abs(a.impactOnUtilityMxn))}
+                  </div>
+                </div>
+              );
+            })}
+            <div
+              className={cn(
+                "flex items-center justify-between gap-3 border-t-2 px-3 py-3 text-sm font-bold sm:px-4",
+                normalizedNeta >= 0
+                  ? "border-success/40 bg-success/10 text-success"
+                  : "border-destructive/40 bg-destructive/10 text-destructive"
+              )}
+            >
+              <span>= Utilidad normalizada</span>
+              <span className="tabular-nums">{fmtFull(normalizedNeta)}</span>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[11px] text-muted-foreground">
+          La utilidad reportada incluye eventos no recurrentes que distorsionan
+          la tendencia operativa real. La normalizada muestra cómo va el negocio
+          sin esos efectos. <strong>Nota:</strong> los ajustes year-end (catch-up
+          depreciación, inventario) son contables — el cash ya se gastó cuando
+          se incurrió, este ejercicio solo separa el efecto en el P&L del mes.
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
 /* Break-even analysis: ventas necesarias para cubrir estructura fija ─ */
 function BreakEvenCard({
   ventasReales,
