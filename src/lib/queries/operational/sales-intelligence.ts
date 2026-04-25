@@ -126,6 +126,11 @@ export async function getSalesRecommendations(
  * Surfaces totals + top-3 critical accounts so we don't have to wait for
  * the full table to render. Reads `client_reorder_predictions` directly
  * (same source the table already uses) to keep one round-trip.
+ *
+ * 2026-04-25: client_reorder_predictions.total_revenue is NULL for every
+ * row in the current MV (pipeline regression — TODO Silver SP6.x). We
+ * derive a lifetime revenue proxy = order_count × avg_order_value so the
+ * banner and ranking still have meaningful numbers.
  */
 export interface ReorderRiskSummary {
   criticalCount: number;
@@ -140,15 +145,25 @@ export interface ReorderRiskSummary {
   }>;
 }
 
+function lifetimeRevenueProxy(r: {
+  total_revenue: number | null;
+  order_count: number | null;
+  avg_order_value: number | null;
+}): number {
+  if (r.total_revenue != null && r.total_revenue > 0) return r.total_revenue;
+  const oc = r.order_count ?? 0;
+  const aov = r.avg_order_value ?? 0;
+  return oc > 0 && aov > 0 ? oc * aov : 0;
+}
+
 export async function getReorderRiskSummary(): Promise<ReorderRiskSummary> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("client_reorder_predictions")
     .select(
-      "company_id, company_name, reorder_status, days_overdue_reorder, total_revenue, salesperson_name"
+      "company_id, company_name, reorder_status, days_overdue_reorder, total_revenue, order_count, avg_order_value, salesperson_name"
     )
     .in("reorder_status", ["overdue", "at_risk", "critical"])
-    .order("total_revenue", { ascending: false, nullsFirst: false })
     .limit(500);
 
   type Raw = {
@@ -157,23 +172,28 @@ export async function getReorderRiskSummary(): Promise<ReorderRiskSummary> {
     reorder_status: string;
     days_overdue_reorder: number | null;
     total_revenue: number | null;
+    order_count: number | null;
+    avg_order_value: number | null;
     salesperson_name: string | null;
   };
   const rows = (data ?? []) as Raw[];
-  const critical = rows.filter((r) => r.reorder_status === "critical");
+  const enriched = rows.map((r) => ({
+    ...r,
+    revenue_proxy: lifetimeRevenueProxy(r),
+  }));
+  const critical = enriched
+    .filter((r) => r.reorder_status === "critical")
+    .sort((a, b) => b.revenue_proxy - a.revenue_proxy);
 
   return {
     criticalCount: critical.length,
     totalAtRiskCount: rows.length,
-    totalRevenueAtRisk: rows.reduce(
-      (s, r) => s + (r.total_revenue ?? 0),
-      0
-    ),
+    totalRevenueAtRisk: enriched.reduce((s, r) => s + r.revenue_proxy, 0),
     topCritical: critical.slice(0, 3).map((r) => ({
       company_id: r.company_id,
       company_name: r.company_name,
       days_overdue_reorder: r.days_overdue_reorder,
-      total_revenue: r.total_revenue,
+      total_revenue: r.revenue_proxy > 0 ? r.revenue_proxy : null,
       salesperson_name: r.salesperson_name,
     })),
   };

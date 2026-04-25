@@ -225,6 +225,13 @@ export async function getUnifiedInvoicesForCompany(
 
 // ──────────────────────────────────────────────────────────────────────────
 // getUnifiedRevenueAggregates — SP5 canonical: reads canonical_invoices
+//
+// 2026-04-25 schema fix: canonical_invoices.match_confidence values changed
+// from {match_uuid, match_composite, odoo_only} to {exact, high, medium} +
+// invoice_date can be null (use invoice_date_resolved). The previous filter
+// silently excluded ~100% of recent rows. We now read every issued invoice
+// in the date range and trust amount_total_mxn_resolved as the canonical
+// monetary value.
 // ──────────────────────────────────────────────────────────────────────────
 export async function getUnifiedRevenueAggregates(
   fromDate: string,
@@ -235,13 +242,12 @@ export async function getUnifiedRevenueAggregates(
   let q = supabase
     .from("canonical_invoices")
     .select(
-      "match_confidence, amount_total_mxn_odoo, amount_total_mxn_resolved, sat_uuid, estado_sat, state_odoo, direction"
+      "amount_total_mxn_odoo, amount_total_mxn_resolved, sat_uuid, estado_sat, direction, invoice_date_resolved, has_sat_record"
     )
     .eq("direction", "issued")
-    .in("match_confidence", ["match_uuid", "match_composite", "odoo_only"])
-    .gte("invoice_date", fromDate)
-    .lte("invoice_date", toDate)
-    .not("estado_sat", "eq", "cancelado");
+    .gte("invoice_date_resolved", fromDate)
+    .lte("invoice_date_resolved", toDate)
+    .or("estado_sat.is.null,estado_sat.neq.cancelado");
   if (opts?.companyId) {
     q = q.or(
       `emisor_canonical_company_id.eq.${opts.companyId},receptor_canonical_company_id.eq.${opts.companyId}`
@@ -250,10 +256,10 @@ export async function getUnifiedRevenueAggregates(
   const { data, error } = await q;
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as Array<{
-    match_confidence: string;
     amount_total_mxn_odoo: number | null;
     amount_total_mxn_resolved: number | null;
     sat_uuid: string | null;
+    has_sat_record: boolean | null;
   }>;
   const revenue = rows.reduce(
     (s, r) =>
@@ -261,7 +267,10 @@ export async function getUnifiedRevenueAggregates(
     0
   );
   const count = rows.length;
-  const uuidValidated = rows.filter((r) => r.sat_uuid !== null).length;
+  // SAT-validated = either has_sat_record true OR sat_uuid present (legacy fallback).
+  const uuidValidated = rows.filter(
+    (r) => r.has_sat_record === true || r.sat_uuid != null
+  ).length;
   const pctValidated = count > 0 ? (uuidValidated / count) * 100 : 0;
   return { revenue, count, uuidValidated, pctValidated };
 }
