@@ -14,7 +14,6 @@ import {
   KpiCard,
   StatGrid,
   PageHeader,
-  DataTable,
   DataView,
   DataTableToolbar,
   DataTablePagination,
@@ -26,14 +25,13 @@ import {
   Currency,
   DateDisplay,
   StatusBadge,
-  TrendIndicator,
   EmptyState,
+  QuestionSection,
   makeSortHref,
   type DataTableColumn,
   type DataViewChartSpec,
   type DataViewMode,
 } from "@/components/patterns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -54,15 +52,13 @@ import {
   getSaleOrdersPage,
   getSaleOrdersTimeline,
   getSaleOrderSalespeopleOptions,
+  getCustomerCohorts,
   type ReorderRiskRow,
   type TopCustomerRow,
   type SalespersonRow,
   type RecentSaleOrder,
-} from "@/lib/queries/operational/sales";
-import {
-  getCustomerCohorts,
   type CohortMatrix,
-} from "@/lib/queries/analytics";
+} from "@/lib/queries/sp13/ventas";
 import { getPlHistory } from "@/lib/queries/analytics/finance";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
@@ -112,17 +108,7 @@ export default async function VentasPage({
       <PageHeader
         title="Ventas"
         subtitle="¿Cómo van las ventas, quién compra y quién dejó de comprar?"
-        actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <DataSourceBadge source="odoo" coverage="2021+" />
-            <a
-              href="/ventas/cohorts"
-              className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
-            >
-              Retención por cohorte →
-            </a>
-          </div>
-        }
+        actions={<DataSourceBadge source="odoo" coverage="2021+" />}
       />
 
       <SectionNav
@@ -137,47 +123,38 @@ export default async function VentasPage({
         ]}
       />
 
-      <section id="kpis" className="scroll-mt-24">
-      <Suspense
-        fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[96px] rounded-xl" />
-            ))}
-          </StatGrid>
-        }
+      <QuestionSection id="kpis" question="¿Cómo van las ventas este mes?">
+        <Suspense
+          fallback={
+            <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[96px] rounded-xl" />
+              ))}
+            </StatGrid>
+          }
+        >
+          <SalesKpisSection />
+        </Suspense>
+      </QuestionSection>
+
+      <QuestionSection
+        id="trend"
+        question="¿Cómo se mueven los ingresos en el tiempo?"
+        actions={<PeriodSelector paramName="rev_period" label="Período" />}
       >
-        <SalesKpisSection />
-      </Suspense>
-      </section>
+        <Suspense
+          fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
+        >
+          <RevenueChartSection searchParams={sp} />
+        </Suspense>
+      </QuestionSection>
 
-      <section id="trend" className="scroll-mt-24">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
-          <PeriodSelector paramName="rev_period" label="Período" />
-        </CardHeader>
-        <CardContent>
-          <Suspense
-            fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
-          >
-            <RevenueChartSection searchParams={sp} />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="retention" className="scroll-mt-24">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Retención por cohorte</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            % de clientes de cada cohort trimestral que siguen activos N
-            trimestres después de su primera compra. Filas = trimestre de
-            adquisición. Columnas = trimestres desde primera compra.
-          </p>
-        </CardHeader>
-        <CardContent className="overflow-x-auto pb-4">
+      <QuestionSection
+        id="retention"
+        question="¿Cuántos clientes nuevos siguen activos meses después?"
+        subtext="% de clientes de cada cohort trimestral que siguen activos N trimestres después de su primera compra. Filas = trimestre de adquisición. Columnas = trimestres desde primera compra."
+      >
+        <div className="overflow-x-auto">
           <Suspense
             fallback={
               <div className="space-y-2">
@@ -189,23 +166,15 @@ export default async function VentasPage({
           >
             <CohortHeatmapSection />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </div>
+      </QuestionSection>
 
-      <section id="reorder" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Reorder risk — clientes que deberían haber comprado
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Filtra por estado de reorden y tier para priorizar a quién
-              llamar.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
+      <QuestionSection
+        id="reorder"
+        question="¿Quién dejó de comprar y debería estar comprando?"
+        subtext="Filtra por estado de reorden y tier para priorizar a quién llamar."
+        actions={
+          <div data-table-export-root className="flex flex-wrap items-center gap-2">
             <Badge
               variant="outline"
               className="text-xs font-normal"
@@ -219,8 +188,9 @@ export default async function VentasPage({
             />
             <TableExportButton filename="reorder-risk" />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+        }
+      >
+        <div data-table-export-root className="space-y-3">
           <DataTableToolbar
             paramPrefix="rr_"
             searchPlaceholder="Buscar cliente…"
@@ -245,26 +215,17 @@ export default async function VentasPage({
               },
             ]}
           />
-          <Suspense
-            fallback={<Skeleton className="h-[300px] rounded-xl" />}
-          >
+          <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
             <ReorderRiskTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </div>
+      </QuestionSection>
 
-      <section id="top-customers" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Top clientes
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Ordenado por facturación SAT (lifetime, subtotal × FX, cuadra con Syntage). Columna &quot;Pedidos Odoo&quot; = pedidos confirmados en ERP.
-            </p>
-          </div>
+      <QuestionSection
+        id="top-customers"
+        question="¿Quién factura más y con qué margen?"
+        subtext='Ordenado por facturación SAT (lifetime, subtotal × FX, cuadra con Syntage). Columna "Pedidos Odoo" = pedidos confirmados en ERP.'
+        actions={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodSelector paramName="tc_period" label="Período" />
             <TableViewOptions
@@ -273,49 +234,36 @@ export default async function VentasPage({
             />
             <TableExportButton filename="top-customers" />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+        }
+      >
+        <div data-table-export-root className="space-y-3">
           <DataTableToolbar
             paramPrefix="tc_"
             searchPlaceholder="Buscar cliente…"
           />
-          <Suspense
-            fallback={<Skeleton className="h-[300px] rounded-xl" />}
-          >
+          <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
             <TopCustomersTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </div>
+      </QuestionSection>
 
-      <section id="salespeople" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Ranking de vendedores este mes
-            </CardTitle>
-          </div>
-          <TableExportButton filename="salespeople" />
-        </CardHeader>
-        <CardContent className="pb-4">
+      <QuestionSection
+        id="salespeople"
+        question="¿Qué vendedor lleva más este mes?"
+        actions={<TableExportButton filename="salespeople" />}
+      >
+        <div data-table-export-root>
           <Suspense fallback={<Skeleton className="h-[200px] rounded-xl" />}>
             <SalespeopleTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </div>
+      </QuestionSection>
 
-      <section id="orders" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Pedidos</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Busca por número o filtra por vendedor, estado y fecha. Datos en
-              vivo de Odoo.
-            </p>
-          </div>
+      <QuestionSection
+        id="orders"
+        question="¿Qué pedidos hay y en qué estado?"
+        subtext="Busca por número o filtra por vendedor, estado y fecha. Datos en vivo de Odoo."
+        actions={
           <div className="flex flex-wrap items-center gap-2">
             <PeriodSelector paramName="so_period" label="Período" />
             <TableViewOptions
@@ -324,8 +272,9 @@ export default async function VentasPage({
             />
             <TableExportButton filename="sale-orders" />
           </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+        }
+      >
+        <div data-table-export-root className="space-y-3">
           <Suspense fallback={null}>
             <SaleOrdersToolbar />
           </Suspense>
@@ -340,9 +289,8 @@ export default async function VentasPage({
           >
             <RecentOrdersTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </div>
+      </QuestionSection>
     </PageLayout>
   );
 }
