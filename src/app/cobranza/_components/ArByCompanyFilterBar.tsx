@@ -2,7 +2,9 @@
 
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
-import { FilterBar, type FilterOption } from "@/components/patterns";
+// Import from individual files: client component cannot pull from the
+// barrel (it transitively re-exports server-only modules).
+import { FilterBar, type FilterOption } from "@/components/patterns/filter-bar";
 
 interface Props {
   bucket?: string;

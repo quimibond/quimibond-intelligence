@@ -228,13 +228,14 @@ export async function getSalesRevenueTrend(
 ): Promise<RevenueTrendPoint[]> {
   const sb = getServiceClient();
 
-  // Bounds path: aggregate from canonical_invoices (replaces invoices_unified)
-  // canonical_invoices fields: direction, invoice_date, amount_total_mxn_resolved,
-  //   estado_sat, tipo_comprobante, receptor_canonical_company_id, emisor_canonical_company_id
+  // Bounds path: aggregate from canonical_invoices (replaces invoices_unified).
+  // canonical_invoices does not have `amount_total_mxn` — only `_resolved`,
+  // `_odoo`, `_sat`, `_fiscal`, `_ops` variants. Pre-Task-24 most rows have
+  // `_resolved` empty, so we fall back to `_odoo` to keep coverage.
   if (bounds?.from || bounds?.to) {
     let q = sb
       .from("canonical_invoices")
-      .select("invoice_date, amount_total_mxn_resolved, amount_total_mxn")
+      .select("invoice_date, amount_total_mxn_resolved, amount_total_mxn_odoo")
       .eq("direction", "issued")
       .eq("estado_sat", "vigente");
     if (bounds.from) q = q.gte("invoice_date", bounds.from);
@@ -245,12 +246,12 @@ export async function getSalesRevenueTrend(
     for (const r of (rows ?? []) as Array<{
       invoice_date: string | null;
       amount_total_mxn_resolved: number | null;
-      amount_total_mxn: number | null;
+      amount_total_mxn_odoo: number | null;
     }>) {
       if (!r.invoice_date) continue;
       const d = new Date(r.invoice_date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn ?? 0);
+      const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn_odoo ?? 0);
       map.set(key, (map.get(key) ?? 0) + amount);
     }
 
@@ -502,7 +503,7 @@ export async function getTopCustomersPage(
   if (params.from || params.to) {
     let q = sb
       .from("canonical_invoices")
-      .select("receptor_canonical_company_id, emisor_rfc, receptor_nombre, amount_total_mxn_resolved, amount_total_mxn")
+      .select("receptor_canonical_company_id, emisor_rfc, receptor_nombre, amount_total_mxn_resolved, amount_total_mxn_odoo")
       .eq("direction", "issued")
       .eq("estado_sat", "vigente")
       .not("receptor_canonical_company_id", "is", null);
@@ -520,7 +521,7 @@ export async function getTopCustomersPage(
       receptor_canonical_company_id: number | null;
       receptor_nombre: string | null;
       amount_total_mxn_resolved: number | null;
-      amount_total_mxn: number | null;
+      amount_total_mxn_odoo: number | null;
     }>) {
       if (r.receptor_canonical_company_id == null) continue;
       if (selfIds.includes(r.receptor_canonical_company_id)) continue;
@@ -529,7 +530,7 @@ export async function getTopCustomersPage(
         name: r.receptor_nombre ?? "",
         revenue: 0,
       };
-      const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn ?? 0);
+      const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn_odoo ?? 0);
       existing.revenue += amount;
       byCompany.set(r.receptor_canonical_company_id, existing);
     }
