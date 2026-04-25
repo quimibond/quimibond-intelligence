@@ -331,3 +331,70 @@ non-zero (within tolerance):
   13 → 15 if growth continues.
 - `wild_margin` (176, tol=250) — Odoo data-entry anomalies (negative
   cost, free samples, very low subtotal). Documented as upstream issue.
+
+## 2026-04-25 · Cross-layer audit (Bronze + Canonical + Gold)
+
+Deep audit pass beyond the standing integrity catalog: read every
+`.from()` against the live schema to catch silent column drift, plus
+freshness and FK orphan checks across all Bronze tables.
+
+### Critical findings + fixes
+
+1. **`canonical_invoices.amount_total_mxn` does not exist** — column was
+   renamed to `amount_total_mxn_resolved` long ago, but two callers in
+   `operational/sales.ts` still selected both names with a `?? amount_total_mxn`
+   fallback. Selecting a non-existent column 400s the entire query, so
+   `getSalesRevenueTrend` (period-bounds path) and `getTopCustomersPage`
+   (period-bounds path) silently returned empty data on every page that
+   passed `from`/`to`. Fixed by removing the dead fallback. Affects
+   /ventas trend chart and Top Customers table when a period filter is
+   applied.
+
+2. **`canonical_sale_orders.canonical_company_id` orphans** — 175 rows
+   (1.4%) point to Odoo `partner_id` values that were deleted from Odoo
+   before MDM ran. `matcher_all_pending()` re-ran cleanly (resolved 2,162
+   companies + 3 contacts) but cannot create shadows for partners that no
+   longer exist in Bronze. Documented as legitimate historical gap; will
+   not self-heal until the upstream partners are restored or the orphan
+   orders are tombstoned.
+
+### Bronze findings (qb19 sync)
+
+- **`odoo_account_payments` 46h stale** — last sync `2026-04-23T02:50:34Z`
+  vs every other Odoo table refreshed within the last hour. Likely a
+  qb19 cron exception on this specific model. Out of scope for silver
+  (lives in qb19 addon).
+- **`odoo_payments` table missing** — CLAUDE.md still lists this table
+  but it is not present in the schema (replaced by canonical_payments).
+  Only one defunct test file references it (`silver-sp5/inbox-api.test.ts`).
+  No runtime callers.
+- **Missing `synced_at` on Bronze tables** — `odoo_bank_balances`,
+  `odoo_order_lines`, `odoo_users`, `odoo_products` lack the column,
+  breaking the standard freshness audit pattern. CLAUDE.md drift, not a
+  data bug.
+- **`odoo_products.internal_ref` NULL on 832 rows (11.5%)** — products
+  without SKU reference; affects matcher coverage.
+- **NULL `salesperson_name` on 19 / 12,394 sale orders (0.15%)** —
+  unroutable for insights.
+- **NULL `buyer_name` on 10 / 5,702 purchase orders (0.18%)** —
+  unroutable for procurement metrics.
+
+### Cross-layer math sanity
+
+- **YTD revenue (2026-01..04)**: Bronze `odoo_invoices` (out_invoice
+  posted) and `canonical_invoices` (issued) both report 694 rows. ✓
+  Aligned.
+- **AR open**: 609 unpaid Bronze invoices ↔ `gold_cashflow.total_receivable_mxn`
+  $24,829,554 ↔ post-double-FX-fix figure from 2026-04-24. ✓ Stable.
+- **Working capital**: $5,023,605 (gold_cashflow), consistent with
+  prior audit (±3%, normal cash flow variance).
+
+### sp13/empresas + sp13/compras smoke verification
+
+Every column referenced by the new sp13 helpers (gold_company_360,
+canonical_companies drift cols, gold_company_odoo_sat_drift,
+canonical_sale_orders, canonical_purchase_orders, canonical_payments,
+canonical_order_lines, canonical_products, purchase_price_intelligence)
+was hit live and returned 200. One drift caught and fixed in
+`sp13/compras/single-source.ts`: selected `canonical_products.name`
+which doesn't exist (column is `display_name`).

@@ -232,9 +232,13 @@ export async function getSalesRevenueTrend(
   // canonical_invoices fields: direction, invoice_date, amount_total_mxn_resolved,
   //   estado_sat, tipo_comprobante, receptor_canonical_company_id, emisor_canonical_company_id
   if (bounds?.from || bounds?.to) {
+    // canonical_invoices exposes amount_total_mxn_resolved (single canonical
+    // MXN total). The legacy fallback on `amount_total_mxn` was dead because
+    // that column does not exist on canonical_invoices — selecting it 400s
+    // the entire query and silently empties the trend chart.
     let q = sb
       .from("canonical_invoices")
-      .select("invoice_date, amount_total_mxn_resolved, amount_total_mxn")
+      .select("invoice_date, amount_total_mxn_resolved")
       .eq("direction", "issued")
       .eq("estado_sat", "vigente");
     if (bounds.from) q = q.gte("invoice_date", bounds.from);
@@ -245,12 +249,11 @@ export async function getSalesRevenueTrend(
     for (const r of (rows ?? []) as Array<{
       invoice_date: string | null;
       amount_total_mxn_resolved: number | null;
-      amount_total_mxn: number | null;
     }>) {
       if (!r.invoice_date) continue;
       const d = new Date(r.invoice_date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn ?? 0);
+      const amount = Number(r.amount_total_mxn_resolved) || 0;
       map.set(key, (map.get(key) ?? 0) + amount);
     }
 
@@ -498,11 +501,14 @@ export async function getTopCustomersPage(
   const selfIds = await getSelfCompanyIds();
 
   // ── Path B: period-filtered via canonical_invoices ─────────────────────────
-  // Replaces invoices_unified (§12 drop-list)
+  // Replaces invoices_unified (§12 drop-list).
+  // canonical_invoices exposes amount_total_mxn_resolved as the canonical
+  // MXN total. Legacy fallback on amount_total_mxn was dead — selecting it
+  // 400s the entire query and silently emptied the table.
   if (params.from || params.to) {
     let q = sb
       .from("canonical_invoices")
-      .select("receptor_canonical_company_id, emisor_rfc, receptor_nombre, amount_total_mxn_resolved, amount_total_mxn")
+      .select("receptor_canonical_company_id, emisor_rfc, receptor_nombre, amount_total_mxn_resolved")
       .eq("direction", "issued")
       .eq("estado_sat", "vigente")
       .not("receptor_canonical_company_id", "is", null);
@@ -520,7 +526,6 @@ export async function getTopCustomersPage(
       receptor_canonical_company_id: number | null;
       receptor_nombre: string | null;
       amount_total_mxn_resolved: number | null;
-      amount_total_mxn: number | null;
     }>) {
       if (r.receptor_canonical_company_id == null) continue;
       if (selfIds.includes(r.receptor_canonical_company_id)) continue;
@@ -529,7 +534,7 @@ export async function getTopCustomersPage(
         name: r.receptor_nombre ?? "",
         revenue: 0,
       };
-      const amount = Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn ?? 0);
+      const amount = Number(r.amount_total_mxn_resolved) || 0;
       existing.revenue += amount;
       byCompany.set(r.receptor_canonical_company_id, existing);
     }
