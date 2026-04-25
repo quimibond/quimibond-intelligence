@@ -60,16 +60,24 @@ import {
   type RecentSaleOrder,
 } from "@/lib/queries/operational/sales";
 import {
+  getSalesRecommendations,
+  getReorderRiskSummary,
+} from "@/lib/queries/operational/sales-intelligence";
+import {
   getCustomerCohorts,
   type CohortMatrix,
 } from "@/lib/queries/analytics";
 import { getPlHistory } from "@/lib/queries/analytics/finance";
+import { getUnifiedRevenueAggregates } from "@/lib/queries/unified";
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 import { parsePeriod, periodBoundsIso } from "@/lib/queries/_shared/period-filter";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { PeriodSelector } from "@/components/patterns/period-selector";
 
 import { SalesTrendChart } from "./_components/sales-trend-chart";
+import { SalesRecommendations } from "./_components/sales-recommendations";
+import { ReorderRiskAlert } from "./_components/reorder-risk-alert";
+import { FiscalRevenueKpiCard } from "@/components/domain/fiscal/FiscalRevenueKpiCard";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
@@ -113,235 +121,337 @@ export default async function VentasPage({
         title="Ventas"
         subtitle="¿Cómo van las ventas, quién compra y quién dejó de comprar?"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
-            <DataSourceBadge source="odoo" coverage="2021+" />
-            <a
-              href="/ventas/cohorts"
-              className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
-            >
-              Retención por cohorte →
-            </a>
-          </div>
+          <a
+            href="/ventas/cohorts"
+            className="rounded-full border border-border bg-muted/40 px-3 py-1.5 text-xs font-medium hover:bg-muted"
+          >
+            Retención por cohorte →
+          </a>
         }
       />
 
       <SectionNav
         items={[
-          { id: "kpis", label: "Resumen" },
-          { id: "trend", label: "Tendencia 12m" },
-          { id: "retention", label: "Retención" },
-          { id: "reorder", label: "Reorder risk" },
-          { id: "top-customers", label: "Top clientes" },
-          { id: "salespeople", label: "Vendedores" },
-          { id: "orders", label: "Pedidos" },
+          { id: "alert", label: "Alertas" },
+          { id: "operativo", label: "Operativo (Odoo)" },
+          { id: "fiscal", label: "Fiscal SAT" },
+          { id: "unificado", label: "Unificado" },
+          { id: "recomendaciones", label: "Recomendaciones" },
         ]}
       />
 
-      <section id="kpis" className="scroll-mt-24">
-      <Suspense
-        fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[96px] rounded-xl" />
-            ))}
-          </StatGrid>
-        }
+      {/* ══════════════════════════════════════════════════════════════
+          BANNER CRÍTICO — Reorder risk en estado critical
+      ══════════════════════════════════════════════════════════════ */}
+      <div id="alert" className="scroll-mt-24">
+        <Suspense fallback={null}>
+          <ReorderRiskAlertSection />
+        </Suspense>
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 1 — Operativo (Odoo)
+          KPIs, tendencia, retención, reorder, top clientes, vendedores, pedidos
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="operativo" className="scroll-mt-24 space-y-5">
+        <div className="flex items-center gap-2 pb-1 border-b border-border">
+          <h2 className="text-base font-semibold">Operativo (Odoo)</h2>
+          <DataSourceBadge source="odoo" coverage="2021+" />
+        </div>
+
+        <div id="kpis" className="scroll-mt-24">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm font-medium text-muted-foreground">KPIs comerciales</p>
+            <DataSourceBadge source="odoo" />
+          </div>
+          <Suspense
+            fallback={
+              <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+                {Array.from({ length: 4 }).map((_, i) => (
+                  <Skeleton key={i} className="h-[96px] rounded-xl" />
+                ))}
+              </StatGrid>
+            }
+          >
+            <SalesKpisSection />
+          </Suspense>
+        </div>
+
+        <div id="trend" className="scroll-mt-24">
+          <Card>
+            <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
+                <DataSourceBadge source="odoo" />
+              </div>
+              <PeriodSelector paramName="rev_period" label="Período" />
+            </CardHeader>
+            <CardContent>
+              <Suspense
+                fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
+              >
+                <RevenueChartSection searchParams={sp} />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div id="retention" className="scroll-mt-24">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">Retención por cohorte</CardTitle>
+                <DataSourceBadge source="odoo" />
+              </div>
+              <p className="text-xs text-muted-foreground">
+                % de clientes de cada cohort trimestral que siguen activos N
+                trimestres después de su primera compra. Filas = trimestre de
+                adquisición. Columnas = trimestres desde primera compra.
+              </p>
+            </CardHeader>
+            <CardContent className="overflow-x-auto pb-4">
+              <Suspense
+                fallback={
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-10 rounded" />
+                    ))}
+                  </div>
+                }
+              >
+                <CohortHeatmapSection />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div id="reorder" className="scroll-mt-24">
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">
+                    Reorder risk — clientes que deberían haber comprado
+                  </CardTitle>
+                  <DataSourceBadge source="odoo" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Filtra por estado de reorden y tier para priorizar a quién
+                  llamar.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className="text-xs font-normal"
+                  title="Reorder risk es un snapshot calculado a partir del ciclo de compra histórico de cada cliente. No es filtrable por período."
+                >
+                  snapshot actual
+                </Badge>
+                <TableViewOptions
+                  paramPrefix="rr_"
+                  columns={reorderRiskViewColumns}
+                />
+                <TableExportButton filename="reorder-risk" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-4">
+              <DataTableToolbar
+                paramPrefix="rr_"
+                searchPlaceholder="Buscar cliente…"
+                facets={[
+                  {
+                    key: "status",
+                    label: "Estado",
+                    options: [
+                      { value: "critical", label: "Crítico" },
+                      { value: "overdue", label: "Vencido" },
+                      { value: "at_risk", label: "En riesgo" },
+                    ],
+                  },
+                  {
+                    key: "tier",
+                    label: "Tier",
+                    options: [
+                      { value: "A", label: "Tier A" },
+                      { value: "B", label: "Tier B" },
+                      { value: "C", label: "Tier C" },
+                    ],
+                  },
+                ]}
+              />
+              <Suspense
+                fallback={<Skeleton className="h-[300px] rounded-xl" />}
+              >
+                <ReorderRiskTable searchParams={sp} />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div id="top-customers" className="scroll-mt-24">
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Top clientes</CardTitle>
+                  <DataSourceBadge source="unified" refresh="15min" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Ordenado por facturación SAT (lifetime, subtotal × FX, cuadra con Syntage). Columna &quot;Pedidos Odoo&quot; = pedidos confirmados en ERP.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <PeriodSelector paramName="tc_period" label="Período" />
+                <TableViewOptions
+                  paramPrefix="tc_"
+                  columns={topCustomerViewColumns}
+                />
+                <TableExportButton filename="top-customers" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-4">
+              <DataTableToolbar
+                paramPrefix="tc_"
+                searchPlaceholder="Buscar cliente…"
+              />
+              <Suspense
+                fallback={<Skeleton className="h-[300px] rounded-xl" />}
+              >
+                <TopCustomersTable searchParams={sp} />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div id="salespeople" className="scroll-mt-24">
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-base">
+                  Ranking de vendedores este mes
+                </CardTitle>
+                <DataSourceBadge source="odoo" />
+              </div>
+              <TableExportButton filename="salespeople" />
+            </CardHeader>
+            <CardContent className="pb-4">
+              <Suspense fallback={<Skeleton className="h-[200px] rounded-xl" />}>
+                <SalespeopleTable searchParams={sp} />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div id="orders" className="scroll-mt-24">
+          <Card data-table-export-root>
+            <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+              <div>
+                <div className="flex items-center gap-2">
+                  <CardTitle className="text-base">Pedidos</CardTitle>
+                  <DataSourceBadge source="odoo" />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Busca por número o filtra por vendedor, estado y fecha. Datos en
+                  vivo de Odoo.
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <PeriodSelector paramName="so_period" label="Período" />
+                <TableViewOptions
+                  paramPrefix="so_"
+                  columns={saleOrderViewColumns}
+                />
+                <TableExportButton filename="sale-orders" />
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-3 pb-4">
+              <Suspense fallback={null}>
+                <SaleOrdersToolbar />
+              </Suspense>
+              <Suspense
+                fallback={
+                  <div className="space-y-2">
+                    {Array.from({ length: 6 }).map((_, i) => (
+                      <Skeleton key={i} className="h-14 rounded-xl" />
+                    ))}
+                  </div>
+                }
+              >
+                <RecentOrdersTable searchParams={sp} />
+              </Suspense>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 2 — Fiscal SAT (Syntage)
+          Revenue fiscal histórico desde CFDIs SAT
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="fiscal" className="scroll-mt-24 space-y-5 pt-4 border-t border-border">
+        <div className="flex items-center gap-2 pb-1">
+          <h2 className="text-base font-semibold">Fiscal SAT (Syntage)</h2>
+          <DataSourceBadge source="syntage" coverage="2014+" />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Facturación timbrada lifetime y comparativo YoY. Cuadra al centavo
+          con la declaración fiscal porque se construye desde los CFDIs
+          recibidos por el SAT, no desde Odoo.
+        </p>
+        <div id="fiscal-sat" className="scroll-mt-24">
+          <Suspense fallback={<Skeleton className="h-[96px] rounded-xl" />}>
+            <FiscalRevenueKpiCard />
+          </Suspense>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 3 — Unificado (reconciliado)
+          Reconciliación Odoo ↔ SAT del mes corriente
+      ══════════════════════════════════════════════════════════════ */}
+      <section id="unificado" className="scroll-mt-24 space-y-5 pt-4 border-t border-border">
+        <div className="flex items-center gap-2 pb-1">
+          <h2 className="text-base font-semibold">Unificado (reconciliado)</h2>
+          <DataSourceBadge source="unified" refresh="15min" />
+        </div>
+        <div id="cfdis" className="scroll-mt-24">
+          <Suspense fallback={<Skeleton className="h-[120px] rounded-xl" />}>
+            <CfdiValidationSection />
+          </Suspense>
+        </div>
+      </section>
+
+      {/* ══════════════════════════════════════════════════════════════
+          SECCIÓN 4 — Recomendaciones del director comercial
+          IA: top acciones priorizadas por impacto
+      ══════════════════════════════════════════════════════════════ */}
+      <section
+        id="recomendaciones"
+        className="scroll-mt-24 space-y-5 pt-4 border-t border-border"
       >
-        <SalesKpisSection />
-      </Suspense>
-      </section>
-
-      <section id="trend" className="scroll-mt-24">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2">
-          <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
-          <PeriodSelector paramName="rev_period" label="Período" />
-        </CardHeader>
-        <CardContent>
-          <Suspense
-            fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
-          >
-            <RevenueChartSection searchParams={sp} />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="retention" className="scroll-mt-24">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Retención por cohorte</CardTitle>
-          <p className="text-xs text-muted-foreground">
-            % de clientes de cada cohort trimestral que siguen activos N
-            trimestres después de su primera compra. Filas = trimestre de
-            adquisición. Columnas = trimestres desde primera compra.
-          </p>
-        </CardHeader>
-        <CardContent className="overflow-x-auto pb-4">
-          <Suspense
-            fallback={
-              <div className="space-y-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-10 rounded" />
-                ))}
-              </div>
-            }
-          >
-            <CohortHeatmapSection />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="reorder" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Reorder risk — clientes que deberían haber comprado
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Filtra por estado de reorden y tier para priorizar a quién
-              llamar.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge
-              variant="outline"
-              className="text-xs font-normal"
-              title="Reorder risk es un snapshot calculado a partir del ciclo de compra histórico de cada cliente. No es filtrable por período."
-            >
-              snapshot actual
-            </Badge>
-            <TableViewOptions
-              paramPrefix="rr_"
-              columns={reorderRiskViewColumns}
-            />
-            <TableExportButton filename="reorder-risk" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
-          <DataTableToolbar
-            paramPrefix="rr_"
-            searchPlaceholder="Buscar cliente…"
-            facets={[
-              {
-                key: "status",
-                label: "Estado",
-                options: [
-                  { value: "critical", label: "Crítico" },
-                  { value: "overdue", label: "Vencido" },
-                  { value: "at_risk", label: "En riesgo" },
-                ],
-              },
-              {
-                key: "tier",
-                label: "Tier",
-                options: [
-                  { value: "A", label: "Tier A" },
-                  { value: "B", label: "Tier B" },
-                  { value: "C", label: "Tier C" },
-                ],
-              },
-            ]}
-          />
-          <Suspense
-            fallback={<Skeleton className="h-[300px] rounded-xl" />}
-          >
-            <ReorderRiskTable searchParams={sp} />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="top-customers" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Top clientes
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Ordenado por facturación SAT (lifetime, subtotal × FX, cuadra con Syntage). Columna &quot;Pedidos Odoo&quot; = pedidos confirmados en ERP.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PeriodSelector paramName="tc_period" label="Período" />
-            <TableViewOptions
-              paramPrefix="tc_"
-              columns={topCustomerViewColumns}
-            />
-            <TableExportButton filename="top-customers" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
-          <DataTableToolbar
-            paramPrefix="tc_"
-            searchPlaceholder="Buscar cliente…"
-          />
-          <Suspense
-            fallback={<Skeleton className="h-[300px] rounded-xl" />}
-          >
-            <TopCustomersTable searchParams={sp} />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="salespeople" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Ranking de vendedores este mes
-            </CardTitle>
-          </div>
-          <TableExportButton filename="salespeople" />
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense fallback={<Skeleton className="h-[200px] rounded-xl" />}>
-            <SalespeopleTable searchParams={sp} />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="orders" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Pedidos</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Busca por número o filtra por vendedor, estado y fecha. Datos en
-              vivo de Odoo.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <PeriodSelector paramName="so_period" label="Período" />
-            <TableViewOptions
-              paramPrefix="so_"
-              columns={saleOrderViewColumns}
-            />
-            <TableExportButton filename="sale-orders" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
-          <Suspense fallback={null}>
-            <SaleOrdersToolbar />
-          </Suspense>
-          <Suspense
-            fallback={
-              <div className="space-y-2">
-                {Array.from({ length: 6 }).map((_, i) => (
-                  <Skeleton key={i} className="h-14 rounded-xl" />
-                ))}
-              </div>
-            }
-          >
-            <RecentOrdersTable searchParams={sp} />
-          </Suspense>
-        </CardContent>
-      </Card>
+        <div className="flex items-center gap-2 pb-1">
+          <h2 className="text-base font-semibold">
+            Recomendaciones del director comercial
+          </h2>
+          <DataSourceBadge source="ia" />
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Acciones priorizadas por impacto para recuperar revenue, reducir
+          concentración y acelerar reorden. Generadas por el agente IA
+          Director Comercial cada 15 min.
+        </p>
+        <Suspense
+          fallback={
+            <div className="space-y-3">
+              <Skeleton className="h-[80px] rounded-xl" />
+              <Skeleton className="h-[120px] rounded-xl" />
+              <Skeleton className="h-[120px] rounded-xl" />
+            </div>
+          }
+        >
+          <SalesRecommendationsSection />
+        </Suspense>
       </section>
     </PageLayout>
   );
@@ -1468,4 +1578,77 @@ function RetentionTable({ data }: { data: CohortMatrix }) {
       </div>
     </div>
   );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Reorder risk alert — banner crítico (paralelo al Runway de /finanzas)
+// ──────────────────────────────────────────────────────────────────────────
+async function ReorderRiskAlertSection() {
+  const summary = await getReorderRiskSummary();
+  return <ReorderRiskAlert summary={summary} />;
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// CFDIs validados — % de pedidos del mes timbrados
+// ──────────────────────────────────────────────────────────────────────────
+async function CfdiValidationSection() {
+  const now = new Date();
+  const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .slice(0, 10);
+  const monthEnd = now.toISOString().slice(0, 10);
+  const revenueAgg = await getUnifiedRevenueAggregates(monthStart, monthEnd);
+
+  const pct = Math.round(revenueAgg.pctValidated);
+  const tone =
+    pct >= 90 ? "success" : pct >= 70 ? "warning" : "danger";
+  const toneText = {
+    success: "text-success",
+    warning: "text-warning",
+    danger: "text-danger",
+  }[tone];
+  const toneBadge = {
+    success:
+      "bg-emerald-100 text-emerald-900 dark:bg-emerald-950 dark:text-emerald-100",
+    warning:
+      "bg-amber-100 text-amber-900 dark:bg-amber-950 dark:text-amber-100",
+    danger:
+      "bg-rose-100 text-rose-900 dark:bg-rose-950 dark:text-rose-100",
+  }[tone];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base">
+          CFDIs validados SAT · mes corriente
+        </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Pedidos facturados con UUID timbrado vigente / total emitidos.
+          Mide qué tan fielmente Odoo refleja la realidad fiscal del mes.
+        </p>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-baseline gap-3">
+          <span className={`font-mono text-3xl tabular-nums ${toneText}`}>
+            {pct}%
+          </span>
+          <Badge className={toneBadge}>
+            {revenueAgg.uuidValidated} de {revenueAgg.count}
+          </Badge>
+        </div>
+        <div className="mt-2 text-xs text-muted-foreground">
+          Revenue total (posted no-cancelado):{" "}
+          <Currency amount={revenueAgg.revenue} compact />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Recomendaciones del director comercial — agent_insights category=ventas
+// ──────────────────────────────────────────────────────────────────────────
+async function SalesRecommendationsSection() {
+  const data = await getSalesRecommendations();
+  return <SalesRecommendations data={data} />;
 }
