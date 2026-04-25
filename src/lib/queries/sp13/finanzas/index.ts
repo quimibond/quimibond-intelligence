@@ -25,6 +25,7 @@ export {
   getBalanceSheet,
   type BalanceSheetSnapshot,
   type BalanceSheetBucket,
+  type BalanceSheetCategoryRow,
 } from "./balance-sheet";
 export {
   getAnomaliesSummary,

@@ -5,16 +5,21 @@ import { getServiceClient } from "@/lib/supabase-server";
 /**
  * F3.5 — Balance general mensual.
  *
- * Source: `gold_balance_sheet` (materialized view). Pre-computed bucket
- * breakdown per period: assets / liabilities / equity + counts.
- *
- * Latest row = most recent period. `asOfDate` is the view's `refreshed_at`
- * so the UI can badge staleness when the refresh has lagged.
+ * Source: `gold_balance_sheet` (materialized view) para totales y staleness;
+ * `get_cash_reconciliation` RPC para el desglose por categoría (AR, Inv,
+ * Fixed, AP, Debt, etc.) usando saldos acumulados al cierre.
  */
 export interface BalanceSheetBucket {
   bucket: "asset" | "liability" | "equity" | "income" | "expense";
   totalMxn: number;
   accountsCount: number;
+}
+
+export interface BalanceSheetCategoryRow {
+  category: string;
+  categoryLabel: string;
+  side: "asset" | "liability" | "equity";
+  closingMxn: number;
 }
 
 export interface BalanceSheetSnapshot {
@@ -27,6 +32,7 @@ export interface BalanceSheetSnapshot {
   liquidityRatio: number | null;
   debtToEquityRatio: number | null;
   buckets: BalanceSheetBucket[];
+  detailRows: BalanceSheetCategoryRow[];
   asOfDate: string | null;
 }
 
@@ -76,9 +82,47 @@ async function _getBalanceSheetRaw(): Promise<BalanceSheetSnapshot | null> {
     }
   }
 
-  // Liquidity & leverage are approximations off the aggregated buckets:
-  // - liquidityRatio = assets / liabilities (> 1 = healthy)
-  // - debtToEquityRatio = liabilities / equity (< 1 = conservative)
+  // Detail breakdown desde get_cash_reconciliation (mismo período, no usamos
+  // deltas — solo closing_mxn por categoría).
+  const detailRows: BalanceSheetCategoryRow[] = [];
+  try {
+    // Para que la función calcule closing al período actual, le damos
+    // p_to_period = el período del snapshot. p_from_period = un mes antes
+    // (no afecta el closing, solo el delta que ignoramos).
+    const fromPeriod = priorMonthOf(row.period);
+    const { data: detail, error: detErr } = await sb.rpc(
+      "get_cash_reconciliation",
+      { p_from_period: fromPeriod, p_to_period: row.period }
+    );
+    if (detErr) {
+      console.error("[getBalanceSheet] detail rpc failure", detErr.message);
+    } else if (detail) {
+      type DetRow = {
+        category: string;
+        category_label: string;
+        prefix_pattern: string;
+        closing_mxn: number | string;
+      };
+      for (const r of detail as DetRow[]) {
+        const side: "asset" | "liability" | "equity" = r.prefix_pattern.startsWith(
+          "asset_"
+        )
+          ? "asset"
+          : r.prefix_pattern.startsWith("liability_")
+            ? "liability"
+            : "equity";
+        detailRows.push({
+          category: r.category,
+          categoryLabel: r.category_label,
+          side,
+          closingMxn: Number(r.closing_mxn) || 0,
+        });
+      }
+    }
+  } catch (e) {
+    console.error("[getBalanceSheet] detail exception", e);
+  }
+
   const liquidityRatio =
     totalLiabilities > 0 ? totalAssets / totalLiabilities : null;
   const debtToEquityRatio =
@@ -96,8 +140,17 @@ async function _getBalanceSheetRaw(): Promise<BalanceSheetSnapshot | null> {
     debtToEquityRatio:
       debtToEquityRatio == null ? null : Math.round(debtToEquityRatio * 100) / 100,
     buckets,
+    detailRows,
     asOfDate: row.refreshed_at,
   };
+}
+
+function priorMonthOf(periodYYYYMM: string): string {
+  const [y, m] = periodYYYYMM.split("-").map((s) => parseInt(s, 10));
+  const prior = new Date(y, m - 2, 1);
+  const py = prior.getFullYear();
+  const pm = String(prior.getMonth() + 1).padStart(2, "0");
+  return `${py}-${pm}`;
 }
 
 export const getBalanceSheet = unstable_cache(
