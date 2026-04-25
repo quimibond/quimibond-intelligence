@@ -4,15 +4,18 @@ import type {
   InboxCardSeverity,
   InboxActionCta,
 } from "@/components/patterns";
+import { resolveSource, resolveDomain, resolveDrift } from "./inbox-sources";
 
 /**
  * Adapt a gold_ceo_inbox row (flat assignee_* columns, nullable fields) to the
  * InboxCardIssue prop shape expected by the new <InboxCard> component.
  *
- * - assignee becomes { id, name, email } or null.
- * - severity coerces null → "low".
- * - action_cta coerces empty-string → null.
- * - priority_score / age_days / description / issue_type coerce null to safe defaults.
+ * SP13.6:
+ *   - `invariant_key` se preserva para que la card pueda decidir SourceBadge.
+ *   - `source` se resuelve aquí (SAT / Odoo / canonical / pl).
+ *   - `domain` se usa como badge de categoría (cobranza/facturacion/...).
+ *   - `sources` se rellena cuando el metadata trae valores dual-source
+ *     (drift visible con DriftPill).
  */
 export function adaptInboxRow(r: InboxRow): InboxCardIssue {
   const hasAssignee =
@@ -22,6 +25,10 @@ export function adaptInboxRow(r: InboxRow): InboxCardIssue {
 
   const rawCta = typeof r.action_cta === "string" && r.action_cta.length > 0 ? r.action_cta : null;
   const action_cta = (rawCta as InboxActionCta | null);
+
+  const source = resolveSource(r.invariant_key);
+  const domain = resolveDomain(r.invariant_key);
+  const sources = resolveDrift(r.invariant_key, r.metadata) ?? undefined;
 
   return {
     issue_id: r.issue_id ?? "",
@@ -42,5 +49,9 @@ export function adaptInboxRow(r: InboxRow): InboxCardIssue {
         }
       : null,
     detected_at: r.detected_at ?? new Date().toISOString(),
+    invariant_key: r.invariant_key ?? null,
+    source,
+    domain,
+    sources,
   };
 }
