@@ -45,6 +45,13 @@ export interface CashProjectionMarker {
   atRisk: boolean;
 }
 
+export interface CashFlowCategoryTotal {
+  category: string;
+  categoryLabel: string;
+  flowType: "inflow" | "outflow";
+  amountMxn: number;
+}
+
 export interface CashProjection {
   horizonDays: number;
   openingBalance: number;
@@ -59,6 +66,9 @@ export interface CashProjection {
   safetyFloor: number;
   points: CashProjectionPoint[];
   markers: CashProjectionMarker[];
+  // Breakdown por categoría (incluye AR/AP factura por factura + recurrentes
+  // proyectados desde patrón histórico de los últimos 3 meses).
+  categoryTotals: CashFlowCategoryTotal[];
 }
 
 function toIso(d: Date): string {
@@ -73,13 +83,10 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const endDate = new Date(today.getTime() + horizonDays * 86400000);
   const endIso = toIso(endDate);
 
-  const [cashRes, projRes] = await Promise.all([
+  const [cashRes, projRes, recurringRes] = await Promise.all([
     sb
       .from("canonical_bank_balances")
       .select("classification, current_balance_mxn"),
-    // Include ALL past-due invoices + future invoices up to horizon. Past-due
-    // dates get clamped to today below (we expect to collect them going
-    // forward, already probability-weighted by aging bucket).
     sb
       .from("cashflow_projection")
       .select(
@@ -87,6 +94,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       )
       .in("flow_type", ["receivable_detail", "payable_detail"])
       .lte("projected_date", endIso),
+    // Recurring inflows/outflows desde patrón histórico (nómina, renta,
+    // servicios, arrendamiento, ventas proyectadas). RPC silver.
+    sb.rpc("get_cash_projection_recurring", {
+      p_horizon_days: horizonDays,
+      p_lookback_months: 3,
+    }),
   ]);
 
   type Bank = { classification: string | null; current_balance_mxn: number | null };
@@ -119,6 +132,22 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   let probCount = 0;
   let overdueInflowCount = 0;
 
+  // Acumulador de totales por categoría
+  const categoryAcc = new Map<
+    string,
+    { label: string; flowType: "inflow" | "outflow"; amount: number }
+  >();
+  const addToCategory = (
+    cat: string,
+    label: string,
+    flow: "inflow" | "outflow",
+    amount: number
+  ) => {
+    const existing = categoryAcc.get(cat);
+    if (existing) existing.amount += amount;
+    else categoryAcc.set(cat, { label, flowType: flow, amount });
+  };
+
   for (const r of projRows) {
     const origDate = r.projected_date;
     if (!origDate) continue;
@@ -135,16 +164,26 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       inflowByDay.set(date, (inflowByDay.get(date) ?? 0) + expected);
       totalInflow += expected;
       totalInflowNominal += nominal;
+      addToCategory(
+        "ar_cobranza",
+        "Cobranza AR (factura emitida)",
+        "inflow",
+        expected
+      );
       if (r.collection_probability != null) {
         probSum += Number(r.collection_probability);
         probCount++;
       }
       if ((r.days_overdue ?? 0) > 0) overdueInflowCount++;
     } else {
-      // AP is paid in full (no probability weighting — you still owe it).
-      // Past-due AP also clamps to today (we owe now, already late).
       outflowByDay.set(date, (outflowByDay.get(date) ?? 0) + nominal);
       totalOutflow += nominal;
+      addToCategory(
+        "ap_proveedores",
+        "AP a proveedores (factura recibida)",
+        "outflow",
+        nominal
+      );
     }
 
     const amtForMarker = isInflow ? expected : nominal;
@@ -161,6 +200,46 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
             : Number(r.collection_probability),
         atRisk: isInflow && (r.days_overdue ?? 0) > 0,
       });
+    }
+  }
+
+  // Procesar recurring flows del RPC silver (nómina, renta, servicios,
+  // arrendamiento, ventas proyectadas).
+  type RecRow = {
+    projected_date: string;
+    category: string;
+    category_label: string;
+    flow_type: string;
+    amount_mxn: number | string;
+    probability: number | string | null;
+    notes: string | null;
+  };
+  const recRows = (recurringRes.data ?? []) as RecRow[];
+  for (const r of recRows) {
+    const date = r.projected_date < todayIso ? todayIso : r.projected_date;
+    const amount = Number(r.amount_mxn) || 0;
+    if (amount <= 0) continue;
+    const isInflow = r.flow_type === "recurring_inflow";
+    if (isInflow) {
+      inflowByDay.set(date, (inflowByDay.get(date) ?? 0) + amount);
+      totalInflow += amount;
+      addToCategory(r.category, r.category_label, "inflow", amount);
+    } else {
+      outflowByDay.set(date, (outflowByDay.get(date) ?? 0) + amount);
+      totalOutflow += amount;
+      addToCategory(r.category, r.category_label, "outflow", amount);
+      // Marker visible para outflows recurrentes grandes
+      if (amount >= MARKER_THRESHOLD) {
+        markers.push({
+          date,
+          kind: "outflow",
+          amount,
+          label: r.category_label,
+          companyId: null,
+          probability: r.probability == null ? null : Number(r.probability),
+          atRisk: false,
+        });
+      }
     }
   }
 
@@ -184,6 +263,22 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
   markers.sort((a, b) => a.date.localeCompare(b.date));
 
+  // Convert categoryAcc to sorted array (inflows desc, then outflows desc)
+  const categoryTotals: CashFlowCategoryTotal[] = Array.from(
+    categoryAcc.entries()
+  )
+    .map(([category, v]) => ({
+      category,
+      categoryLabel: v.label,
+      flowType: v.flowType,
+      amountMxn: Math.round(v.amount),
+    }))
+    .sort((a, b) => {
+      if (a.flowType !== b.flowType)
+        return a.flowType === "inflow" ? -1 : 1;
+      return b.amountMxn - a.amountMxn;
+    });
+
   return {
     horizonDays,
     openingBalance: Math.round(opening),
@@ -199,13 +294,14 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     safetyFloor: 500000,
     points,
     markers: markers.slice(0, 40),
+    categoryTotals,
   };
 }
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v2"],
-  { revalidate: 60, tags: ["finanzas"] }
+  ["sp13-finanzas-cash-projection-v3"],
+  { revalidate: 600, tags: ["finanzas"] }
 );
 
 export type CashProjectionHorizon = 13 | 30 | 90;
