@@ -24,6 +24,8 @@ import {
   buildTimelineFromEvidencePack,
   extractEvidenceRefs,
 } from "@/lib/queries/intelligence/evidence-helpers";
+import { explainInvariant } from "@/lib/queries/intelligence/invariant-explainers";
+import { fetchIssueEntityContext } from "@/lib/queries/intelligence/issue-entity-context";
 import { markInsightSeen } from "../../actions";
 import { InsightActions } from "./_components/insight-actions";
 import { IssueDetailClient } from "./_components/IssueDetailClient";
@@ -59,17 +61,31 @@ export default async function InsightDetailPage({
   if (UUID_RE.test(idParam)) {
     const item = await fetchInboxItem(idParam);
     if (!item) return notFound();
-    // SP6-01: rich detail rendered by IssueDetailClient (evidence + actions).
+    const explainer = explainInvariant(item.invariant_key);
+    // Resolve the underlying invoice/payment so the page shows context the
+    // CEO recognizes (INV/2025/03/0185 + Contitech) instead of just the
+    // canonical_entity_id ("odoo:6561630").
+    const entityContext = await fetchIssueEntityContext({
+      canonicalEntityType: item.canonical_entity_type,
+      canonicalEntityId: item.canonical_entity_id,
+      invariantKey: item.invariant_key,
+    });
     return (
       <div className="space-y-5 pb-24 md:pb-6">
         <PageHeader
           breadcrumbs={[
             { label: "Dashboard", href: "/" },
             { label: "Inbox", href: "/inbox" },
-            { label: "Alerta" },
+            { label: explainer.entityLabel },
           ]}
-          title={item.description ?? item.invariant_key ?? "Alerta"}
-          subtitle={item.action_cta ?? undefined}
+          title={explainer.title}
+          subtitle={
+            entityContext?.displayName
+              ? `${explainer.entityLabel} ${entityContext.displayName}${
+                  entityContext.companyName ? ` · ${entityContext.companyName}` : ""
+                }`
+              : item.description ?? undefined
+          }
           actions={
             <div className="flex flex-wrap gap-1.5">
               <SeverityBadge level={item.severity ?? "medium"} />
@@ -81,7 +97,11 @@ export default async function InsightDetailPage({
             </div>
           }
         />
-        <IssueDetailClient item={item} />
+        <IssueDetailClient
+          item={item}
+          explainer={explainer}
+          entityContext={entityContext}
+        />
       </div>
     );
   }
