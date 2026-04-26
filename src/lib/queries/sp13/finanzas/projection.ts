@@ -156,6 +156,28 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     return toIso(d);
   };
 
+  // Para AR/AP que ya rebasaron su fecha esperada de pago (incluso
+  // después de aplicar delay histórico), distribuimos sobre una ventana
+  // realista en vez de "dump on today". Sin esto, el chart muestra un
+  // cliff artificial el día 1 cuando hay backlog grande de past-due
+  // (típico en AP de Quimibond: ~91% del residual está past-due).
+  const PAST_DUE_SPREAD_MIN_DAYS = 14;
+  const stableHash = (key: string): number => {
+    let h = 5381;
+    for (let i = 0; i < key.length; i++) h = ((h << 5) + h + key.charCodeAt(i)) | 0;
+    return Math.abs(h);
+  };
+  const spreadPastDue = (
+    shiftedIso: string,
+    delayDays: number,
+    invoiceKey: string
+  ): string => {
+    if (shiftedIso >= todayIso) return shiftedIso;
+    const span = Math.max(delayDays > 0 ? delayDays : 0, PAST_DUE_SPREAD_MIN_DAYS);
+    const offset = stableHash(invoiceKey) % span;
+    return shiftDate(todayIso, offset);
+  };
+
   type Bank = { classification: string | null; current_balance_mxn: number | null };
   const banks = (cashRes.data ?? []) as Bank[];
   const opening = banks
@@ -211,16 +233,20 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (expected <= 0) continue;
 
     // Aplicar delay histórico (proveedor para AP, cliente para AR) sobre
-    // el due date original. Si ya está vencida, comparamos con today:
-    // adjustedDate = max(today, dueDate + delay). Esto refleja que:
+    // el due date original.
     //  - factura no vencida + delay 30d → cobramos/pagamos due_date + 30d
-    //  - factura ya vencida 60d con delay 30d (cliente típicamente paga
-    //    30d tarde) → ya rebasó su patrón, esperamos cobranza para hoy
     //  - factura vencida 10d con delay 30d → cobranza esperada en today + 20d
+    //  - factura vencida 60d con delay 30d → past-due incluso post-delay;
+    //    spreadPastDue() la distribuye sobre [today, today + max(delay, 14)]
+    //    en vez de dumpear todo en hoy (evita cliff artificial cuando hay
+    //    backlog grande de past-due).
     //
     // Partes relacionadas (intercompañía) → fuera del horizonte (180d).
-    let date = origDate < todayIso ? todayIso : origDate;
+    const invoiceKey =
+      r.invoice_name ?? `${r.flow_type}-${r.company_id}-${origDate}-${nominal}`;
+    let date = origDate;
     let isRelatedParty = false;
+    let delayForSpread = 0;
     if (r.company_id != null) {
       if (!isInflow) {
         const delay = apDelayMap.get(r.company_id);
@@ -228,16 +254,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
           isRelatedParty = true;
           date = shiftDate(origDate, 180);
         } else if (delay && delay.delayDays > 0) {
-          const shifted = shiftDate(origDate, delay.delayDays);
-          date = shifted < todayIso ? todayIso : shifted;
+          delayForSpread = delay.delayDays;
+          date = shiftDate(origDate, delay.delayDays);
         }
       } else {
         const delayDays = arDelayMap.get(r.company_id);
         if (delayDays != null && delayDays > 0) {
-          const shifted = shiftDate(origDate, delayDays);
-          date = shifted < todayIso ? todayIso : shifted;
+          delayForSpread = delayDays;
+          date = shiftDate(origDate, delayDays);
         }
       }
+    }
+    if (!isRelatedParty) {
+      date = spreadPastDue(date, delayForSpread, invoiceKey);
     }
 
     if (isInflow) {
@@ -403,7 +432,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v7"],
+  ["sp13-finanzas-cash-projection-v8-spread-past-due"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
