@@ -90,4 +90,12 @@ export {
   type ObligationCategory,
   type ObligationDetail,
 } from "./obligations";
+export {
+  getInvoiceDiscrepancies,
+  type InvoiceDiscrepanciesSummary,
+  type DiscrepancyCategory,
+  type DiscrepancyInvoice,
+  type DiscrepancyKind,
+  type InvoiceDirection,
+} from "./invoice-discrepancies";
 export { periodBoundsForRange, daysBetween } from "./_period";
