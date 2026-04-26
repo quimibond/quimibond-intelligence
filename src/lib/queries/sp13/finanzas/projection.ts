@@ -82,6 +82,29 @@ export interface CashProjectionMarker {
   categoryLabel: string;
 }
 
+/**
+ * Evento individual del cashflow para drill-down. A diferencia de los
+ * markers (que solo emite eventos ≥$50k para pintar burbujas en el chart),
+ * `events` contiene TODOS los flujos modelados: cada factura AR, cada AP,
+ * cada recurrente, cada SO pipeline tier, y residual de run rate por
+ * cliente. Permite que la timeline expanda una semana y vea todo.
+ */
+export interface ProjectionEvent {
+  date: string; // YYYY-MM-DD ISO
+  kind: "inflow" | "outflow";
+  /** Monto que mueve la curva (con probabilidad aplicada para inflows). */
+  amountMxn: number;
+  /** Monto nominal antes de probability discount (para AP = igual a amount). */
+  nominalAmountMxn: number;
+  label: string;
+  category: string;
+  categoryLabel: string;
+  probability: number | null;
+  companyId: number | null;
+  counterpartyName: string | null;
+  daysOverdue: number | null;
+}
+
 export interface CustomerCashflowRow {
   customerId: number; // Bronze companies.id
   customerName: string;
@@ -115,6 +138,10 @@ export interface CashProjection {
   safetyFloor: number;
   points: CashProjectionPoint[];
   markers: CashProjectionMarker[];
+  // TODOS los flujos individuales modelados (sin threshold, sin cap).
+  // Cada AR/AP/recurrente/SO pipeline/run rate residual aquí. Para
+  // drill-down de la timeline al expandir una semana.
+  events: ProjectionEvent[];
   // Breakdown por categoría (incluye AR/AP factura por factura + recurrentes
   // proyectados desde patrón histórico de los últimos 3 meses).
   categoryTotals: CashFlowCategoryTotal[];
@@ -337,6 +364,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const inflowByDay = new Map<string, number>();
   const outflowByDay = new Map<string, number>();
   const markers: CashProjectionMarker[] = [];
+  const events: ProjectionEvent[] = [];
+  const pushEvent = (e: ProjectionEvent) => {
+    if (e.amountMxn <= 0) return;
+    if (e.date > endIso) return;
+    events.push(e);
+  };
   const MARKER_THRESHOLD = 50000;
 
   let totalInflow = 0;
@@ -438,6 +471,22 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         "inflow",
         expected
       );
+      pushEvent({
+        date,
+        kind: "inflow",
+        amountMxn: expected,
+        nominalAmountMxn: nominal,
+        label: r.invoice_name ?? "Cobranza AR",
+        category: "ar_cobranza",
+        categoryLabel: "Cobranza AR (factura emitida)",
+        probability:
+          r.collection_probability == null
+            ? null
+            : Number(r.collection_probability),
+        companyId: r.company_id,
+        counterpartyName: null,
+        daysOverdue: r.days_overdue ?? null,
+      });
       if (r.company_id != null && date <= endIso) {
         bucket1WeightedByCustomer.set(
           r.company_id,
@@ -467,6 +516,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         "outflow",
         nominal
       );
+      pushEvent({
+        date,
+        kind: "outflow",
+        amountMxn: nominal,
+        nominalAmountMxn: nominal,
+        label: r.invoice_name ?? "Pago a proveedor",
+        category: "ap_proveedores",
+        categoryLabel: "AP a proveedores (factura recibida)",
+        probability: null,
+        companyId: r.company_id,
+        counterpartyName: null,
+        daysOverdue: r.days_overdue ?? null,
+      });
     }
 
     const amtForMarker = isInflow ? expected : nominal;
@@ -600,6 +662,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       "inflow",
       expected
     );
+    pushEvent({
+      date: paymentDateIso,
+      kind: "inflow",
+      amountMxn: expected,
+      nominalAmountMxn: nominal,
+      label: header.name ? `${header.name} ${suffix}` : `SO ${suffix}`,
+      category: "ventas_confirmadas",
+      categoryLabel: "Ventas confirmadas (SO sin facturar)",
+      probability,
+      companyId: header.company_id,
+      counterpartyName: null,
+      daysOverdue: null,
+    });
     if (expected >= MARKER_THRESHOLD) {
       markers.push({
         date: paymentDateIso,
@@ -807,6 +882,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
           "inflow",
           bucket3Expected
         );
+        pushEvent({
+          date: paymentDate,
+          kind: "inflow",
+          amountMxn: bucket3Expected,
+          nominalAmountMxn: residualNominal,
+          label: "Run rate residual (cliente activo)",
+          category: "runrate_clientes",
+          categoryLabel: "Run rate (clientes activos, demanda nueva)",
+          probability: RUN_RATE_PROBABILITY,
+          companyId: bronzeId,
+          counterpartyName: null,
+          daysOverdue: null,
+        });
       }
     }
     customerBreakdown.set(bronzeId, {
@@ -816,19 +904,33 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     });
   }
 
-  // Resolver display_name de los top customers (para la tabla UI)
+  // Resolver display_name de TODAS las counterparties referenciadas:
+  // top customers (breakdownIds) + counterparties de eventos (AR, AP, SO).
+  // Sirve para la tabla de breakdown UI y para los nombres en la timeline
+  // expandida (drill-down de cada evento).
   const breakdownIds = [...customerBreakdown.keys()];
+  const eventCompanyIds = new Set<number>();
+  for (const ev of events) {
+    if (ev.companyId != null) eventCompanyIds.add(ev.companyId);
+  }
+  const allNameIds = new Set<number>([...breakdownIds, ...eventCompanyIds]);
   const customerNames = new Map<number, string>();
-  if (breakdownIds.length > 0) {
-    const { data: nameRows } = await sb
-      .from("companies")
-      .select("id, name")
-      .in("id", breakdownIds);
-    for (const r of (nameRows ?? []) as Array<{
-      id: number | null;
-      name: string | null;
-    }>) {
-      if (r.id != null) customerNames.set(r.id, r.name ?? `#${r.id}`);
+  if (allNameIds.size > 0) {
+    const ids = [...allNameIds];
+    // Chunk para evitar URLs gigantes con .in()
+    const chunkSize = 200;
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const { data: nameRows } = await sb
+        .from("companies")
+        .select("id, name")
+        .in("id", chunk);
+      for (const r of (nameRows ?? []) as Array<{
+        id: number | null;
+        name: string | null;
+      }>) {
+        if (r.id != null) customerNames.set(r.id, r.name ?? `#${r.id}`);
+      }
     }
   }
   // Construir tabla — incluir clientes con expectedHorizon ≥ 50k para evitar
@@ -898,10 +1000,36 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       inflowByDay.set(date, (inflowByDay.get(date) ?? 0) + amount);
       totalInflow += amount;
       addToCategory(r.category, r.category_label, "inflow", amount);
+      pushEvent({
+        date,
+        kind: "inflow",
+        amountMxn: amount,
+        nominalAmountMxn: amount,
+        label: r.category_label,
+        category: r.category,
+        categoryLabel: r.category_label,
+        probability: r.probability == null ? null : Number(r.probability),
+        companyId: null,
+        counterpartyName: null,
+        daysOverdue: null,
+      });
     } else {
       outflowByDay.set(date, (outflowByDay.get(date) ?? 0) + amount);
       totalOutflow += amount;
       addToCategory(r.category, r.category_label, "outflow", amount);
+      pushEvent({
+        date,
+        kind: "outflow",
+        amountMxn: amount,
+        nominalAmountMxn: amount,
+        label: r.category_label,
+        category: r.category,
+        categoryLabel: r.category_label,
+        probability: r.probability == null ? null : Number(r.probability),
+        companyId: null,
+        counterpartyName: null,
+        daysOverdue: null,
+      });
       // Marker visible para outflows recurrentes grandes
       if (amount >= MARKER_THRESHOLD) {
         markers.push({
@@ -970,6 +1098,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     safetyFloor: 500000,
     points,
     markers: markers.slice(0, 40),
+    events: events.map((e) => ({
+      ...e,
+      counterpartyName:
+        e.counterpartyName ??
+        (e.companyId != null ? customerNames.get(e.companyId) ?? null : null),
+    })),
     categoryTotals,
     customerInflowBreakdown,
   };
@@ -977,7 +1111,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v13-customer-breakdown"],
+  ["sp13-finanzas-cash-projection-v14-events"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

@@ -7,6 +7,7 @@ import {
   Banknote,
   Building2,
   CalendarClock,
+  ChevronRight,
   CreditCard,
   FileText,
   FileX,
@@ -61,8 +62,8 @@ import {
   getWorkingCapital,
   getCashProjection,
   type CashFlowCategoryTotal,
-  type CashProjectionMarker,
   type CustomerCashflowRow,
+  type ProjectionEvent,
   getBankDetail,
   getDriftSummary,
   getBalanceSheet,
@@ -2406,7 +2407,7 @@ async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
       <CashProjectionChart projection={proj} />
 
       <ProjectionTimeline
-        markers={proj.markers}
+        events={proj.events}
         horizonDays={proj.horizonDays}
       />
 
@@ -2736,20 +2737,19 @@ function CustomerInflowBreakdownTable({
   );
 }
 
-/* Timeline de eventos próximos: agrupa markers por semana ─────────────── */
+/* Timeline de eventos: agrupa TODO el detalle por semana, expandible ──── */
 function ProjectionTimeline({
-  markers,
+  events,
   horizonDays,
 }: {
-  markers: CashProjectionMarker[];
+  events: ProjectionEvent[];
   horizonDays: number;
 }) {
-  if (markers.length === 0) return null;
+  if (events.length === 0) return null;
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
 
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  // Semana inicia lunes (getDay: 0=dom, 1=lun)
   const startOfWeek = (d: Date): Date => {
     const out = new Date(d);
     const dow = out.getDay();
@@ -2781,20 +2781,20 @@ function ProjectionTimeline({
     return `${startTxt} – ${endTxt}`;
   };
 
-  // Agrupa markers por iso de inicio de semana
-  const byWeek = new Map<string, CashProjectionMarker[]>();
-  for (const m of markers) {
-    const wk = startOfWeek(new Date(m.date));
+  // Agrupa TODOS los eventos por iso de inicio de semana
+  const byWeek = new Map<string, ProjectionEvent[]>();
+  for (const e of events) {
+    const wk = startOfWeek(new Date(e.date));
     const key = wk.toISOString().slice(0, 10);
     const arr = byWeek.get(key) ?? [];
-    arr.push(m);
+    arr.push(e);
     byWeek.set(key, arr);
   }
 
   const sortedWeeks = Array.from(byWeek.entries())
     .map(([key, items]) => ({ key, items, weekStart: new Date(key) }))
     .sort((a, b) => a.weekStart.getTime() - b.weekStart.getTime())
-    .slice(0, 5);
+    .slice(0, 12); // hasta 12 semanas (cubre horizonte 90d)
 
   if (sortedWeeks.length === 0) return null;
 
@@ -2807,12 +2807,19 @@ function ProjectionTimeline({
     return `Semana del ${fmtWeekRange(weekStart)}`;
   };
 
-  const catTone = (m: CashProjectionMarker): string => {
-    if (m.kind === "inflow")
+  const catTone = (e: ProjectionEvent): string => {
+    if (e.kind === "inflow") {
+      if (e.category === "ar_cobranza")
+        return "bg-success/10 text-success border-success/30";
+      if (e.category === "ventas_confirmadas")
+        return "bg-info/10 text-info border-info/30";
+      if (e.category === "runrate_clientes")
+        return "bg-warning/10 text-warning border-warning/30";
       return "bg-success/10 text-success border-success/30";
-    if (m.category === "impuestos_sat")
+    }
+    if (e.category === "impuestos_sat")
       return "bg-warning/10 text-warning border-warning/30";
-    if (m.category === "nomina")
+    if (e.category === "nomina")
       return "bg-primary/10 text-primary border-primary/30";
     return "bg-destructive/10 text-destructive border-destructive/30";
   };
@@ -2822,84 +2829,142 @@ function ProjectionTimeline({
       <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground sm:px-4">
         <span>Calendario de eventos · próximos {horizonDays}d</span>
         <span className="font-normal normal-case tracking-normal">
-          {markers.length} eventos ≥ $50k
+          {events.length} eventos · click semana para ver detalle
         </span>
       </div>
       <div className="divide-y">
-        {sortedWeeks.map(({ key, items, weekStart }) => {
+        {sortedWeeks.map(({ key, items, weekStart }, weekIdx) => {
           const totalIn = items
-            .filter((m) => m.kind === "inflow")
-            .reduce((s, m) => s + m.amount, 0);
+            .filter((e) => e.kind === "inflow")
+            .reduce((s, e) => s + e.amountMxn, 0);
           const totalOut = items
-            .filter((m) => m.kind === "outflow")
-            .reduce((s, m) => s + m.amount, 0);
+            .filter((e) => e.kind === "outflow")
+            .reduce((s, e) => s + e.amountMxn, 0);
           const net = totalIn - totalOut;
+          const inflowCount = items.filter((e) => e.kind === "inflow").length;
+          const outflowCount = items.filter((e) => e.kind === "outflow").length;
+          // Default open: las primeras 2 semanas (esta + próxima)
+          const defaultOpen = weekIdx < 2;
+          // Sort: por monto desc dentro de la semana (más impactante arriba)
+          const sortedItems = [...items].sort(
+            (a, b) => b.amountMxn - a.amountMxn
+          );
           return (
-            <div key={key}>
-              <div className="flex items-baseline justify-between gap-3 bg-muted/15 px-3 py-1.5 text-xs sm:px-4">
+            <details
+              key={key}
+              open={defaultOpen}
+              className="group [&_summary::-webkit-details-marker]:hidden"
+            >
+              <summary className="flex cursor-pointer list-none items-baseline justify-between gap-3 bg-muted/15 px-3 py-2 text-xs hover:bg-muted/30 sm:px-4">
                 <div className="flex items-baseline gap-2">
+                  <ChevronRight
+                    className="size-3 shrink-0 self-center transition-transform group-open:rotate-90"
+                    aria-hidden
+                  />
                   <span className="font-semibold">{weekLabel(weekStart)}</span>
                   <span className="text-[11px] text-muted-foreground">
                     {fmtWeekRange(weekStart)}
                   </span>
                 </div>
-                <span
-                  className={cn(
-                    "tabular-nums",
-                    net >= 0 ? "text-success" : "text-destructive"
-                  )}
-                >
-                  Net {net >= 0 ? "+" : ""}
-                  {fmt(net)}
-                </span>
-              </div>
+                <div className="flex items-baseline gap-3 text-[11px]">
+                  <span className="text-success tabular-nums">
+                    +{fmt(totalIn)}
+                    <span className="ml-0.5 text-[10px] text-muted-foreground">
+                      ({inflowCount})
+                    </span>
+                  </span>
+                  <span className="text-destructive tabular-nums">
+                    −{fmt(totalOut)}
+                    <span className="ml-0.5 text-[10px] text-muted-foreground">
+                      ({outflowCount})
+                    </span>
+                  </span>
+                  <span
+                    className={cn(
+                      "min-w-[80px] text-right font-semibold tabular-nums",
+                      net >= 0 ? "text-success" : "text-destructive"
+                    )}
+                  >
+                    Net {net >= 0 ? "+" : ""}
+                    {fmt(net)}
+                  </span>
+                </div>
+              </summary>
               <div className="divide-y">
-                {items
-                  .sort((a, b) => a.date.localeCompare(b.date))
-                  .map((m, i) => (
+                {sortedItems.map((e, i) => {
+                  const counterpartyHref =
+                    e.companyId != null ? `/empresas/${e.companyId}` : null;
+                  const counterpartyText =
+                    e.counterpartyName ?? e.label ?? "—";
+                  return (
                     <div
-                      key={`${m.date}-${i}`}
+                      key={`${e.date}-${i}`}
                       className="flex items-center gap-3 px-3 py-1.5 text-sm sm:px-4"
                     >
                       <div className="w-[110px] shrink-0 text-[11px] tabular-nums text-muted-foreground">
-                        {fmtDayShort(m.date)}
+                        {fmtDayShort(e.date)}
                       </div>
                       <span
                         className={cn(
                           "shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-medium",
-                          catTone(m)
+                          catTone(e)
                         )}
                       >
-                        {m.categoryLabel}
+                        {e.categoryLabel}
                       </span>
-                      <div className="min-w-0 flex-1 truncate text-[12px] text-muted-foreground">
-                        {m.label || (m.kind === "inflow" ? "Cobranza" : "Pago")}
-                        {m.atRisk && (
-                          <span className="ml-1 text-[10px] text-warning">
-                            · vencido
+                      <div className="min-w-0 flex-1 truncate text-[12px]">
+                        {counterpartyHref ? (
+                          <Link
+                            href={counterpartyHref}
+                            className="hover:underline"
+                          >
+                            {counterpartyText}
+                          </Link>
+                        ) : (
+                          <span className="text-muted-foreground">
+                            {counterpartyText}
                           </span>
                         )}
-                        {m.probability != null && m.kind === "inflow" && (
-                          <span className="ml-1 text-[10px]">
-                            · {Math.round(m.probability * 100)}%
+                        {e.label && e.counterpartyName && e.label !== e.counterpartyName && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            · {e.label}
+                          </span>
+                        )}
+                        {(e.daysOverdue ?? 0) > 0 && (
+                          <span className="ml-1 text-[10px] text-warning">
+                            · vencido {e.daysOverdue}d
+                          </span>
+                        )}
+                        {e.probability != null && e.kind === "inflow" && (
+                          <span className="ml-1 text-[10px] text-muted-foreground">
+                            · {Math.round(e.probability * 100)}%
                           </span>
                         )}
                       </div>
-                      <div
-                        className={cn(
-                          "shrink-0 text-right text-sm font-medium tabular-nums",
-                          m.kind === "inflow"
-                            ? "text-success"
-                            : "text-destructive"
-                        )}
-                      >
-                        {m.kind === "inflow" ? "+" : "−"}
-                        {fmt(m.amount)}
+                      <div className="shrink-0 text-right">
+                        <div
+                          className={cn(
+                            "text-sm font-medium tabular-nums",
+                            e.kind === "inflow"
+                              ? "text-success"
+                              : "text-destructive"
+                          )}
+                        >
+                          {e.kind === "inflow" ? "+" : "−"}
+                          {fmt(e.amountMxn)}
+                        </div>
+                        {e.kind === "inflow" &&
+                          e.nominalAmountMxn > e.amountMxn && (
+                            <div className="text-[10px] text-muted-foreground tabular-nums">
+                              de {fmt(e.nominalAmountMxn)} nominal
+                            </div>
+                          )}
                       </div>
                     </div>
-                  ))}
+                  );
+                })}
               </div>
-            </div>
+            </details>
           );
         })}
       </div>
