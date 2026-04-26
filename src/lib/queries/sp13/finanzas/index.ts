@@ -28,6 +28,10 @@ export {
   type CustomerCreditScoreSummary,
   type CreditTier,
 } from "./customer-credit-score";
+export {
+  getCashConversionCycle,
+  type CashConversionCycleSnapshot,
+} from "./cash-conversion-cycle";
 export { getBankDetail, type BankAccountDetail } from "./bank-detail";
 export { getDriftSummary, type DriftSummary, type DriftMonth } from "./drift";
 export {
