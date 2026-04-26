@@ -275,8 +275,18 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     probability: number | string | null;
     notes: string | null;
   };
+  // Estas categorías llegan como factura del proveedor (arrendador, CFE,
+  // Telmex, etc.) y entran al cashflow_projection vía AP. Si la fecha
+  // proyectada del recurrente cae en el pasado del mes corriente, asumimos
+  // que la factura ya está en el AP y NO la duplicamos via overlay.
+  // Nómina + impuestos_sat + ventas_proyectadas no llegan como factura,
+  // siempre se proyectan.
+  const FACTURED_CATS = new Set(["renta", "servicios", "arrendamiento"]);
   const recRows = (recurringRes.data ?? []) as RecRow[];
   for (const r of recRows) {
+    if (FACTURED_CATS.has(r.category) && r.projected_date < todayIso) {
+      continue;
+    }
     const date = r.projected_date < todayIso ? todayIso : r.projected_date;
     const amount = Number(r.amount_mxn) || 0;
     if (amount <= 0) continue;
@@ -363,7 +373,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v5"],
+  ["sp13-finanzas-cash-projection-v6"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
