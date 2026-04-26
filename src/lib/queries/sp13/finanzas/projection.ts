@@ -891,37 +891,60 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     let bucket3Expected = 0;
     if (residualNominal > 0) {
       const arDelay = arDelayMap.get(bronzeId) ?? 30;
-      const midpointOffset = Math.floor(horizonDays / 2);
-      const orderDate = shiftDate(todayIso, midpointOffset);
-      const invoiceDate = shiftDate(orderDate, CFDI_EMISSION_LAG_DAYS);
-      const paymentDate = shiftDate(invoiceDate, Math.max(arDelay, 0));
-      if (paymentDate <= endIso) {
-        bucket3Expected = residualNominal * RUN_RATE_PROBABILITY;
-        inflowByDay.set(
-          paymentDate,
-          (inflowByDay.get(paymentDate) ?? 0) + bucket3Expected
-        );
-        totalInflow += bucket3Expected;
+      // Distribuir el residual SEMANALMENTE sobre el horizonte (no
+      // concentrar en midpoint+delay, que apilaba 50+ clientes en una
+      // misma fecha generando pico artificial). El cliente típicamente
+      // coloca varias órdenes a lo largo del horizonte y cobra en
+      // cadencia ~semanal. Modelo:
+      //   - Primer cobro = today + ar_delay + dayOffset (0-6 stable hash
+      //     del bronzeId) → cada cliente cae en día distinto de la semana,
+      //     evita que todos los clientes con mismo delay se apilen.
+      //   - Subsecuentes = cada 7 días hasta endDate
+      //   - Monto por cobro = residual_weighted / # cobros caben
+      const dayOffset = stableHash(`runrate-${bronzeId}`) % 7;
+      const firstPayDate = shiftDate(todayIso, arDelay + dayOffset);
+      // Generar fechas de pago semanales dentro del horizonte
+      const paymentDates: string[] = [];
+      const cursor = new Date(firstPayDate);
+      while (cursor <= endDate) {
+        paymentDates.push(toIso(cursor));
+        cursor.setDate(cursor.getDate() + 7);
+      }
+      if (paymentDates.length === 0) {
+        // ar_delay > horizonte → todo el residual cae fuera; ignorar.
+        bucket3Expected = 0;
+      } else {
+        const weightedTotal = residualNominal * RUN_RATE_PROBABILITY;
+        const perPayment = weightedTotal / paymentDates.length;
+        const nominalPerPayment = residualNominal / paymentDates.length;
+        bucket3Expected = weightedTotal;
+        totalInflow += weightedTotal;
         totalInflowNominal += residualNominal;
         addToCategory(
           "runrate_clientes",
           "Run rate (clientes activos, demanda nueva)",
           "inflow",
-          bucket3Expected
+          weightedTotal
         );
-        pushEvent({
-          date: paymentDate,
-          kind: "inflow",
-          amountMxn: bucket3Expected,
-          nominalAmountMxn: residualNominal,
-          label: "Run rate residual (cliente activo)",
-          category: "runrate_clientes",
-          categoryLabel: "Run rate (clientes activos, demanda nueva)",
-          probability: RUN_RATE_PROBABILITY,
-          companyId: bronzeId,
-          counterpartyName: null,
-          daysOverdue: null,
-        });
+        for (const payDate of paymentDates) {
+          inflowByDay.set(
+            payDate,
+            (inflowByDay.get(payDate) ?? 0) + perPayment
+          );
+          pushEvent({
+            date: payDate,
+            kind: "inflow",
+            amountMxn: perPayment,
+            nominalAmountMxn: nominalPerPayment,
+            label: "Run rate residual (cliente activo)",
+            category: "runrate_clientes",
+            categoryLabel: "Run rate (clientes activos, demanda nueva)",
+            probability: RUN_RATE_PROBABILITY,
+            companyId: bronzeId,
+            counterpartyName: null,
+            daysOverdue: null,
+          });
+        }
       }
     }
     customerBreakdown.set(bronzeId, {
@@ -1377,7 +1400,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v16-nomina-cfdi"],
+  ["sp13-finanzas-cash-projection-v17-runrate-distributed"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
