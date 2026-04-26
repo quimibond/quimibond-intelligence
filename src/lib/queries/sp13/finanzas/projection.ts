@@ -51,14 +51,24 @@ import { getServiceClient } from "@/lib/supabase-server";
  * → 1.16; SOs con líneas mixtas → blended. Default 1.16 sólo si header
  * viene con totales 0/null (raro).
  *
- * Modelo de tres capas para inflows (sin duplicación):
+ * Modelo SIMÉTRICO de tres capas:
+ *
+ * INFLOWS (sin duplicación):
  *   1. AR ya facturado (cashflow_projection.receivable_detail) — con IVA
  *   2. SO confirmadas pero no facturadas — con IVA via tax factor
  *   3. Run rate per cliente activo (last 90d / 3 = monthly avg con IVA),
- *      descontando bucket 1+2 weighted en horizonte para evitar duplicar.
- *      Probabilidad 0.70 (estadístico). Reemplaza `ventas_proyectadas`
- *      del RPC recurring (que era proxy global, no per-customer, y
- *      duplicaba con AR existente).
+ *      descontando bucket 1+2 weighted en horizonte. Prob 0.70.
+ *      Reemplaza `ventas_proyectadas` del RPC recurring.
+ *
+ * OUTFLOWS (sin duplicación):
+ *   1. AP ya facturado (cashflow_projection.payable_detail)
+ *   2. Recurrentes calendarizados (nómina semanal+quincenal con CFDIs SAT,
+ *      renta día 1, servicios día 10, arrendamiento día 5, impuestos SAT
+ *      día 17, aguinaldo 20-dic)
+ *   3. Run rate per proveedor activo (last 90d / 3 = monthly avg con IVA),
+ *      descontando bucket 1 (apCommittedBySupplier) en horizonte para
+ *      evitar duplicar. Prob 0.80 (compras más predecibles que ventas).
+ *      Categoría 'runrate_proveedores'.
  *
  * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
  */
@@ -270,16 +280,34 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // Tomamos los últimos 90 días de canonical_invoices issued con IVA
   // (amount_total_mxn_resolved) — es el cash que el cliente NOS paga.
   const customerLookbackIso = toIso(new Date(today.getTime() - 90 * 86400000));
-  const customerInvRes = await sb
-    .from("canonical_invoices")
-    .select(
-      "receptor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
-    )
-    .eq("direction", "issued")
-    .eq("is_quimibond_relevant", true)
-    .or("estado_sat.is.null,estado_sat.neq.cancelado")
-    .gte("invoice_date", customerLookbackIso)
-    .gt("amount_total_mxn_resolved", 0);
+  const [customerInvRes, supplierInvRes] = await Promise.all([
+    sb
+      .from("canonical_invoices")
+      .select(
+        "receptor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
+      )
+      .eq("direction", "issued")
+      .eq("is_quimibond_relevant", true)
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
+      .gte("invoice_date", customerLookbackIso)
+      .gt("amount_total_mxn_resolved", 0),
+    // Idéntico para proveedores: run rate de COMPRAS nuevas esperadas.
+    // Sin esto, el modelo era asimétrico (3 capas de inflow vs 2 de
+    // outflow) y subestimaba los outflows porque solo proyectaba AP
+    // existente + recurrentes. La realidad: la empresa va a recibir
+    // facturas NUEVAS de proveedores en el horizonte que aún no están
+    // registradas hoy.
+    sb
+      .from("canonical_invoices")
+      .select(
+        "emisor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
+      )
+      .eq("direction", "received")
+      .eq("is_quimibond_relevant", true)
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
+      .gte("invoice_date", customerLookbackIso)
+      .gt("amount_total_mxn_resolved", 0),
+  ]);
 
   // Set autoritativo de Bronze company.id para partes relacionadas.
   // Source of truth: canonical_companies.is_related_party = true (marcado
@@ -409,6 +437,9 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // ya emitidas, con IVA — amount_residual incluye impuestos). Usado en
   // capa 3 para no duplicar con run rate.
   const bucket1WeightedByCustomer = new Map<number, number>();
+  // Idem para AP por proveedor (egreso de facturas ya recibidas).
+  // Usado para descontar al run rate de compras y evitar duplicar.
+  const apCommittedBySupplier = new Map<number, number>();
 
   // Acumulador de totales por categoría
   const categoryAcc = new Map<
@@ -543,6 +574,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         "outflow",
         nominal
       );
+      if (r.company_id != null && date <= endIso) {
+        apCommittedBySupplier.set(
+          r.company_id,
+          (apCommittedBySupplier.get(r.company_id) ?? 0) + nominal
+        );
+      }
       pushEvent({
         date,
         kind: "outflow",
@@ -1010,6 +1047,144 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   }
   customerInflowBreakdown.sort((a, b) => b.totalExpectedMxn - a.totalExpectedMxn);
 
+  // ── Capa 3 OUTFLOW: Run rate por proveedor activo (last 90d) ──────────
+  // Simétrico a la capa 3 de inflow (clientes). Para cada proveedor con
+  // facturación recibida en últimos 90d, proyecta su demanda mensual
+  // promedio (con IVA — total que pagamos), descontando:
+  //   - AP committed (capa 1): salidas weighted en horizonte para ese
+  //     proveedor que ya están en cashflow_projection.
+  //   - Recurrentes ya separados (renta, servicios, arrendamiento, SAT,
+  //     IMSS): NO se descuentan aquí porque viven en su propia categoría
+  //     (proveedor LEPEZO sí entra al run rate, pero ya lo descontamos
+  //     vía apCommittedBySupplier si tiene AP abierto).
+  //
+  // Probabilidad 0.80 (ligeramente mayor que clientes 0.70 — las compras
+  // a proveedores son más predecibles porque hay contratos y necesidades
+  // operativas constantes).
+  //
+  // Distribución: semanal con offset por hash del bronze id (mismo
+  // algoritmo que clientes para evitar concentración artificial).
+  // Usa ap_delay del proveedor para fechar el primer pago.
+  type SupplierInvRow = {
+    emisor_canonical_company_id: number | null;
+    amount_total_mxn_resolved: number | null;
+    invoice_date: string | null;
+  };
+  const supplierInvRows = (supplierInvRes.data ?? []) as SupplierInvRow[];
+
+  // Resolver canonical → bronze para emisores
+  const supplierCanonicalIds = new Set<number>();
+  for (const r of supplierInvRows) {
+    if (r.emisor_canonical_company_id != null) {
+      supplierCanonicalIds.add(r.emisor_canonical_company_id);
+    }
+  }
+  const supplierCanonicalToBronze = new Map<number, number>();
+  if (supplierCanonicalIds.size > 0) {
+    const ids = [...supplierCanonicalIds];
+    const { data: ccData } = await sb
+      .from("canonical_companies")
+      .select("id, odoo_partner_id")
+      .in("id", ids)
+      .not("odoo_partner_id", "is", null);
+    type CcRow = { id: number | null; odoo_partner_id: number | null };
+    const partnerIds: number[] = [];
+    const ccByPartner = new Map<number, number>();
+    for (const c of (ccData ?? []) as CcRow[]) {
+      if (c.id != null && c.odoo_partner_id != null) {
+        partnerIds.push(c.odoo_partner_id);
+        ccByPartner.set(c.odoo_partner_id, c.id);
+      }
+    }
+    if (partnerIds.length > 0) {
+      const chunkSize = 200;
+      for (let i = 0; i < partnerIds.length; i += chunkSize) {
+        const chunk = partnerIds.slice(i, i + chunkSize);
+        const { data: bronzeData } = await sb
+          .from("companies")
+          .select("id, odoo_partner_id")
+          .in("odoo_partner_id", chunk);
+        for (const b of (bronzeData ?? []) as Array<{
+          id: number | null;
+          odoo_partner_id: number | null;
+        }>) {
+          if (b.id != null && b.odoo_partner_id != null) {
+            const cid = ccByPartner.get(b.odoo_partner_id);
+            if (cid != null) supplierCanonicalToBronze.set(cid, b.id);
+          }
+        }
+      }
+    }
+  }
+
+  // Run rate mensual por proveedor: SUM(received last 90d con IVA) / 3
+  const monthlySupplierRunRate = new Map<number, number>();
+  for (const r of supplierInvRows) {
+    const cid = r.emisor_canonical_company_id;
+    if (cid == null) continue;
+    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    monthlySupplierRunRate.set(
+      cid,
+      (monthlySupplierRunRate.get(cid) ?? 0) + amt
+    );
+  }
+  const SUPPLIER_RUN_RATE_PROBABILITY = 0.8;
+  for (const [canonicalId, lookbackTotal] of monthlySupplierRunRate) {
+    const monthlyAvg = lookbackTotal / 3;
+    if (monthlyAvg <= 0) continue;
+    const bronzeId = supplierCanonicalToBronze.get(canonicalId);
+    if (bronzeId == null) continue;
+    if (relatedPartyIds.has(bronzeId)) continue; // intercompañía fuera
+
+    const expectedInHorizon = monthlyAvg * horizonProportion;
+    const apCommitted = apCommittedBySupplier.get(bronzeId) ?? 0;
+    const residualNominal = Math.max(0, expectedInHorizon - apCommitted);
+    if (residualNominal <= 0) continue;
+
+    const apDelay = apDelayMap.get(bronzeId)?.delayDays ?? 30;
+    const dayOffset = stableHash(`runrate-supplier-${bronzeId}`) % 7;
+    const firstPayDate = shiftDate(todayIso, apDelay + dayOffset);
+
+    const paymentDates: string[] = [];
+    const cursor = new Date(firstPayDate);
+    while (cursor <= endDate) {
+      paymentDates.push(toIso(cursor));
+      cursor.setDate(cursor.getDate() + 7);
+    }
+    if (paymentDates.length === 0) continue;
+
+    const weightedTotal = residualNominal * SUPPLIER_RUN_RATE_PROBABILITY;
+    const perPayment = weightedTotal / paymentDates.length;
+    const nominalPerPayment = residualNominal / paymentDates.length;
+
+    totalOutflow += weightedTotal;
+    addToCategory(
+      "runrate_proveedores",
+      "Run rate (compras nuevas a proveedores)",
+      "outflow",
+      weightedTotal
+    );
+    for (const payDate of paymentDates) {
+      outflowByDay.set(
+        payDate,
+        (outflowByDay.get(payDate) ?? 0) + perPayment
+      );
+      pushEvent({
+        date: payDate,
+        kind: "outflow",
+        amountMxn: perPayment,
+        nominalAmountMxn: nominalPerPayment,
+        label: "Run rate compras (proveedor activo)",
+        category: "runrate_proveedores",
+        categoryLabel: "Run rate (compras nuevas a proveedores)",
+        probability: SUPPLIER_RUN_RATE_PROBABILITY,
+        companyId: bronzeId,
+        counterpartyName: null,
+        daysOverdue: null,
+      });
+    }
+  }
+
   // ── Nómina client-side basada en CFDIs SAT ────────────────────────────
   // Source of truth: syntage_invoices tipo='N' direction='issued'
   // (CFDIs de nómina que la empresa emite a cada empleado).
@@ -1400,7 +1575,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v17-runrate-distributed"],
+  ["sp13-finanzas-cash-projection-v18-supplier-runrate"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
