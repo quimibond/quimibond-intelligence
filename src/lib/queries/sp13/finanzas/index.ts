@@ -35,6 +35,11 @@ export {
   type SupplierPriorityTier,
 } from "./supplier-priority-score";
 export {
+  getCustomerLtv,
+  type CustomerLtvRow,
+  type CustomerLtvSummary,
+} from "./customer-ltv";
+export {
   getCashConversionCycle,
   type CashConversionCycleSnapshot,
 } from "./cash-conversion-cycle";
