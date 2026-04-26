@@ -637,6 +637,72 @@ export async function getCompanyOrders(
 }
 
 // ──────────────────────────────────────────────────────────────────────────
+// Recent activity — agent_insights for /empresas/[id] Panorama tab
+// agent_insights.company_id references Bronze `companies.id`, NOT
+// canonical_companies.id. We translate via canonical_companies.odoo_partner_id
+// → companies.odoo_partner_id → companies.id.
+// ──────────────────────────────────────────────────────────────────────────
+export interface CompanyRecentInsight {
+  id: number;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low" | null;
+  state: string | null;
+  category: string | null;
+  created_at: string | null;
+}
+
+export async function getCompanyRecentInsights(
+  canonicalCompanyId: number,
+  limit = 5,
+): Promise<CompanyRecentInsight[]> {
+  const sb = getServiceClient();
+
+  const { data: cc } = await sb
+    .from("canonical_companies")
+    .select("odoo_partner_id")
+    .eq("id", canonicalCompanyId)
+    .maybeSingle();
+
+  const odooPartnerId = (cc as { odoo_partner_id?: number | null } | null)?.odoo_partner_id ?? null;
+  if (odooPartnerId == null) return [];
+
+  // Resolve Bronze company id(s) — the same partner can map to multiple
+  // Bronze rows from historical de-dup churn, so collect them all.
+  const { data: bronzeRows } = await sb
+    .from("companies")
+    .select("id")
+    .eq("odoo_partner_id", odooPartnerId);
+  const bronzeIds = (bronzeRows ?? [])
+    .map((r) => (r as { id: number }).id)
+    .filter((n): n is number => typeof n === "number");
+  if (bronzeIds.length === 0) return [];
+
+  const { data, error } = await sb
+    .from("agent_insights")
+    .select("id, title, severity, state, category, created_at")
+    .in("company_id", bronzeIds)
+    .order("created_at", { ascending: false, nullsFirst: false })
+    .limit(limit);
+  if (error) throw error;
+
+  return ((data ?? []) as Array<{
+    id: number;
+    title: string | null;
+    severity: string | null;
+    state: string | null;
+    category: string | null;
+    created_at: string | null;
+  }>).map((r) => ({
+    id: r.id,
+    title: r.title ?? "",
+    severity: (r.severity as CompanyRecentInsight["severity"]) ?? null,
+    state: r.state,
+    category: r.category,
+    created_at: r.created_at,
+  }));
+}
+
+// ──────────────────────────────────────────────────────────────────────────
 // Company Invoices — delegates to getUnifiedInvoicesForCompany (no legacy reads)
 // ──────────────────────────────────────────────────────────────────────────
 export interface CompanyInvoiceRow {

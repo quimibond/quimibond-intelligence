@@ -7,12 +7,16 @@ const {
   fetchCompanyRevenueTrendMock,
   fetchCompanyReceivablesMock,
   getCompanyDetailMock,
+  getCompanyOrdersMock,
+  getCompanyRecentInsightsMock,
 } = vi.hoisted(() => ({
   fetchCompanyByIdMock: vi.fn(),
   fetchCompany360Mock: vi.fn(),
   fetchCompanyRevenueTrendMock: vi.fn(),
   fetchCompanyReceivablesMock: vi.fn(),
   getCompanyDetailMock: vi.fn(),
+  getCompanyOrdersMock: vi.fn(async () => []),
+  getCompanyRecentInsightsMock: vi.fn(async () => []),
 }));
 
 vi.mock("@/lib/queries/_shared/companies", () => ({
@@ -21,6 +25,8 @@ vi.mock("@/lib/queries/_shared/companies", () => ({
   fetchCompanyRevenueTrend: fetchCompanyRevenueTrendMock,
   fetchCompanyReceivables: fetchCompanyReceivablesMock,
   getCompanyDetail: getCompanyDetailMock,
+  getCompanyOrders: getCompanyOrdersMock,
+  getCompanyRecentInsights: getCompanyRecentInsightsMock,
 }));
 
 vi.mock("next/navigation", () => ({

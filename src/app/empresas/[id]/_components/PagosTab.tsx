@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { Banknote } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 import {
@@ -10,6 +9,7 @@ import {
   StatusBadge,
   EmptyState,
   MobileCard,
+  QuestionSection,
   type DataTableColumn,
 } from "@/components/patterns";
 import {
@@ -134,23 +134,17 @@ async function PaymentsTable({ companyId }: { companyId: number }) {
 // ──────────────────────────────────────────────────────────────────────────
 export function PagosTab({ company }: Props) {
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Historial de pagos</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Cobros y pagos registrados en Odoo para esta empresa.
-            </p>
-          </div>
-          <DataSourceBadge source="odoo" refresh="1h" />
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
-            <PaymentsTable companyId={company.id} />
-          </Suspense>
-        </CardContent>
-      </Card>
+    <div className="space-y-6">
+      <QuestionSection
+        id="company-payments"
+        question="¿Cuándo y cuánto pagó (o cobró)?"
+        subtext="Historial de cobros y pagos sincronizados desde Odoo: fecha, tipo, monto, estado, referencia."
+        actions={<DataSourceBadge source="odoo" refresh="1h" />}
+      >
+        <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+          <PaymentsTable companyId={company.id} />
+        </Suspense>
+      </QuestionSection>
     </div>
   );
 }
