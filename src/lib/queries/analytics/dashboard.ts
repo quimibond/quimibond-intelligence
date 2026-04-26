@@ -78,7 +78,29 @@ export async function getDashboardKpis(): Promise<DashboardKpis | null> {
     return null;
   }
   if (!data) return null;
-  return data as DashboardKpis;
+  const kpis = data as DashboardKpis;
+
+  // Fill reorders_at_risk_mxn from client_reorder_predictions when the RPC
+  // omits it (current behaviour — RPC returns null because total_revenue
+  // column is not populated). Sum avg_order_value across rows whose
+  // status is overdue or at_risk; gives a directionally-correct $ figure
+  // tied to the same `predictions.reorders_overdue` count shown in the
+  // KpiCard subtitle.
+  if (kpis.predictions.reorders_at_risk_mxn == null) {
+    const { data: predRows } = await sb
+      .from("client_reorder_predictions")
+      .select("reorder_status, avg_order_value")
+      .in("reorder_status", ["overdue", "at_risk"])
+      .limit(2000);
+    const sum = ((predRows ?? []) as Array<{
+      reorder_status: string | null;
+      avg_order_value: number | null;
+    }>).reduce((s, r) => s + (Number(r.avg_order_value) || 0), 0);
+    if (sum > 0) {
+      kpis.predictions = { ...kpis.predictions, reorders_at_risk_mxn: sum };
+    }
+  }
+  return kpis;
 }
 
 // ──────────────────────────────────────────────────────────────────────────

@@ -322,8 +322,7 @@ async function Kpis() {
           value={k.operations.manufacturing_active}
           format="number"
           icon={Factory}
-          subtitle={`${k.operations.overdue_activities} actividades vencidas`}
-          tone={k.operations.overdue_activities > 100 ? "warning" : "default"}
+          subtitle="Órdenes en proceso"
           href="/operaciones"
         />
       </StatGrid>

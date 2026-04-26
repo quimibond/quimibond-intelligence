@@ -304,6 +304,10 @@ async function _getRevenueConcentrationRaw(
     rev_30d: number;
     rev_30d_prev: number;
     last_invoice_date: string | null;
+    /** First invoice in the 12-month window — used to detect one-off mega-invoices. */
+    first_invoice_date: string | null;
+    /** Distinct issued invoice count — used to filter related-party / one-off transactions. */
+    invoice_count: number;
   }
   const byCompany = new Map<number, Agg>();
   for (const r of rawInvoices) {
@@ -318,13 +322,19 @@ async function _getRevenueConcentrationRaw(
       rev_30d: 0,
       rev_30d_prev: 0,
       last_invoice_date: null,
+      first_invoice_date: null,
+      invoice_count: 0,
     };
     a.rev_12m += amount;
+    a.invoice_count += 1;
     if (d >= cutoff90) a.rev_90d += amount;
     if (d >= cutoff30) a.rev_30d += amount;
     else if (d >= cutoff60) a.rev_30d_prev += amount;
     if (a.last_invoice_date == null || r.invoice_date > a.last_invoice_date) {
       a.last_invoice_date = r.invoice_date;
+    }
+    if (a.first_invoice_date == null || r.invoice_date < a.first_invoice_date) {
+      a.first_invoice_date = r.invoice_date;
     }
     byCompany.set(id, a);
   }
@@ -345,7 +355,18 @@ async function _getRevenueConcentrationRaw(
   const ccMap = new Map<number, CC>();
   for (const c of (ccData ?? []) as CC[]) ccMap.set(c.id, c);
 
-  // Filter internal + grand total for share calc
+  // Filter:
+  //   1. is_internal=true → inter-company / self-invoicing (e.g., LEPEZO group cross-billing)
+  //   2. < 3 issued invoices in 12m → one-off transactions (sale-leaseback, scrap sale, etc.)
+  //      that wildly distort the rank because they have no MoM history.
+  //   3. < 60 days of activity span → very new accounts that haven't established
+  //      a baseline yet; tripwires would fire spuriously on the first month.
+  // The MIN_INVOICES + MIN_SPAN_DAYS filters protect us from related-party
+  // transactions that show up as "top customers" with -100% MoM (e.g.,
+  // LEASING LEPEZO showed up because of a single $13M issued invoice that
+  // looks like a sale-leaseback).
+  const MIN_INVOICES = 3;
+  const MIN_SPAN_DAYS = 60;
   const ranked: Array<{
     company_id: number;
     company_name: string;
@@ -356,6 +377,14 @@ async function _getRevenueConcentrationRaw(
   for (const [id, agg] of byCompany.entries()) {
     const cc = ccMap.get(id);
     if (cc?.is_internal) continue;
+    if (agg.invoice_count < MIN_INVOICES) continue;
+    if (agg.first_invoice_date && agg.last_invoice_date) {
+      const spanDays =
+        (new Date(agg.last_invoice_date).getTime() -
+          new Date(agg.first_invoice_date).getTime()) /
+        (86400 * 1000);
+      if (spanDays < MIN_SPAN_DAYS) continue;
+    }
     totalRev12m += agg.rev_12m;
     ranked.push({
       company_id: id,
