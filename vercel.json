@@ -87,6 +87,10 @@
     {
       "path": "/api/system/dq-check",
       "schedule": "15 */6 * * *"
+    },
+    {
+      "path": "/api/finanzas/snapshot-projection",
+      "schedule": "0 6 * * *"
     }
   ]
 }

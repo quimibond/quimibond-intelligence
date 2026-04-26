@@ -40,6 +40,13 @@ export {
   type CustomerLtvSummary,
 } from "./customer-ltv";
 export {
+  captureProjectionSnapshot,
+  getProjectionAccuracy,
+  type SnapshotCaptureResult,
+  type ProjectionAccuracySummary,
+  type AccuracyComparisonRow,
+} from "./projection-snapshots";
+export {
   getCashConversionCycle,
   type CashConversionCycleSnapshot,
 } from "./cash-conversion-cycle";
