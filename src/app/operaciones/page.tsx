@@ -4,7 +4,6 @@ import {
   CheckCircle2,
   Clock,
   Factory,
-  Package,
   Truck,
 } from "lucide-react";
 
@@ -24,12 +23,12 @@ import {
   DateDisplay,
   StatusBadge,
   EmptyState,
+  QuestionSection,
   makeSortHref,
   type DataTableColumn,
   type DataViewChartSpec,
   type DataViewMode,
 } from "@/components/patterns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
@@ -94,62 +93,53 @@ export default async function OperacionesPage({
       <SectionNav
         items={[
           { id: "kpis", label: "Resumen" },
-          { id: "otd", label: "OTD semanal" },
-          { id: "deliveries", label: "Entregas" },
-          { id: "manufacturing", label: "Manufactura" },
+          { id: "otd", label: "¿Cómo va OTD?" },
+          { id: "deliveries", label: "¿Qué entregas?" },
+          { id: "manufacturing", label: "¿Qué se produce?" },
         ]}
       />
 
       <section id="kpis" className="scroll-mt-24">
-      <Suspense
-        fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[96px] rounded-xl" />
-            ))}
-          </StatGrid>
-        }
+        <Suspense
+          fallback={
+            <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[96px] rounded-xl" />
+              ))}
+            </StatGrid>
+          }
+        >
+          <OpsHeroKpis />
+        </Suspense>
+      </section>
+
+      <QuestionSection
+        id="otd"
+        question="¿Cómo va el OTD semanal?"
+        subtext="On-time delivery últimas 12 semanas: stacked bars (a tiempo / tarde) y línea de % cumplimiento vs. meta 90%."
       >
-        <OpsHeroKpis />
-      </Suspense>
-      </section>
+        <Suspense
+          fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
+        >
+          <WeeklyChartSection />
+        </Suspense>
+      </QuestionSection>
 
-      <section id="otd" className="scroll-mt-24">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">
-            OTD semanal — últimas 12 semanas
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <Suspense
-            fallback={<Skeleton className="h-[260px] w-full rounded-md" />}
-          >
-            <WeeklyChartSection />
-          </Suspense>
-        </CardContent>
-      </Card>
-      </section>
-
-      <section id="deliveries" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Entregas</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Busca por número u origen. Filtra por estado, tipo de picking,
-              fecha programada o solo tarde.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TableViewOptions
-              paramPrefix="dl_"
-              columns={deliveryViewColumns}
-            />
-            <TableExportButton filename="deliveries" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+      <div data-table-export-root>
+        <QuestionSection
+          id="deliveries"
+          question="¿Qué entregas tengo en el piso?"
+          subtext="Busca por número u origen. Filtra por estado, tipo de picking, fecha programada o solo tarde."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <TableViewOptions
+                paramPrefix="dl_"
+                columns={deliveryViewColumns}
+              />
+              <TableExportButton filename="deliveries" />
+            </div>
+          }
+        >
           <DataTableToolbar
             paramPrefix="dl_"
             searchPlaceholder="Buscar entrega u origen…"
@@ -195,29 +185,24 @@ export default async function OperacionesPage({
           >
             <DeliveriesTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </QuestionSection>
+      </div>
 
-      <section id="manufacturing" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Manufactura</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Filtra por estado, responsable o fecha. Busca por número de
-              orden, producto u origen.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TableViewOptions
-              paramPrefix="mfg_"
-              columns={manufacturingViewColumns}
-            />
-            <TableExportButton filename="manufacturing" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+      <div data-table-export-root>
+        <QuestionSection
+          id="manufacturing"
+          question="¿Qué se está produciendo en planta?"
+          subtext="Filtra por estado, responsable o fecha. Busca por número de orden, producto u origen."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <TableViewOptions
+                paramPrefix="mfg_"
+                columns={manufacturingViewColumns}
+              />
+              <TableExportButton filename="manufacturing" />
+            </div>
+          }
+        >
           <Suspense fallback={null}>
             <ManufacturingToolbar />
           </Suspense>
@@ -226,9 +211,8 @@ export default async function OperacionesPage({
           >
             <ManufacturingTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </QuestionSection>
+      </div>
     </PageLayout>
   );
 }
