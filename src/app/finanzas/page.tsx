@@ -134,20 +134,22 @@ export default async function FinanzasPage({
       <SectionNav
         items={[
           { id: "hero", label: "Snapshot" },
-          { id: "balance-sheet", label: "Balance" },
-          { id: "pnl", label: "P&L" },
-          { id: "mp-quality", label: "Costos de MP" },
-          { id: "cash-reconciliation", label: "¿Dónde está el dinero?" },
+          { id: "projection", label: "Proyección" },
           { id: "obligations", label: "Obligaciones" },
-          { id: "discrepancies", label: "Odoo ↔ SAT" },
-          { id: "pnl-by-account", label: "Gastos por cuenta" },
+          { id: "cash-reconciliation", label: "¿Dónde está el dinero?" },
+          { id: "pnl", label: "P&L" },
+          { id: "balance-sheet", label: "Balance" },
           { id: "working-capital", label: "Capital trabajo" },
+          { id: "mp-quality", label: "Costos de MP" },
+          { id: "pnl-by-account", label: "Gastos por cuenta" },
+          { id: "discrepancies", label: "Odoo ↔ SAT" },
           { id: "fx", label: "FX" },
           { id: "tax", label: "Fiscal" },
-          { id: "projection", label: "Proyección" },
           { id: "bank-detail", label: "Detalle bancario" },
         ]}
       />
+
+      {/* ═══ Diario / accionable ════════════════════════════════════ */}
 
       {/* F1 + F2 — Hero snapshot */}
       <section id="hero" className="scroll-mt-24">
@@ -164,25 +166,18 @@ export default async function FinanzasPage({
         </Suspense>
       </section>
 
-      {/* F3.5 — Balance general */}
+      {/* F5 — Proyección */}
       <Suspense
-        fallback={<Skeleton className="h-[220px] w-full rounded-lg" />}
+        fallback={<Skeleton className="h-[380px] w-full rounded-lg" />}
       >
-        <BalanceSheetBlock />
+        <ProjectionBlock horizon={horizon} />
       </Suspense>
 
-      {/* F3 — P&L */}
+      {/* F-OBL — Obligaciones */}
       <Suspense
-        fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}
+        fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
       >
-        <PnlBlock range={plPeriod} />
-      </Suspense>
-
-      {/* F-MP-Q — Calidad de costo primo */}
-      <Suspense
-        fallback={<Skeleton className="h-[360px] w-full rounded-lg" />}
-      >
-        <MpQualityBlock range={plPeriod} />
+        <ObligationsBlock />
       </Suspense>
 
       {/* F-WTM — ¿Dónde está el dinero? */}
@@ -192,19 +187,21 @@ export default async function FinanzasPage({
         <CashReconciliationBlock range={plPeriod} />
       </Suspense>
 
-      {/* F-OBL — Obligaciones totales */}
+      {/* F3 — P&L */}
       <Suspense
-        fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
+        fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}
       >
-        <ObligationsBlock />
+        <PnlBlock range={plPeriod} />
       </Suspense>
 
-      {/* F-DISC — Discrepancias Odoo ↔ SAT */}
+      {/* F3.5 — Balance general */}
       <Suspense
-        fallback={<Skeleton className="h-[280px] w-full rounded-lg" />}
+        fallback={<Skeleton className="h-[220px] w-full rounded-lg" />}
       >
-        <InvoiceDiscrepanciesBlock />
+        <BalanceSheetBlock />
       </Suspense>
+
+      {/* ═══ Drilldowns (collapse-by-default en commit siguiente) ══ */}
 
       {/* F4 — Working capital */}
       <Suspense
@@ -213,11 +210,25 @@ export default async function FinanzasPage({
         <WorkingCapitalBlock />
       </Suspense>
 
+      {/* F-MP-Q — Calidad de costo primo */}
+      <Suspense
+        fallback={<Skeleton className="h-[360px] w-full rounded-lg" />}
+      >
+        <MpQualityBlock range={plPeriod} />
+      </Suspense>
+
       {/* F-PnL by account */}
       <Suspense
         fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
       >
         <PnlByAccountBlock range={plPeriod} />
+      </Suspense>
+
+      {/* F-DISC — Discrepancias Odoo ↔ SAT */}
+      <Suspense
+        fallback={<Skeleton className="h-[280px] w-full rounded-lg" />}
+      >
+        <InvoiceDiscrepanciesBlock />
       </Suspense>
 
       {/* F-FX */}
@@ -234,14 +245,7 @@ export default async function FinanzasPage({
         <TaxBlock range={period} />
       </Suspense>
 
-      {/* F5 — Projection */}
-      <Suspense
-        fallback={<Skeleton className="h-[380px] w-full rounded-lg" />}
-      >
-        <ProjectionBlock horizon={horizon} />
-      </Suspense>
-
-      {/* F7 — Bank detail expandable */}
+      {/* F7 — Bank detail */}
       <section id="bank-detail" className="scroll-mt-24">
         <Suspense fallback={<Skeleton className="h-[56px] w-full rounded-lg" />}>
           <BankDetailBlock />
