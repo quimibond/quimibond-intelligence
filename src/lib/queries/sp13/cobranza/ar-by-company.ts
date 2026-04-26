@@ -37,7 +37,13 @@ const SORT_MAP: Record<string, string> = {
   company: "company_name",
 };
 
-function normalizeRisk(raw: string | null | undefined): ArRiskLabel {
+/**
+ * Map raw `payment_predictions.payment_risk` string (Spanish/English with
+ * mixed casing) to the canonical 4-bucket label. Returns null for unknown
+ * inputs. Same semantics as action-list.ts — kept local to avoid cross-file
+ * coupling on unstable internal exports.
+ */
+export function normalizeRisk(raw: string | null | undefined): ArRiskLabel {
   if (!raw) return null;
   const upper = raw.toUpperCase();
   if (upper.startsWith("CRITIC")) return "critical";
@@ -45,6 +51,20 @@ function normalizeRisk(raw: string | null | undefined): ArRiskLabel {
   if (upper.startsWith("VIGIL") || upper.startsWith("WATCH")) return "watch";
   if (upper.startsWith("NORMAL")) return "normal";
   return null;
+}
+
+/**
+ * Translate UI bucket selection (subset of "1-30" | "31-60" | "61-90" | "90+")
+ * to PostgREST `.or()` fragments referencing the cash_flow_aging columns.
+ * Empty input → empty array (caller skips the filter).
+ */
+export function bucketOrFilters(buckets: string[]): string[] {
+  const out: string[] = [];
+  if (buckets.includes("1-30")) out.push("overdue_1_30.gt.0");
+  if (buckets.includes("31-60")) out.push("overdue_31_60.gt.0");
+  if (buckets.includes("61-90")) out.push("overdue_61_90.gt.0");
+  if (buckets.includes("90+")) out.push("overdue_90plus.gt.0");
+  return out;
 }
 
 export async function getArByCompany(
@@ -69,11 +89,7 @@ export async function getArByCompany(
   if (params.q) query = query.ilike("company_name", `%${params.q}%`);
 
   if (params.bucket && params.bucket.length > 0) {
-    const orParts: string[] = [];
-    if (params.bucket.includes("1-30")) orParts.push("overdue_1_30.gt.0");
-    if (params.bucket.includes("31-60")) orParts.push("overdue_31_60.gt.0");
-    if (params.bucket.includes("61-90")) orParts.push("overdue_61_90.gt.0");
-    if (params.bucket.includes("90+")) orParts.push("overdue_90plus.gt.0");
+    const orParts = bucketOrFilters(params.bucket);
     if (orParts.length > 0) query = query.or(orParts.join(","));
   }
 

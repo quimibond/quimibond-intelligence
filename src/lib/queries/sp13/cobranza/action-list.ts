@@ -21,14 +21,31 @@ export interface ActionListItem {
   score: number;
 }
 
-const RISK_WEIGHT: Record<string, number> = {
+/**
+ * Probability-of-no-pay weights used to rank overdue invoices.
+ *   critical = 90% likely to default → highest priority
+ *   abnormal = 60%
+ *   watch    = 35%
+ *   normal   = 15%
+ *   unknown  = 30% (split-the-difference default for empresas sin payment_predictions row)
+ *
+ * Exported so tests + downstream rankings can use the same scale.
+ */
+export const RISK_WEIGHT: Record<NonNullable<ActionRiskLabel>, number> = {
   critical: 0.9,
   abnormal: 0.6,
   watch: 0.35,
   normal: 0.15,
 };
 
-function normalizeRisk(raw: string | null | undefined): ActionRiskLabel {
+export const UNKNOWN_RISK_WEIGHT = 0.3;
+
+/**
+ * Map raw `payment_predictions.payment_risk` string (Spanish/English variants
+ * with mixed casing) to the canonical 4-bucket label. Returns null for unknown
+ * inputs (caller should fall back to UNKNOWN_RISK_WEIGHT).
+ */
+export function normalizeRisk(raw: string | null | undefined): ActionRiskLabel {
   if (!raw) return null;
   const upper = raw.toUpperCase();
   if (upper.startsWith("CRITIC")) return "critical";
@@ -36,6 +53,22 @@ function normalizeRisk(raw: string | null | undefined): ActionRiskLabel {
   if (upper.startsWith("VIGIL") || upper.startsWith("WATCH")) return "watch";
   if (upper.startsWith("NORMAL")) return "normal";
   return null;
+}
+
+/**
+ * Pure scoring formula for an overdue invoice.
+ *   score = amount × risk_weight × log1p(days_overdue)
+ * - amount or days <= 0 → score = 0 (caller filters out)
+ * - log1p compresses long-tail (90d ≈ 4.5, 180d ≈ 5.2)
+ */
+export function scoreInvoice(input: {
+  amount: number;
+  daysOverdue: number;
+  risk: ActionRiskLabel;
+}): number {
+  if (input.amount <= 0 || input.daysOverdue <= 0) return 0;
+  const w = input.risk ? RISK_WEIGHT[input.risk] : UNKNOWN_RISK_WEIGHT;
+  return input.amount * w * Math.log1p(input.daysOverdue);
 }
 
 async function _getActionListRaw(top: number): Promise<ActionListItem[]> {
@@ -131,9 +164,7 @@ async function _getActionListRaw(top: number): Promise<ActionListItem[]> {
       if (amt <= 0 || daysOverdue <= 0) return null;
       const cid = r.receptor_canonical_company_id;
       const risk = cid != null ? riskByCompany.get(cid) ?? null : null;
-      const riskWeight = risk ? RISK_WEIGHT[risk] : 0.3; // default for unknown risk
-      const daysFactor = Math.log1p(daysOverdue);
-      const score = amt * riskWeight * daysFactor;
+      const score = scoreInvoice({ amount: amt, daysOverdue, risk });
       const companyName =
         (cid != null ? nameFromCompanies.get(cid) : null) ??
         (cid != null ? nameFromPredictions.get(cid) : null) ??
