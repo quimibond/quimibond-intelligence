@@ -29,6 +29,12 @@ export {
   type CreditTier,
 } from "./customer-credit-score";
 export {
+  getSupplierPriorityScores,
+  type SupplierPriorityScore,
+  type SupplierPrioritySummary,
+  type SupplierPriorityTier,
+} from "./supplier-priority-score";
+export {
   getCashConversionCycle,
   type CashConversionCycleSnapshot,
 } from "./cash-conversion-cycle";
