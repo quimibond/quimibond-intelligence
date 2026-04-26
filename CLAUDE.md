@@ -761,6 +761,211 @@ o revenue se cuentan 2x.
 
 ---
 
+## /finanzas — Cash projection (modelo realista day-by-day)
+
+Sección "¿Qué va a pasar con el efectivo?" en /finanzas. Proyecta saldo
+de cash día-a-día en horizontes de 13/30/90 días. Combina cuatro
+fuentes y aplica varias correcciones para no ser ni demasiado
+optimista ni pesimista.
+
+### Fuente 1: AR/AP factura por factura — `cashflow_projection`
+
+Tabla pre-computada que tiene una fila por factura abierta:
+
+| flow_type | Significado |
+|---|---|
+| `receivable_detail` | Factura emitida (AR) — entra a cash |
+| `payable_detail` | Factura recibida (AP) — sale de cash |
+| `receivable_by_month` | Agregado mensual (ignorado en projection.ts) |
+
+Cada fila trae `projected_date = due_date_resolved`,
+`amount_residual` (residual nominal), y `expected_amount = residual ×
+collection_probability` donde la prob viene del aging bucket:
+
+| Aging | Prob |
+|---|---|
+| Fresca (no vencida) | 95% |
+| 1-30d vencida | 85% |
+| 31-60d | 70% |
+| 61-90d | 50% |
+| 90+ | 25% |
+
+Para AR usamos `expected_amount` (con prob aplicada). Para AP usamos
+`amount_residual` (al proveedor le debemos el monto completo, sin
+descuento por aging).
+
+### Fuente 2: Recurrentes — RPC `get_cash_projection_recurring`
+
+Patrón histórico de los últimos 3 meses cerrados, proyectado al
+calendario típico:
+
+| Categoría | Día del mes | Cuentas |
+|---|---|---|
+| `nomina` | 15 + último día (quincenas) | 501.06.* (excl. 0020-23) + 602.01-25 + 603.01-25 |
+| `impuestos_sat` | 17 del mes siguiente | 501.06.0020-23 (cuotas IMSS/SAR/INFONAVIT) + 602.26-29 + 603.26-29 (retenciones e ISN) |
+| `renta` | 1 | 504.01.0008 + 603.45.* |
+| `servicios` | 10 | 504.01.0002-0043 (energía/agua/gas/mtto) |
+| `arrendamiento` | 5 | 701.11.* |
+| `ventas_proyectadas` | diario, today + DSO | 4xx run rate × 0.85 prob |
+
+DSO se calcula dinámico: `AR_open / (avg_revenue / 30)`, capped
+[15, 120] días.
+
+### Fuente 3: Saldo inicial — `canonical_bank_balances`
+
+`opening = SUM(current_balance_mxn WHERE classification='cash')`.
+
+### Cuatro correcciones críticas aplicadas en projection.ts
+
+#### 1. AP delay por proveedor (RPC `get_ap_payment_delay_v2`)
+
+Antes: asumía que pagamos AP en el due date al 100%. Crash de cash falso.
+Ahora: por cada proveedor, calcular delay promedio histórico
+`payment_date_odoo - due_date_resolved` de últimos 6 meses (mín. 3
+facturas pagadas, cap 0-90d). Aplicar al `projected_date`. Si sample <10
+usa median (más robusto que avg). Sin histórico → 0d default
+(conservador, paga en due date).
+
+```
+adjustedDate = max(today, dueDate + supplierDelay)
+```
+
+#### 2. AR delay por cliente (RPC `get_ar_collection_delay_v2`)
+
+Antes: asumía cobranza en due date — optimista.
+Ahora: análogo a AP pero para AR. Cap 0-180d. La prob del aging bucket
+se mantiene (es ortogonal: el delay mide CUÁNDO, la prob mide CUÁNTO).
+
+Validación reciente: 116 clientes con histórico, 965 facturas. Mediana
+delay 9d, p75 28d, máx 172d. Promedio ponderado 22d después del
+vencimiento.
+
+#### 3. Partes relacionadas — flag `is_related_party`
+
+Columna `canonical_companies.is_related_party boolean`. Marcadas
+manualmente por RFC en migration `20260426_ap_delay_related_party.sql`:
+
+| RFC | Partner |
+|---|---|
+| GQU920609JNA | Grupo Quimibond, S.C. (matriz / holding) |
+| MITJ991130TV7 | José Jaime Mizrahi Tuachi |
+| MIDJ4003178X9 | José Mizrahi Daniel |
+| MIPJ691003QJ1 | Jacobo Mizrahi Penhos |
+| AOMS630418PP1 | Salomón Ancona Mizrahi |
+
+AP a partes relacionadas:
+- **En projection.ts**: pushed 180d fuera del horizonte. Categoría
+  separada `ap_intercompania`. NO contamina `outflowByDay` ni
+  `totalOutflow` ni markers.
+- **En obligations.ts**: cuenta 205.04 → categoría
+  `partes_relacionadas` propia. KPI principal cambia a "Operativo
+  (sin intercompañía)" y aparece KPI separado "Intercompañía".
+
+Importante: el saldo principal del $12.81M en 205.04.0001 es préstamo
+de accionista de dic-2021 sin actividad reciente — vive a nivel GL,
+no como facturas. El push 180d es preventivo (por si en el futuro
+emiten factura), no correctivo de hoy.
+
+#### 4. Anti doble-conteo recurrentes ya facturados
+
+Antes: si el arrendador emitió factura de renta de abril, entraba al
+`cashflow_projection` AP Y el recurring overlay también la proyectaba
+para el día 1. $1.37M renta contado 2x. Mismo bug con servicios y
+arrendamiento.
+
+Ahora: para las 3 categorías que llegan como factura del proveedor
+(`renta`, `servicios`, `arrendamiento`), se omite la proyección
+recurrente si `projected_date < hoy`. Asumimos que la factura del
+mes corriente ya está capturada en AP.
+
+Nómina, impuestos_sat y ventas_proyectadas siguen proyectándose
+siempre — no llegan como factura.
+
+#### 5. Past-due spread (anti-cliff)
+
+Para AR/AP que ya rebasaron su fecha esperada incluso después del
+delay, en vez de "dump on today" (cliff artificial el día 1) se
+distribuyen sobre una ventana mínima de 14 días usando un hash estable
+de `invoice_name`. Determinístico y evita que el chart muestre un
+acantilado el día de hoy cuando hay backlog grande de past-due
+(típico: ~91% del residual de Quimibond está past-due).
+
+```
+window = max(supplierDelay, 14)
+offset = stableHash(invoiceName) % window
+adjustedDate = today + offset
+```
+
+### Estructura de salida (`CashProjection`)
+
+```ts
+{
+  horizonDays: 13 | 30 | 90,
+  openingBalance, closingBalance, minBalance, minBalanceDate,
+  totalInflow, totalOutflow, totalInflowNominal,
+  avgCollectionProbability, overdueInflowCount, safetyFloor,
+  points: [{ date, balance, inflow, outflow }],     // día por día
+  markers: [{ date, kind, amount, label, category, ... }],  // ≥$50k
+  categoryTotals: [{ category, categoryLabel, flowType, amountMxn }],
+}
+```
+
+UI muestra 4 partes:
+1. **CashProjectionChart** — area chart con balance + markers coloreados
+   por categoría (verde inflow, naranja `impuestos_sat`, rojo outflow)
+2. **ProjectionTimeline** — eventos agrupados por semana ("Esta
+   semana", "Próxima semana", "Semana del X-Y") con net por semana
+3. **CashCategoryBreakdown** — totales por categoría (inflow/outflow)
+4. **SummaryStat** — saldo inicial / inflows / outflows / saldo proyectado
+
+### Archivos
+
+| Archivo | Qué hace |
+|---|---|
+| `src/lib/queries/sp13/finanzas/projection.ts` | Lógica principal, aplica las 5 correcciones, retorna CashProjection |
+| `src/app/finanzas/_components/cash-projection-chart.tsx` | Chart con markers coloreados |
+| `src/app/finanzas/page.tsx` (ProjectionBlock + ProjectionTimeline + CashCategoryBreakdown) | Render |
+
+### RPCs silver involucrados
+
+- `get_cash_projection_recurring(p_horizon_days, p_lookback_months)` — nómina/renta/servicios/arrendamiento/impuestos_sat/ventas_proyectadas
+- `get_ap_payment_delay_v2(p_lookback_months)` — delay AP por proveedor + flag is_related_party
+- `get_ar_collection_delay_v2(p_lookback_months)` — delay AR por cliente
+
+### Migrations relevantes
+
+- `20260425_cash_projection_recurring.sql` (v1 — nómina sin separar SAT)
+- `20260425_cash_projection_recurring_v2_taxes.sql` (separa impuestos_sat día 17)
+- `20260426_ap_delay_related_party.sql` (RPC + is_related_party + 5 RFCs marcados)
+- `20260426_ar_collection_delay.sql` (RPC AR delay)
+
+### Cache
+
+`unstable_cache` key bumpeada con cada cambio significativo
+(actualmente `sp13-finanzas-cash-projection-v7`). Bumpear al modificar
+la lógica para invalidar Vercel ISR.
+
+### IMPORTANTE para futuras sesiones
+
+- **El modelo viejo era OPTIMISTA** (no pesimista como pareciera). El
+  AP wall asumía pago en due date y el AR wave asumía cobranza en due
+  date — ambos compensados. Al fixear ambos, el net empeora (más
+  realista). Si alguien dice "el dashboard ahora se ve más feo",
+  defender los cambios: la realidad es esa.
+- **No tocar la prob por aging bucket**: las 95/85/70/50/25 son un
+  proxy razonable hasta que se calcule prob por cliente histórica.
+  Mejorar eso sería opción separada.
+- **El intercompañía a 180d es un workaround**: la solución real es
+  no traer al cashflow_projection las facturas de partes relacionadas
+  desde la silver. Si en el futuro alguien construye SP4+, considerar
+  excluir `is_related_party` ahí.
+- **`is_related_party` se popla manual**: no hay matcher automático.
+  Si Quimibond agrega nuevos accionistas/empresas hermanas, hay que
+  marcarlas con UPDATE en migration.
+- **Cache key**: si modificas projection.ts, bumpear v7 → v8.
+
+---
+
 ## Addon Odoo (qb19)
 
 **Ubicacion:** `addons/quimibond_intelligence/`
