@@ -245,11 +245,9 @@ export default async function FinanzasPage({
       </Suspense>
 
       {/* F7 — Bank detail */}
-      <section id="bank-detail" className="scroll-mt-24">
-        <Suspense fallback={<Skeleton className="h-[56px] w-full rounded-lg" />}>
-          <BankDetailBlock />
-        </Suspense>
-      </section>
+      <Suspense fallback={<Skeleton className="h-[160px] w-full rounded-lg" />}>
+        <BankDetailBlock />
+      </Suspense>
     </PageLayout>
   );
 }
@@ -1484,6 +1482,8 @@ async function MpQualityBlock({ range }: { range: HistoryRange }) {
       id="mp-quality"
       question="¿Los costos de mi materia prima están correctos?"
       subtext={`${mp.totalLeaves} MP únicas · ${pctOk}% OK · ${pctSinCosto}% sin avg_cost · top ${top.rows.length} productos vendidos con desglose · ${top.periodLabel}`}
+      collapsible
+      defaultOpen={false}
     >
       <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
         <KpiCard
@@ -2213,6 +2213,8 @@ async function WorkingCapitalBlock() {
       id="working-capital"
       question="¿Cuál es mi capital de trabajo?"
       subtext="AR (me deben), AP (yo debo), y los principales contribuidores"
+      collapsible
+      defaultOpen={false}
     >
       <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
         <KpiCard
@@ -2803,7 +2805,21 @@ function SummaryStat({
 /* ── F7 Bank detail ──────────────────────────────────────────────────── */
 async function BankDetailBlock() {
   const accounts = await getBankDetail();
-  return <BankDetailExpand accounts={accounts} />;
+  const total = accounts.reduce(
+    (s, a) => s + (a.classification === "cash" ? a.currentBalanceMxn : 0),
+    0
+  );
+  return (
+    <QuestionSection
+      id="bank-detail"
+      question="¿Qué hay en cada cuenta bancaria?"
+      subtext={`${accounts.length} cuentas · ${formatCurrencyMXN(total, { compact: true })} en efectivo`}
+      collapsible
+      defaultOpen={false}
+    >
+      <BankDetailExpand accounts={accounts} />
+    </QuestionSection>
+  );
 }
 
 /* ── Anomalies banner ────────────────────────────────────────────────── */
@@ -3152,6 +3168,8 @@ async function InvoiceDiscrepanciesBlock() {
       subtext={`${disc.totalCount} facturas con desfase entre ERP y libro fiscal.
         Lo más común: pagos registrados en SAT (vía complemento) que el equipo
         no marcó como pagados en Odoo.`}
+      collapsible
+      defaultOpen={false}
     >
       <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
         <KpiCard
@@ -3574,6 +3592,8 @@ async function PnlByAccountBlock({ range }: { range: HistoryRange }) {
       id="pnl-by-account"
       question="¿En qué cuentas se me va el dinero?"
       subtext={`Top 20 cuentas con movimiento · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
+      collapsible
+      defaultOpen={false}
     >
       {data.rows.length === 0 ? (
         <EmptyState
@@ -3681,6 +3701,8 @@ async function FxExposureBlock() {
       id="fx"
       question="¿Cuánta exposición tengo en moneda extranjera?"
       subtext="Tipo de cambio actual + AR/AP abierto en USD/EUR"
+      collapsible
+      defaultOpen={false}
     >
       <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
         {fx.rates.map((r) => (
@@ -3782,6 +3804,8 @@ async function TaxBlock({ range }: { range: HistoryRange }) {
       id="tax"
       question="¿Qué pasa con mi situación fiscal?"
       subtext={`Retenciones recibidas + declaraciones SAT presentadas · ${tax.periodLabel}`}
+      collapsible
+      defaultOpen={false}
     >
       <StatGrid columns={{ mobile: 1, tablet: 3, desktop: 3 }}>
         <KpiCard
