@@ -137,8 +137,14 @@ export async function fetchDashboardAlerts(limit = 5): Promise<CeoInboxRow[]> {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Revenue trend sparkline — last N months, grand-total rows from gold_revenue_monthly
-// Replaces getRevenueTrend() that read pl_estado_resultados (dropped SP1)
+// Revenue trend sparkline — last N months from gold_pl_statement.
+//
+// Original implementation read gold_revenue_monthly with
+// canonical_company_id IS NULL (grand-total rows), but those rows are
+// almost never populated (live DB has just 1 row from 2025-03 / $76k).
+// gold_pl_statement is the canonical monthly P&L source — same view that
+// /finanzas hero reads — and stores total_income negative (credit side),
+// so abs() = revenue.
 // ──────────────────────────────────────────────────────────────────────────
 
 export async function getRevenueTrend(
@@ -146,26 +152,26 @@ export async function getRevenueTrend(
 ): Promise<MonthlyRevenuePoint[]> {
   const sb = getServiceClient();
   const { data } = await sb
-    .from("gold_revenue_monthly")
-    .select("month_start, resolved_mxn, odoo_mxn")
-    .is("canonical_company_id", null)
-    .order("month_start", { ascending: false })
+    .from("gold_pl_statement")
+    .select("period, total_income")
+    .order("period", { ascending: false })
     .limit(months + 5);
 
   return ((data ?? []) as Array<{
-    month_start: string | null;
-    resolved_mxn: number | null;
-    odoo_mxn: number | null;
+    period: string | null;
+    total_income: number | null;
   }>)
     .filter((r) => {
-      if (!r.month_start) return false;
-      const year = Number(r.month_start.split("-")[0]);
+      if (!r.period) return false;
+      const year = Number(r.period.split("-")[0]);
       return year >= 2020 && year <= 2030;
     })
     .slice(0, months)
     .map((r) => ({
-      period: r.month_start as string,
-      revenue: Number(r.resolved_mxn ?? r.odoo_mxn ?? 0),
+      // gold_pl_statement.period is "YYYY-MM"; chart expects ISO-like
+      // month_start so we suffix "-01" for downstream date parsing.
+      period: `${r.period}-01`,
+      revenue: Math.abs(Number(r.total_income) || 0),
     }))
     .reverse();
 }

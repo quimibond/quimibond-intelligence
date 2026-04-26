@@ -35,6 +35,7 @@ import {
   getTopAtRiskClients,
   getRevenueTrend,
 } from "@/lib/queries/analytics/dashboard";
+import { getRunwayKpis } from "@/lib/queries/sp13/finanzas/runway";
 import { getInsights, isVisibleToCEO } from "@/lib/queries/intelligence/insights";
 import {
   getActiveTripwires,
@@ -171,15 +172,21 @@ function rangeLabel(range: HistoryRange): string {
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Runway alert banner — usa DriftAlert primitive en lugar de Card custom
+// Runway alert banner — usa DriftAlert primitive en lugar de Card custom.
+//
+// Lee getRunwayKpis() canonical (gold_cashflow + gold_pl_statement) en
+// lugar del RPC get_dashboard_kpis().cash.runway_days, que reportaba 0
+// días incluso con net_income positivo y $3.4M en banco — bug del RPC.
+// El helper de /finanzas calcula burn = avg(total_expense últimos 3 meses
+// cerrados) / 30, runwayCashOnly = cash / burn, runwayWithAr =
+// (cash + AR_abierto) / burn. Coherente con /finanzas.
 // ──────────────────────────────────────────────────────────────────────────
 async function RunwayAlertBanner() {
-  const k = await getDashboardKpis();
-  if (!k) return null;
-  const days = k.cash.runway_days;
-  const total = k.cash.total_mxn;
+  const r = await getRunwayKpis();
+  const days = r.runwayCashOnlyDays;
+  if (days == null) return null;
 
-  // Si runway > 60 días, no mostrar banner (se ve abajo en KPIs si hace falta).
+  // Si runway cash-only > 60 días, no mostrar banner.
   if (days > 60) return null;
 
   const severity: "critical" | "warning" =
@@ -187,8 +194,13 @@ async function RunwayAlertBanner() {
   const title =
     days <= 0
       ? "Runway agotado"
-      : `${days} día${days === 1 ? "" : "s"} de runway`;
-  const description = `Cash total ${formatCurrencyMXN(total, { compact: true })} · ${formatCurrencyMXN(k.cash.cash_mxn, { compact: true })} MXN · ${formatCurrencyMXN(k.cash.cash_usd, { compact: true })} USD. Sin nueva cobranza, la caja no cubre nómina ni proveedores.`;
+      : `${days} día${days === 1 ? "" : "s"} de runway (cash-only)`;
+  const burnLine = `Burn diario ${formatCurrencyMXN(r.burnRateDaily, { compact: true })} · ${r.burnWindow.monthsCovered}m de historia`;
+  const arLine =
+    r.runwayWithArDays != null && r.runwayWithArDays > days
+      ? ` · Con AR cobrado: ${r.runwayWithArDays} días`
+      : "";
+  const description = `Cash ${formatCurrencyMXN(r.cashMxn, { compact: true })}. ${burnLine}.${arLine}`;
 
   return (
     <DriftAlert

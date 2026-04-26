@@ -7,6 +7,7 @@ const {
   getRevenueTrendMock,
   getInsightsMock,
   getActiveTripwiresMock,
+  getRunwayKpisMock,
 } = vi.hoisted(() => ({
   getDashboardKpisMock: vi.fn(async () => ({
     revenue: { this_month: 8_787_682, last_month: 16_066_217, ytd: 46_242_753 },
@@ -48,12 +49,25 @@ const {
   getRevenueTrendMock: vi.fn(async () => [] as unknown[]),
   getInsightsMock: vi.fn(async () => [] as unknown[]),
   getActiveTripwiresMock: vi.fn(async () => [] as unknown[]),
+  getRunwayKpisMock: vi.fn(async () => ({
+    burnRateDaily: 500_000,
+    burnRateMonthly: 15_000_000,
+    runwayCashOnlyDays: 7,
+    runwayWithArDays: 56,
+    cashMxn: 3_376_985,
+    arOpenMxn: 24_829_554,
+    burnWindow: { from: "2026-01", to: "2026-03", monthsCovered: 3 },
+  })),
 }));
 
 vi.mock("@/lib/queries/analytics/dashboard", () => ({
   getDashboardKpis: getDashboardKpisMock,
   getTopAtRiskClients: getTopAtRiskClientsMock,
   getRevenueTrend: getRevenueTrendMock,
+}));
+
+vi.mock("@/lib/queries/sp13/finanzas/runway", () => ({
+  getRunwayKpis: getRunwayKpisMock,
 }));
 
 vi.mock("@/lib/queries/intelligence/insights", () => ({
