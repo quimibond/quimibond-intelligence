@@ -82,6 +82,18 @@ export interface CashProjectionMarker {
   categoryLabel: string;
 }
 
+export interface CustomerCashflowRow {
+  customerId: number; // Bronze companies.id
+  customerName: string;
+  monthlyAvgMxn: number; // run rate (con IVA)
+  expectedInHorizonMxn: number; // monthly_avg × horizon_proportion
+  bucket1WeightedMxn: number; // AR ya facturada, weighted en horizonte
+  bucket2WeightedMxn: number; // SO pipeline weighted en horizonte
+  bucket3ExpectedMxn: number; // run rate residual × 0.70 prob
+  totalExpectedMxn: number; // suma de las 3 capas weighted
+  saturationPct: number | null; // (bucket1+2) / expected_horizon × 100
+}
+
 export interface CashFlowCategoryTotal {
   category: string;
   categoryLabel: string;
@@ -106,6 +118,11 @@ export interface CashProjection {
   // Breakdown por categoría (incluye AR/AP factura por factura + recurrentes
   // proyectados desde patrón histórico de los últimos 3 meses).
   categoryTotals: CashFlowCategoryTotal[];
+  // Top clientes con desglose de inflow esperado: AR ya facturado, SO
+  // pipeline, residual de run rate. Saturación = (bucket1+2)/run_rate
+  // → muestra qué clientes tienen pipeline cubriendo su demanda vs
+  // dónde la capa 3 (residual) está aportando.
+  customerInflowBreakdown: CustomerCashflowRow[];
 }
 
 function toIso(d: Date): string {
@@ -750,14 +767,17 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   }
   const RUN_RATE_PROBABILITY = 0.7;
   const horizonProportion = horizonDays / 30;
+  // Tracker per-customer para construir la tabla de breakdown al final.
+  // key = Bronze company id. monthlyAvg/expectedHorizon en MXN con IVA.
+  const customerBreakdown = new Map<
+    number,
+    { monthlyAvg: number; expectedHorizon: number; bucket3Expected: number }
+  >();
   for (const [canonicalId, lookbackTotal] of monthlyRunRateByCanonical) {
     const monthlyAvg = lookbackTotal / 3; // 90 días = 3 meses
     if (monthlyAvg <= 0) continue;
-    // Excluir partes relacionadas (canonical id checked at canonical_companies level)
-    // canonicalId is canonical_companies.id; we excluded by RFC at Bronze level.
-    // Resolve to Bronze id for proper bucket1/bucket2 lookup.
     const bronzeId = canonicalToBronzeMap.get(canonicalId);
-    if (bronzeId == null) continue; // sin Bronze id no podemos descontar — skip
+    if (bronzeId == null) continue;
     if (relatedPartyIds.has(bronzeId)) continue;
     const expectedInHorizon = monthlyAvg * horizonProportion;
     const bucket1Committed = bucket1WeightedByCustomer.get(bronzeId) ?? 0;
@@ -766,31 +786,77 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       0,
       expectedInHorizon - bucket1Committed - bucket2Committed
     );
-    if (residualNominal <= 0) continue;
-    // AR_delay del cliente para fechar la cobranza
-    const arDelay = arDelayMap.get(bronzeId) ?? 30;
-    // Modelado simple: cobranza ocurre al midpoint del horizonte + AR_delay
-    // (compromiso entre orders pronto-tarde dentro del horizonte). Si cae
-    // fuera del horizonte, no se agrega.
-    const midpointOffset = Math.floor(horizonDays / 2);
-    const orderDate = shiftDate(todayIso, midpointOffset);
-    const invoiceDate = shiftDate(orderDate, CFDI_EMISSION_LAG_DAYS);
-    const paymentDate = shiftDate(invoiceDate, Math.max(arDelay, 0));
-    if (paymentDate > endIso) continue;
-    const expected = residualNominal * RUN_RATE_PROBABILITY;
-    inflowByDay.set(
-      paymentDate,
-      (inflowByDay.get(paymentDate) ?? 0) + expected
-    );
-    totalInflow += expected;
-    totalInflowNominal += residualNominal;
-    addToCategory(
-      "runrate_clientes",
-      "Run rate (clientes activos, demanda nueva)",
-      "inflow",
-      expected
-    );
+    let bucket3Expected = 0;
+    if (residualNominal > 0) {
+      const arDelay = arDelayMap.get(bronzeId) ?? 30;
+      const midpointOffset = Math.floor(horizonDays / 2);
+      const orderDate = shiftDate(todayIso, midpointOffset);
+      const invoiceDate = shiftDate(orderDate, CFDI_EMISSION_LAG_DAYS);
+      const paymentDate = shiftDate(invoiceDate, Math.max(arDelay, 0));
+      if (paymentDate <= endIso) {
+        bucket3Expected = residualNominal * RUN_RATE_PROBABILITY;
+        inflowByDay.set(
+          paymentDate,
+          (inflowByDay.get(paymentDate) ?? 0) + bucket3Expected
+        );
+        totalInflow += bucket3Expected;
+        totalInflowNominal += residualNominal;
+        addToCategory(
+          "runrate_clientes",
+          "Run rate (clientes activos, demanda nueva)",
+          "inflow",
+          bucket3Expected
+        );
+      }
+    }
+    customerBreakdown.set(bronzeId, {
+      monthlyAvg,
+      expectedHorizon: expectedInHorizon,
+      bucket3Expected,
+    });
   }
+
+  // Resolver display_name de los top customers (para la tabla UI)
+  const breakdownIds = [...customerBreakdown.keys()];
+  const customerNames = new Map<number, string>();
+  if (breakdownIds.length > 0) {
+    const { data: nameRows } = await sb
+      .from("companies")
+      .select("id, name")
+      .in("id", breakdownIds);
+    for (const r of (nameRows ?? []) as Array<{
+      id: number | null;
+      name: string | null;
+    }>) {
+      if (r.id != null) customerNames.set(r.id, r.name ?? `#${r.id}`);
+    }
+  }
+  // Construir tabla — incluir clientes con expectedHorizon ≥ 50k para evitar
+  // ruido. Ordenar por totalExpected descendente.
+  const customerInflowBreakdown: CustomerCashflowRow[] = [];
+  const BREAKDOWN_MIN_EXPECTED = 50_000;
+  for (const [bronzeId, data] of customerBreakdown) {
+    if (data.expectedHorizon < BREAKDOWN_MIN_EXPECTED) continue;
+    const bucket1 = bucket1WeightedByCustomer.get(bronzeId) ?? 0;
+    const bucket2 = bucket2WeightedByCustomer.get(bronzeId) ?? 0;
+    const totalExpected = bucket1 + bucket2 + data.bucket3Expected;
+    const saturation =
+      data.expectedHorizon > 0
+        ? Math.round(((bucket1 + bucket2) / data.expectedHorizon) * 1000) / 10
+        : null;
+    customerInflowBreakdown.push({
+      customerId: bronzeId,
+      customerName: customerNames.get(bronzeId) ?? `#${bronzeId}`,
+      monthlyAvgMxn: Math.round(data.monthlyAvg),
+      expectedInHorizonMxn: Math.round(data.expectedHorizon),
+      bucket1WeightedMxn: Math.round(bucket1),
+      bucket2WeightedMxn: Math.round(bucket2),
+      bucket3ExpectedMxn: Math.round(data.bucket3Expected),
+      totalExpectedMxn: Math.round(totalExpected),
+      saturationPct: saturation,
+    });
+  }
+  customerInflowBreakdown.sort((a, b) => b.totalExpectedMxn - a.totalExpectedMxn);
 
   // Procesar recurring flows del RPC silver (nómina, renta, servicios,
   // arrendamiento). NOTA: ventas_proyectadas se SKIPEA aquí porque ya está
@@ -905,12 +971,13 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     points,
     markers: markers.slice(0, 40),
     categoryTotals,
+    customerInflowBreakdown,
   };
 }
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v12-three-layer"],
+  ["sp13-finanzas-cash-projection-v13-customer-breakdown"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

@@ -19,6 +19,7 @@ export {
   type CashProjectionMarker,
   type CashProjectionHorizon,
   type CashFlowCategoryTotal,
+  type CustomerCashflowRow,
 } from "./projection";
 export { getBankDetail, type BankAccountDetail } from "./bank-detail";
 export { getDriftSummary, type DriftSummary, type DriftMonth } from "./drift";

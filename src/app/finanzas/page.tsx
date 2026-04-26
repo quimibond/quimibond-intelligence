@@ -62,6 +62,7 @@ import {
   getCashProjection,
   type CashFlowCategoryTotal,
   type CashProjectionMarker,
+  type CustomerCashflowRow,
   getBankDetail,
   getDriftSummary,
   getBalanceSheet,
@@ -2413,6 +2414,11 @@ async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
         horizonDays={proj.horizonDays}
       />
 
+      <CustomerInflowBreakdownTable
+        rows={proj.customerInflowBreakdown}
+        horizonDays={proj.horizonDays}
+      />
+
       {belowFloor && (
         <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-foreground">
           Saldo mínimo proyectado <Currency amount={proj.minBalance} /> el{" "}
@@ -2586,6 +2592,103 @@ function CashCategoryBreakdown({
           renta día 1, servicios día 10, arrendamiento día 5) + cobranza
           proyectada de ventas futuras (ponderada al 85%).
         </p>
+      </div>
+    </div>
+  );
+}
+
+/* Top 10 clientes con desglose de inflow esperado por capa ───────────── */
+function CustomerInflowBreakdownTable({
+  rows,
+  horizonDays,
+}: {
+  rows: CustomerCashflowRow[];
+  horizonDays: number;
+}) {
+  if (rows.length === 0) return null;
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const top = rows.slice(0, 10);
+
+  return (
+    <div className="overflow-hidden rounded-md border bg-card">
+      <div className="border-b bg-muted/30 px-3 py-2 sm:px-4">
+        <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Top 10 clientes · cobranza esperada · {horizonDays}d
+        </div>
+        <p className="mt-1 text-[11px] leading-snug text-muted-foreground">
+          Desglose por capa: AR ya facturado · SO confirmado sin factura ·
+          Run rate (demanda nueva esperada). Saturación = (AR + SO) / run
+          rate × 100. ≥100% = el cliente ya tiene pipeline cubriendo o
+          excediendo su run rate (capa 3 = $0). &lt;100% = hay gap → capa 3
+          aporta el residual.
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="min-w-[180px]">Cliente</TableHead>
+              <TableHead className="text-right">Run rate/mes</TableHead>
+              <TableHead className="text-right">Esperado horizonte</TableHead>
+              <TableHead className="text-right">AR (capa 1)</TableHead>
+              <TableHead className="text-right">SO (capa 2)</TableHead>
+              <TableHead className="text-right">Run rate residual (capa 3)</TableHead>
+              <TableHead className="text-right">Total esperado</TableHead>
+              <TableHead className="text-right">Saturación</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {top.map((r) => {
+              const satTone =
+                r.saturationPct == null
+                  ? "text-muted-foreground"
+                  : r.saturationPct >= 100
+                    ? "text-success"
+                    : r.saturationPct >= 60
+                      ? "text-warning"
+                      : "text-destructive";
+              return (
+                <TableRow key={r.customerId}>
+                  <TableCell className="font-medium">
+                    <Link
+                      href={`/empresas/${r.customerId}`}
+                      className="hover:underline"
+                    >
+                      {r.customerName}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmt(r.monthlyAvgMxn)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmt(r.expectedInHorizonMxn)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmt(r.bucket1WeightedMxn)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {fmt(r.bucket2WeightedMxn)}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.bucket3ExpectedMxn > 0 ? (
+                      fmt(r.bucket3ExpectedMxn)
+                    ) : (
+                      <span className="text-muted-foreground">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-medium">
+                    {fmt(r.totalExpectedMxn)}
+                  </TableCell>
+                  <TableCell className={`text-right tabular-nums ${satTone}`}>
+                    {r.saturationPct == null
+                      ? "—"
+                      : `${r.saturationPct.toFixed(0)}%`}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );
