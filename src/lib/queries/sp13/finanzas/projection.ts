@@ -86,27 +86,33 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const endDate = new Date(today.getTime() + horizonDays * 86400000);
   const endIso = toIso(endDate);
 
-  const [cashRes, projRes, recurringRes, apDelayRes] = await Promise.all([
-    sb
-      .from("canonical_bank_balances")
-      .select("classification, current_balance_mxn"),
-    sb
-      .from("cashflow_projection")
-      .select(
-        "company_id, flow_type, projected_date, amount_residual, expected_amount, collection_probability, invoice_name, days_overdue"
-      )
-      .in("flow_type", ["receivable_detail", "payable_detail"])
-      .lte("projected_date", endIso),
-    // Recurring inflows/outflows desde patrón histórico (nómina, renta,
-    // servicios, arrendamiento, ventas proyectadas). RPC silver.
-    sb.rpc("get_cash_projection_recurring", {
-      p_horizon_days: horizonDays,
-      p_lookback_months: 3,
-    }),
-    // Delay promedio histórico de pago AP por proveedor — para no proyectar
-    // que pagamos todo en su due date (sobreestima salidas de cash).
-    sb.rpc("get_ap_payment_delay_v2", { p_lookback_months: 6 }),
-  ]);
+  const [cashRes, projRes, recurringRes, apDelayRes, arDelayRes] =
+    await Promise.all([
+      sb
+        .from("canonical_bank_balances")
+        .select("classification, current_balance_mxn"),
+      sb
+        .from("cashflow_projection")
+        .select(
+          "company_id, flow_type, projected_date, amount_residual, expected_amount, collection_probability, invoice_name, days_overdue"
+        )
+        .in("flow_type", ["receivable_detail", "payable_detail"])
+        .lte("projected_date", endIso),
+      // Recurring inflows/outflows desde patrón histórico (nómina, renta,
+      // servicios, arrendamiento, ventas proyectadas). RPC silver.
+      sb.rpc("get_cash_projection_recurring", {
+        p_horizon_days: horizonDays,
+        p_lookback_months: 3,
+      }),
+      // Delay promedio histórico de pago AP por proveedor — para no proyectar
+      // que pagamos todo en su due date (sobreestima salidas de cash).
+      sb.rpc("get_ap_payment_delay_v2", { p_lookback_months: 6 }),
+      // Delay promedio histórico de cobranza AR por cliente — refleja que
+      // los clientes nos pagan X días después del vencimiento (no en el
+      // due date). Sin esto, la cobranza esperada llega antes de cuando
+      // realmente cobramos.
+      sb.rpc("get_ar_collection_delay_v2", { p_lookback_months: 6 }),
+    ]);
 
   // Mapa company_id → { delay days, is_related_party }
   type ApDelayRow = {
@@ -128,6 +134,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       delayDays: days,
       isRelatedParty: r.is_related_party,
     });
+  }
+
+  type ArDelayRow = {
+    company_id: number;
+    avg_delay_days: number;
+    sample_size: number;
+    median_delay_days: number;
+  };
+  const arDelayRows = (arDelayRes.data ?? []) as ArDelayRow[];
+  const arDelayMap = new Map<number, number>();
+  for (const r of arDelayRows) {
+    const days = r.sample_size >= 10 ? r.avg_delay_days : r.median_delay_days;
+    arDelayMap.set(r.company_id, days);
   }
 
   const shiftDate = (iso: string, days: number): string => {
@@ -191,22 +210,33 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
     if (expected <= 0) continue;
 
-    // Past-due → clamp to today.
-    const baseDate = origDate < todayIso ? todayIso : origDate;
-
-    // AP: aplicar delay histórico del proveedor (si lo conocemos). Esto
-    // refleja que en la realidad pateamos pagos varios días/semanas
-    // después del due date. Sin esto, proyectamos un crash de cash falso.
+    // Aplicar delay histórico (proveedor para AP, cliente para AR) sobre
+    // el due date original. Si ya está vencida, comparamos con today:
+    // adjustedDate = max(today, dueDate + delay). Esto refleja que:
+    //  - factura no vencida + delay 30d → cobramos/pagamos due_date + 30d
+    //  - factura ya vencida 60d con delay 30d (cliente típicamente paga
+    //    30d tarde) → ya rebasó su patrón, esperamos cobranza para hoy
+    //  - factura vencida 10d con delay 30d → cobranza esperada en today + 20d
+    //
     // Partes relacionadas (intercompañía) → fuera del horizonte (180d).
-    let date = baseDate;
+    let date = origDate < todayIso ? todayIso : origDate;
     let isRelatedParty = false;
-    if (!isInflow && r.company_id != null) {
-      const delay = apDelayMap.get(r.company_id);
-      if (delay?.isRelatedParty) {
-        isRelatedParty = true;
-        date = shiftDate(baseDate, 180);
-      } else if (delay && delay.delayDays > 0) {
-        date = shiftDate(baseDate, delay.delayDays);
+    if (r.company_id != null) {
+      if (!isInflow) {
+        const delay = apDelayMap.get(r.company_id);
+        if (delay?.isRelatedParty) {
+          isRelatedParty = true;
+          date = shiftDate(origDate, 180);
+        } else if (delay && delay.delayDays > 0) {
+          const shifted = shiftDate(origDate, delay.delayDays);
+          date = shifted < todayIso ? todayIso : shifted;
+        }
+      } else {
+        const delayDays = arDelayMap.get(r.company_id);
+        if (delayDays != null && delayDays > 0) {
+          const shifted = shiftDate(origDate, delayDays);
+          date = shifted < todayIso ? todayIso : shifted;
+        }
       }
     }
 
@@ -373,7 +403,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v6"],
+  ["sp13-finanzas-cash-projection-v7"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
