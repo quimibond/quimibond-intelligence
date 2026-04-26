@@ -22,6 +22,12 @@ export {
   type CustomerCashflowRow,
   type ProjectionEvent,
 } from "./projection";
+export {
+  getCustomerCreditScores,
+  type CustomerCreditScore,
+  type CustomerCreditScoreSummary,
+  type CreditTier,
+} from "./customer-credit-score";
 export { getBankDetail, type BankAccountDetail } from "./bank-detail";
 export { getDriftSummary, type DriftSummary, type DriftMonth } from "./drift";
 export {
