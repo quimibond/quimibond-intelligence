@@ -1,7 +1,6 @@
 import { Suspense } from "react";
 import {
   Activity,
-  AlertTriangle,
   Archive,
   Flame,
   Package,
@@ -24,12 +23,12 @@ import {
   Currency,
   DateDisplay,
   EmptyState,
+  QuestionSection,
   makeSortHref,
   type DataTableColumn,
   type DataViewChartSpec,
   type DataViewMode,
 } from "@/components/patterns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -100,48 +99,42 @@ export default async function ProductosPage({
       <SectionNav
         items={[
           { id: "kpis", label: "Resumen" },
-          { id: "inventory", label: "Inventario" },
-          { id: "top-movers", label: "Top movers" },
-          { id: "top-margin", label: "Top margen" },
-          { id: "dead-stock", label: "Dead stock" },
+          { id: "reorder", label: "¿Qué reordenar?" },
+          { id: "top-movers", label: "¿Qué se vende?" },
+          { id: "top-margin", label: "¿Dónde gano?" },
+          { id: "dead-stock", label: "¿Qué está muerto?" },
         ]}
       />
 
       <section id="kpis" className="scroll-mt-24">
-      <Suspense
-        fallback={
-          <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
-            {Array.from({ length: 4 }).map((_, i) => (
-              <Skeleton key={i} className="h-[96px] rounded-xl" />
-            ))}
-          </StatGrid>
-        }
-      >
-        <ProductsHeroKpis />
-      </Suspense>
+        <Suspense
+          fallback={
+            <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
+              {Array.from({ length: 4 }).map((_, i) => (
+                <Skeleton key={i} className="h-[96px] rounded-xl" />
+              ))}
+            </StatGrid>
+          }
+        >
+          <ProductsHeroKpis />
+        </Suspense>
       </section>
 
-      {/* Inventario — tabla con filtros completos */}
-      <section id="inventory" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Inventario</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Busca por referencia o nombre y filtra por estado de reorden o
-              categoría. Por defecto muestra stockout, urgente 14d y reorder
-              30d.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TableViewOptions
-              paramPrefix="inv_"
-              columns={inventoryViewColumns}
-            />
-            <TableExportButton filename="inventory" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+      <div data-table-export-root>
+        <QuestionSection
+          id="reorder"
+          question="¿Qué necesito reordenar urgente?"
+          subtext="Busca por referencia o nombre y filtra por estado de reorden o categoría. Por defecto muestra stockout, urgente 14d y reorder 30d."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <TableViewOptions
+                paramPrefix="inv_"
+                columns={inventoryViewColumns}
+              />
+              <TableExportButton filename="inventory" />
+            </div>
+          }
+        >
           <Suspense fallback={null}>
             <InventoryToolbar />
           </Suspense>
@@ -156,28 +149,21 @@ export default async function ProductosPage({
           >
             <ReorderTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </QuestionSection>
+      </div>
 
-      <section id="top-movers" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Top movers (90 días)</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Productos con mayor volumen vendido.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TableViewOptions
-              paramPrefix="tm_"
-              columns={topMoverViewColumns}
-            />
-            <TableExportButton filename="top-movers" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+      <div data-table-export-root>
+        <QuestionSection
+          id="top-movers"
+          question="¿Qué se vende más?"
+          subtext="Top SKUs por volumen últimos 90 días."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <TableViewOptions paramPrefix="tm_" columns={topMoverViewColumns} />
+              <TableExportButton filename="top-movers" />
+            </div>
+          }
+        >
           <DataTableToolbar
             paramPrefix="tm_"
             searchPlaceholder="Ref o nombre…"
@@ -185,51 +171,37 @@ export default async function ProductosPage({
           <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
             <TopMoversTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </QuestionSection>
+      </div>
 
-      <section id="top-margin" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Top margen (revenue ponderado)
-            </CardTitle>
-          </div>
-          <TableExportButton filename="top-margin" />
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense
-            fallback={<Skeleton className="h-[300px] rounded-xl" />}
-          >
+      <div data-table-export-root>
+        <QuestionSection
+          id="top-margin"
+          question="¿Dónde tengo márgenes finos vs. saludables?"
+          subtext="Top productos por margen ponderado por revenue. Productos con revenue grande pero margen bajo son los que más urgen revisar."
+          actions={<TableExportButton filename="top-margin" />}
+        >
+          <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
             <TopMarginTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </QuestionSection>
+      </div>
 
-      <section id="dead-stock" className="scroll-mt-24">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">
-              Stock muerto (sin movimiento)
-            </CardTitle>
-            <p className="text-xs text-muted-foreground">
-              Productos sin venta por largo tiempo. Ordena por valor, días o
-              revenue lifetime.
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <TableViewOptions
-              paramPrefix="ds_"
-              columns={deadStockViewColumns}
-            />
-            <TableExportButton filename="dead-stock" />
-          </div>
-        </CardHeader>
-        <CardContent className="space-y-3 pb-4">
+      <div data-table-export-root>
+        <QuestionSection
+          id="dead-stock"
+          question="¿Qué se quedó muerto en el almacén?"
+          subtext="Productos sin venta por largo tiempo. Ordena por valor, días sin movimiento o revenue lifetime."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <TableViewOptions
+                paramPrefix="ds_"
+                columns={deadStockViewColumns}
+              />
+              <TableExportButton filename="dead-stock" />
+            </div>
+          }
+        >
           <DataTableToolbar
             paramPrefix="ds_"
             searchPlaceholder="Ref o nombre…"
@@ -237,9 +209,8 @@ export default async function ProductosPage({
           <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
             <DeadStockTable searchParams={sp} />
           </Suspense>
-        </CardContent>
-      </Card>
-      </section>
+        </QuestionSection>
+      </div>
     </PageLayout>
   );
 }
