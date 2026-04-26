@@ -39,17 +39,20 @@ export interface ObligationCategory {
     | "30_60d"
     | "mensual"
     | "meses"
-    | "lp";
+    | "lp"
+    | "intercompania";
   detail: ObligationDetail[];
 }
 
 export interface ObligationsSummary {
   asOfPeriod: string;
   totalMxn: number;
+  totalOperativoMxn: number;
   totalInmediatoMxn: number;
   totalCortoPlazo30Mxn: number;
   totalCortoPlazo90Mxn: number;
   totalLargoPlazoMxn: number;
+  totalIntercompaniaMxn: number;
   efectivoMxn: number;
   liquidityRatio: number | null;
   categories: ObligationCategory[];
@@ -116,6 +119,9 @@ async function _getObligationsSummaryRaw(): Promise<ObligationsSummary> {
     "meses",
   ]);
   const totalLargoPlazoMxn = sumByHorizon(["lp"]);
+  const totalIntercompaniaMxn = sumByHorizon(["intercompania"]);
+  // Operativo = todo excepto intercompañía (préstamos accionista, etc.)
+  const totalOperativoMxn = totalMxn - totalIntercompaniaMxn;
 
   type Bank = {
     classification: string | null;
@@ -132,10 +138,12 @@ async function _getObligationsSummaryRaw(): Promise<ObligationsSummary> {
   return {
     asOfPeriod: period,
     totalMxn,
+    totalOperativoMxn,
     totalInmediatoMxn,
     totalCortoPlazo30Mxn,
     totalCortoPlazo90Mxn,
     totalLargoPlazoMxn,
+    totalIntercompaniaMxn,
     efectivoMxn: Math.round(efectivoMxn),
     liquidityRatio,
     categories,
@@ -144,6 +152,6 @@ async function _getObligationsSummaryRaw(): Promise<ObligationsSummary> {
 
 export const getObligationsSummary = unstable_cache(
   _getObligationsSummaryRaw,
-  ["sp13-finanzas-obligations-v1"],
+  ["sp13-finanzas-obligations-v2"],
   { revalidate: 600, tags: ["finanzas"] }
 );

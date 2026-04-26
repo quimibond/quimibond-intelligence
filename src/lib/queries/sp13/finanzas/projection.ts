@@ -86,7 +86,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const endDate = new Date(today.getTime() + horizonDays * 86400000);
   const endIso = toIso(endDate);
 
-  const [cashRes, projRes, recurringRes] = await Promise.all([
+  const [cashRes, projRes, recurringRes, apDelayRes] = await Promise.all([
     sb
       .from("canonical_bank_balances")
       .select("classification, current_balance_mxn"),
@@ -103,7 +103,39 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       p_horizon_days: horizonDays,
       p_lookback_months: 3,
     }),
+    // Delay promedio histórico de pago AP por proveedor — para no proyectar
+    // que pagamos todo en su due date (sobreestima salidas de cash).
+    sb.rpc("get_ap_payment_delay_v2", { p_lookback_months: 6 }),
   ]);
+
+  // Mapa company_id → { delay days, is_related_party }
+  type ApDelayRow = {
+    company_id: number;
+    avg_delay_days: number;
+    sample_size: number;
+    median_delay_days: number;
+    is_related_party: boolean;
+  };
+  const apDelayRows = (apDelayRes.data ?? []) as ApDelayRow[];
+  const apDelayMap = new Map<
+    number,
+    { delayDays: number; isRelatedParty: boolean }
+  >();
+  for (const r of apDelayRows) {
+    // Use median (más robusto contra outliers) cuando la muestra es chica.
+    const days = r.sample_size >= 10 ? r.avg_delay_days : r.median_delay_days;
+    apDelayMap.set(r.company_id, {
+      delayDays: days,
+      isRelatedParty: r.is_related_party,
+    });
+  }
+
+  const shiftDate = (iso: string, days: number): string => {
+    if (days <= 0) return iso;
+    const d = new Date(iso);
+    d.setDate(d.getDate() + days);
+    return toIso(d);
+  };
 
   type Bank = { classification: string | null; current_balance_mxn: number | null };
   const banks = (cashRes.data ?? []) as Bank[];
@@ -154,14 +186,29 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   for (const r of projRows) {
     const origDate = r.projected_date;
     if (!origDate) continue;
-    // Clamp past-due dates to today — we still expect to collect these,
-    // starting from now. The expected_amount is already discounted by aging
-    // bucket so we're not over-counting.
-    const date = origDate < todayIso ? todayIso : origDate;
     const isInflow = r.flow_type === "receivable_detail";
     const nominal = Number(r.amount_residual) || 0;
     const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
     if (expected <= 0) continue;
+
+    // Past-due → clamp to today.
+    const baseDate = origDate < todayIso ? todayIso : origDate;
+
+    // AP: aplicar delay histórico del proveedor (si lo conocemos). Esto
+    // refleja que en la realidad pateamos pagos varios días/semanas
+    // después del due date. Sin esto, proyectamos un crash de cash falso.
+    // Partes relacionadas (intercompañía) → fuera del horizonte (180d).
+    let date = baseDate;
+    let isRelatedParty = false;
+    if (!isInflow && r.company_id != null) {
+      const delay = apDelayMap.get(r.company_id);
+      if (delay?.isRelatedParty) {
+        isRelatedParty = true;
+        date = shiftDate(baseDate, 180);
+      } else if (delay && delay.delayDays > 0) {
+        date = shiftDate(baseDate, delay.delayDays);
+      }
+    }
 
     if (isInflow) {
       inflowByDay.set(date, (inflowByDay.get(date) ?? 0) + expected);
@@ -178,6 +225,15 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         probCount++;
       }
       if ((r.days_overdue ?? 0) > 0) overdueInflowCount++;
+    } else if (isRelatedParty) {
+      // Intercompañía: separamos en categoría aparte y empujamos out 180d.
+      // No suma al outflow principal ni al daily bucket dentro del horizonte.
+      addToCategory(
+        "ap_intercompania",
+        "AP a partes relacionadas (intercompañía)",
+        "outflow",
+        nominal
+      );
     } else {
       outflowByDay.set(date, (outflowByDay.get(date) ?? 0) + nominal);
       totalOutflow += nominal;
@@ -190,7 +246,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
 
     const amtForMarker = isInflow ? expected : nominal;
-    if (amtForMarker >= MARKER_THRESHOLD) {
+    if (!isRelatedParty && amtForMarker >= MARKER_THRESHOLD) {
       markers.push({
         date,
         kind: isInflow ? "inflow" : "outflow",
@@ -203,9 +259,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
             : Number(r.collection_probability),
         atRisk: isInflow && (r.days_overdue ?? 0) > 0,
         category: isInflow ? "ar_cobranza" : "ap_proveedores",
-        categoryLabel: isInflow
-          ? "Cobranza AR"
-          : "AP a proveedor",
+        categoryLabel: isInflow ? "Cobranza AR" : "AP a proveedor",
       });
     }
   }
@@ -309,7 +363,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v4"],
+  ["sp13-finanzas-cash-projection-v5"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

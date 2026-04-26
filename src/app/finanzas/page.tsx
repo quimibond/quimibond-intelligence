@@ -3360,18 +3360,18 @@ async function ObligationsBlock() {
       id="obligations"
       question="¿Cuánto debo y cuándo lo tengo que pagar?"
       subtext={`Saldos al cierre de ${formatPeriod(ob.asOfPeriod)}.
-        Inmediato = tarjetas + sueldos. ≤30d incluye SAT/IMSS día 17.
-        Liquidez = efectivo / obligaciones ≤30d.`}
+        Operativo excluye intercompañía/préstamos accionistas.
+        ≤30d incluye SAT/IMSS día 17. Liquidez = efectivo / obligaciones ≤30d.`}
     >
       <StatGrid columns={{ mobile: 2, tablet: 4, desktop: 4 }}>
         <KpiCard
-          title="Total obligaciones"
-          value={ob.totalMxn}
+          title="Operativo (sin intercompañía)"
+          value={ob.totalOperativoMxn}
           format="currency"
           compact
           icon={Scale}
           source="canonical"
-          tone={ob.totalMxn > ob.efectivoMxn * 5 ? "danger" : "default"}
+          tone={ob.totalOperativoMxn > ob.efectivoMxn * 5 ? "danger" : "default"}
           subtitle={`vs ${fmt(ob.efectivoMxn)} en efectivo`}
         />
         <KpiCard
@@ -3395,14 +3395,14 @@ async function ObligationsBlock() {
           subtitle="AP, arrendamiento, préstamos CP"
         />
         <KpiCard
-          title="Largo plazo"
-          value={ob.totalLargoPlazoMxn}
+          title="Intercompañía"
+          value={ob.totalIntercompaniaMxn}
           format="currency"
           compact
-          icon={Landmark}
+          icon={Building2}
           source="canonical"
           tone="default"
-          subtitle="préstamos bancarios LP"
+          subtitle="partes relacionadas · no urgente"
         />
       </StatGrid>
 
@@ -3413,7 +3413,11 @@ async function ObligationsBlock() {
           description="No hay saldos pendientes en cuentas de pasivo al corte."
         />
       ) : (
-        <ObligationsTable rows={cats} totalMxn={ob.totalMxn} fmtFull={fmtFull} />
+        <ObligationsTable
+          rows={cats}
+          totalMxn={ob.totalMxn}
+          fmtFull={fmtFull}
+        />
       )}
     </QuestionSection>
   );
@@ -3442,6 +3446,8 @@ function ObligationsTable({
         return "Próximos meses";
       case "lp":
         return "Largo plazo";
+      case "intercompania":
+        return "Intercompañía";
     }
   };
   const horizonTone = (h: ObligationCategory["paymentHorizon"]) => {
@@ -3457,6 +3463,8 @@ function ObligationsTable({
         return "bg-muted text-muted-foreground border-muted-foreground/20";
       case "lp":
         return "bg-muted/50 text-muted-foreground border-muted-foreground/10";
+      case "intercompania":
+        return "bg-muted/30 text-muted-foreground border-muted-foreground/10 italic";
     }
   };
 
