@@ -1997,19 +1997,21 @@ async function CashReconciliationBlock({ range }: { range: HistoryRange }) {
     <QuestionSection
       id="cash-reconciliation"
       question="¿Dónde está el dinero?"
-      subtext={`Reconciliación entre cierre ${data.fromPeriod} y ${data.toPeriod} · utilidad contable vs cash real`}
+      subtext={`Saldos contables al cierre ${data.fromPeriod} y ${data.toPeriod}.
+        El "cash al cierre" puede diferir del efectivo de hoy en el Hero por
+        movimientos bancarios posteriores al corte mensual.`}
     >
       {/* Hero de 3 cards: cash inicial → utilidad → cash final */}
       <StatGrid columns={{ mobile: 1, tablet: 4, desktop: 4 }}>
         <KpiCard
-          title="Cash al inicio"
+          title="Saldo contable inicio"
           value={data.openingCashMxn}
           format="currency"
           compact
           icon={Wallet}
           source="canonical"
           tone="default"
-          subtitle={`Corte ${data.fromPeriod}`}
+          subtitle={`Cierre ${data.fromPeriod}`}
         />
         <KpiCard
           title="Utilidad del período"
@@ -2022,14 +2024,14 @@ async function CashReconciliationBlock({ range }: { range: HistoryRange }) {
           subtitle="Neta contable (incluye 7xx otros)"
         />
         <KpiCard
-          title="Cash al cierre"
+          title="Saldo contable cierre"
           value={data.closingCashMxn}
           format="currency"
           compact
           icon={Wallet}
           source="canonical"
           tone="default"
-          subtitle={`Corte ${data.toPeriod}`}
+          subtitle={`Cierre ${data.toPeriod} · no es el efectivo de hoy`}
         />
         <KpiCard
           title="Δ Cash vs utilidad"
@@ -3336,7 +3338,12 @@ async function ObligationsBlock() {
   const ob = await getObligationsSummary();
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
   const fmtFull = (n: number) => formatCurrencyMXN(n);
-  const cats = ob.categories.filter((c) => c.outstandingMxn > 0);
+  // Threshold $1k: el RPC mantiene categorías con remanentes < $1k (típico
+  // del ISR retenido cuando el 99% se paga cada mes y deja pesos sueltos)
+  // pero account_count y detail vienen vacíos. Mostrarlas confunde al CEO
+  // ("hay 54 pesos pero ninguna cuenta"). Filtrar en el render evita tocar
+  // la lógica fiscal del RPC.
+  const cats = ob.categories.filter((c) => c.outstandingMxn >= 1000);
 
   const liqLabel =
     ob.liquidityRatio == null
