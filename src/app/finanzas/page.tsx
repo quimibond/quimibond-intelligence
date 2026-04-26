@@ -112,7 +112,6 @@ export default async function FinanzasPage({
 }) {
   const sp = searchParams ? await searchParams : {};
   const period = parseHistoryRange(sp.period, "mtd");
-  const plPeriod = parseHistoryRange(sp.pl_period, "mtd");
   const horizon = parseProjectionHorizon(sp.proj_horizon, 13);
 
   return (
@@ -184,14 +183,14 @@ export default async function FinanzasPage({
       <Suspense
         fallback={<Skeleton className="h-[380px] w-full rounded-lg" />}
       >
-        <CashReconciliationBlock range={plPeriod} />
+        <CashReconciliationBlock range={period} />
       </Suspense>
 
       {/* F3 — P&L */}
       <Suspense
         fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}
       >
-        <PnlBlock range={plPeriod} />
+        <PnlBlock range={period} />
       </Suspense>
 
       {/* F3.5 — Balance general */}
@@ -214,14 +213,14 @@ export default async function FinanzasPage({
       <Suspense
         fallback={<Skeleton className="h-[360px] w-full rounded-lg" />}
       >
-        <MpQualityBlock range={plPeriod} />
+        <MpQualityBlock range={period} />
       </Suspense>
 
       {/* F-PnL by account */}
       <Suspense
         fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
       >
-        <PnlByAccountBlock range={plPeriod} />
+        <PnlByAccountBlock range={period} />
       </Suspense>
 
       {/* F-DISC — Discrepancias Odoo ↔ SAT */}
@@ -390,7 +389,6 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
       id="pnl"
       question="¿Cómo va mi P&L contable vs el real (sin overhead)?"
       subtext={`Ventas de producto (cuenta 4xx) · COGS contable (501.xx) vs COGS recursivo a materia prima · ${cogs.periodLabel}`}
-      actions={<HistorySelector paramName="pl_period" defaultRange="mtd" />}
     >
       {!hasData ? (
         <EmptyState
