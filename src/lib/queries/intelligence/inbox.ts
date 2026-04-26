@@ -2,8 +2,63 @@ import "server-only";
 import { getServiceClient } from "@/lib/supabase-server";
 import type { Database } from "@/lib/database.types";
 import { computeDelta, type Comparison } from "@/lib/kpi";
+import { parseCanonicalEntityId } from "./issue-entity-context";
 
 export type InboxRow = Database["public"]["Views"]["gold_ceo_inbox"]["Row"];
+
+/**
+ * 2026-04-26: defensive stale-issue filter.
+ *
+ * Several silver invariants emit issues but never UPDATE/close them when
+ * the underlying canonical entity later meets the resolved condition.
+ * Audit found 22/22 `posted_without_uuid` and 20/25 `missing_sat_timbrado`
+ * pointing to invoices that already have sat_uuid + has_sat_record=true.
+ *
+ * Until Silver SP6 fixes the invariant runtime, we filter these out at
+ * read-time so the CEO never sees a critical alert that contradicts the
+ * current data. The set of (invariant_key, resolved-condition) pairs
+ * lives here — keep in sync with invariant-explainers.ts.
+ */
+const INVOICE_STALE_INVARIANTS = new Set([
+  "invoice.posted_without_uuid",
+  "invoice.missing_sat_timbrado",
+]);
+
+async function filterStaleInvoiceIssues(rows: InboxRow[]): Promise<InboxRow[]> {
+  if (rows.length === 0) return rows;
+  const idsToCheck = new Set<number>();
+  for (const r of rows) {
+    if (!r.invariant_key || !INVOICE_STALE_INVARIANTS.has(r.invariant_key)) continue;
+    const ref = parseCanonicalEntityId(r.canonical_entity_id);
+    if (ref?.source === "odoo") {
+      const n = Number(ref.id);
+      if (Number.isFinite(n)) idsToCheck.add(n);
+    }
+  }
+  if (idsToCheck.size === 0) return rows;
+
+  const sb = getServiceClient();
+  const { data } = await sb
+    .from("canonical_invoices")
+    .select("odoo_invoice_id, sat_uuid, has_sat_record")
+    .in("odoo_invoice_id", Array.from(idsToCheck));
+
+  type Row = { odoo_invoice_id: number; sat_uuid: string | null; has_sat_record: boolean | null };
+  const stale = new Set<number>();
+  for (const row of (data ?? []) as Row[]) {
+    if (row.sat_uuid != null || row.has_sat_record === true) {
+      stale.add(row.odoo_invoice_id);
+    }
+  }
+
+  return rows.filter((r) => {
+    if (!r.invariant_key || !INVOICE_STALE_INVARIANTS.has(r.invariant_key)) return true;
+    const ref = parseCanonicalEntityId(r.canonical_entity_id);
+    if (ref?.source !== "odoo") return true;
+    const n = Number(ref.id);
+    return !stale.has(n);
+  });
+}
 
 export interface ListInboxOptions {
   limit?: number;
@@ -20,11 +75,18 @@ export interface ListInboxOptions {
 /**
  * List gold_ceo_inbox rows ordered by priority_score desc.
  * Backed by the SP4 gold view over reconciliation_issues.
+ *
+ * Stale-issue defensive filter (see filterStaleInvoiceIssues) is applied
+ * after fetch. We over-fetch by 50% to keep the limit honest when the
+ * filter removes rows.
  */
 export async function listInbox(
   opts: ListInboxOptions = {}
 ): Promise<InboxRow[]> {
   const sb = getServiceClient();
+  const limit = opts.limit ?? 50;
+  const fetchLimit = Math.min(Math.ceil(limit * 1.5), 200);
+
   let q = sb
     .from("gold_ceo_inbox")
     .select("*")
@@ -43,11 +105,13 @@ export async function listInbox(
       opts.assigneeCanonicalContactId
     );
   }
-  q = q.limit(opts.limit ?? 50);
+  q = q.limit(fetchLimit);
 
   const { data, error } = await q;
   if (error) throw error;
-  return data ?? [];
+  const rows = data ?? [];
+  const filtered = await filterStaleInvoiceIssues(rows);
+  return filtered.slice(0, limit);
 }
 
 /**
@@ -154,6 +218,8 @@ export async function getInboxKpis(): Promise<InboxKpis> {
     openNow,
     openWeekAgo,
     criticalNow,
+    staleAdjustNow,
+    staleAdjustCritical,
     closedThisWeek,
     closedPrevWeek,
     avgThisWeekRes,
@@ -173,6 +239,10 @@ export async function getInboxKpis(): Promise<InboxKpis> {
       .select("issue_id", { count: "exact", head: true })
       .is("resolved_at", null)
       .eq("severity", "critical"),
+    // Count of stale-but-still-open invoice issues we'll subtract from
+    // openNow / criticalNow so the KPI agrees with what listInbox renders.
+    countStaleInvoiceIssues(sb, { onlyCritical: false }),
+    countStaleInvoiceIssues(sb, { onlyCritical: true }),
     sb
       .from("reconciliation_issues")
       .select("issue_id", { count: "exact", head: true })
@@ -197,16 +267,18 @@ export async function getInboxKpis(): Promise<InboxKpis> {
       .limit(1000),
   ]);
 
+  const openAdjusted = Math.max(0, (openNow.count ?? 0) - staleAdjustNow);
+  const criticalAdjusted = Math.max(0, (criticalNow.count ?? 0) - staleAdjustCritical);
   const avgThisWeek = avgHours(avgThisWeekRes.data ?? []);
   const avgPrevWeek = avgHours(avgPrevWeekRes.data ?? []);
 
   return {
-    open: openNow.count ?? 0,
-    critical: criticalNow.count ?? 0,
+    open: openAdjusted,
+    critical: criticalAdjusted,
     closedThisWeek: closedThisWeek.count ?? 0,
     avgResponseHours: avgThisWeek,
     openDelta: computeDelta({
-      current: openNow.count ?? 0,
+      current: openAdjusted,
       prior: openWeekAgo.count ?? 0,
       label: "vs sem. pasada",
     }),
@@ -225,6 +297,60 @@ export async function getInboxKpis(): Promise<InboxKpis> {
         ? now.toISOString().slice(0, 10)
         : now.toISOString().slice(0, 10),
   };
+}
+
+/**
+ * Count stale invoice issues so KPI counts match what listInbox renders.
+ *
+ * "Stale" = open issue whose underlying canonical_invoice already meets
+ * the resolved condition (e.g. has sat_uuid for a posted_without_uuid
+ * issue). See INVOICE_STALE_INVARIANTS for the full set.
+ *
+ * Uses the same join-in-memory strategy as filterStaleInvoiceIssues so
+ * the two paths can never disagree.
+ */
+async function countStaleInvoiceIssues(
+  sb: ReturnType<typeof getServiceClient>,
+  opts: { onlyCritical: boolean }
+): Promise<number> {
+  let q = sb
+    .from("reconciliation_issues")
+    .select("issue_id, invariant_key, canonical_entity_id")
+    .is("resolved_at", null)
+    .in("invariant_key", Array.from(INVOICE_STALE_INVARIANTS));
+  if (opts.onlyCritical) q = q.eq("severity", "critical");
+  const { data } = await q.limit(2000);
+  type Raw = { issue_id: string; invariant_key: string | null; canonical_entity_id: string | null };
+  const rows = (data ?? []) as Raw[];
+  const ids = new Set<number>();
+  for (const r of rows) {
+    const ref = parseCanonicalEntityId(r.canonical_entity_id);
+    if (ref?.source === "odoo") {
+      const n = Number(ref.id);
+      if (Number.isFinite(n)) ids.add(n);
+    }
+  }
+  if (ids.size === 0) return 0;
+  const { data: invs } = await sb
+    .from("canonical_invoices")
+    .select("odoo_invoice_id, sat_uuid, has_sat_record")
+    .in("odoo_invoice_id", Array.from(ids));
+  type Inv = { odoo_invoice_id: number; sat_uuid: string | null; has_sat_record: boolean | null };
+  const stale = new Set<number>();
+  for (const inv of (invs ?? []) as Inv[]) {
+    if (inv.sat_uuid != null || inv.has_sat_record === true) {
+      stale.add(inv.odoo_invoice_id);
+    }
+  }
+  let count = 0;
+  for (const r of rows) {
+    const ref = parseCanonicalEntityId(r.canonical_entity_id);
+    if (ref?.source === "odoo") {
+      const n = Number(ref.id);
+      if (stale.has(n)) count++;
+    }
+  }
+  return count;
 }
 
 function avgHours(
