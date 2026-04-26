@@ -236,51 +236,206 @@ export interface ConcentrationRow {
   tripwire: ConcentrationTripwire | null;
 }
 
-export async function getRevenueConcentration(
-  topN = 30
+/**
+ * Revenue concentration replacement — computed in TypeScript from
+ * canonical_invoices + canonical_companies (replaces the `revenue_concentration`
+ * MV that was dropped in SP1 batch 1, migration 1068_silver_sp5_drop_batch_1).
+ *
+ * Same shape as the legacy view + same tripwire heuristics:
+ *   - rev_12m / rev_90d / rev_30d / rev_30d_prev windows from invoice_date
+ *   - rank_in_portfolio by rev_12m DESC
+ *   - share_pct + cumulative_pct (Pareto)
+ *   - pareto_class A (≤80%) / B (≤95%) / C
+ *   - tripwires:
+ *       TOP5_DECLINE_25PCT  → top-5 with rev_30d down >25% MoM
+ *       TOP10_DECLINE_40PCT → top-10 with rev_30d down >40% MoM
+ *       TOP5_NO_ORDER_45D   → top-5 with no invoice in 45+ days
+ *
+ * Filters internal companies (canonical_companies.is_internal=true) so
+ * inter-company revenue doesn't pollute the rank.
+ *
+ * Cached 300s — revenue concentration changes slowly and the view is
+ * read on every / page load.
+ */
+async function _getRevenueConcentrationRaw(
+  topN: number = 30,
 ): Promise<ConcentrationRow[]> {
   const sb = getServiceClient();
-  // SP5-EXCEPTION: revenue_concentration was a §12 MV dropped in SP1 batch 1
-  // (migration 1068_silver_sp5_drop_batch_1_wrappers). PostgREST returns 404
-  // from the live DB. Until SP6 ships a canonical aggregate, swallow the
-  // error and return []; the consumer (`/` ConcentrationTripwires) hides
-  // itself when the array is empty.
-  // TODO SP6: derive from canonical_invoices aggregate.
-  const { data, error } = await sb
-    .from("revenue_concentration")
-    .select("*")
-    .lte("rank_in_portfolio", topN);
+  const since = new Date();
+  since.setUTCDate(since.getUTCDate() - 365);
+  const sinceIso = since.toISOString().slice(0, 10);
+
+  // Pull all issued+vigente invoices in the last 365 days. Volume cap:
+  // ~2.5k rows in production — fits comfortably in one round-trip.
+  const { data: invRows, error } = await sb
+    .from("canonical_invoices")
+    .select(
+      "receptor_canonical_company_id, invoice_date, amount_total_mxn_resolved",
+    )
+    .eq("direction", "issued")
+    .eq("estado_sat", "vigente")
+    .gte("invoice_date", sinceIso)
+    .not("receptor_canonical_company_id", "is", null)
+    .not("invoice_date", "is", null)
+    .limit(10000);
   if (error) {
     if (process.env.NODE_ENV !== "production") {
-      console.warn(
-        "[getRevenueConcentration] view unavailable; returning [] until SP6:",
-        error.message,
-      );
+      console.warn("[getRevenueConcentration] canonical_invoices query failed:", error.message);
     }
     return [];
   }
-  return ((data ?? []) as Array<Partial<ConcentrationRow>>).map((r) => ({
-    company_id: Number(r.company_id) || 0,
-    company_name: r.company_name ?? "—",
-    tier: r.tier ?? null,
-    rank_in_portfolio: Number(r.rank_in_portfolio) || 0,
-    rev_12m: Number(r.rev_12m) || 0,
-    rev_90d: Number(r.rev_90d) || 0,
-    rev_30d: Number(r.rev_30d) || 0,
-    rev_30d_prev: Number(r.rev_30d_prev) || 0,
-    share_pct: Number(r.share_pct) || 0,
-    cumulative_pct: Number(r.cumulative_pct) || 0,
-    pareto_class: (r.pareto_class as "A" | "B" | "C") ?? "C",
-    last_invoice_date: r.last_invoice_date ?? null,
-    days_since_last_invoice:
-      r.days_since_last_invoice != null
-        ? Number(r.days_since_last_invoice)
-        : null,
-    rev_30d_delta_pct:
-      r.rev_30d_delta_pct != null ? Number(r.rev_30d_delta_pct) : null,
-    tripwire: (r.tripwire as ConcentrationTripwire) ?? null,
-  }));
+  const rawInvoices = (invRows ?? []) as Array<{
+    receptor_canonical_company_id: number | null;
+    invoice_date: string | null;
+    amount_total_mxn_resolved: number | null;
+  }>;
+  if (rawInvoices.length === 0) return [];
+
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const cutoff30 = new Date(today.getTime() - 30 * 86400 * 1000);
+  const cutoff60 = new Date(today.getTime() - 60 * 86400 * 1000);
+  const cutoff90 = new Date(today.getTime() - 90 * 86400 * 1000);
+
+  // Aggregate per company
+  interface Agg {
+    rev_12m: number;
+    rev_90d: number;
+    rev_30d: number;
+    rev_30d_prev: number;
+    last_invoice_date: string | null;
+  }
+  const byCompany = new Map<number, Agg>();
+  for (const r of rawInvoices) {
+    if (r.receptor_canonical_company_id == null || r.invoice_date == null) continue;
+    const amount = Number(r.amount_total_mxn_resolved) || 0;
+    if (amount <= 0) continue;
+    const d = new Date(r.invoice_date);
+    const id = r.receptor_canonical_company_id;
+    const a = byCompany.get(id) ?? {
+      rev_12m: 0,
+      rev_90d: 0,
+      rev_30d: 0,
+      rev_30d_prev: 0,
+      last_invoice_date: null,
+    };
+    a.rev_12m += amount;
+    if (d >= cutoff90) a.rev_90d += amount;
+    if (d >= cutoff30) a.rev_30d += amount;
+    else if (d >= cutoff60) a.rev_30d_prev += amount;
+    if (a.last_invoice_date == null || r.invoice_date > a.last_invoice_date) {
+      a.last_invoice_date = r.invoice_date;
+    }
+    byCompany.set(id, a);
+  }
+
+  // Resolve display_name + tier + is_internal for the companies in the bucket
+  const ids = [...byCompany.keys()];
+  if (ids.length === 0) return [];
+  const { data: ccData } = await sb
+    .from("canonical_companies")
+    .select("id, display_name, tier, is_internal")
+    .in("id", ids);
+  type CC = {
+    id: number;
+    display_name: string | null;
+    tier: string | null;
+    is_internal: boolean | null;
+  };
+  const ccMap = new Map<number, CC>();
+  for (const c of (ccData ?? []) as CC[]) ccMap.set(c.id, c);
+
+  // Filter internal + grand total for share calc
+  const ranked: Array<{
+    company_id: number;
+    company_name: string;
+    tier: string | null;
+    agg: Agg;
+  }> = [];
+  let totalRev12m = 0;
+  for (const [id, agg] of byCompany.entries()) {
+    const cc = ccMap.get(id);
+    if (cc?.is_internal) continue;
+    totalRev12m += agg.rev_12m;
+    ranked.push({
+      company_id: id,
+      company_name: cc?.display_name ?? `#${id}`,
+      tier: cc?.tier ?? null,
+      agg,
+    });
+  }
+  ranked.sort((a, b) => b.agg.rev_12m - a.agg.rev_12m);
+
+  // Compute rank, share, cumulative, pareto, tripwires
+  let cumulative = 0;
+  const rows: ConcentrationRow[] = ranked.slice(0, topN).map((r, i) => {
+    const rank = i + 1;
+    const sharePct = totalRev12m > 0 ? (r.agg.rev_12m / totalRev12m) * 100 : 0;
+    cumulative += r.agg.rev_12m;
+    const cumPct =
+      totalRev12m > 0 ? (cumulative / totalRev12m) * 100 : 0;
+    const paretoClass: "A" | "B" | "C" =
+      cumPct <= 80 ? "A" : cumPct <= 95 ? "B" : "C";
+
+    const lastInv = r.agg.last_invoice_date;
+    const daysSinceLast =
+      lastInv != null
+        ? Math.floor(
+            (today.getTime() - new Date(lastInv).getTime()) / (86400 * 1000),
+          )
+        : null;
+
+    const delta30Pct =
+      r.agg.rev_30d_prev > 0
+        ? ((r.agg.rev_30d - r.agg.rev_30d_prev) / r.agg.rev_30d_prev) * 100
+        : null;
+
+    let tripwire: ConcentrationTripwire | null = null;
+    if (
+      rank <= 5 &&
+      r.agg.rev_30d_prev > 0 &&
+      delta30Pct != null &&
+      delta30Pct < -25
+    ) {
+      tripwire = "TOP5_DECLINE_25PCT";
+    } else if (
+      rank <= 10 &&
+      r.agg.rev_30d_prev > 0 &&
+      delta30Pct != null &&
+      delta30Pct < -40
+    ) {
+      tripwire = "TOP10_DECLINE_40PCT";
+    } else if (rank <= 5 && daysSinceLast != null && daysSinceLast > 45) {
+      tripwire = "TOP5_NO_ORDER_45D";
+    }
+
+    return {
+      company_id: r.company_id,
+      company_name: r.company_name,
+      tier: r.tier,
+      rank_in_portfolio: rank,
+      rev_12m: Math.round(r.agg.rev_12m * 100) / 100,
+      rev_90d: Math.round(r.agg.rev_90d * 100) / 100,
+      rev_30d: Math.round(r.agg.rev_30d * 100) / 100,
+      rev_30d_prev: Math.round(r.agg.rev_30d_prev * 100) / 100,
+      share_pct: Math.round(sharePct * 100) / 100,
+      cumulative_pct: Math.round(cumPct * 100) / 100,
+      pareto_class: paretoClass,
+      last_invoice_date: lastInv,
+      days_since_last_invoice: daysSinceLast,
+      rev_30d_delta_pct:
+        delta30Pct != null ? Math.round(delta30Pct * 10) / 10 : null,
+      tripwire,
+    };
+  });
+  return rows;
 }
+
+export const getRevenueConcentration = unstable_cache(
+  _getRevenueConcentrationRaw,
+  ["analytics-revenue-concentration"],
+  { revalidate: 300, tags: ["revenue", "companies"] },
+);
 
 export async function getActiveTripwires(): Promise<ConcentrationRow[]> {
   const all = await getRevenueConcentration(50);
