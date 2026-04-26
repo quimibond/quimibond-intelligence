@@ -15,16 +15,37 @@ import { joinedCompanyName } from "../_shared/_helpers";
 
 export type SalesActionSeverity = "critical" | "high" | "medium" | "low";
 
+/** A single concrete next-step parsed out of agent_insights.recommendation. */
+export interface SalesNextStep {
+  /** Person responsible — extracted from "Persona: acción" prefix. May be null
+   *  when the LLM didn't follow the convention. */
+  owner: string | null;
+  /** The action sentence itself, sans the owner prefix. */
+  text: string;
+}
+
 export interface SalesAction {
   id: number;
   title: string;
+  /** Long-form explanation of WHY this matters. Often missing for older
+   *  insights — caller should fall back to title. */
+  description: string | null;
   severity: SalesActionSeverity;
   impactMxn: number | null;
-  recommendation: string | null;
+  /** 0–1. Surfaces "how confident the agent is" so the CEO can calibrate. */
+  confidence: number | null;
+  /** Parsed list of next steps. recommendation.split("|") + owner extraction. */
+  nextSteps: SalesNextStep[];
+  /** Verifiable facts the agent used (entries from agent_insights.evidence). */
+  evidence: string[];
+  /** The agent that produced the insight (for provenance). */
   agentName: string | null;
   companyId: number | null;
   companyName: string | null;
-  assigneeName: string | null;
+  /** Internal routing assignee (often the area lead or CEO via insight_routing
+   *  trigger). Different from `nextSteps[].owner`, which is the actual person
+   *  named in the LLM-generated action text. */
+  routedTo: string | null;
   createdAt: string | null;
 }
 
@@ -49,6 +70,54 @@ function normalizeSeverity(s: string | null): SalesActionSeverity {
 }
 
 /**
+ * Split agent_insights.recommendation into discrete next steps.
+ *
+ * Convention emitted by the Director Comercial agent:
+ *
+ *   "Owner Name: Acción concreta | Owner Name: Otra acción | ..."
+ *
+ * Owners aren't always present (legacy / different agents). When the prefix
+ * is missing we surface the whole text as a single step with owner=null.
+ */
+function parseNextSteps(recommendation: string | null): SalesNextStep[] {
+  if (!recommendation) return [];
+  const parts = recommendation
+    .split("|")
+    .map((p) => p.trim())
+    .filter(Boolean);
+  return parts.map((p) => {
+    // Match "Owner: action". Owner = up to first colon, but reject if the
+    // prefix has more than 6 words (that's a sentence, not a name).
+    // [\s\S]+ instead of .+ with /s flag — tsconfig target=ES2017 lacks dotAll.
+    const m = /^([^:]{1,80}):\s*([\s\S]+)$/.exec(p);
+    if (m) {
+      const owner = m[1].trim();
+      if (owner.split(/\s+/).length <= 6) {
+        return { owner, text: m[2].trim() };
+      }
+    }
+    return { owner: null, text: p };
+  });
+}
+
+function parseEvidence(raw: unknown): string[] {
+  if (!raw) return [];
+  if (Array.isArray(raw)) {
+    return raw
+      .map((item) =>
+        typeof item === "string"
+          ? item
+          : typeof item === "object"
+            ? JSON.stringify(item)
+            : String(item)
+      )
+      .filter(Boolean);
+  }
+  if (typeof raw === "string") return [raw];
+  return [];
+}
+
+/**
  * Ordered list of open ventas-category insights with company + assignee
  * joined. `limit` controls how many actions we surface — defaults to 6
  * which matches the "top acciones priorizadas" pattern of /finanzas.
@@ -63,7 +132,7 @@ export async function getSalesRecommendations(
   const { data } = await sb
     .from("agent_insights")
     .select(
-      "id, title, severity, business_impact_estimate, recommendation, company_id, assignee_name, created_at, companies:company_id(name), ai_agents:agent_id(slug, name)"
+      "id, title, description, severity, business_impact_estimate, recommendation, evidence, confidence, company_id, assignee_name, created_at, companies:company_id(name), ai_agents:agent_id(slug, name)"
     )
     .eq("category", "ventas")
     .in("state", ["new", "seen"])
@@ -73,9 +142,12 @@ export async function getSalesRecommendations(
   type Raw = {
     id: number;
     title: string | null;
+    description: string | null;
     severity: string | null;
     business_impact_estimate: number | null;
     recommendation: string | null;
+    evidence: unknown;
+    confidence: number | null;
     company_id: number | null;
     assignee_name: string | null;
     created_at: string | null;
@@ -90,16 +162,20 @@ export async function getSalesRecommendations(
     const action: SalesAction = {
       id: row.id,
       title: row.title ?? "",
+      description: row.description,
       severity: normalizeSeverity(row.severity),
       impactMxn:
         row.business_impact_estimate != null
           ? Number(row.business_impact_estimate)
           : null,
-      recommendation: row.recommendation,
+      confidence:
+        row.confidence != null ? Number(row.confidence) : null,
+      nextSteps: parseNextSteps(row.recommendation),
+      evidence: parseEvidence(row.evidence),
       agentName: ag?.name ?? null,
       companyId: row.company_id,
       companyName: joinedCompanyName(row.companies),
-      assigneeName: row.assignee_name,
+      routedTo: row.assignee_name,
       createdAt: row.created_at,
     };
     return action;
