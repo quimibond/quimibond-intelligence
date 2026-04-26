@@ -46,8 +46,19 @@ import { getServiceClient } from "@/lib/supabase-server";
  *     → invoice_date = delivery_date + CFDI_LAG (3d)
  *     → payment_date = invoice_date + AR_delay del cliente
  *     → probabilidad por tier de edad: <30d=0.85, 30-90d=0.70, 90-180d=0.45
- * Categoría separada `ventas_confirmadas` para distinguirla de `ar_cobranza`
- * (factura ya emitida) y `ventas_proyectadas` (run rate estadístico).
+ * IVA: se aplica el ratio del header `amount_total_mxn / amount_untaxed_mxn`
+ * por SO. Cliente exento (export USA, tasa 0%) → factor 1.0; cliente normal
+ * → 1.16; SOs con líneas mixtas → blended. Default 1.16 sólo si header
+ * viene con totales 0/null (raro).
+ *
+ * Modelo de tres capas para inflows (sin duplicación):
+ *   1. AR ya facturado (cashflow_projection.receivable_detail) — con IVA
+ *   2. SO confirmadas pero no facturadas — con IVA via tax factor
+ *   3. Run rate per cliente activo (last 90d / 3 = monthly avg con IVA),
+ *      descontando bucket 1+2 weighted en horizonte para evitar duplicar.
+ *      Probabilidad 0.70 (estadístico). Reemplaza `ventas_proyectadas`
+ *      del RPC recurring (que era proxy global, no per-customer, y
+ *      duplicaba con AR existente).
  *
  * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
  */
@@ -160,10 +171,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       // para fechar la cobranza esperada. cashflow_projection solo tiene
       // facturas emitidas; este pipeline confirmado es backlog comprometido
       // que entrará a AR cuando se facture (entrega + lead time).
+      // amount_total_mxn / amount_untaxed_mxn = tax factor para escalar
+      // las líneas (subtotal_mxn está SIN IVA; el cliente paga CON IVA).
       sb
         .from("odoo_sale_orders")
         .select(
-          "odoo_order_id, name, date_order, commitment_date, company_id, currency"
+          "odoo_order_id, name, date_order, commitment_date, company_id, currency, amount_total_mxn, amount_untaxed_mxn"
         )
         .eq("state", "sale")
         .gte("date_order", soSinceIso),
@@ -180,6 +193,22 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         .gt("qty", 0)
         .gt("subtotal_mxn", 0),
     ]);
+
+  // Capa 3: run rate por cliente activo. Pulled separately después del
+  // primer batch para no cargar el Promise.all con dependencias cruzadas.
+  // Tomamos los últimos 90 días de canonical_invoices issued con IVA
+  // (amount_total_mxn_resolved) — es el cash que el cliente NOS paga.
+  const customerLookbackIso = toIso(new Date(today.getTime() - 90 * 86400000));
+  const customerInvRes = await sb
+    .from("canonical_invoices")
+    .select(
+      "receptor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
+    )
+    .eq("direction", "issued")
+    .eq("is_quimibond_relevant", true)
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
+    .gte("invoice_date", customerLookbackIso)
+    .gt("amount_total_mxn_resolved", 0);
 
   // Set autoritativo de Bronze company.id para partes relacionadas.
   // Source of truth: canonical_companies.is_related_party = true (marcado
@@ -299,6 +328,10 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   let probSum = 0;
   let probCount = 0;
   let overdueInflowCount = 0;
+  // Tracker bucket 1 weighted por cliente (cobranza esperada de facturas
+  // ya emitidas, con IVA — amount_residual incluye impuestos). Usado en
+  // capa 3 para no duplicar con run rate.
+  const bucket1WeightedByCustomer = new Map<number, number>();
 
   // Acumulador de totales por categoría
   const categoryAcc = new Map<
@@ -388,6 +421,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         "inflow",
         expected
       );
+      if (r.company_id != null && date <= endIso) {
+        bucket1WeightedByCustomer.set(
+          r.company_id,
+          (bucket1WeightedByCustomer.get(r.company_id) ?? 0) + expected
+        );
+      }
       if (r.collection_probability != null) {
         probSum += Number(r.collection_probability);
         probCount++;
@@ -475,7 +514,10 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     commitment_date: string | null;
     company_id: number | null;
     currency: string | null;
+    amount_total_mxn: number | null;
+    amount_untaxed_mxn: number | null;
   };
+  const DEFAULT_IVA_FACTOR = 1.16; // IVA general MX 16%
   type SoLine = {
     odoo_order_id: number | null;
     qty: number | null;
@@ -556,6 +598,10 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
   };
 
+  // Tracker de pipeline weighted por cliente (para descontar en capa 3
+  // y evitar duplicar con run rate).
+  const bucket2WeightedByCustomer = new Map<number, number>();
+
   for (const [orderId, amts] of pendingByOrder) {
     if (amts.deliveredAmt <= 0 && amts.undeliveredAmt <= 0) continue;
     const header = soHeaders.get(orderId);
@@ -566,15 +612,36 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const arDelay =
       header.company_id != null ? arDelayMap.get(header.company_id) ?? 30 : 30;
 
+    // IVA factor: amount_total_mxn / amount_untaxed_mxn del header del SO.
+    // Las líneas guardan subtotal_mxn (sin IVA); el cobro real al cliente
+    // incluye IVA. Si no hay header data válido, default 1.16.
+    const headerUntaxed = Number(header.amount_untaxed_mxn) || 0;
+    const headerTotal = Number(header.amount_total_mxn) || 0;
+    const taxFactor =
+      headerUntaxed > 0 && headerTotal > 0
+        ? headerTotal / headerUntaxed
+        : DEFAULT_IVA_FACTOR;
+    const deliveredWithIva = amts.deliveredAmt * taxFactor;
+    const undeliveredWithIva = amts.undeliveredAmt * taxFactor;
+
+    const trackBucket2 = (expectedAmt: number) => {
+      if (header.company_id == null) return;
+      bucket2WeightedByCustomer.set(
+        header.company_id,
+        (bucket2WeightedByCustomer.get(header.company_id) ?? 0) + expectedAmt
+      );
+    };
+
     // Tier A: delivered pending (factura inminente, prob 0.95)
-    if (amts.deliveredAmt > 0) {
+    if (deliveredWithIva > 0) {
       const invoiceIso = shiftDate(todayIso, CFDI_EMISSION_LAG_DAYS);
       const paymentIso = shiftDate(invoiceIso, Math.max(arDelay, 0));
-      pushPipelineInflow(header, amts.deliveredAmt, paymentIso, 0.95, "(entregado)");
+      if (paymentIso <= endIso) trackBucket2(deliveredWithIva * 0.95);
+      pushPipelineInflow(header, deliveredWithIva, paymentIso, 0.95, "(entregado)");
     }
 
     // Tier B: undelivered pending — prob por edad del SO
-    if (amts.undeliveredAmt > 0) {
+    if (undeliveredWithIva > 0) {
       const ageDays = Math.max(
         0,
         Math.floor(
@@ -596,11 +663,140 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       }
       const invoiceIso = shiftDate(deliveryIso, CFDI_EMISSION_LAG_DAYS);
       const paymentIso = shiftDate(invoiceIso, Math.max(arDelay, 0));
-      pushPipelineInflow(header, amts.undeliveredAmt, paymentIso, prob, "(pipeline)");
+      if (paymentIso <= endIso) trackBucket2(undeliveredWithIva * prob);
+      pushPipelineInflow(header, undeliveredWithIva, paymentIso, prob, "(pipeline)");
     }
   }
+
+  // ── Capa 3: Run rate por cliente activo (last 90d) ─────────────────────
+  // Para cada cliente con facturación reciente, proyecta su demanda mensual
+  // promedio (con IVA — usamos amount_total_mxn_resolved que es el total
+  // que el cliente paga, incluyendo o no IVA según su régimen). El run rate
+  // se reduce por:
+  //   - bucket 1 (AR ya emitida): cobranza esperada en horizonte
+  //   - bucket 2 (SO confirmada sin facturar): pipeline weighted en horizonte
+  // Solo el RESIDUAL = max(0, expected_in_horizon − bucket1 − bucket2)
+  // se agrega como inflow de "demanda nueva esperada", evitando duplicar
+  // los flujos ya capturados en capas 1 y 2.
+  //
+  // Probabilidad 0.70 (estadística — el cliente típicamente compra esto
+  // pero no está comprometido para este horizonte). Lower que SO pipeline
+  // (0.85-0.95) por la incertidumbre de demanda futura.
+  //
+  // Cliente activo = facturó al menos 1 vez en últimos 90d, no es parte
+  // relacionada, y no está en blacklist (canonical_companies.blacklist_status
+  // si existe — por ahora solo filtramos partes relacionadas).
+  type CustomerInvRow = {
+    receptor_canonical_company_id: number | null;
+    amount_total_mxn_resolved: number | null;
+    invoice_date: string | null;
+  };
+  const customerInvRows = (customerInvRes.data ?? []) as CustomerInvRow[];
+  // canonical_company_id → bronze companies.id mapping no es directo;
+  // canonical_invoices.receptor_canonical_company_id es canonical id,
+  // mientras que cashflow_projection y SOs usan companies.id (Bronze).
+  // Para descontar bucket 1 + 2 (Bronze ids) del run rate (canonical id),
+  // resolvemos vía canonical_companies → companies join por odoo_partner_id.
+  const canonicalIdsWithRevenue = new Set<number>();
+  for (const r of customerInvRows) {
+    if (r.receptor_canonical_company_id != null) {
+      canonicalIdsWithRevenue.add(r.receptor_canonical_company_id);
+    }
+  }
+  const canonicalToBronzeMap = new Map<number, number>();
+  if (canonicalIdsWithRevenue.size > 0) {
+    const ids = [...canonicalIdsWithRevenue];
+    const { data: ccData } = await sb
+      .from("canonical_companies")
+      .select("id, odoo_partner_id")
+      .in("id", ids)
+      .not("odoo_partner_id", "is", null);
+    type CcRow = { id: number | null; odoo_partner_id: number | null };
+    const partnerIds: number[] = [];
+    const ccByPartner = new Map<number, number>();
+    for (const c of (ccData ?? []) as CcRow[]) {
+      if (c.id != null && c.odoo_partner_id != null) {
+        partnerIds.push(c.odoo_partner_id);
+        ccByPartner.set(c.odoo_partner_id, c.id);
+      }
+    }
+    if (partnerIds.length > 0) {
+      const { data: bronzeData } = await sb
+        .from("companies")
+        .select("id, odoo_partner_id")
+        .in("odoo_partner_id", partnerIds);
+      for (const b of (bronzeData ?? []) as Array<{
+        id: number | null;
+        odoo_partner_id: number | null;
+      }>) {
+        if (b.id != null && b.odoo_partner_id != null) {
+          const cid = ccByPartner.get(b.odoo_partner_id);
+          if (cid != null) canonicalToBronzeMap.set(cid, b.id);
+        }
+      }
+    }
+  }
+
+  // Run rate mensual por cliente: SUM(invoiced last 90d con IVA) / 3
+  const monthlyRunRateByCanonical = new Map<number, number>();
+  for (const r of customerInvRows) {
+    const cid = r.receptor_canonical_company_id;
+    if (cid == null) continue;
+    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    monthlyRunRateByCanonical.set(
+      cid,
+      (monthlyRunRateByCanonical.get(cid) ?? 0) + amt
+    );
+  }
+  const RUN_RATE_PROBABILITY = 0.7;
+  const horizonProportion = horizonDays / 30;
+  for (const [canonicalId, lookbackTotal] of monthlyRunRateByCanonical) {
+    const monthlyAvg = lookbackTotal / 3; // 90 días = 3 meses
+    if (monthlyAvg <= 0) continue;
+    // Excluir partes relacionadas (canonical id checked at canonical_companies level)
+    // canonicalId is canonical_companies.id; we excluded by RFC at Bronze level.
+    // Resolve to Bronze id for proper bucket1/bucket2 lookup.
+    const bronzeId = canonicalToBronzeMap.get(canonicalId);
+    if (bronzeId == null) continue; // sin Bronze id no podemos descontar — skip
+    if (relatedPartyIds.has(bronzeId)) continue;
+    const expectedInHorizon = monthlyAvg * horizonProportion;
+    const bucket1Committed = bucket1WeightedByCustomer.get(bronzeId) ?? 0;
+    const bucket2Committed = bucket2WeightedByCustomer.get(bronzeId) ?? 0;
+    const residualNominal = Math.max(
+      0,
+      expectedInHorizon - bucket1Committed - bucket2Committed
+    );
+    if (residualNominal <= 0) continue;
+    // AR_delay del cliente para fechar la cobranza
+    const arDelay = arDelayMap.get(bronzeId) ?? 30;
+    // Modelado simple: cobranza ocurre al midpoint del horizonte + AR_delay
+    // (compromiso entre orders pronto-tarde dentro del horizonte). Si cae
+    // fuera del horizonte, no se agrega.
+    const midpointOffset = Math.floor(horizonDays / 2);
+    const orderDate = shiftDate(todayIso, midpointOffset);
+    const invoiceDate = shiftDate(orderDate, CFDI_EMISSION_LAG_DAYS);
+    const paymentDate = shiftDate(invoiceDate, Math.max(arDelay, 0));
+    if (paymentDate > endIso) continue;
+    const expected = residualNominal * RUN_RATE_PROBABILITY;
+    inflowByDay.set(
+      paymentDate,
+      (inflowByDay.get(paymentDate) ?? 0) + expected
+    );
+    totalInflow += expected;
+    totalInflowNominal += residualNominal;
+    addToCategory(
+      "runrate_clientes",
+      "Run rate (clientes activos, demanda nueva)",
+      "inflow",
+      expected
+    );
+  }
+
   // Procesar recurring flows del RPC silver (nómina, renta, servicios,
-  // arrendamiento, ventas proyectadas).
+  // arrendamiento). NOTA: ventas_proyectadas se SKIPEA aquí porque ya está
+  // cubierto por la capa 3 client-level (run rate per customer descontando
+  // bucket 1+2). El recurring global ventas_proyectadas era un proxy
+  // statistical que duplicaba.
   type RecRow = {
     projected_date: string;
     category: string;
@@ -617,8 +813,14 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // Nómina + impuestos_sat + ventas_proyectadas no llegan como factura,
   // siempre se proyectan.
   const FACTURED_CATS = new Set(["renta", "servicios", "arrendamiento"]);
+  // Categorías reemplazadas por modelos más precisos en este file:
+  //  - ventas_proyectadas → reemplazado por capa 3 (run rate per customer
+  //    descontando bucket 1+2). El recurring global era un proxy statistical
+  //    que duplicaba con el AR ya en cashflow_projection.
+  const REPLACED_CATS = new Set(["ventas_proyectadas"]);
   const recRows = (recurringRes.data ?? []) as RecRow[];
   for (const r of recRows) {
+    if (REPLACED_CATS.has(r.category)) continue;
     if (FACTURED_CATS.has(r.category) && r.projected_date < todayIso) {
       continue;
     }
@@ -708,7 +910,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v11-so-tiered"],
+  ["sp13-finanzas-cash-projection-v12-three-layer"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
