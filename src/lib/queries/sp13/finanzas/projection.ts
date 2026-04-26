@@ -169,15 +169,11 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // (cliente no va a recibir/facturar) y meterlas infla el inflow.
   const soSinceIso = toIso(new Date(today.getTime() - 180 * 86400000));
 
-  // Lookback nómina: últimos 6 meses cerrados (más robusto vs outliers
-  // mensuales y permite usar mediana). Extraído client-side para tener
-  // control sobre qué cuentas y aplicar mediana + exclusión de one-offs.
+  // Lookback nómina: últimos 6 meses cerrados. Extraído de CFDIs SAT
+  // (syntage_invoices tipo 'N') para reflejar el cash real al empleado
+  // y separar cohortes semanal vs quincenal por patrón de fechas.
   const nominaLookbackFromMonth = (() => {
     const d = new Date(today.getFullYear(), today.getMonth() - 6, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  })();
-  const lastClosedMonth = (() => {
-    const d = new Date(today.getFullYear(), today.getMonth(), 0); // último día del mes anterior
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
   })();
 
@@ -190,7 +186,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     relatedRfcRes,
     soHeaderRes,
     soLinesRes,
-    nominaBalancesRes,
+    nominaCfdiRes,
   ] = await Promise.all([
       sb
         .from("canonical_bank_balances")
@@ -249,21 +245,24 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         .gte("order_date", soSinceIso)
         .gt("qty", 0)
         .gt("subtotal_mxn", 0),
-      // Cuentas de nómina contable últimos 6 meses cerrados.
-      // Calculado client-side para excluir one-offs (Reyes, indemnización,
-      // prima antigüedad esporádica) y usar mediana en lugar de promedio.
-      // Reemplaza el cálculo del RPC `get_cash_projection_recurring` para
-      // la categoría 'nomina'.
+      // CFDIs de nómina (tipo "N", direction='issued') últimos 6 meses.
+      // Source de truth para el cash flow real al empleado:
+      //   - Subtotal CFDI = bruto devengado (incluye retenciones).
+      //   - Total CFDI = NETO al empleado (lo que sale del banco).
+      //   - Las retenciones (ISR, IMSS empleado) se enteran al SAT día 17
+      //     mes siguiente — ya están en `impuestos_sat` del recurring RPC.
+      //   - Quimibond tiene 99 empleados semanales (CFDIs cada ~7d, los
+      //     viernes) + 65 quincenales (CFDIs días 15 + último).
+      // Usar TOTAL evita double count con impuestos_sat (que ya proyecta
+      // las retenciones separadas).
       sb
-        .from("canonical_account_balances")
-        .select("period, account_code, balance")
-        .eq("balance_sheet_bucket", "expense")
-        .eq("deprecated", false)
-        .or(
-          "account_code.like.501.06.*,account_code.like.602.01.*,account_code.like.602.02.*,account_code.like.602.03.*,account_code.like.602.04.*,account_code.like.602.05.*,account_code.like.602.06.*,account_code.like.602.07.*,account_code.like.602.08.*,account_code.like.602.09.*,account_code.like.602.10.*,account_code.like.602.11.*,account_code.like.602.12.*,account_code.like.602.13.*,account_code.like.602.14.*,account_code.like.602.15.*,account_code.like.602.16.*,account_code.like.602.17.*,account_code.like.602.18.*,account_code.like.602.19.*,account_code.like.602.20.*,account_code.like.602.21.*,account_code.like.602.22.*,account_code.like.602.23.*,account_code.like.602.24.*,account_code.like.602.25.*,account_code.like.603.01.*,account_code.like.603.02.*,account_code.like.603.03.*,account_code.like.603.04.*,account_code.like.603.05.*,account_code.like.603.06.*,account_code.like.603.07.*,account_code.like.603.08.*,account_code.like.603.09.*,account_code.like.603.10.*,account_code.like.603.11.*,account_code.like.603.12.*,account_code.like.603.13.*,account_code.like.603.14.*,account_code.like.603.15.*,account_code.like.603.16.*,account_code.like.603.17.*,account_code.like.603.18.*,account_code.like.603.19.*,account_code.like.603.20.*,account_code.like.603.21.*,account_code.like.603.22.*,account_code.like.603.23.*,account_code.like.603.24.*,account_code.like.603.25.*"
-        )
-        .gte("period", nominaLookbackFromMonth)
-        .lte("period", lastClosedMonth),
+        .from("syntage_invoices")
+        .select("fecha_emision, total_mxn, subtotal")
+        .eq("tipo_comprobante", "N")
+        .eq("direction", "issued")
+        .neq("estado_sat", "cancelado")
+        .gte("fecha_emision", `${nominaLookbackFromMonth}-01`)
+        .gt("total_mxn", 0),
     ]);
 
   // Capa 3: run rate por cliente activo. Pulled separately después del
@@ -988,136 +987,142 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   }
   customerInflowBreakdown.sort((a, b) => b.totalExpectedMxn - a.totalExpectedMxn);
 
-  // ── Nómina client-side (reemplaza categoría 'nomina' del RPC) ────────
-  // Best practices Quimibond:
-  //  1. Excluir cuentas one-off del promedio:
-  //     - 501.06.0014 AYUDA DE REYES (anual, solo enero)
-  //     - 501.06.0019 INDEMNIZACION (esporádico)
-  //     - 501.06.0025 PRIMA DE ANTIGUEDAD (anual o por separación)
-  //     - 602.17 PRIMA DE ANTIGUEDAD (idem)
-  //  2. Usar MEDIANA en últimos 6 meses (vs promedio: robusta a outliers).
-  //  3. Componentes con calendario propio:
-  //     - Aguinaldo (501.06.0006 + 602.12 + 603.12) → solo diciembre
-  //     - Vales despensa (501.06.0010 + 602.15 + 603.15) → 1 vez/mes (día 15)
-  //     - Fondo ahorro (501.06.0009 + 602.19 + 603.19) → 1 vez/mes (día último)
-  //     - Resto (sueldos, premios, vacaciones, prima vacacional) → 50/50 quincenas
-  //  4. Provisión aguinaldo: 1/12 del salario base proyectado para diciembre
-  //     (Quimibond no provisiona mensual: balance .0006 ≈ $5k/mes solamente).
-  type NominaRow = {
-    period: string | null;
-    account_code: string | null;
-    balance: number | null;
+  // ── Nómina client-side basada en CFDIs SAT ────────────────────────────
+  // Source of truth: syntage_invoices tipo='N' direction='issued'
+  // (CFDIs de nómina que la empresa emite a cada empleado).
+  //
+  // Quimibond paga DOS cohortes:
+  //   - SEMANAL: 99 empleados, CFDI cada viernes (~$1.91M/mes en viernes)
+  //   - QUINCENAL: 65 empleados, CFDI días 15 + último (~$1.10M/mes)
+  //
+  // Usamos TOTAL_MXN del CFDI = NETO al empleado (lo que sale del banco).
+  // El bruto (subtotal) NO se usa porque incluye retenciones que ya están
+  // proyectadas en `impuestos_sat` día 17 — usar bruto duplicaría el cash.
+  //
+  // Algoritmo:
+  //   1. Agregar CFDIs por día (lookback 6 meses, excluir mes actual y diciembre).
+  //   2. Clasificar cada día: quincenal (días 15, 28-31) vs semanal (otros, mayoría viernes).
+  //   3. Calcular promedio por evento:
+  //      - quincena_avg = total_quincenal / # eventos_quincenal
+  //      - viernes_avg = total_semanal / # viernes_observados
+  //   4. Proyectar al horizonte:
+  //      - Cada viernes ∈ horizonte: +viernes_avg
+  //      - Día 15 + último de cada mes ∈ horizonte: +quincena_avg
+  //   5. Aguinaldo (solo si horizonte cruza diciembre): delta dec_subtotal
+  //      vs subtotal_avg ≈ provisión anual. Proyectar 20-dic.
+  type CfdiNominaRow = {
+    fecha_emision: string | null;
+    total_mxn: number | null;
+    subtotal: number | null;
   };
-  const nominaRows = (nominaBalancesRes.data ?? []) as NominaRow[];
+  const cfdiNominaRows = (nominaCfdiRes.data ?? []) as CfdiNominaRow[];
 
-  const ONE_OFF_CODES = new Set([
-    "501.06.0014", // Ayuda de Reyes
-    "501.06.0019", // Indemnización
-    "501.06.0025", // Prima de antigüedad (501)
-  ]);
-  const isOneOff = (code: string): boolean => {
-    if (ONE_OFF_CODES.has(code)) return true;
-    // 602.17.* y 603.17.* son prima de antigüedad esporádica
-    if (code.startsWith("602.17.") || code.startsWith("603.17.")) return true;
-    return false;
+  // Agregar por día con clasificación quincenal/semanal
+  type DayBucket = {
+    iso: string;
+    dayOfMonth: number;
+    dayOfWeek: number;
+    total: number;
+    subtotal: number;
   };
-  const isAguinaldo = (code: string): boolean => {
-    if (code === "501.06.0006") return true;
-    return code.startsWith("602.12.") || code.startsWith("603.12.");
-  };
-  const isValesDespensa = (code: string): boolean => {
-    if (code === "501.06.0010") return true;
-    return code.startsWith("602.15.") || code.startsWith("603.15.");
-  };
-  const isFondoAhorro = (code: string): boolean => {
-    if (code === "501.06.0009") return true;
-    return code.startsWith("602.19.") || code.startsWith("603.19.");
-  };
-  // Validar que el code aplique al filtro del RPC (501.06 sin 0020-23, ó
-  // 602.01-25, ó 603.01-25). Defensa por si el .or de PostgREST trae algo
-  // fuera de scope.
-  const isInNominaScope = (code: string): boolean => {
-    if (code.startsWith("501.06.")) {
-      if (code.startsWith("501.06.0020") || code.startsWith("501.06.0021") ||
-          code.startsWith("501.06.0022") || code.startsWith("501.06.0023")) {
-        return false;
-      }
-      return true;
-    }
-    const parts = code.split(".");
-    if (parts.length < 2) return false;
-    if (parts[0] === "602" || parts[0] === "603") {
-      const n = parseInt(parts[1], 10);
-      return Number.isFinite(n) && n >= 1 && n <= 25;
-    }
-    return false;
-  };
-
-  // Sumar por período + categoría (excluyendo one-offs)
-  type NominaPeriodTotals = {
-    period: string;
-    sueldos: number; // todo lo regular quincenal
-    valesDespensa: number;
-    fondoAhorro: number;
-    aguinaldo: number;
-  };
-  const nominaByPeriod = new Map<string, NominaPeriodTotals>();
-  for (const r of nominaRows) {
-    if (!r.period || !r.account_code) continue;
-    const code = r.account_code;
-    if (!isInNominaScope(code)) continue;
-    if (isOneOff(code)) continue;
-    const bal = Number(r.balance) || 0;
-    if (bal === 0) continue;
-    const acc = nominaByPeriod.get(r.period) ?? {
-      period: r.period,
-      sueldos: 0,
-      valesDespensa: 0,
-      fondoAhorro: 0,
-      aguinaldo: 0,
+  const dayBuckets = new Map<string, DayBucket>();
+  for (const r of cfdiNominaRows) {
+    if (!r.fecha_emision) continue;
+    const iso = r.fecha_emision.slice(0, 10);
+    const d = new Date(iso);
+    const dom = d.getDate();
+    const dow = d.getDay();
+    const total = Number(r.total_mxn) || 0;
+    const subtotal = Number(r.subtotal) || 0;
+    if (total <= 0) continue;
+    const acc = dayBuckets.get(iso) ?? {
+      iso,
+      dayOfMonth: dom,
+      dayOfWeek: dow,
+      total: 0,
+      subtotal: 0,
     };
-    if (isAguinaldo(code)) acc.aguinaldo += bal;
-    else if (isValesDespensa(code)) acc.valesDespensa += bal;
-    else if (isFondoAhorro(code)) acc.fondoAhorro += bal;
-    else acc.sueldos += bal;
-    nominaByPeriod.set(r.period, acc);
+    acc.total += total;
+    acc.subtotal += subtotal;
+    dayBuckets.set(iso, acc);
   }
 
-  const median = (arr: number[]): number => {
-    if (arr.length === 0) return 0;
-    const sorted = [...arr].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 0
-      ? (sorted[mid - 1] + sorted[mid]) / 2
-      : sorted[mid];
-  };
+  // Clasificación: día 14, 15, 16 → quincenal mid; 28-31 → quincenal fin.
+  // Otros días con volumen significativo → semanal (típicamente viernes).
+  const FORTNIGHT_MID_DAYS = new Set([14, 15, 16]);
+  const FORTNIGHT_END_DAYS = new Set([28, 29, 30, 31]);
+  const isFortnightDay = (dom: number): boolean =>
+    FORTNIGHT_MID_DAYS.has(dom) || FORTNIGHT_END_DAYS.has(dom);
 
-  const periodValues = [...nominaByPeriod.values()];
-  const sueldosMedian = median(periodValues.map((p) => p.sueldos));
-  const valesMedian = median(periodValues.map((p) => p.valesDespensa));
-  const fondoMedian = median(periodValues.map((p) => p.fondoAhorro));
-  // Aguinaldo provisión = sueldos × 0.041 (15 días salario / 365 días).
-  // Quimibond no provisiona mensual; el cash hit cae en diciembre.
-  // Estimamos como (sueldos_anual × 15/365) y proyectamos para el día 20 dic.
-  const aguinaldoAnnualEstimate = sueldosMedian * 12 * (15 / 365);
+  // Excluir mes actual (parcial) y diciembre (atípico por aguinaldo).
+  const currentMonthKey = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}`;
 
-  const monthsInHorizon = (() => {
-    const months: Array<{ year: number; month: number; firstDay: Date; lastDay: Date }> = [];
-    const cursor = new Date(today.getFullYear(), today.getMonth(), 1);
-    while (cursor <= endDate) {
-      const lastDay = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 0);
-      months.push({
-        year: cursor.getFullYear(),
-        month: cursor.getMonth(),
-        firstDay: new Date(cursor),
-        lastDay,
-      });
-      cursor.setMonth(cursor.getMonth() + 1);
+  let totalFortnight = 0;
+  let countFortnightEvents = 0;
+  let totalWeekly = 0;
+  let totalWeeklySubtotal = 0;
+  let totalFortnightSubtotal = 0;
+  const weeklyEventsObserved = new Set<string>(); // ISO de viernes únicos
+  const decemberDayBuckets: DayBucket[] = [];
+  for (const b of dayBuckets.values()) {
+    const ym = b.iso.slice(0, 7);
+    if (ym === currentMonthKey) continue; // mes parcial
+    if (b.iso.slice(5, 7) === "12") {
+      decemberDayBuckets.push(b);
+      continue; // diciembre se trata aparte
     }
-    return months;
-  })();
+    if (isFortnightDay(b.dayOfMonth)) {
+      totalFortnight += b.total;
+      totalFortnightSubtotal += b.subtotal;
+      countFortnightEvents++;
+    } else {
+      totalWeekly += b.total;
+      totalWeeklySubtotal += b.subtotal;
+      // Contar viernes únicos como "evento semanal"
+      if (b.dayOfWeek === 5) {
+        weeklyEventsObserved.add(b.iso);
+      }
+    }
+  }
 
-  const pushNominaInflow = (
+  // Promedio por evento. Si no hay viernes (datos cortos), usar fallback.
+  const fortnightAvgNet =
+    countFortnightEvents > 0 ? totalFortnight / countFortnightEvents : 0;
+  const weeklyAvgNet =
+    weeklyEventsObserved.size > 0
+      ? totalWeekly / weeklyEventsObserved.size
+      : 0;
+
+  // Aguinaldo: estimar como (subtotal_dec - subtotal_baseline). Si
+  // diciembre histórico no está disponible, usar provisión 1/12 anual.
+  let aguinaldoEstimate = 0;
+  if (decemberDayBuckets.length > 0) {
+    const decTotalSubtotal = decemberDayBuckets.reduce(
+      (s, b) => s + b.subtotal,
+      0
+    );
+    // Baseline mensual: avg(viernes_subtotal × ~4.3 + quincenal_subtotal × 2)
+    const monthlyBaseline =
+      (weeklyEventsObserved.size > 0
+        ? (totalWeeklySubtotal / weeklyEventsObserved.size) * 4.33
+        : 0) +
+      (countFortnightEvents > 0
+        ? (totalFortnightSubtotal / countFortnightEvents) * 2
+        : 0);
+    aguinaldoEstimate = Math.max(0, decTotalSubtotal - monthlyBaseline);
+  } else {
+    // Provisión 15 días salario: subtotal_avg × 12 × 15/365
+    const monthlySubtotalAvg =
+      (weeklyEventsObserved.size > 0
+        ? (totalWeeklySubtotal / weeklyEventsObserved.size) * 4.33
+        : 0) +
+      (countFortnightEvents > 0
+        ? (totalFortnightSubtotal / countFortnightEvents) * 2
+        : 0);
+    aguinaldoEstimate = monthlySubtotalAvg * 12 * (15 / 365);
+  }
+
+  const pushNominaOutflow = (
     iso: string,
     amount: number,
     label: string,
@@ -1144,22 +1149,75 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     });
   };
 
-  for (const m of monthsInHorizon) {
-    const yyyymm = `${m.year}-${String(m.month + 1).padStart(2, "0")}`;
-    // Sueldos quincenales: día 15 + último día. Splitting median/2.
-    const day15 = new Date(m.year, m.month, 15);
-    const day15Iso = toIso(day15);
-    const lastIso = toIso(m.lastDay);
-    pushNominaInflow(day15Iso, sueldosMedian / 2, "Sueldos quincena 15", yyyymm);
-    pushNominaInflow(lastIso, sueldosMedian / 2, "Sueldos quincena fin", yyyymm);
-    // Vales despensa: día 15 (1 vez/mes, junto con la primera quincena)
-    pushNominaInflow(day15Iso, valesMedian, "Vales de despensa", yyyymm);
-    // Fondo ahorro: último día del mes
-    pushNominaInflow(lastIso, fondoMedian, "Fondo de ahorro", yyyymm);
-    // Aguinaldo: solo diciembre (día 20)
-    if (m.month === 11) {
-      const dec20 = toIso(new Date(m.year, 11, 20));
-      pushNominaInflow(dec20, aguinaldoAnnualEstimate, "Aguinaldo (anual)", yyyymm);
+  // Generar pagos a lo largo del horizonte
+  // 1. Semanales: cada viernes en [today, endDate]
+  if (weeklyAvgNet > 0) {
+    const cursor = new Date(today);
+    while (cursor <= endDate) {
+      if (cursor.getDay() === 5) {
+        // viernes
+        const iso = toIso(cursor);
+        if (iso >= todayIso) {
+          pushNominaOutflow(
+            iso,
+            weeklyAvgNet,
+            "Nómina semanal (99 empleados)",
+            iso
+          );
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+  }
+
+  // 2. Quincenales: día 15 + último día de cada mes en horizonte
+  if (fortnightAvgNet > 0) {
+    const cursor = new Date(today.getFullYear(), today.getMonth(), 1);
+    while (cursor <= endDate) {
+      const y = cursor.getFullYear();
+      const mo = cursor.getMonth();
+      const day15 = new Date(y, mo, 15);
+      const lastDay = new Date(y, mo + 1, 0);
+      const yyyymm = `${y}-${String(mo + 1).padStart(2, "0")}`;
+      const day15Iso = toIso(day15);
+      const lastIso = toIso(lastDay);
+      if (day15Iso >= todayIso && day15Iso <= endIso) {
+        pushNominaOutflow(
+          day15Iso,
+          fortnightAvgNet,
+          "Nómina quincena 15 (65 empleados)",
+          yyyymm
+        );
+      }
+      if (lastIso >= todayIso && lastIso <= endIso && lastIso !== day15Iso) {
+        pushNominaOutflow(
+          lastIso,
+          fortnightAvgNet,
+          "Nómina quincena fin (65 empleados)",
+          yyyymm
+        );
+      }
+      cursor.setMonth(cursor.getMonth() + 1);
+    }
+  }
+
+  // 3. Aguinaldo: 20 dic si está en horizonte
+  if (aguinaldoEstimate > 0) {
+    const cursor = new Date(today);
+    while (cursor <= endDate) {
+      if (cursor.getMonth() === 11) {
+        const dec20 = toIso(new Date(cursor.getFullYear(), 11, 20));
+        if (dec20 >= todayIso && dec20 <= endIso) {
+          pushNominaOutflow(
+            dec20,
+            aguinaldoEstimate,
+            "Aguinaldo (anual)",
+            `dic-${cursor.getFullYear()}`
+          );
+        }
+        break;
+      }
+      cursor.setMonth(cursor.getMonth() + 1);
     }
   }
 
@@ -1319,7 +1377,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v15-nomina-detail"],
+  ["sp13-finanzas-cash-projection-v16-nomina-cfdi"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
