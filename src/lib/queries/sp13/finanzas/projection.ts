@@ -57,8 +57,9 @@ import { getServiceClient } from "@/lib/supabase-server";
  *   1. AR ya facturado (cashflow_projection.receivable_detail) — con IVA
  *   2. SO confirmadas pero no facturadas — con IVA via tax factor
  *   3. Run rate per cliente activo (last 90d / 3 = monthly avg con IVA),
- *      descontando bucket 1+2 weighted en horizonte. Prob 0.70.
- *      Reemplaza `ventas_proyectadas` del RPC recurring.
+ *      descontando bucket 1+2 weighted en horizonte. Probabilidad por
+ *      tier de recurrencia: 3+ meses activos=0.70, 2 meses=0.35, 1 mes=skip
+ *      (one-off, no se proyecta). Reemplaza `ventas_proyectadas` del RPC.
  *
  * OUTFLOWS (sin duplicación):
  *   1. AP ya facturado (cashflow_projection.payable_detail)
@@ -66,8 +67,10 @@ import { getServiceClient } from "@/lib/supabase-server";
  *      renta día 1, servicios día 10, arrendamiento día 5, impuestos SAT
  *      día 17, aguinaldo 20-dic)
  *   3. Run rate per proveedor activo (last 90d / 3 = monthly avg con IVA),
- *      descontando bucket 1 (apCommittedBySupplier) en horizonte para
- *      evitar duplicar. Prob 0.80 (compras más predecibles que ventas).
+ *      descontando bucket 1 (apCommittedBySupplier) en horizonte.
+ *      Probabilidad por tier de recurrencia: 3+ meses=0.80, 2 meses=0.40,
+ *      1 mes=skip (excluye one-offs como compras grandes únicas que no
+ *      se repiten — ej. ICOMATEX $12.5M en marzo).
  *      Categoría 'runrate_proveedores'.
  *
  * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
@@ -893,8 +896,11 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
   }
 
-  // Run rate mensual por cliente: SUM(invoiced last 90d con IVA) / 3
+  // Run rate mensual por cliente: SUM(invoiced last 90d con IVA) / 3.
+  // Track también # distinct months para clasificar recurrencia y aplicar
+  // probabilidad por tier (recurrente fuerte vs débil vs one-off).
   const monthlyRunRateByCanonical = new Map<number, number>();
+  const customerActiveMonths = new Map<number, Set<string>>();
   for (const r of customerInvRows) {
     const cid = r.receptor_canonical_company_id;
     if (cid == null) continue;
@@ -903,8 +909,23 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       cid,
       (monthlyRunRateByCanonical.get(cid) ?? 0) + amt
     );
+    if (r.invoice_date) {
+      const month = r.invoice_date.slice(0, 7);
+      const set = customerActiveMonths.get(cid) ?? new Set<string>();
+      set.add(month);
+      customerActiveMonths.set(cid, set);
+    }
   }
-  const RUN_RATE_PROBABILITY = 0.7;
+  // Probabilidad por tier de recurrencia (clientes):
+  //   3+ meses activos: 0.70 (recurrente fuerte — alta confianza)
+  //   2 meses: 0.35 (recurrente débil — la mitad)
+  //   1 mes: skip (one-off — no proyectar como recurrente)
+  // Esto evita inflar el run rate con compras únicas que no se repiten.
+  const probabilityForCustomerRecurrence = (months: number): number => {
+    if (months >= 3) return 0.7;
+    if (months === 2) return 0.35;
+    return 0; // one-off
+  };
   const horizonProportion = horizonDays / 30;
   // Tracker per-customer para construir la tabla de breakdown al final.
   // key = Bronze company id. monthlyAvg/expectedHorizon en MXN con IVA.
@@ -918,6 +939,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const bronzeId = canonicalToBronzeMap.get(canonicalId);
     if (bronzeId == null) continue;
     if (relatedPartyIds.has(bronzeId)) continue;
+    const activeMonths = customerActiveMonths.get(canonicalId)?.size ?? 0;
+    const customerProb = probabilityForCustomerRecurrence(activeMonths);
+    if (customerProb <= 0) {
+      // One-off customer (1 mes activo): NO proyectar como recurrente.
+      // Su AR ya facturado sigue en bucket 1; aquí solo descartamos
+      // proyectar nuevas compras esperadas que no se van a repetir.
+      customerBreakdown.set(bronzeId, {
+        monthlyAvg,
+        expectedHorizon: monthlyAvg * horizonProportion,
+        bucket3Expected: 0,
+      });
+      continue;
+    }
     const expectedInHorizon = monthlyAvg * horizonProportion;
     const bucket1Committed = bucket1WeightedByCustomer.get(bronzeId) ?? 0;
     const bucket2Committed = bucket2WeightedByCustomer.get(bronzeId) ?? 0;
@@ -951,7 +985,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         // ar_delay > horizonte → todo el residual cae fuera; ignorar.
         bucket3Expected = 0;
       } else {
-        const weightedTotal = residualNominal * RUN_RATE_PROBABILITY;
+        const weightedTotal = residualNominal * customerProb;
         const perPayment = weightedTotal / paymentDates.length;
         const nominalPerPayment = residualNominal / paymentDates.length;
         bucket3Expected = weightedTotal;
@@ -976,7 +1010,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
             label: "Run rate residual (cliente activo)",
             category: "runrate_clientes",
             categoryLabel: "Run rate (clientes activos, demanda nueva)",
-            probability: RUN_RATE_PROBABILITY,
+            probability: customerProb,
             companyId: bronzeId,
             counterpartyName: null,
             daysOverdue: null,
@@ -1117,8 +1151,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
   }
 
-  // Run rate mensual por proveedor: SUM(received last 90d con IVA) / 3
+  // Run rate mensual por proveedor: SUM(received last 90d con IVA) / 3.
+  // Track también # distinct months para clasificar recurrencia y aplicar
+  // probabilidad por tier (igual que clientes — evita inflar el outflow
+  // con compras grandes one-off como ICOMATEX $12M en marzo).
   const monthlySupplierRunRate = new Map<number, number>();
+  const supplierActiveMonths = new Map<number, Set<string>>();
   for (const r of supplierInvRows) {
     const cid = r.emisor_canonical_company_id;
     if (cid == null) continue;
@@ -1127,14 +1165,35 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       cid,
       (monthlySupplierRunRate.get(cid) ?? 0) + amt
     );
+    if (r.invoice_date) {
+      const month = r.invoice_date.slice(0, 7);
+      const set = supplierActiveMonths.get(cid) ?? new Set<string>();
+      set.add(month);
+      supplierActiveMonths.set(cid, set);
+    }
   }
-  const SUPPLIER_RUN_RATE_PROBABILITY = 0.8;
+  // Probabilidad por tier de recurrencia (proveedores):
+  //   3+ meses activos: 0.80 (recurrente fuerte, alta confianza)
+  //   2 meses: 0.40 (recurrente débil)
+  //   1 mes: skip (one-off — no proyectar como recurrente)
+  // Excluir one-offs evita que ICOMATEX ($12.5M en marzo, una sola
+  // compra grande de hilo) se multiplique como si comprara mensualmente.
+  const probabilityForSupplierRecurrence = (months: number): number => {
+    if (months >= 3) return 0.8;
+    if (months === 2) return 0.4;
+    return 0; // one-off
+  };
   for (const [canonicalId, lookbackTotal] of monthlySupplierRunRate) {
     const monthlyAvg = lookbackTotal / 3;
     if (monthlyAvg <= 0) continue;
     const bronzeId = supplierCanonicalToBronze.get(canonicalId);
     if (bronzeId == null) continue;
     if (relatedPartyIds.has(bronzeId)) continue; // intercompañía fuera
+
+    const activeMonths =
+      supplierActiveMonths.get(canonicalId)?.size ?? 0;
+    const supplierProb = probabilityForSupplierRecurrence(activeMonths);
+    if (supplierProb <= 0) continue; // one-off, no proyectar
 
     const expectedInHorizon = monthlyAvg * horizonProportion;
     const apCommitted = apCommittedBySupplier.get(bronzeId) ?? 0;
@@ -1153,7 +1212,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
     if (paymentDates.length === 0) continue;
 
-    const weightedTotal = residualNominal * SUPPLIER_RUN_RATE_PROBABILITY;
+    const weightedTotal = residualNominal * supplierProb;
     const perPayment = weightedTotal / paymentDates.length;
     const nominalPerPayment = residualNominal / paymentDates.length;
 
@@ -1177,7 +1236,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         label: "Run rate compras (proveedor activo)",
         category: "runrate_proveedores",
         categoryLabel: "Run rate (compras nuevas a proveedores)",
-        probability: SUPPLIER_RUN_RATE_PROBABILITY,
+        probability: supplierProb,
         companyId: bronzeId,
         counterpartyName: null,
         daysOverdue: null,
@@ -1575,7 +1634,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v18-supplier-runrate"],
+  ["sp13-finanzas-cash-projection-v19-recurrence-tiers"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
