@@ -34,6 +34,14 @@ import { getServiceClient } from "@/lib/supabase-server";
  * "dump on today" (que producía cliffs artificiales de millones cuando
  * el 90%+ del AP está vencido).
  *
+ * Pipeline confirmado (SOs sin facturar):
+ * Sale orders con state='sale' donde qty_invoiced < qty representan
+ * backlog comprometido (~$18M al 2026-04-26). Sin overlay, ese ingreso
+ * se queda invisible. Modelado: payment_date = max(today, commitment_date
+ * or order_date+14d) + AR_delay_cliente; probabilidad 0.85. Categoría
+ * separada `ventas_confirmadas` para distinguirla de `ar_cobranza`
+ * (factura ya emitida) y `ventas_proyectadas` (run rate estadístico).
+ *
  * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
  */
 export interface CashProjectionPoint {
@@ -94,8 +102,21 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const endDate = new Date(today.getTime() + horizonDays * 86400000);
   const endIso = toIso(endDate);
 
-  const [cashRes, projRes, recurringRes, apDelayRes, arDelayRes, relatedRfcRes] =
-    await Promise.all([
+  // Cutoff para SOs confirmadas: solo las recientes (últimos 6 meses)
+  // porque las viejas con pending probablemente ya están en "rotted"
+  // (cliente no va a recibir/facturar) y meterlas infla el inflow.
+  const soSinceIso = toIso(new Date(today.getTime() - 180 * 86400000));
+
+  const [
+    cashRes,
+    projRes,
+    recurringRes,
+    apDelayRes,
+    arDelayRes,
+    relatedRfcRes,
+    soHeaderRes,
+    soLinesRes,
+  ] = await Promise.all([
       sb
         .from("canonical_bank_balances")
         .select("classification, current_balance_mxn"),
@@ -128,6 +149,29 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         .select("rfc")
         .eq("is_related_party", true)
         .not("rfc", "is", null),
+      // Sale orders confirmadas pero NO facturadas: header con commitment_date
+      // para fechar la cobranza esperada. cashflow_projection solo tiene
+      // facturas emitidas; este pipeline confirmado es backlog comprometido
+      // que entrará a AR cuando se facture (entrega + lead time).
+      sb
+        .from("odoo_sale_orders")
+        .select(
+          "odoo_order_id, name, date_order, commitment_date, company_id, currency"
+        )
+        .eq("state", "sale")
+        .gte("date_order", soSinceIso),
+      // Líneas de SO con qty/qty_invoiced para calcular pending pendiente
+      // de facturar por cada orden.
+      sb
+        .from("odoo_order_lines")
+        .select(
+          "odoo_order_id, qty, qty_invoiced, qty_delivered, subtotal_mxn"
+        )
+        .eq("order_type", "sale")
+        .eq("order_state", "sale")
+        .gte("order_date", soSinceIso)
+        .gt("qty", 0)
+        .gt("subtotal_mxn", 0),
     ]);
 
   // Set autoritativo de Bronze company.id para partes relacionadas.
@@ -381,6 +425,115 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
   }
 
+  // ── Sale orders confirmadas pero NO facturadas (pipeline) ────────────
+  // Estas son SOs en state='sale' donde qty_invoiced < qty. Representan
+  // backlog comprometido — el cliente firmó la orden, el monto está fijo,
+  // pero la factura aún no se emite (puede ser que falte entrega o que
+  // se haya entregado pero ventas no haya emitido CFDI todavía).
+  //
+  // cashflow_projection solo conoce facturas emitidas. Sin este overlay,
+  // ~$18M de backlog confirmado quedan invisibles en la curva.
+  //
+  // Modelo de timing por SO:
+  //   1. invoice_date_estimada = max(today, commitment_date or order_date+14d)
+  //   2. payment_date_estimada = invoice_date_estimada + AR_delay_cliente
+  //   3. probabilidad = 0.85 (más alta que prob_aging porque es pre-facturada,
+  //      menor que 95% para reflejar riesgo de cancelación/devolución)
+  //
+  // Se categoriza aparte como `ventas_confirmadas` para distinguirla de
+  // `ar_cobranza` (factura ya emitida) y `ventas_proyectadas` (run rate
+  // estadístico). Los tres pueden tener overlap parcial — el run rate
+  // proyectado se basa en revenue histórico que incluye SOs cobradas.
+  const SO_PIPELINE_PROBABILITY = 0.85;
+  const SO_TO_INVOICE_LEAD_DAYS = 14;
+  type SoHeader = {
+    odoo_order_id: number | null;
+    name: string | null;
+    date_order: string | null;
+    commitment_date: string | null;
+    company_id: number | null;
+    currency: string | null;
+  };
+  type SoLine = {
+    odoo_order_id: number | null;
+    qty: number | null;
+    qty_invoiced: number | null;
+    qty_delivered: number | null;
+    subtotal_mxn: number | null;
+  };
+  const soHeaders = new Map<number, SoHeader>();
+  for (const h of (soHeaderRes.data ?? []) as SoHeader[]) {
+    if (h.odoo_order_id != null) soHeaders.set(h.odoo_order_id, h);
+  }
+  const pendingByOrder = new Map<number, number>();
+  for (const l of (soLinesRes.data ?? []) as SoLine[]) {
+    if (l.odoo_order_id == null) continue;
+    const qty = Number(l.qty) || 0;
+    const qtyInv = Number(l.qty_invoiced) || 0;
+    const sub = Number(l.subtotal_mxn) || 0;
+    if (qty <= 0 || sub <= 0) continue;
+    const pendingQty = qty - qtyInv;
+    if (pendingQty <= 0) continue;
+    const pendingAmt = sub * (pendingQty / qty);
+    pendingByOrder.set(
+      l.odoo_order_id,
+      (pendingByOrder.get(l.odoo_order_id) ?? 0) + pendingAmt
+    );
+  }
+  for (const [orderId, pending] of pendingByOrder) {
+    if (pending <= 0) continue;
+    const header = soHeaders.get(orderId);
+    if (!header) continue;
+    // Excluir partes relacionadas (consistente con AP/AR)
+    if (header.company_id != null && relatedPartyIds.has(header.company_id)) {
+      continue;
+    }
+    // 1. Fecha estimada de facturación
+    let invoiceEstIso: string;
+    if (header.commitment_date) {
+      invoiceEstIso = header.commitment_date < todayIso
+        ? toIso(new Date(today.getTime() + SO_TO_INVOICE_LEAD_DAYS * 86400000))
+        : header.commitment_date;
+    } else if (header.date_order) {
+      const fromOrder = shiftDate(header.date_order, SO_TO_INVOICE_LEAD_DAYS);
+      invoiceEstIso = fromOrder < todayIso ? todayIso : fromOrder;
+    } else {
+      invoiceEstIso = todayIso;
+    }
+    // 2. + delay de cobranza del cliente
+    const arDelay = header.company_id != null
+      ? (arDelayMap.get(header.company_id) ?? 30)
+      : 30;
+    const paymentEstIso = shiftDate(invoiceEstIso, Math.max(arDelay, 0));
+    if (paymentEstIso > endIso) continue; // fuera del horizonte
+    // 3. Probabilidad de cobro (post-facturación)
+    const expected = pending * SO_PIPELINE_PROBABILITY;
+    inflowByDay.set(
+      paymentEstIso,
+      (inflowByDay.get(paymentEstIso) ?? 0) + expected
+    );
+    totalInflow += expected;
+    totalInflowNominal += pending;
+    addToCategory(
+      "ventas_confirmadas",
+      "Ventas confirmadas (SO sin facturar)",
+      "inflow",
+      expected
+    );
+    if (expected >= MARKER_THRESHOLD) {
+      markers.push({
+        date: paymentEstIso,
+        kind: "inflow",
+        amount: expected,
+        label: header.name ? `${header.name} (pipeline)` : "SO pipeline",
+        companyId: header.company_id,
+        probability: SO_PIPELINE_PROBABILITY,
+        atRisk: false,
+        category: "ventas_confirmadas",
+        categoryLabel: "Ventas confirmadas (SO sin facturar)",
+      });
+    }
+  }
   // Procesar recurring flows del RPC silver (nómina, renta, servicios,
   // arrendamiento, ventas proyectadas).
   type RecRow = {
@@ -490,7 +643,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v9-rfc-related-party"],
+  ["sp13-finanzas-cash-projection-v10-so-pipeline"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
