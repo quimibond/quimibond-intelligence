@@ -134,6 +134,33 @@ export async function getWeeklyTrend(weeks = 12): Promise<WeeklyTrendPoint[]> {
 // Note: canonical_deliveries has canonical_company_id (FK to canonical_companies)
 // but no embedded company_name — consumers should resolve name from canonical_company_id if needed.
 // ──────────────────────────────────────────────────────────────────────────
+// Internal helper — batch-resolve canonical_companies.display_name. Used by
+// every delivery query so the UI can show "Empresa" labels instead of empty
+// CompanyLink rendering.
+async function resolveCompanyNames(
+  sb: ReturnType<typeof getServiceClient>,
+  canonicalCompanyIds: Array<number | null | undefined>,
+): Promise<Map<number, string>> {
+  const ids = Array.from(
+    new Set(
+      canonicalCompanyIds.filter((id): id is number => typeof id === "number"),
+    ),
+  );
+  if (ids.length === 0) return new Map();
+  const { data } = await sb
+    .from("canonical_companies")
+    .select("id, display_name")
+    .in("id", ids);
+  const map = new Map<number, string>();
+  for (const r of (data ?? []) as Array<{
+    id: number;
+    display_name: string | null;
+  }>) {
+    if (r.display_name) map.set(r.id, r.display_name);
+  }
+  return map;
+}
+
 export interface LateDeliveryRow {
   id: number;
   name: string | null;
@@ -160,7 +187,7 @@ export async function getLateDeliveries(
     .order("scheduled_date", { ascending: true })
     .limit(limit);
 
-  return ((data ?? []) as Array<{
+  const raw = (data ?? []) as Array<{
     canonical_id: number;
     name: string | null;
     picking_type_code: string | null;
@@ -168,13 +195,21 @@ export async function getLateDeliveries(
     scheduled_date: string | null;
     state: string | null;
     origin: string | null;
-  }>).map((r) => ({
+  }>;
+  const nameByCompany = await resolveCompanyNames(
+    sb,
+    raw.map((r) => r.canonical_company_id),
+  );
+  return raw.map((r) => ({
     id: r.canonical_id,
     name: r.name,
     picking_type_code: r.picking_type_code,
     canonical_company_id: r.canonical_company_id,
-    company_id: r.canonical_company_id, // back-compat alias
-    company_name: null,
+    company_id: r.canonical_company_id,
+    company_name:
+      r.canonical_company_id != null
+        ? (nameByCompany.get(r.canonical_company_id) ?? null)
+        : null,
     scheduled_date: r.scheduled_date,
     state: r.state,
     origin: r.origin,
@@ -210,7 +245,7 @@ export async function getPendingDeliveries(
     .order("scheduled_date", { ascending: true })
     .limit(limit);
 
-  return ((data ?? []) as Array<{
+  const raw = (data ?? []) as Array<{
     canonical_id: number;
     name: string | null;
     picking_type_code: string | null;
@@ -218,13 +253,21 @@ export async function getPendingDeliveries(
     scheduled_date: string | null;
     state: string | null;
     is_late: boolean | null;
-  }>).map((r) => ({
+  }>;
+  const nameByCompany = await resolveCompanyNames(
+    sb,
+    raw.map((r) => r.canonical_company_id),
+  );
+  return raw.map((r) => ({
     id: r.canonical_id,
     name: r.name,
     picking_type_code: r.picking_type_code,
     canonical_company_id: r.canonical_company_id,
-    company_id: r.canonical_company_id, // back-compat alias
-    company_name: null,
+    company_id: r.canonical_company_id,
+    company_name:
+      r.canonical_company_id != null
+        ? (nameByCompany.get(r.canonical_company_id) ?? null)
+        : null,
     scheduled_date: r.scheduled_date,
     state: r.state,
     is_late: r.is_late,
@@ -303,7 +346,7 @@ export async function getDeliveriesPage(
     .order(sortCol, { ascending, nullsFirst: false })
     .range(start, end);
 
-  const rows = ((data ?? []) as Array<{
+  const raw = (data ?? []) as Array<{
     canonical_id: number;
     name: string | null;
     picking_type_code: string | null;
@@ -313,13 +356,24 @@ export async function getDeliveriesPage(
     state: string | null;
     origin: string | null;
     is_late: boolean | null;
-  }>).map((r) => ({
+  }>;
+
+  // Batch-resolve display_name for the page (≤200 IDs). Shared helper.
+  const nameByCompany = await resolveCompanyNames(
+    sb,
+    raw.map((r) => r.canonical_company_id),
+  );
+
+  const rows = raw.map((r) => ({
     id: r.canonical_id,
     name: r.name,
     picking_type_code: r.picking_type_code,
     canonical_company_id: r.canonical_company_id,
     company_id: r.canonical_company_id, // back-compat alias
-    company_name: null as string | null,
+    company_name:
+      r.canonical_company_id != null
+        ? (nameByCompany.get(r.canonical_company_id) ?? null)
+        : null,
     scheduled_date: r.scheduled_date,
     date_done: r.date_done ? String(r.date_done) : null,
     state: r.state,

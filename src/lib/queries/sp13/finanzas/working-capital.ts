@@ -101,17 +101,20 @@ async function _getWorkingCapitalRaw(): Promise<WorkingCapitalSummary> {
     sb
       .from("canonical_invoices")
       .select("amount_total_mxn_odoo, amount_total_mxn_resolved")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .gte("invoice_date", daysAgoIso(365)),
     sb
       .from("canonical_invoices")
       .select("amount_total_mxn_odoo, amount_total_mxn_resolved")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
       .gte("invoice_date", daysAgoIso(365)),
     // AP overdue: count + amount from invoice level (no company aggregate exists)
     sb
       .from("canonical_invoices")
       .select("amount_residual_mxn_odoo, due_date_odoo, emisor_canonical_company_id")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
       .gt("amount_residual_mxn_odoo", 0)
       .lt("due_date_odoo", today),

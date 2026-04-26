@@ -240,10 +240,25 @@ export async function getRevenueConcentration(
   topN = 30
 ): Promise<ConcentrationRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
-    .from("revenue_concentration") // SP5-EXCEPTION: §12 banned MV — revenue concentration portfolio read; no canonical replacement in SP5 scope. TODO SP6: derive from canonical_invoices aggregate.
+  // SP5-EXCEPTION: revenue_concentration was a §12 MV dropped in SP1 batch 1
+  // (migration 1068_silver_sp5_drop_batch_1_wrappers). PostgREST returns 404
+  // from the live DB. Until SP6 ships a canonical aggregate, swallow the
+  // error and return []; the consumer (`/` ConcentrationTripwires) hides
+  // itself when the array is empty.
+  // TODO SP6: derive from canonical_invoices aggregate.
+  const { data, error } = await sb
+    .from("revenue_concentration")
     .select("*")
     .lte("rank_in_portfolio", topN);
+  if (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[getRevenueConcentration] view unavailable; returning [] until SP6:",
+        error.message,
+      );
+    }
+    return [];
+  }
   return ((data ?? []) as Array<Partial<ConcentrationRow>>).map((r) => ({
     company_id: Number(r.company_id) || 0,
     company_name: r.company_name ?? "—",
@@ -506,51 +521,146 @@ export interface CohortMatrix {
   baseSize: number[];
 }
 
+/** Round YYYY-MM-DD → start of its quarter (YYYY-MM-DD of Jan/Apr/Jul/Oct). */
+function quarterStart(monthStart: string): string {
+  const [yStr, mStr] = monthStart.split("-");
+  const y = Number(yStr);
+  const m = Number(mStr);
+  const qMonth = Math.floor((m - 1) / 3) * 3 + 1;
+  return `${y}-${String(qMonth).padStart(2, "0")}-01`;
+}
+
+/**
+ * Customer retention cohorts derived from gold_revenue_monthly.
+ *
+ * 2026-04-25: the prior implementation read `customer_cohorts` MV which
+ * was dropped in Silver SP1. We rebuild the matrix in-memory from
+ * gold_revenue_monthly (per-company monthly revenue, ~20k rows). For
+ * each company we take its earliest month with revenue as its cohort
+ * quarter, then bucket subsequent active quarters as retention.
+ *
+ * `monthsBack` controls how deep the cohort window goes (default 36m).
+ */
 export async function getCustomerCohorts(
-  monthsBack = 24
+  monthsBack = 36
 ): Promise<CohortMatrix> {
   const sb = getServiceClient();
   const cutoff = new Date();
   cutoff.setMonth(cutoff.getMonth() - monthsBack);
   const cutoffStr = cutoff.toISOString().slice(0, 10);
-  const { data } = await sb
-    .from("customer_cohorts") // SP5-EXCEPTION: §12 banned MV — cohort analysis read; no canonical replacement in SP5 scope. TODO SP6: derive from canonical_invoices aggregate.
-    .select("*")
-    .gte("cohort_quarter", cutoffStr)
-    .order("cohort_quarter", { ascending: true })
-    .order("quarters_since_first", { ascending: true });
 
-  const rows = ((data ?? []) as Array<Partial<CohortCellRow>>).map((r) => ({
-    cohort_quarter: r.cohort_quarter ?? "",
-    revenue_quarter: r.revenue_quarter ?? "",
-    quarters_since_first: Number(r.quarters_since_first) || 0,
-    active_customers: Number(r.active_customers) || 0,
-    cohort_revenue: Number(r.cohort_revenue) || 0,
-    avg_revenue_per_customer: Number(r.avg_revenue_per_customer) || 0,
-  }));
-
-  const cohortSet = new Set<string>();
-  let maxQuarters = 0;
-  for (const r of rows) {
-    cohortSet.add(r.cohort_quarter);
-    if (r.quarters_since_first > maxQuarters)
-      maxQuarters = r.quarters_since_first;
+  // PostgREST caps a single response at 1000 rows; paginate explicitly so we
+  // don't silently truncate the cohort matrix.
+  type GR = {
+    canonical_company_id: number | null;
+    month_start: string | null;
+    resolved_mxn: number | null;
+    odoo_mxn: number | null;
+  };
+  const rows: Array<GR & { canonical_company_id: number; month_start: string }> = [];
+  const PAGE = 1000;
+  for (let offset = 0; offset < 50000; offset += PAGE) {
+    const { data, error } = await sb
+      .from("gold_revenue_monthly")
+      .select("canonical_company_id, month_start, resolved_mxn, odoo_mxn")
+      .not("canonical_company_id", "is", null)
+      .gte("month_start", cutoffStr)
+      .order("canonical_company_id", { ascending: true })
+      .order("month_start", { ascending: true })
+      .range(offset, offset + PAGE - 1);
+    if (error) {
+      console.warn(
+        "[getCustomerCohorts] gold_revenue_monthly read failed:",
+        error.message
+      );
+      return { cohorts: [], maxQuarters: 0, matrix: [], baseSize: [] };
+    }
+    const page = (data ?? []) as GR[];
+    for (const r of page) {
+      if (
+        typeof r.canonical_company_id === "number" &&
+        typeof r.month_start === "string"
+      ) {
+        rows.push(
+          r as GR & { canonical_company_id: number; month_start: string }
+        );
+      }
+    }
+    if (page.length < PAGE) break;
   }
-  const cohorts = [...cohortSet].sort();
+
+  // Aggregate per (company, quarter): revenue + isActive flag.
+  const perCompanyQuarters = new Map<number, Map<string, number>>();
+  for (const r of rows) {
+    const rev = Math.abs(Number(r.resolved_mxn ?? r.odoo_mxn ?? 0));
+    if (rev === 0) continue;
+    const q = quarterStart(r.month_start);
+    let m = perCompanyQuarters.get(r.canonical_company_id);
+    if (!m) {
+      m = new Map();
+      perCompanyQuarters.set(r.canonical_company_id, m);
+    }
+    m.set(q, (m.get(q) ?? 0) + rev);
+  }
+
+  // Cohort = first quarter the company had revenue.
+  const firstQuarterByCompany = new Map<number, string>();
+  for (const [companyId, qMap] of perCompanyQuarters.entries()) {
+    const earliest = [...qMap.keys()].sort()[0];
+    if (earliest) firstQuarterByCompany.set(companyId, earliest);
+  }
+
+  // Map (cohort, qIdx) → { activeCustomers, cohortRevenue }.
+  type Cell = { active: number; revenue: number };
+  const grid = new Map<string, Map<number, Cell>>(); // cohort → qIdx → cell
+
+  function quarterDiff(from: string, to: string): number {
+    const [fy, fm] = from.split("-").map(Number);
+    const [ty, tm] = to.split("-").map(Number);
+    return (ty - fy) * 4 + (tm - fm) / 3;
+  }
+
+  let maxQuarters = 0;
+  for (const [companyId, qMap] of perCompanyQuarters.entries()) {
+    const cohort = firstQuarterByCompany.get(companyId);
+    if (!cohort) continue;
+    for (const [q, rev] of qMap.entries()) {
+      const idx = quarterDiff(cohort, q);
+      if (idx < 0) continue;
+      if (idx > maxQuarters) maxQuarters = idx;
+      let cMap = grid.get(cohort);
+      if (!cMap) {
+        cMap = new Map();
+        grid.set(cohort, cMap);
+      }
+      const prev = cMap.get(idx) ?? { active: 0, revenue: 0 };
+      cMap.set(idx, { active: prev.active + 1, revenue: prev.revenue + rev });
+    }
+  }
+
+  const cohorts = [...grid.keys()].sort();
   const matrix: Array<Array<CohortCellRow | null>> = cohorts.map(() =>
     Array(maxQuarters + 1).fill(null)
   );
   const baseSize: number[] = Array(cohorts.length).fill(0);
 
-  const cohortIdx = new Map(cohorts.map((c, i) => [c, i]));
-  for (const r of rows) {
-    const i = cohortIdx.get(r.cohort_quarter);
-    if (i == null) continue;
-    if (r.quarters_since_first <= maxQuarters) {
-      matrix[i][r.quarters_since_first] = r;
-      if (r.quarters_since_first === 0) baseSize[i] = r.active_customers;
+  cohorts.forEach((cohort, i) => {
+    const cMap = grid.get(cohort);
+    if (!cMap) return;
+    for (const [idx, cell] of cMap.entries()) {
+      const row: CohortCellRow = {
+        cohort_quarter: cohort,
+        revenue_quarter: "",
+        quarters_since_first: idx,
+        active_customers: cell.active,
+        cohort_revenue: cell.revenue,
+        avg_revenue_per_customer:
+          cell.active > 0 ? cell.revenue / cell.active : 0,
+      };
+      matrix[i][idx] = row;
+      if (idx === 0) baseSize[i] = cell.active;
     }
-  }
+  });
 
   return { cohorts, maxQuarters, matrix, baseSize };
 }

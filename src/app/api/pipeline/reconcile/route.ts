@@ -299,13 +299,34 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // ── Silver SP2 stale-issue sweep ───────────────────────────────────
+    // Closes invoice.posted_without_uuid + invoice.missing_sat_timbrado
+    // issues whose canonical invoice has acquired sat_uuid / has_sat_record
+    // since the issue was raised. Patches a gap in run_reconciliation()
+    // (posted_without_uuid lacks an auto-resolve block; missing_sat_timbrado
+    // only checks has_sat_record but matcher sometimes sets sat_uuid first).
+    let invoiceIssuesClosed = 0;
+    try {
+      const { data: sweep } = await supabase.rpc(
+        "silver_close_stale_invoice_issues"
+      );
+      type SweepRow = { invariant_key: string; closed_count: number };
+      for (const row of (sweep ?? []) as SweepRow[]) {
+        invoiceIssuesClosed += Number(row.closed_count) || 0;
+      }
+    } catch (err) {
+      console.warn("[reconcile] silver_close_stale_invoice_issues failed:", err);
+    }
+
     return NextResponse.json({
       success: true,
       actions_closed: closed,
       follow_ups_resolved: followUpsResolved,
-      message: closed > 0
-        ? `${closed} acciones cerradas automaticamente`
-        : "Sin acciones para cerrar",
+      invoice_issues_closed: invoiceIssuesClosed,
+      message:
+        closed > 0 || invoiceIssuesClosed > 0
+          ? `${closed} acciones + ${invoiceIssuesClosed} alertas cerradas automáticamente`
+          : "Sin acciones para cerrar",
     });
   } catch (err) {
     console.error("[reconcile] Error:", err);

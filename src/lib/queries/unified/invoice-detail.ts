@@ -89,6 +89,7 @@ export async function fetchInvoiceDetail(
     sb
       .from("canonical_invoices")
       .select("*")
+      .eq("is_quimibond_relevant", true)
       .eq("canonical_id", canonical_id)
       .maybeSingle(),
     listAllocations(canonical_id),
@@ -189,6 +190,7 @@ export async function getInvoiceByName(
   const { data, error } = await sb
     .from("canonical_invoices")
     .select("*")
+    .eq("is_quimibond_relevant", true)
     .eq("odoo_name", reference)
     .maybeSingle();
   if (error) throw error;

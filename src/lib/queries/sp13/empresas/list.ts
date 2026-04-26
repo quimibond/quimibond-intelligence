@@ -199,7 +199,39 @@ export async function getCompaniesPage(
     last_invoice_date: string | null;
   };
 
-  const rows: CompanyListRow[] = ((listRes.data ?? []) as RawRow[]).map((r) => {
+  const rawRows = (listRes.data ?? []) as RawRow[];
+
+  // Real LTM per visible company: aggregate gold_revenue_monthly.resolved_mxn
+  // for the last 12 months. Bounded to the visible page (≤100 rows) so this
+  // adds one extra roundtrip with a small IN-list, not a 4k-row scan.
+  const visibleIds = rawRows
+    .map((r) => r.canonical_company_id)
+    .filter((n): n is number => typeof n === "number");
+  const ltmByCompany = new Map<number, number>();
+  if (visibleIds.length > 0) {
+    const ltmFrom = new Date();
+    ltmFrom.setUTCFullYear(ltmFrom.getUTCFullYear() - 1);
+    ltmFrom.setUTCDate(1);
+    const ltmFromIso = ltmFrom.toISOString().slice(0, 10);
+    const { data: ltmRows } = await sb
+      .from("gold_revenue_monthly")
+      .select("canonical_company_id, resolved_mxn")
+      .in("canonical_company_id", visibleIds)
+      .gte("month_start", ltmFromIso);
+    for (const r of (ltmRows ?? []) as Array<{
+      canonical_company_id: number | null;
+      resolved_mxn: number | null;
+    }>) {
+      if (r.canonical_company_id == null) continue;
+      ltmByCompany.set(
+        r.canonical_company_id,
+        (ltmByCompany.get(r.canonical_company_id) ?? 0) +
+          (Number(r.resolved_mxn) || 0),
+      );
+    }
+  }
+
+  const rows: CompanyListRow[] = rawRows.map((r) => {
     const id = r.canonical_company_id as number;
     const drift = driftMap[id];
     return {
@@ -213,9 +245,10 @@ export async function getCompaniesPage(
       tier: r.tier,
       lifetime_value_mxn: Number(r.lifetime_value_mxn) || 0,
       revenue_ytd_mxn: Number(r.revenue_ytd_mxn) || 0,
-      // revenue_ltm proxy: gold_company_360 doesn't have an LTM column; use
-      // 90d * 4 as a rough display (TODO: surface revenue_ltm_mxn in the view).
-      revenue_ltm_mxn: (Number(r.revenue_90d_mxn) || 0) * 4,
+      // Real LTM from gold_revenue_monthly (resolved_mxn = SAT preferred,
+      // Odoo fallback). Replaces the legacy 90d * 4 proxy that under-stated
+      // by ~15-25% due to seasonality.
+      revenue_ltm_mxn: ltmByCompany.get(id) ?? 0,
       overdue_amount_mxn: Number(r.overdue_amount_mxn) || 0,
       last_invoice_date: r.last_invoice_date,
       drift_total_mxn: drift?.total_abs_mxn ?? 0,

@@ -1,6 +1,5 @@
 import { Suspense } from "react";
 import { Package, ShoppingCart } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   DataTable,
   DataTablePagination,
@@ -10,6 +9,7 @@ import {
   Currency,
   DateDisplay,
   StatusBadge,
+  QuestionSection,
   makeSortHref,
   type DataTableColumn,
 } from "@/components/patterns";
@@ -214,49 +214,39 @@ async function OrdersSection({
 // ──────────────────────────────────────────────────────────────────────────
 export function ComercialTab({ company, searchParams }: Props) {
   return (
-    <div className="space-y-4">
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-base">Top productos comprados</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Ordenados por revenue en los últimos 12 meses.
-              </p>
-            </div>
-            <DataSourceBadge source="odoo" refresh="1h" />
-          </div>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
-            <ProductsSection companyId={company.id} />
-          </Suspense>
-        </CardContent>
-      </Card>
+    <div className="space-y-6">
+      <QuestionSection
+        id="top-products"
+        question="¿Qué productos compra esta empresa?"
+        subtext="Top 15 SKUs por revenue, últimos 12 meses."
+        actions={<DataSourceBadge source="odoo" refresh="1h" />}
+      >
+        <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
+          <ProductsSection companyId={company.id} />
+        </Suspense>
+      </QuestionSection>
 
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Órdenes de venta</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              ¿Qué ha comprado y cómo van las órdenes abiertas?
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <DataSourceBadge source="odoo" refresh="1h" />
-            <TableViewOptions
-              paramPrefix="co_"
-              columns={companyOrdersViewColumns}
-            />
-            <TableExportButton filename={`${company.name}-orders`} />
-          </div>
-        </CardHeader>
-        <CardContent className="pb-4">
+      <div data-table-export-root>
+        <QuestionSection
+          id="company-orders"
+          question="¿Cómo van sus órdenes?"
+          subtext="Histórico paginado de pedidos: estado, monto, vendedor."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <DataSourceBadge source="odoo" refresh="1h" />
+              <TableViewOptions
+                paramPrefix="co_"
+                columns={companyOrdersViewColumns}
+              />
+              <TableExportButton filename={`${company.name}-orders`} />
+            </div>
+          }
+        >
           <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
             <OrdersSection companyId={company.id} searchParams={searchParams} />
           </Suspense>
-        </CardContent>
-      </Card>
+        </QuestionSection>
+      </div>
     </div>
   );
 }

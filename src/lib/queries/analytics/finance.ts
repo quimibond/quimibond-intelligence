@@ -65,6 +65,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
       .select(
         "receptor_canonical_company_id, amount_residual_mxn_resolved, amount_residual_mxn_odoo, due_date_resolved, due_date_odoo"
       )
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .neq("estado_sat", "cancelado")
       .eq("state_odoo", "posted")
@@ -78,6 +79,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
       .select(
         "amount_residual_mxn_resolved, amount_residual_mxn_odoo"
       )
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
       .neq("estado_sat", "cancelado")
       .eq("state_odoo", "posted")
@@ -89,6 +91,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
     sb
       .from("canonical_invoices")
       .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .gte("invoice_date", cutoff30),
     // 5. Last-30d payments split by direction for cobros / pagos_prov
@@ -228,6 +231,7 @@ export async function getArZombies(): Promise<ArZombies> {
   const { data } = await sb
     .from("canonical_invoices")
     .select("canonical_id, amount_residual_mxn_odoo, due_date_odoo, estado_sat, match_confidence")
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
     .not("estado_sat", "eq", "cancelado")
     .in("payment_state_odoo", ["not_paid", "partial"])
@@ -486,6 +490,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
     sb
       .from("canonical_invoices")
       .select("amount_residual_mxn_resolved, amount_residual_mxn_odoo")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .neq("estado_sat", "cancelado")
       .eq("state_odoo", "posted")
@@ -494,6 +499,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
     sb
       .from("canonical_invoices")
       .select("amount_residual_mxn_resolved, amount_residual_mxn_odoo")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
       .neq("estado_sat", "cancelado")
       .eq("state_odoo", "posted")
@@ -502,6 +508,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
     sb
       .from("canonical_invoices")
       .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .eq("state_odoo", "posted")
       .neq("estado_sat", "cancelado")
@@ -1073,6 +1080,7 @@ export async function getPartnerPaymentProfiles(
   let invQ = sb
     .from("canonical_invoices")
     .select("odoo_partner_id, direction, invoice_date, due_date_odoo, amount_total_mxn_resolved, payment_state_odoo, fiscal_days_to_due_date")
+    .eq("is_quimibond_relevant", true)
     .not("odoo_partner_id", "is", null)
     .gte("invoice_date", cutoff24mStr);
   if (direction) invQ = invQ.eq("direction", direction);

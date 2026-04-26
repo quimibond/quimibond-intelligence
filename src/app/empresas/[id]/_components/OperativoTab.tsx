@@ -1,6 +1,5 @@
 import { Suspense } from "react";
-import { Activity, Truck, Users } from "lucide-react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Truck, Users } from "lucide-react";
 import {
   DataTable,
   DataTablePagination,
@@ -9,6 +8,7 @@ import {
   MobileCard,
   DateDisplay,
   StatusBadge,
+  QuestionSection,
   makeSortHref,
   type DataTableColumn,
 } from "@/components/patterns";
@@ -241,25 +241,23 @@ async function ActivitiesSection({ companyId }: { companyId: number }) {
 // ──────────────────────────────────────────────────────────────────────────
 export function OperativoTab({ company, searchParams }: Props) {
   return (
-    <div className="space-y-4">
-      <Card data-table-export-root>
-        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
-          <div>
-            <CardTitle className="text-base">Entregas</CardTitle>
-            <p className="text-xs text-muted-foreground">
-              ¿Estamos entregando a tiempo? ¿Qué quedó pendiente?
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <DataSourceBadge source="odoo" refresh="1h" />
-            <TableViewOptions
-              paramPrefix="cd_"
-              columns={companyDeliveriesViewColumns}
-            />
-            <TableExportButton filename={`${company.name}-deliveries`} />
-          </div>
-        </CardHeader>
-        <CardContent className="pb-4">
+    <div className="space-y-6">
+      <div data-table-export-root>
+        <QuestionSection
+          id="company-deliveries"
+          question="¿Estamos entregando a tiempo?"
+          subtext="Movimientos de inventario asociados a esta empresa: programadas, completadas, atrasadas."
+          actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <DataSourceBadge source="odoo" refresh="1h" />
+              <TableViewOptions
+                paramPrefix="cd_"
+                columns={companyDeliveriesViewColumns}
+              />
+              <TableExportButton filename={`${company.name}-deliveries`} />
+            </div>
+          }
+        >
           <Suspense fallback={<Skeleton className="h-48 rounded-xl" />}>
             <DeliveriesSection
               companyId={company.id}
@@ -267,27 +265,19 @@ export function OperativoTab({ company, searchParams }: Props) {
               companyName={company.name}
             />
           </Suspense>
-        </CardContent>
-      </Card>
+        </QuestionSection>
+      </div>
 
-      <Card>
-        <CardHeader className="pb-2">
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <CardTitle className="text-base">Actividades pendientes</CardTitle>
-              <p className="text-xs text-muted-foreground">
-                Tareas con deadline pendiente relacionadas con este cliente.
-              </p>
-            </div>
-            <DataSourceBadge source="odoo" refresh="1h" />
-          </div>
-        </CardHeader>
-        <CardContent className="pb-4">
-          <Suspense fallback={<Skeleton className="h-32 rounded-xl" />}>
-            <ActivitiesSection companyId={company.id} />
-          </Suspense>
-        </CardContent>
-      </Card>
+      <QuestionSection
+        id="company-activities"
+        question="¿Qué hay pendiente con esta empresa?"
+        subtext="Tareas y deadlines abiertos del CRM."
+        actions={<DataSourceBadge source="odoo" refresh="1h" />}
+      >
+        <Suspense fallback={<Skeleton className="h-32 rounded-xl" />}>
+          <ActivitiesSection companyId={company.id} />
+        </Suspense>
+      </QuestionSection>
     </div>
   );
 }

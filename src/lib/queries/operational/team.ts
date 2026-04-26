@@ -161,16 +161,45 @@ export interface DepartmentRow {
 
 export async function getDepartments(): Promise<DepartmentRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
-    .from("canonical_employees")
-    .select("department_name, department_id")
-    .eq("is_active", true)
-    .not("department_name", "is", null)
-    .order("department_name", { ascending: true });
 
-  // Deduplicate by department_name
+  // Distinct department names from active canonical_employees + manager
+  // metadata from Bronze odoo_departments (case-insensitive name join).
+  // SP5-EXCEPTION: odoo_departments — Bronze read; no canonical_departments
+  // table in SP5 scope. Used only for manager_name + member_count metadata
+  // that the canonical_employees view does not expose.
+  const [empRes, deptRes] = await Promise.all([
+    sb
+      .from("canonical_employees")
+      .select("department_name, department_id")
+      .eq("is_active", true)
+      .not("department_name", "is", null)
+      .order("department_name", { ascending: true }),
+    sb
+      .from("odoo_departments") // SP5-EXCEPTION: Bronze read for manager_name + parent_name; no canonical_departments table in SP5.
+      .select("name, manager_name, member_count, parent_name"),
+  ]);
+
+  // department_name lowercase → metadata
+  const meta = new Map<
+    string,
+    { manager_name: string | null; description: string | null }
+  >();
+  for (const d of (deptRes.data ?? []) as Array<{
+    name: string | null;
+    manager_name: string | null;
+    member_count: number | null;
+    parent_name: string | null;
+  }>) {
+    if (!d.name) continue;
+    meta.set(d.name.toLowerCase(), {
+      manager_name: d.manager_name,
+      description: d.parent_name ? `Reporta a ${d.parent_name}` : null,
+    });
+  }
+
+  // Deduplicate by department_name (preserve first id seen).
   const seen = new Map<string, number>();
-  for (const r of (data ?? []) as Array<{
+  for (const r of (empRes.data ?? []) as Array<{
     department_name: string | null;
     department_id: number | null;
   }>) {
@@ -180,13 +209,16 @@ export async function getDepartments(): Promise<DepartmentRow[]> {
     }
   }
 
-  return Array.from(seen.entries()).map(([name, id], idx) => ({
-    id: id || idx + 1,
-    name,
-    lead_name: null,
-    lead_email: null,
-    description: null,
-  }));
+  return Array.from(seen.entries()).map(([name, id], idx) => {
+    const m = meta.get(name.toLowerCase());
+    return {
+      id: id || idx + 1,
+      name,
+      lead_name: m?.manager_name ?? null,
+      lead_email: null, // odoo_departments does not expose manager email
+      description: m?.description ?? null,
+    };
+  });
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -254,15 +286,39 @@ export interface EmployeeRow {
 
 export async function getEmployees(limit = 100): Promise<EmployeeRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
-    .from("canonical_employees")
-    .select(
-      "contact_id, display_name, primary_email, department_name, job_title, is_active"
-    )
-    .eq("is_active", true)
-    .order("display_name", { ascending: true })
-    .limit(limit);
-  return ((data ?? []) as Array<{
+
+  // canonical_employees is the source of truth, but
+  // manager_canonical_contact_id is null on most rows (MDM contact graph not
+  // backfilled). Best-effort: join odoo_employees by case-insensitive name
+  // match to surface the manager_name. SP5-EXCEPTION: odoo_employees —
+  // Bronze read for hierarchy until canonical_employees populates the FK.
+  const [canonRes, bronzeRes] = await Promise.all([
+    sb
+      .from("canonical_employees")
+      .select(
+        "contact_id, display_name, primary_email, department_name, job_title, is_active",
+      )
+      .eq("is_active", true)
+      .order("display_name", { ascending: true })
+      .limit(limit),
+    sb
+      .from("odoo_employees") // SP5-EXCEPTION: Bronze read for manager_name; canonical_employees.manager_canonical_contact_id not backfilled yet.
+      .select("name, manager_name")
+      .not("manager_name", "is", null)
+      .limit(2000),
+  ]);
+
+  const managerByName = new Map<string, string>();
+  for (const e of (bronzeRes.data ?? []) as Array<{
+    name: string | null;
+    manager_name: string | null;
+  }>) {
+    if (e.name && e.manager_name) {
+      managerByName.set(e.name.trim().toLowerCase(), e.manager_name);
+    }
+  }
+
+  return ((canonRes.data ?? []) as Array<{
     contact_id: number;
     display_name: string | null;
     primary_email: string | null;
@@ -274,7 +330,10 @@ export async function getEmployees(limit = 100): Promise<EmployeeRow[]> {
     work_email: r.primary_email,
     department_name: r.department_name,
     job_title: r.job_title,
-    manager_name: null, // manager_canonical_contact_id requires separate join — not available on view
+    manager_name:
+      r.display_name != null
+        ? (managerByName.get(r.display_name.trim().toLowerCase()) ?? null)
+        : null,
   }));
 }
 

@@ -14,3 +14,9 @@ export {
   type CompanyTierFilter,
   type CompanyActivityFilter,
 } from "./list";
+export {
+  getAtRiskOverview,
+  type AtRiskBucket,
+  type AtRiskCompanyRow,
+  type AtRiskOverview,
+} from "./at-risk";

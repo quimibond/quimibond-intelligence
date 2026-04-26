@@ -17,6 +17,8 @@ import {
   fetchCompanyRevenueTrend,
   fetchCompanyReceivables,
   getCompanyDetail,
+  getCompanyOrders,
+  getCompanyRecentInsights,
 } from "@/lib/queries/_shared/companies";
 
 import { TabPicker, type TabKey } from "./_components/TabPicker";
@@ -108,26 +110,36 @@ export default async function EmpresaDetailPage({
   const raw = await searchParams;
   const { tab } = parseSearchParams(raw, detailSchema);
 
-  const [canonical, c360, trend, receivables, legacyDetail, driftAggregates] =
-    await Promise.all([
-      fetchCompanyById(id),
-      fetchCompany360(id),
-      fetchCompanyRevenueTrend(id, 12).catch(
-        () => [] as Array<{ month_start: string; total_mxn: number }>,
-      ),
-      fetchCompanyReceivables(id).catch(
-        () =>
-          [] as Array<{
-            fiscal_days_to_due_date: number | null;
-            amount_residual_mxn_odoo: number | null;
-          }>,
-      ),
-      getCompanyDetail(id).catch(() => null),
-      // Drift fields may be null on empresas recién creadas where the hourly
-      // refresh job hasn't computed the aggregates yet — swallow errors so
-      // the rest of the page still renders (see memory feedback_server_component_top_level_throws).
-      getCompanyDrift(id).catch(() => null),
-    ]);
+  const [
+    canonical,
+    c360,
+    trend,
+    receivables,
+    legacyDetail,
+    driftAggregates,
+    recentOrdersRaw,
+    recentInsights,
+  ] = await Promise.all([
+    fetchCompanyById(id),
+    fetchCompany360(id),
+    fetchCompanyRevenueTrend(id, 12).catch(
+      () => [] as Array<{ month_start: string; total_mxn: number }>,
+    ),
+    fetchCompanyReceivables(id).catch(
+      () =>
+        [] as Array<{
+          fiscal_days_to_due_date: number | null;
+          amount_residual_mxn_odoo: number | null;
+        }>,
+    ),
+    getCompanyDetail(id).catch(() => null),
+    // Drift fields may be null on empresas recién creadas where the hourly
+    // refresh job hasn't computed the aggregates yet — swallow errors so
+    // the rest of the page still renders (see memory feedback_server_component_top_level_throws).
+    getCompanyDrift(id).catch(() => null),
+    getCompanyOrders(id, 3).catch(() => []),
+    getCompanyRecentInsights(id, 5).catch(() => []),
+  ]);
 
   if (!canonical || !c360) notFound();
 
@@ -167,22 +179,33 @@ export default async function EmpresaDetailPage({
 
   const aging = toAgingData(receivables);
 
+  const recentSaleOrders = recentOrdersRaw.map((o) => ({
+    canonical_id: String(o.id),
+    name: o.name,
+    amount_total_mxn: o.amount_total_mxn,
+    date_order: o.date_order,
+  }));
+
+  const recentEvidence = recentInsights.map((i) => ({
+    kind: "fact" as const,
+    key: `insight-${i.id}`,
+    title: i.title,
+    body:
+      [
+        i.severity ? `Severidad ${i.severity}` : null,
+        i.category ? `· ${i.category}` : null,
+        i.state ? `· ${i.state}` : null,
+      ]
+        .filter(Boolean)
+        .join(" ") || "Insight del sistema",
+    at: i.created_at ?? "",
+  }));
+
   const newTabDetail = {
     aging,
     revenueTrend: trend,
-    recentSaleOrders: [] as Array<{
-      canonical_id: string;
-      name: string | null;
-      amount_total_mxn: number | null;
-      date_order: string | null;
-    }>,
-    recentEvidence: [] as Array<{
-      kind: "email" | "fact";
-      key: string;
-      title: string;
-      body: string;
-      at: string;
-    }>,
+    recentSaleOrders,
+    recentEvidence,
     overdue_amount_mxn: c360.overdue_amount_mxn ?? 0,
     lifetime_value_mxn: c360.lifetime_value_mxn ?? 0,
     revenue_90d_mxn: c360.revenue_90d_mxn ?? 0,

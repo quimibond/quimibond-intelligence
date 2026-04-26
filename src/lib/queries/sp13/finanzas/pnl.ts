@@ -213,6 +213,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     .select(
       "amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo, invoice_date"
     )
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
     .neq("estado_sat", "cancelado")
     .gte("invoice_date", bounds.from)
