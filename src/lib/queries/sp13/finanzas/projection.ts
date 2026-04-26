@@ -18,13 +18,21 @@ import { getServiceClient } from "@/lib/supabase-server";
  *   - `payable_detail`    → AP rows per invoice (outflow)
  *   - `receivable_by_month` → aggregated monthly totals (ignored here)
  *
- * IMPORTANT — past-due invoices:
- * `cashflow_projection.projected_date` = `i.due_date` (original due date).
- * Past-due invoices have projected_date < today. Rather than drop them
- * (losing the overdue AR from the projection), we clamp their date to
- * today. This models "we expect to collect the overdue balance going
- * forward, starting now" — the probability weighting already discounts
- * them (25% for 90+ days overdue) so we don't double-count optimism.
+ * Partes relacionadas (intercompañía):
+ * Cualquier AP/AR cuyo company_id apunte a una entidad marcada
+ * `is_related_party=true` en canonical_companies (familia Mizrahi +
+ * Grupo Quimibond) se push 180d (fuera del horizonte 13/30/90), por
+ * lo que NO contamina `outflowByDay`/`inflowByDay`, `totalOutflow`/
+ * `totalInflow` ni los markers. Solo aparece en `categoryTotals` como
+ * `ap_intercompania`/`ar_intercompania` para visibilidad informativa.
+ * Detección autoritativa por RFC en canonical_companies, con respaldo
+ * por flag heredado de get_ap_payment_delay_v2 (defensa en profundidad).
+ *
+ * Past-due con backlog grande:
+ * Cuando `due_date + supplier_delay` sigue siendo < today, distribuimos
+ * vía spreadPastDue() sobre [today, today + max(delay, 14)] en vez de
+ * "dump on today" (que producía cliffs artificiales de millones cuando
+ * el 90%+ del AP está vencido).
  *
  * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
  */
@@ -86,7 +94,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const endDate = new Date(today.getTime() + horizonDays * 86400000);
   const endIso = toIso(endDate);
 
-  const [cashRes, projRes, recurringRes, apDelayRes, arDelayRes] =
+  const [cashRes, projRes, recurringRes, apDelayRes, arDelayRes, relatedRfcRes] =
     await Promise.all([
       sb
         .from("canonical_bank_balances")
@@ -112,7 +120,38 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       // due date). Sin esto, la cobranza esperada llega antes de cuando
       // realmente cobramos.
       sb.rpc("get_ar_collection_delay_v2", { p_lookback_months: 6 }),
+      // RFCs de partes relacionadas (familia Mizrahi + Grupo Quimibond).
+      // Marcadas en canonical_companies.is_related_party=true. Las usamos
+      // para excluir TOTALMENTE cualquier AP/AR intercompañía del cashflow.
+      sb
+        .from("canonical_companies")
+        .select("rfc")
+        .eq("is_related_party", true)
+        .not("rfc", "is", null),
     ]);
+
+  // Set autoritativo de Bronze company.id para partes relacionadas.
+  // Source of truth: canonical_companies.is_related_party = true (marcado
+  // por RFC en migration 20260426_ap_delay_related_party.sql). Resolvemos
+  // a Bronze IDs vía companies.rfc (mismo RFC = misma entidad fiscal).
+  //
+  // No dependemos del flag is_related_party que retorna get_ap_payment_delay_v2
+  // porque ese RPC requiere ≥3 facturas pagadas en el lookback — partes
+  // relacionadas con poco movimiento operativo se quedan fuera del map y
+  // sus invoices accidentalmente entrarían a la proyección como AP normal.
+  const relatedRfcs = ((relatedRfcRes.data ?? []) as Array<{ rfc: string | null }>)
+    .map((r) => r.rfc)
+    .filter((r): r is string => !!r);
+  const relatedPartyIds = new Set<number>();
+  if (relatedRfcs.length > 0) {
+    const { data: bronzeRows } = await sb
+      .from("companies")
+      .select("id")
+      .in("rfc", relatedRfcs);
+    for (const c of (bronzeRows ?? []) as Array<{ id: number | null }>) {
+      if (c.id != null) relatedPartyIds.add(c.id);
+    }
+  }
 
   // Mapa company_id → { delay days, is_related_party }
   type ApDelayRow = {
@@ -134,6 +173,8 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       delayDays: days,
       isRelatedParty: r.is_related_party,
     });
+    // Propagar al set autoritativo (defensa en profundidad)
+    if (r.is_related_party) relatedPartyIds.add(r.company_id);
   }
 
   type ArDelayRow = {
@@ -232,28 +273,35 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
     if (expected <= 0) continue;
 
+    // Detección autoritativa de partes relacionadas: si el company_id
+    // pertenece al set RFC-based (canonical_companies.is_related_party),
+    // o si apDelayMap lo marcó (invoice ya pagada con flag heredado),
+    // tratamos la fila como intercompañía.
+    const isRelatedParty =
+      (r.company_id != null && relatedPartyIds.has(r.company_id)) ||
+      (r.company_id != null &&
+        apDelayMap.get(r.company_id)?.isRelatedParty === true);
+
     // Aplicar delay histórico (proveedor para AP, cliente para AR) sobre
     // el due date original.
-    //  - factura no vencida + delay 30d → cobramos/pagamos due_date + 30d
-    //  - factura vencida 10d con delay 30d → cobranza esperada en today + 20d
-    //  - factura vencida 60d con delay 30d → past-due incluso post-delay;
+    //  - intercompañía → push 180d FUERA del horizonte. NO contamina
+    //    outflowByDay, totalOutflow ni markers; solo aparece en el
+    //    breakdown como categoría aparte (ver CLAUDE.md /finanzas).
+    //  - factura no vencida + delay 30d → pagamos/cobramos due+30d
+    //  - factura vencida 10d con delay 30d → esperada en today + 20d
+    //  - factura vencida 60d con delay 30d → past-due post-delay;
     //    spreadPastDue() la distribuye sobre [today, today + max(delay, 14)]
-    //    en vez de dumpear todo en hoy (evita cliff artificial cuando hay
-    //    backlog grande de past-due).
-    //
-    // Partes relacionadas (intercompañía) → fuera del horizonte (180d).
+    //    para evitar cliff artificial cuando hay backlog grande past-due.
     const invoiceKey =
       r.invoice_name ?? `${r.flow_type}-${r.company_id}-${origDate}-${nominal}`;
     let date = origDate;
-    let isRelatedParty = false;
     let delayForSpread = 0;
-    if (r.company_id != null) {
+    if (isRelatedParty) {
+      date = shiftDate(origDate, 180);
+    } else if (r.company_id != null) {
       if (!isInflow) {
         const delay = apDelayMap.get(r.company_id);
-        if (delay?.isRelatedParty) {
-          isRelatedParty = true;
-          date = shiftDate(origDate, 180);
-        } else if (delay && delay.delayDays > 0) {
+        if (delay && delay.delayDays > 0) {
           delayForSpread = delay.delayDays;
           date = shiftDate(origDate, delay.delayDays);
         }
@@ -270,6 +318,16 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
 
     if (isInflow) {
+      if (isRelatedParty) {
+        // AR intercompañía: visibilidad en breakdown, fuera del flujo diario.
+        addToCategory(
+          "ar_intercompania",
+          "AR a partes relacionadas (intercompañía)",
+          "inflow",
+          expected
+        );
+        continue;
+      }
       inflowByDay.set(date, (inflowByDay.get(date) ?? 0) + expected);
       totalInflow += expected;
       totalInflowNominal += nominal;
@@ -285,8 +343,8 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       }
       if ((r.days_overdue ?? 0) > 0) overdueInflowCount++;
     } else if (isRelatedParty) {
-      // Intercompañía: separamos en categoría aparte y empujamos out 180d.
-      // No suma al outflow principal ni al daily bucket dentro del horizonte.
+      // AP intercompañía: visibilidad en breakdown, fuera del flujo
+      // diario y del total operativo (push 180d ya descarta del horizonte).
       addToCategory(
         "ap_intercompania",
         "AP a partes relacionadas (intercompañía)",
@@ -432,7 +490,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v8-spread-past-due"],
+  ["sp13-finanzas-cash-projection-v9-rfc-related-party"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
