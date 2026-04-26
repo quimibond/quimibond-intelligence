@@ -2,10 +2,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
-  Banknote,
   ChevronRight,
   Factory,
-  Flame,
   Inbox,
   Target,
   TrendingUp,
@@ -22,8 +20,14 @@ import {
   Currency,
   DateDisplay,
   SeverityBadge,
+  QuestionSection,
+  HistorySelector,
+  DriftAlert,
+  SectionNav,
+  parseHistoryRange,
+  type HistoryRange,
 } from "@/components/patterns";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
@@ -50,124 +54,149 @@ function greet() {
   return h < 12 ? "Buenos días" : h < 19 ? "Buenas tardes" : "Buenas noches";
 }
 
-export default function CeoDashboardPage() {
+interface HomeSearchParams {
+  range?: string | string[];
+}
+
+export default async function CeoDashboardPage({
+  searchParams,
+}: {
+  searchParams?: Promise<HomeSearchParams>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const range = parseHistoryRange(sp.range, "ltm");
+
   return (
-    <div className="space-y-5 pb-24 md:pb-6">
+    <div className="space-y-6 pb-24 md:pb-6">
       <PageHeader
         title={greet()}
-        subtitle="Lo que necesitas saber del negocio en 30 segundos"
+        subtitle="¿Cuánto tengo, qué quema hoy y en qué debo enfocarme?"
+        actions={<HistorySelector paramName="range" defaultRange="ltm" />}
       />
 
-      {/* Runway alert — la señal más crítica */}
-      <Suspense fallback={<Skeleton className="h-20 rounded-xl" />}>
-        <RunwayBanner />
-      </Suspense>
-
-      {/* Concentration tripwires — clientes top con caída brusca */}
+      {/* Banners arriba — runway + tripwires (cada uno se auto-oculta si no aplica) */}
       <Suspense fallback={null}>
-        <ConcentrationTripwires />
+        <RunwayAlertBanner />
+      </Suspense>
+      <Suspense fallback={null}>
+        <ConcentrationTripwiresBanner />
       </Suspense>
 
-      <Suspense fallback={<KpisSkeleton />}>
-        <Kpis />
-      </Suspense>
+      <SectionNav
+        items={[
+          { id: "resumen", label: "Resumen" },
+          { id: "quema-hoy", label: "Qué quema hoy" },
+          { id: "tendencia", label: "Tendencia" },
+          { id: "en-riesgo", label: "En riesgo" },
+        ]}
+      />
 
-      {/* Insights urgentes — spec: "lista de insights urgentes abajo" */}
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-            Insights urgentes
-          </h2>
+      <QuestionSection
+        id="resumen"
+        question="¿Cómo está la salud del negocio?"
+        subtext="6 KPIs core con deep-link a la página dedicada de cada dominio."
+      >
+        <Suspense fallback={<KpisSkeleton />}>
+          <Kpis />
+        </Suspense>
+      </QuestionSection>
+
+      <QuestionSection
+        id="quema-hoy"
+        question="¿Qué quema hoy?"
+        subtext="Top 5 insights críticos / altos visibles para el CEO (filtra cobranza low-impact)."
+        actions={
           <Link
             href="/inbox"
-            className="flex items-center gap-1 text-xs font-medium text-primary"
+            className="text-xs font-medium text-primary hover:underline"
           >
-            Ver todos
-            <ChevronRight className="h-3 w-3" />
+            Ver inbox completo →
           </Link>
-        </div>
+        }
+      >
         <Suspense fallback={<InsightsSkeleton />}>
           <UrgentInsights />
         </Suspense>
-      </section>
+      </QuestionSection>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <Card className="lg:col-span-2">
-          <CardHeader>
-            <CardTitle className="text-base">Ingresos últimos 12 meses</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <Suspense
-              fallback={<Skeleton className="h-[220px] w-full rounded-md" />}
-            >
-              <RevenueChartSection />
-            </Suspense>
-          </CardContent>
-        </Card>
+      <QuestionSection
+        id="tendencia"
+        question="¿Cómo viene la facturación?"
+        subtext={`Ingresos mensuales · ${rangeLabel(range)}.`}
+      >
+        <Suspense
+          fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
+        >
+          <RevenueChartSection />
+        </Suspense>
+      </QuestionSection>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Clientes en riesgo</CardTitle>
-          </CardHeader>
-          <CardContent className="pb-4">
-            <Suspense fallback={<InsightsSkeleton rows={5} />}>
-              <AtRiskClientsPanel />
-            </Suspense>
-          </CardContent>
-        </Card>
-      </div>
+      <QuestionSection
+        id="en-riesgo"
+        question="¿Quién está en riesgo de irse?"
+        subtext="Top 5 clientes con cartera vencida ordenados por monto. Click para ver ficha."
+        actions={
+          <Link
+            href="/empresas/at-risk"
+            className="text-xs font-medium text-primary hover:underline"
+          >
+            Ver todos →
+          </Link>
+        }
+      >
+        <Suspense fallback={<InsightsSkeleton rows={5} />}>
+          <AtRiskClientsPanel />
+        </Suspense>
+      </QuestionSection>
     </div>
   );
 }
 
+function rangeLabel(range: HistoryRange): string {
+  switch (range) {
+    case "mtd":
+      return "Mes en curso";
+    case "ytd":
+      return "Año en curso";
+    case "3y":
+      return "Últ. 3 años";
+    case "5y":
+      return "Últ. 5 años";
+    case "all":
+      return "Todo el historial";
+    case "ltm":
+    default:
+      return "Últ. 12 meses";
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
-// Runway banner — lo primero que ve el CEO
+// Runway alert banner — usa DriftAlert primitive en lugar de Card custom
 // ──────────────────────────────────────────────────────────────────────────
-async function RunwayBanner() {
+async function RunwayAlertBanner() {
   const k = await getDashboardKpis();
   if (!k) return null;
   const days = k.cash.runway_days;
-  const tone =
-    days <= 7 ? "danger" : days <= 30 ? "warning" : "success";
-  const toneClass = {
-    danger: "border-l-danger bg-danger/10",
-    warning: "border-l-warning bg-warning/10",
-    success: "border-l-success bg-success/10",
-  }[tone];
-  const iconColor = {
-    danger: "text-danger",
-    warning: "text-warning",
-    success: "text-success",
-  }[tone];
+  const total = k.cash.total_mxn;
+
+  // Si runway > 60 días, no mostrar banner (se ve abajo en KPIs si hace falta).
+  if (days > 60) return null;
+
+  const severity: "critical" | "warning" =
+    days <= 7 ? "critical" : "warning";
+  const title =
+    days <= 0
+      ? "Runway agotado"
+      : `${days} día${days === 1 ? "" : "s"} de runway`;
+  const description = `Cash total ${formatCurrencyMXN(total, { compact: true })} · ${formatCurrencyMXN(k.cash.cash_mxn, { compact: true })} MXN · ${formatCurrencyMXN(k.cash.cash_usd, { compact: true })} USD. Sin nueva cobranza, la caja no cubre nómina ni proveedores.`;
 
   return (
-    <Link href="/finanzas" className="block">
-      <Card
-        className={`gap-2 border-l-4 transition-colors active:bg-accent/60 ${toneClass}`}
-      >
-        <div className="flex items-start gap-3 px-4 py-3">
-          <Flame className={`h-6 w-6 shrink-0 ${iconColor}`} aria-hidden />
-          <div className="flex-1 min-w-0">
-            <div className="flex items-baseline gap-2">
-              <span className={`text-3xl font-bold tabular-nums ${iconColor}`}>
-                {days}
-              </span>
-              <span className="text-sm font-medium">días de runway</span>
-            </div>
-            <p className="text-xs text-muted-foreground">
-              Cash total{" "}
-              <Currency amount={k.cash.total_mxn} compact colorBySign /> ·{" "}
-              <Currency amount={k.cash.cash_mxn} compact /> MXN ·{" "}
-              <Currency amount={k.cash.cash_usd} compact /> USD
-            </p>
-          </div>
-          <ChevronRight
-            className="h-5 w-5 shrink-0 text-muted-foreground"
-            aria-hidden
-          />
-        </div>
-      </Card>
-    </Link>
+    <DriftAlert
+      severity={severity}
+      title={title}
+      description={description}
+      action={{ label: "Ver finanzas", href: "/finanzas" }}
+    />
   );
 }
 
@@ -210,7 +239,7 @@ async function Kpis() {
       : 0;
 
   return (
-    <>
+    <div className="space-y-2">
       <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 6 }}>
         <KpiCard
           title="Ingresos del mes"
@@ -289,12 +318,15 @@ async function Kpis() {
       <p className="text-[11px] text-muted-foreground">
         Actualizado {formatRelative(k.generated_at)}
       </p>
-    </>
+    </div>
   );
 }
 
 // ──────────────────────────────────────────────────────────────────────────
-// Concentration tripwires — Top customers con caída brusca
+// Concentration tripwires — top customers con caída brusca o sin facturar.
+// El backing view (revenue_concentration) está dropeado en SP1; el helper
+// devuelve [] hasta que SP6 reimplemente con canonical_invoices. El banner
+// se auto-oculta cuando no hay tripwires.
 // ──────────────────────────────────────────────────────────────────────────
 const tripwireLabel: Record<ConcentrationTripwire, string> = {
   TOP5_DECLINE_25PCT: "Top 5 cayó −25% MoM",
@@ -315,63 +347,34 @@ function tripwireMessage(t: ConcentrationRow): string {
   }
 }
 
-async function ConcentrationTripwires() {
+async function ConcentrationTripwiresBanner() {
   const tripwires = await getActiveTripwires();
   if (tripwires.length === 0) return null;
 
+  const top = tripwires[0];
+  const label = top.tripwire ? tripwireLabel[top.tripwire] : "Concentración";
+  const headline =
+    tripwires.length === 1
+      ? `${top.company_name}: ${label}`
+      : `${tripwires.length} clientes top con tripwires`;
+  const description = tripwires
+    .slice(0, 3)
+    .map((t) => `${t.company_name} (${tripwireMessage(t)})`)
+    .join(" · ");
+
   return (
-    <Card className="gap-2 border-l-4 border-l-warning bg-warning/5">
-      <CardHeader className="px-4 pt-3 pb-1">
-        <CardTitle className="flex items-center gap-2 text-sm uppercase tracking-wide text-warning">
-          <AlertTriangle className="h-4 w-4" aria-hidden />
-          Tripwires de concentración ({tripwires.length})
-        </CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-2 px-4 pb-4">
-        {tripwires.map((t) => (
-          <Link
-            key={t.company_id}
-            href={`/companies/${t.company_id}`}
-            className="block transition-colors active:bg-accent/60"
-          >
-            <Card className="rounded-lg">
-              <CardContent className="p-3">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[10px] font-bold text-muted-foreground">
-                        #{t.rank_in_portfolio}
-                      </span>
-                      <span className="truncate text-sm font-semibold">
-                        {t.company_name}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 flex items-center gap-2 text-[11px]">
-                      <span className="font-semibold uppercase tracking-wide text-warning">
-                        {t.tripwire ? tripwireLabel[t.tripwire] : ""}
-                      </span>
-                    </div>
-                    <div className="mt-0.5 text-[11px] text-muted-foreground">
-                      {tripwireMessage(t)}
-                    </div>
-                  </div>
-                  <div className="shrink-0 text-right">
-                    <Currency amount={t.rev_12m} compact />
-                    <div className="text-[9px] uppercase text-muted-foreground">
-                      rev 12m
-                    </div>
-                  </div>
-                  <ChevronRight
-                    className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
-                    aria-hidden
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        ))}
-      </CardContent>
-    </Card>
+    <DriftAlert
+      severity="warning"
+      title={headline}
+      description={description}
+      action={{
+        label: tripwires.length === 1 ? "Ver empresa" : "Ver empresas",
+        href:
+          tripwires.length === 1
+            ? `/empresas/${top.company_id}`
+            : "/empresas/at-risk",
+      }}
+    />
   );
 }
 
@@ -382,7 +385,7 @@ async function RevenueChartSection() {
       <EmptyState
         icon={TrendingUp}
         title="Sin datos de ingresos"
-        description="No hay periodos válidos en pl_estado_resultados."
+        description="No hay periodos válidos en gold_revenue_monthly."
         compact
       />
     );
@@ -473,29 +476,36 @@ async function AtRiskClientsPanel() {
       <EmptyState
         icon={Users}
         title="Sin clientes en riesgo"
-        description={`${totalAtRisk} clientes con churn score elevado`}
+        description={
+          totalAtRisk > 0
+            ? `${totalAtRisk} con cartera vencida sin score por bucket`
+            : "Toda la cartera al día."
+        }
         compact
       />
     );
   }
+
   return (
     <div className="flex flex-col">
       {clients.map((c, i) => (
         <div
-          key={`${c.company_id}-${i}`}
+          key={`${c.canonical_company_id}-${i}`}
           className="space-y-1 border-b border-border/60 py-2 last:border-b-0"
         >
           <CompanyLink
-            companyId={c.company_id ?? 0}
-            name={c.company_name}
+            companyId={c.canonical_company_id}
+            name={c.display_name}
             tier={(c.tier as "A" | "B" | "C") ?? undefined}
             truncate
           />
           <div className="flex items-center justify-between text-[11px] text-muted-foreground">
             <span>
-              LTV: <Currency amount={c.ltv_mxn} compact />
+              LTV: <Currency amount={c.lifetime_value_mxn} compact />
             </span>
-            <span>Churn: {c.churn_risk_score ?? 0}</span>
+            <span>
+              Vencido: <Currency amount={c.overdue_amount_mxn} compact />
+            </span>
           </div>
           {c.max_days_overdue != null && c.max_days_overdue > 0 && (
             <div className="text-[11px] text-danger">
@@ -506,7 +516,7 @@ async function AtRiskClientsPanel() {
       ))}
       {totalAtRisk > clients.length && (
         <Link
-          href="/empresas"
+          href="/empresas/at-risk"
           className="mt-2 flex items-center justify-center gap-1 text-xs font-medium text-primary"
         >
           Ver los {totalAtRisk} clientes en riesgo
