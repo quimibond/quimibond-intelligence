@@ -1,6 +1,8 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import type { HistoryRange } from "@/components/patterns/history-range";
+import { periodBoundsForRange } from "./_period";
 
 /**
  * F-DISC — Discrepancias Odoo ↔ SAT en facturas con residual abierto.
@@ -153,23 +155,34 @@ const KIND_META: Record<
   },
 };
 
-async function _getInvoiceDiscrepanciesRaw(): Promise<InvoiceDiscrepanciesSummary> {
+async function _getInvoiceDiscrepanciesRaw(
+  range?: HistoryRange
+): Promise<InvoiceDiscrepanciesSummary> {
   const sb = getServiceClient();
   const today = new Date();
   const todayMs = today.setHours(0, 0, 0, 0);
+
+  // Si se pasa range, filtrar canonical_invoices por invoice_date_resolved
+  // dentro del período. Sin range, retornar histórico completo (compatibilidad).
+  const bounds = range ? periodBoundsForRange(range) : null;
 
   const PAGE = 1000;
   const allRows: CanonicalRow[] = [];
   let from = 0;
   while (true) {
-    const { data, error } = await sb
+    let query = sb
       .from("canonical_invoices")
       .select(
         "canonical_id,odoo_invoice_id,odoo_name,direction,has_odoo_record,has_sat_record,amount_residual_odoo,amount_residual_sat,amount_residual_mxn_resolved,payment_state_odoo,estado_sat,invoice_date_resolved,due_date_resolved,emisor_nombre,receptor_nombre,emisor_canonical_company_id,receptor_canonical_company_id,sat_uuid"
       )
       .eq("is_quimibond_relevant", true)
-      .gt("amount_residual_mxn_resolved", 0)
-      .range(from, from + PAGE - 1);
+      .gt("amount_residual_mxn_resolved", 0);
+    if (bounds) {
+      query = query
+        .gte("invoice_date_resolved", bounds.from)
+        .lt("invoice_date_resolved", bounds.to);
+    }
+    const { data, error } = await query.range(from, from + PAGE - 1);
     if (error) break;
     const rows = (data ?? []) as CanonicalRow[];
     allRows.push(...rows);
@@ -278,8 +291,9 @@ async function _getInvoiceDiscrepanciesRaw(): Promise<InvoiceDiscrepanciesSummar
   };
 }
 
-export const getInvoiceDiscrepancies = unstable_cache(
-  _getInvoiceDiscrepanciesRaw,
-  ["sp13-finanzas-invoice-discrepancies-v1"],
-  { revalidate: 600, tags: ["finanzas"] }
-);
+export const getInvoiceDiscrepancies = (range?: HistoryRange) =>
+  unstable_cache(
+    () => _getInvoiceDiscrepanciesRaw(range),
+    ["sp13-finanzas-invoice-discrepancies-v2", range ?? "all"],
+    { revalidate: 600, tags: ["finanzas"] }
+  )();

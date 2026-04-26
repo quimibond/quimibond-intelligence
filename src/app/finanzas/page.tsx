@@ -91,6 +91,7 @@ import {
   getInvoiceDiscrepancies,
   type DiscrepancyCategory,
   type DiscrepancyInvoice,
+  periodBoundsForRange,
 } from "@/lib/queries/sp13/finanzas";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
@@ -228,7 +229,7 @@ export default async function FinanzasPage({
       <Suspense
         fallback={<Skeleton className="h-[280px] w-full rounded-lg" />}
       >
-        <InvoiceDiscrepanciesBlock />
+        <InvoiceDiscrepanciesBlock range={period} />
       </Suspense>
 
       {/* F-FX */}
@@ -3273,8 +3274,9 @@ function bucketAccountCount(
 }
 
 /* ── F-DISC Discrepancias Odoo ↔ SAT ─────────────────────────────────── */
-async function InvoiceDiscrepanciesBlock() {
-  const disc = await getInvoiceDiscrepancies();
+async function InvoiceDiscrepanciesBlock({ range }: { range: HistoryRange }) {
+  const disc = await getInvoiceDiscrepancies(range);
+  const periodLabel = periodBoundsForRange(range).label;
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
 
   if (disc.totalCount === 0) {
@@ -3282,7 +3284,7 @@ async function InvoiceDiscrepanciesBlock() {
       <QuestionSection
         id="discrepancies"
         question="¿Hay diferencias entre Odoo y SAT?"
-        subtext="Cero discrepancias detectadas. Las facturas en Odoo cuadran con los CFDI en SAT."
+        subtext={`Cero discrepancias detectadas en ${periodLabel}. Las facturas en Odoo cuadran con los CFDI en SAT.`}
       >
         <EmptyState
           icon={Scale}
@@ -3301,7 +3303,7 @@ async function InvoiceDiscrepanciesBlock() {
     <QuestionSection
       id="discrepancies"
       question="¿Hay diferencias entre Odoo y SAT?"
-      subtext={`${disc.totalCount} facturas con desfase entre ERP y libro fiscal.
+      subtext={`${disc.totalCount} facturas con desfase entre ERP y libro fiscal · ${periodLabel}.
         Lo más común: pagos registrados en SAT (vía complemento) que el equipo
         no marcó como pagados en Odoo.`}
       collapsible
