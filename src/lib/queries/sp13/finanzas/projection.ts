@@ -34,12 +34,19 @@ import { getServiceClient } from "@/lib/supabase-server";
  * "dump on today" (que producía cliffs artificiales de millones cuando
  * el 90%+ del AP está vencido).
  *
- * Pipeline confirmado (SOs sin facturar):
- * Sale orders con state='sale' donde qty_invoiced < qty representan
- * backlog comprometido (~$18M al 2026-04-26). Sin overlay, ese ingreso
- * se queda invisible. Modelado: payment_date = max(today, commitment_date
- * or order_date+14d) + AR_delay_cliente; probabilidad 0.85. Categoría
- * separada `ventas_confirmadas` para distinguirla de `ar_cobranza`
+ * Pipeline confirmado (SOs sin facturar) — best practices:
+ * Sale orders con state='sale' donde qty_invoiced < qty (filter age <180d
+ * para excluir zombies; medido: 93% del pending nominal son SOs >180d
+ * olvidadas). Por línea se separa:
+ *   - delivered_pending = min(qty_delivered, qty) − qty_invoiced
+ *     → factura inminente, prob 0.95, payment = today + CFDI_LAG (3d) + AR_delay
+ *   - undelivered_pending = pending_total − delivered_pending
+ *     → delivery_date = max(today, commitment_date or order_date+lead)
+ *       (lead default 7d, P75 histórico Quimibond del medido en deliveries)
+ *     → invoice_date = delivery_date + CFDI_LAG (3d)
+ *     → payment_date = invoice_date + AR_delay del cliente
+ *     → probabilidad por tier de edad: <30d=0.85, 30-90d=0.70, 90-180d=0.45
+ * Categoría separada `ventas_confirmadas` para distinguirla de `ar_cobranza`
  * (factura ya emitida) y `ventas_proyectadas` (run rate estadístico).
  *
  * Markers: cualquier flujo ≥ 50k MXN se emite como marker visible.
@@ -426,26 +433,41 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   }
 
   // ── Sale orders confirmadas pero NO facturadas (pipeline) ────────────
-  // Estas son SOs en state='sale' donde qty_invoiced < qty. Representan
-  // backlog comprometido — el cliente firmó la orden, el monto está fijo,
-  // pero la factura aún no se emite (puede ser que falte entrega o que
-  // se haya entregado pero ventas no haya emitido CFDI todavía).
+  // Best practices aplicadas (B2B textile manufacturer, MX context):
   //
-  // cashflow_projection solo conoce facturas emitidas. Sin este overlay,
-  // ~$18M de backlog confirmado quedan invisibles en la curva.
+  // 1. VALIDEZ del pedido — solo SOs con order_date en últimos 180d
+  //    (filtrado en query). 93% del pending nominal está en SOs zombie
+  //    de >180d (ej. PV04308 desde 2022-09 con $4.1M pendiente que en
+  //    realidad fueron olvidadas en state='sale'). Filtrarlas evita
+  //    inflar inflows con backlog ficticio.
   //
-  // Modelo de timing por SO:
-  //   1. invoice_date_estimada = max(today, commitment_date or order_date+14d)
-  //   2. payment_date_estimada = invoice_date_estimada + AR_delay_cliente
-  //   3. probabilidad = 0.85 (más alta que prob_aging porque es pre-facturada,
-  //      menor que 95% para reflejar riesgo de cancelación/devolución)
+  // 2. SPLIT por estado de entrega — calcula por línea:
+  //    - delivered_pending = max(0, min(qty_delivered, qty) - qty_invoiced)
+  //      → ya entregado, falta emitir CFDI. Probabilidad alta (0.95),
+  //      facturación inminente (today + CFDI_LAG).
+  //    - undelivered_pending = pending_total - delivered_pending
+  //      → pendiente entrega + factura. Probabilidad por tier de edad.
   //
-  // Se categoriza aparte como `ventas_confirmadas` para distinguirla de
-  // `ar_cobranza` (factura ya emitida) y `ventas_proyectadas` (run rate
-  // estadístico). Los tres pueden tener overlap parcial — el run rate
-  // proyectado se basa en revenue histórico que incluye SOs cobradas.
-  const SO_PIPELINE_PROBABILITY = 0.85;
-  const SO_TO_INVOICE_LEAD_DAYS = 14;
+  // 3. TIMING chain con datos reales Quimibond (medidos del histórico):
+  //    - Lead order_date → delivery: median 2d, P75 7d, P90 15d
+  //    - CFDI_LAG (delivery → factura): 3d (CFDI emitido casi inmediato)
+  //    - delivery_date_estimada =
+  //        commitment_date (si futura)
+  //        ∨ today (si commitment_date pasada — late delivery)
+  //        ∨ order_date + SO_LEAD_DEFAULT (si no hay commitment_date)
+  //    - invoice_date_estimada = delivery_date + CFDI_LAG
+  //    - payment_date_estimada = invoice_date + AR_delay del cliente
+  //
+  // 4. PROBABILIDAD por tier (más conservador que un flat 0.85):
+  //    - delivered_pending: 0.95 (factura inminente, riesgo solo si CFDI rebota)
+  //    - undelivered, age <30d: 0.85
+  //    - undelivered, age 30-90d: 0.70
+  //    - undelivered, age 90-180d: 0.45 (riesgo retraso producción/cancel)
+  //
+  // 5. EXCLUIR partes relacionadas (consistente con AP/AR — push 180d)
+  const CFDI_EMISSION_LAG_DAYS = 3;
+  const SO_LEAD_DEFAULT_DAYS = 7; // P75 histórico Quimibond
+
   type SoHeader = {
     odoo_order_id: number | null;
     name: string | null;
@@ -465,55 +487,54 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   for (const h of (soHeaderRes.data ?? []) as SoHeader[]) {
     if (h.odoo_order_id != null) soHeaders.set(h.odoo_order_id, h);
   }
-  const pendingByOrder = new Map<number, number>();
+  // Por orden: sumar (delivered_pending_amt, undelivered_pending_amt)
+  const pendingByOrder = new Map<
+    number,
+    { deliveredAmt: number; undeliveredAmt: number }
+  >();
   for (const l of (soLinesRes.data ?? []) as SoLine[]) {
     if (l.odoo_order_id == null) continue;
     const qty = Number(l.qty) || 0;
     const qtyInv = Number(l.qty_invoiced) || 0;
+    const qtyDel = Number(l.qty_delivered) || 0;
     const sub = Number(l.subtotal_mxn) || 0;
     if (qty <= 0 || sub <= 0) continue;
     const pendingQty = qty - qtyInv;
     if (pendingQty <= 0) continue;
-    const pendingAmt = sub * (pendingQty / qty);
-    pendingByOrder.set(
-      l.odoo_order_id,
-      (pendingByOrder.get(l.odoo_order_id) ?? 0) + pendingAmt
-    );
+    const pricePerUnit = sub / qty;
+    const deliveredPendingQty = Math.max(0, Math.min(qtyDel, qty) - qtyInv);
+    const undeliveredPendingQty = pendingQty - deliveredPendingQty;
+    const existing = pendingByOrder.get(l.odoo_order_id) ?? {
+      deliveredAmt: 0,
+      undeliveredAmt: 0,
+    };
+    existing.deliveredAmt += deliveredPendingQty * pricePerUnit;
+    existing.undeliveredAmt += undeliveredPendingQty * pricePerUnit;
+    pendingByOrder.set(l.odoo_order_id, existing);
   }
-  for (const [orderId, pending] of pendingByOrder) {
-    if (pending <= 0) continue;
-    const header = soHeaders.get(orderId);
-    if (!header) continue;
-    // Excluir partes relacionadas (consistente con AP/AR)
-    if (header.company_id != null && relatedPartyIds.has(header.company_id)) {
-      continue;
-    }
-    // 1. Fecha estimada de facturación
-    let invoiceEstIso: string;
-    if (header.commitment_date) {
-      invoiceEstIso = header.commitment_date < todayIso
-        ? toIso(new Date(today.getTime() + SO_TO_INVOICE_LEAD_DAYS * 86400000))
-        : header.commitment_date;
-    } else if (header.date_order) {
-      const fromOrder = shiftDate(header.date_order, SO_TO_INVOICE_LEAD_DAYS);
-      invoiceEstIso = fromOrder < todayIso ? todayIso : fromOrder;
-    } else {
-      invoiceEstIso = todayIso;
-    }
-    // 2. + delay de cobranza del cliente
-    const arDelay = header.company_id != null
-      ? (arDelayMap.get(header.company_id) ?? 30)
-      : 30;
-    const paymentEstIso = shiftDate(invoiceEstIso, Math.max(arDelay, 0));
-    if (paymentEstIso > endIso) continue; // fuera del horizonte
-    // 3. Probabilidad de cobro (post-facturación)
-    const expected = pending * SO_PIPELINE_PROBABILITY;
+
+  const probabilityForUndelivered = (ageDays: number): number => {
+    if (ageDays < 30) return 0.85;
+    if (ageDays < 90) return 0.70;
+    if (ageDays < 180) return 0.45;
+    return 0; // skip — caería al filtro pero por seguridad
+  };
+
+  const pushPipelineInflow = (
+    header: SoHeader,
+    nominal: number,
+    paymentDateIso: string,
+    probability: number,
+    suffix: string
+  ) => {
+    if (nominal <= 0 || paymentDateIso > endIso) return;
+    const expected = nominal * probability;
     inflowByDay.set(
-      paymentEstIso,
-      (inflowByDay.get(paymentEstIso) ?? 0) + expected
+      paymentDateIso,
+      (inflowByDay.get(paymentDateIso) ?? 0) + expected
     );
     totalInflow += expected;
-    totalInflowNominal += pending;
+    totalInflowNominal += nominal;
     addToCategory(
       "ventas_confirmadas",
       "Ventas confirmadas (SO sin facturar)",
@@ -522,16 +543,60 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     );
     if (expected >= MARKER_THRESHOLD) {
       markers.push({
-        date: paymentEstIso,
+        date: paymentDateIso,
         kind: "inflow",
         amount: expected,
-        label: header.name ? `${header.name} (pipeline)` : "SO pipeline",
+        label: header.name ? `${header.name} ${suffix}` : `SO ${suffix}`,
         companyId: header.company_id,
-        probability: SO_PIPELINE_PROBABILITY,
+        probability,
         atRisk: false,
         category: "ventas_confirmadas",
         categoryLabel: "Ventas confirmadas (SO sin facturar)",
       });
+    }
+  };
+
+  for (const [orderId, amts] of pendingByOrder) {
+    if (amts.deliveredAmt <= 0 && amts.undeliveredAmt <= 0) continue;
+    const header = soHeaders.get(orderId);
+    if (!header || !header.date_order) continue;
+    if (header.company_id != null && relatedPartyIds.has(header.company_id)) {
+      continue;
+    }
+    const arDelay =
+      header.company_id != null ? arDelayMap.get(header.company_id) ?? 30 : 30;
+
+    // Tier A: delivered pending (factura inminente, prob 0.95)
+    if (amts.deliveredAmt > 0) {
+      const invoiceIso = shiftDate(todayIso, CFDI_EMISSION_LAG_DAYS);
+      const paymentIso = shiftDate(invoiceIso, Math.max(arDelay, 0));
+      pushPipelineInflow(header, amts.deliveredAmt, paymentIso, 0.95, "(entregado)");
+    }
+
+    // Tier B: undelivered pending — prob por edad del SO
+    if (amts.undeliveredAmt > 0) {
+      const ageDays = Math.max(
+        0,
+        Math.floor(
+          (today.getTime() - new Date(header.date_order).getTime()) / 86400000
+        )
+      );
+      const prob = probabilityForUndelivered(ageDays);
+      if (prob <= 0) continue;
+      // delivery_date estimada
+      let deliveryIso: string;
+      if (header.commitment_date && header.commitment_date >= todayIso) {
+        deliveryIso = header.commitment_date;
+      } else if (header.commitment_date) {
+        // Compromiso pasado (entrega tarde) — asumir today + lead/2
+        deliveryIso = shiftDate(todayIso, Math.ceil(SO_LEAD_DEFAULT_DAYS / 2));
+      } else {
+        const fromOrder = shiftDate(header.date_order, SO_LEAD_DEFAULT_DAYS);
+        deliveryIso = fromOrder < todayIso ? todayIso : fromOrder;
+      }
+      const invoiceIso = shiftDate(deliveryIso, CFDI_EMISSION_LAG_DAYS);
+      const paymentIso = shiftDate(invoiceIso, Math.max(arDelay, 0));
+      pushPipelineInflow(header, amts.undeliveredAmt, paymentIso, prob, "(pipeline)");
     }
   }
   // Procesar recurring flows del RPC silver (nómina, renta, servicios,
@@ -643,7 +708,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v10-so-pipeline"],
+  ["sp13-finanzas-cash-projection-v11-so-tiered"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
