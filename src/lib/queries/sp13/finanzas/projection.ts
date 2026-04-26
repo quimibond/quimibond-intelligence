@@ -1,6 +1,11 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import {
+  getLearnedAgingCalibration,
+  getLearnedCounterpartyParams,
+  getLearnedHistoricalRecurrence,
+} from "./learned-params";
 
 /**
  * F5 — Cash projection día-a-día (probability-weighted).
@@ -283,6 +288,21 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // Tomamos los últimos 90 días de canonical_invoices issued con IVA
   // (amount_total_mxn_resolved) — es el cash que el cliente NOS paga.
   const customerLookbackIso = toIso(new Date(today.getTime() - 90 * 86400000));
+  // Parámetros aprendidos del histórico (cached separadamente, refresh 1h):
+  //   - agingCalibration: tasas reales de cobro por bucket (calibran las
+  //     heurísticas 95/85/70/50/25 vs lo que realmente pasa en Quimibond)
+  //   - learnedCounterpartyParams: 12m precise (canonical_invoices)
+  //   - learnedHistoricalRecurrence: 60m SAT (multi-year recurrence,
+  //     antigüedad, estacionalidad)
+  const [agingCalibration, learnedCounterparty, learnedHistorical] =
+    await Promise.all([
+      getLearnedAgingCalibration(),
+      getLearnedCounterpartyParams(),
+      getLearnedHistoricalRecurrence(),
+    ]);
+  const freshPaymentRate =
+    agingCalibration.paymentRateByBucket.fresh.rate || 0.95;
+
   const [customerInvRes, supplierInvRes] = await Promise.all([
     sb
       .from("canonical_invoices")
@@ -916,15 +936,26 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       customerActiveMonths.set(cid, set);
     }
   }
-  // Probabilidad por tier de recurrencia (clientes):
-  //   3+ meses activos: 0.70 (recurrente fuerte — alta confianza)
-  //   2 meses: 0.35 (recurrente débil — la mitad)
-  //   1 mes: skip (one-off — no proyectar como recurrente)
-  // Esto evita inflar el run rate con compras únicas que no se repiten.
-  const probabilityForCustomerRecurrence = (months: number): number => {
-    if (months >= 3) return 0.7;
-    if (months === 2) return 0.35;
-    return 0; // one-off
+  // Probabilidad por tier de recurrencia × calibración empírica (clientes).
+  // Tiers basados en months activos sobre 12m (no 3m, más estable):
+  //   ≥9 meses (casi todos):  0.90 × calibration
+  //   6-8 meses:              0.75 × calibration
+  //   3-5 meses:              0.55 × calibration
+  //   2 meses:                0.30 × calibration
+  //   1 mes:                  skip (one-off, no proyectar)
+  // calibration = freshPaymentRate empírico (typically <0.95 por morosidad
+  // estructural Quimibond — refleja realidad).
+  const probabilityForCustomerRecurrence = (
+    months12: number,
+    freshRate: number
+  ): number => {
+    let base = 0;
+    if (months12 >= 9) base = 0.9;
+    else if (months12 >= 6) base = 0.75;
+    else if (months12 >= 3) base = 0.55;
+    else if (months12 === 2) base = 0.3;
+    else return 0;
+    return base * Math.max(0.5, Math.min(1.0, freshRate));
   };
   const horizonProportion = horizonDays / 30;
   // Tracker per-customer para construir la tabla de breakdown al final.
@@ -939,8 +970,26 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const bronzeId = canonicalToBronzeMap.get(canonicalId);
     if (bronzeId == null) continue;
     if (relatedPartyIds.has(bronzeId)) continue;
-    const activeMonths = customerActiveMonths.get(canonicalId)?.size ?? 0;
-    const customerProb = probabilityForCustomerRecurrence(activeMonths);
+    const canonicalActive3m = customerActiveMonths.get(canonicalId)?.size ?? 0;
+    // Capa de aprendizaje: combinar canonical (12m precise) + SAT (24m
+    // long-term). El signal más fuerte gana — un cliente puede ser
+    // "one-off" en 3m pero "recurrente long-term" en SAT 24m.
+    const learnedCp = learnedCounterparty.byBronzeId.get(bronzeId);
+    const learnedSat = learnedHistorical.byBronzeId.get(bronzeId);
+    const canonicalActive12m = learnedCp?.activeMonthsLast12 ?? canonicalActive3m;
+    const satActive24m = learnedSat?.activeMonthsLast24 ?? 0;
+    // Normalizar SAT 24m → equivalente 12m dividiendo entre 2
+    const effectiveActive12m = Math.max(
+      canonicalActive12m,
+      Math.round(satActive24m / 2)
+    );
+    // Calibración empírica: usar la tasa REAL de cobro fresh observada
+    // en últimos 18m de Quimibond (vs heurística asumida 0.95).
+    const customerProb = probabilityForCustomerRecurrence(effectiveActive12m, freshPaymentRate);
+    // Trend factor: si cliente está creciendo (recent3m/prior9m > 1),
+    // ajustar monthlyAvg para reflejar la tendencia.
+    const trendFactor = learnedCp?.trendFactor ?? 1.0;
+    const monthlyAvgAdjusted = monthlyAvg * trendFactor;
     if (customerProb <= 0) {
       // One-off customer (1 mes activo): NO proyectar como recurrente.
       // Su AR ya facturado sigue en bucket 1; aquí solo descartamos
@@ -952,7 +1001,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       });
       continue;
     }
-    const expectedInHorizon = monthlyAvg * horizonProportion;
+    const expectedInHorizon = monthlyAvgAdjusted * horizonProportion;
     const bucket1Committed = bucket1WeightedByCustomer.get(bronzeId) ?? 0;
     const bucket2Committed = bucket2WeightedByCustomer.get(bronzeId) ?? 0;
     const residualNominal = Math.max(
@@ -1172,16 +1221,26 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       supplierActiveMonths.set(cid, set);
     }
   }
-  // Probabilidad por tier de recurrencia (proveedores):
-  //   3+ meses activos: 0.80 (recurrente fuerte, alta confianza)
-  //   2 meses: 0.40 (recurrente débil)
-  //   1 mes: skip (one-off — no proyectar como recurrente)
-  // Excluir one-offs evita que ICOMATEX ($12.5M en marzo, una sola
-  // compra grande de hilo) se multiplique como si comprara mensualmente.
-  const probabilityForSupplierRecurrence = (months: number): number => {
-    if (months >= 3) return 0.8;
-    if (months === 2) return 0.4;
-    return 0; // one-off
+  // Probabilidad por tier de recurrencia × calibración empírica (proveedores).
+  // Tiers basados en 12m activos:
+  //   ≥9 meses: 0.95 × calibration
+  //   6-8:      0.80 × calibration
+  //   3-5:      0.60 × calibration
+  //   2:        0.35 × calibration
+  //   1:        skip
+  // Suppliers ligeramente mayor que clientes (compras más predecibles —
+  // hay contratos/necesidades operativas constantes).
+  const probabilityForSupplierRecurrence = (
+    months12: number,
+    freshRate: number
+  ): number => {
+    let base = 0;
+    if (months12 >= 9) base = 0.95;
+    else if (months12 >= 6) base = 0.8;
+    else if (months12 >= 3) base = 0.6;
+    else if (months12 === 2) base = 0.35;
+    else return 0;
+    return base * Math.max(0.5, Math.min(1.0, freshRate));
   };
   for (const [canonicalId, lookbackTotal] of monthlySupplierRunRate) {
     const monthlyAvg = lookbackTotal / 3;
@@ -1190,12 +1249,24 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (bronzeId == null) continue;
     if (relatedPartyIds.has(bronzeId)) continue; // intercompañía fuera
 
-    const activeMonths =
-      supplierActiveMonths.get(canonicalId)?.size ?? 0;
-    const supplierProb = probabilityForSupplierRecurrence(activeMonths);
+    const supplierActive3m = supplierActiveMonths.get(canonicalId)?.size ?? 0;
+    // Combinar canonical 12m + SAT 24m igual que con clientes
+    const learnedSp = learnedCounterparty.byBronzeId.get(bronzeId);
+    const learnedSatSp = learnedHistorical.byBronzeId.get(bronzeId);
+    const canonicalActive12mSp = learnedSp?.activeMonthsLast12 ?? supplierActive3m;
+    const satActive24mSp = learnedSatSp?.activeMonthsLast24 ?? 0;
+    const effectiveActive12mSp = Math.max(
+      canonicalActive12mSp,
+      Math.round(satActive24mSp / 2)
+    );
+    const supplierProb = probabilityForSupplierRecurrence(
+      effectiveActive12mSp,
+      freshPaymentRate
+    );
     if (supplierProb <= 0) continue; // one-off, no proyectar
 
-    const expectedInHorizon = monthlyAvg * horizonProportion;
+    const supplierTrend = learnedSp?.trendFactor ?? 1.0;
+    const expectedInHorizon = monthlyAvg * supplierTrend * horizonProportion;
     const apCommitted = apCommittedBySupplier.get(bronzeId) ?? 0;
     const residualNominal = Math.max(0, expectedInHorizon - apCommitted);
     if (residualNominal <= 0) continue;
@@ -1634,7 +1705,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v19-recurrence-tiers"],
+  ["sp13-finanzas-cash-projection-v20-self-learning"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
