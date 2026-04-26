@@ -168,6 +168,17 @@ export interface CashProjection {
   // → muestra qué clientes tienen pipeline cubriendo su demanda vs
   // dónde la capa 3 (residual) está aportando.
   customerInflowBreakdown: CustomerCashflowRow[];
+  // Metadata de auto-aprendizaje. Permite al CEO ver qué tan entrenado
+  // está el modelo y la calibración empírica vs heurísticas.
+  learning: {
+    canonicalSampleSize: number; // # facturas issued ≥180d con outcome
+    canonicalCounterparties: number; // # bronze ids con learned params (12m)
+    satCounterparties: number; // # bronze ids con SAT history (60m)
+    satOldestRecord: string;
+    freshPaymentRate: number; // tasa empírica vs heurística 0.95
+    freshHeuristicRate: number; // 0.95
+    asOfDate: string;
+  };
 }
 
 function toIso(d: Date): string {
@@ -989,7 +1000,25 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     // Trend factor: si cliente está creciendo (recent3m/prior9m > 1),
     // ajustar monthlyAvg para reflejar la tendencia.
     const trendFactor = learnedCp?.trendFactor ?? 1.0;
-    const monthlyAvgAdjusted = monthlyAvg * trendFactor;
+    // Seasonality: si cliente histórico vende ~1.4x en Q4 y el horizonte
+    // cae sobre Q4, ajustar al alza. Calculamos como avg de las
+    // seasonalityByMonth para los meses en el horizonte (cap [0.5, 2.0]).
+    const sat = learnedSat;
+    let seasonalityFactor = 1.0;
+    if (sat?.seasonalityByMonth && sat.seasonalityByMonth.length === 13) {
+      const cursor = new Date(today);
+      const factors: number[] = [];
+      while (cursor <= endDate) {
+        const moy = cursor.getMonth() + 1;
+        factors.push(sat.seasonalityByMonth[moy] ?? 1.0);
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+      if (factors.length > 0) {
+        const avg = factors.reduce((s, f) => s + f, 0) / factors.length;
+        seasonalityFactor = Math.max(0.5, Math.min(2.0, avg));
+      }
+    }
+    const monthlyAvgAdjusted = monthlyAvg * trendFactor * seasonalityFactor;
     if (customerProb <= 0) {
       // One-off customer (1 mes activo): NO proyectar como recurrente.
       // Su AR ya facturado sigue en bucket 1; aquí solo descartamos
@@ -1010,7 +1039,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     );
     let bucket3Expected = 0;
     if (residualNominal > 0) {
-      const arDelay = arDelayMap.get(bronzeId) ?? 30;
+      // Preferir learned median delay (12m sample) sobre RPC silver (6m).
+      // Más estable cuando hay menos volumen mensual.
+      const arDelay =
+        learnedCp?.medianDelayDays != null && learnedCp.paymentSampleSize >= 5
+          ? learnedCp.medianDelayDays
+          : arDelayMap.get(bronzeId) ?? 30;
       // Distribuir el residual SEMANALMENTE sobre el horizonte (no
       // concentrar en midpoint+delay, que apilaba 50+ clientes en una
       // misma fecha generando pico artificial). El cliente típicamente
@@ -1266,12 +1300,32 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (supplierProb <= 0) continue; // one-off, no proyectar
 
     const supplierTrend = learnedSp?.trendFactor ?? 1.0;
-    const expectedInHorizon = monthlyAvg * supplierTrend * horizonProportion;
+    // Seasonality del proveedor sobre meses del horizonte
+    let supplierSeasonality = 1.0;
+    if (learnedSatSp?.seasonalityByMonth?.length === 13) {
+      const cursor = new Date(today);
+      const factors: number[] = [];
+      while (cursor <= endDate) {
+        const moy = cursor.getMonth() + 1;
+        factors.push(learnedSatSp.seasonalityByMonth[moy] ?? 1.0);
+        cursor.setMonth(cursor.getMonth() + 1);
+      }
+      if (factors.length > 0) {
+        const avg = factors.reduce((s, f) => s + f, 0) / factors.length;
+        supplierSeasonality = Math.max(0.5, Math.min(2.0, avg));
+      }
+    }
+    const expectedInHorizon =
+      monthlyAvg * supplierTrend * supplierSeasonality * horizonProportion;
     const apCommitted = apCommittedBySupplier.get(bronzeId) ?? 0;
     const residualNominal = Math.max(0, expectedInHorizon - apCommitted);
     if (residualNominal <= 0) continue;
 
-    const apDelay = apDelayMap.get(bronzeId)?.delayDays ?? 30;
+    // Preferir learned median delay (12m) sobre RPC silver (6m)
+    const apDelay =
+      learnedSp?.medianDelayDays != null && learnedSp.paymentSampleSize >= 5
+        ? learnedSp.medianDelayDays
+        : apDelayMap.get(bronzeId)?.delayDays ?? 30;
     const dayOffset = stableHash(`runrate-supplier-${bronzeId}`) % 7;
     const firstPayDate = shiftDate(todayIso, apDelay + dayOffset);
 
@@ -1700,12 +1754,21 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     })),
     categoryTotals,
     customerInflowBreakdown,
+    learning: {
+      canonicalSampleSize: agingCalibration.totalSample,
+      canonicalCounterparties: learnedCounterparty.totalCounterparties,
+      satCounterparties: learnedHistorical.totalCounterparties,
+      satOldestRecord: learnedHistorical.oldestRecord,
+      freshPaymentRate,
+      freshHeuristicRate: 0.95,
+      asOfDate: agingCalibration.asOfDate,
+    },
   };
 }
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v20-self-learning"],
+  ["sp13-finanzas-cash-projection-v21-seasonality-applied"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
