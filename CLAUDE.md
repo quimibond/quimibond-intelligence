@@ -618,6 +618,149 @@ Pattern C master data management layer:
 
 ---
 
+## /finanzas — P&L limpio (costo primo real vía BOM recursiva)
+
+Quimibond-específico. La sección P&L de `/finanzas` muestra **dos vistas**:
+P&L contable (lo que dice Odoo) y P&L limpio (lo que realmente costó
+producir). Existen porque hay un problema sistémico de **doble conteo
+de costos** en la contabilidad.
+
+### El problema: CAPA + 501.01.01
+
+Odoo, al usar valoración estándar de inventario, genera asientos
+automáticos de "Capa de Valoración" (CAPA) que **duplican el costo**
+en `501.01.01 COSTO DE VENTAS`. El asiento típico es:
+
+```
+Dr 501.01.01 (COGS)         X
+Cr 115.xx    (Inventario)   X
+```
+
+Esto pretende reconocer el costo cuando se vende. El problema: 501.01.01
+ya recibe el costo a través de la valoración de las salidas de stock,
+así que el CAPA lo duplica. Resultado: **501.01.01 contable está inflado
+sistemáticamente**. La utilidad reportada es menor a la real.
+
+Causa raíz: configuración de régimen contable en Odoo que se hizo en
+abr-2024. No se ha corregido en Odoo aún (manual del CEO).
+
+### La solución: P&L limpio con costo primo recursivo
+
+Reemplazamos `501.01.01` por el **costo real de la materia prima** que
+se usó en lo que vendimos. Para cada producto vendido en el período:
+
+1. Tomar la BOM activa (recursiva — bajamos todos los niveles hasta
+   llegar a leaves de tipo `product` con stock_qty/avg_cost reales).
+2. Sumar `qty × avg_cost` de cada leaf MP.
+3. Multiplicar por la cantidad vendida.
+
+Eso es el **costo primo real** de las ventas del período. Ya no incluye
+overhead, MOD, ni depreciación — solo MP que efectivamente se transformó
+en producto vendido.
+
+Los demás costos de producción quedan cada uno en su cuenta:
+
+| Cuenta | Concepto | Va a |
+|---|---|---|
+| `501.01.01` | COGS contable (CON CAPA inflada) | NO se usa en limpio |
+| `501.06.*` | Mano de obra directa | Línea aparte en limpio |
+| `502.*` | Compras de importación | Línea aparte |
+| `504.01.*` (excl. 0008) | Overhead fábrica (renta, energía, servicios, mtto) | Línea aparte |
+| `504.08-23` | Depreciación fábrica (maquinaria) | Línea aparte |
+| `6xx + 613` | Gastos operativos (admin, ventas, dep corporativa) | Línea aparte |
+| `7xx` | Otros ingresos / gastos (FX, intereses, venta activo) | Después de EBIT |
+
+### Estructura del P&L limpio
+
+```
+Ventas de producto (4xx)
+− Costo primo real (BOM recursiva → MP)        ← reemplaza 501.01.01
+= Margen contributivo material
+− Mano de obra directa (501.06)
+− Compras de importación (502)
+− Overhead fábrica (504.01)
+− Depreciación fábrica (504.08-23)
+− Gastos operativos (6xx + 613)
+= EBIT
++ Otros (7xx: FX, intereses, venta activo)
+= UTILIDAD NETA (P&L limpio)
+```
+
+### Validación: residual 501.01
+
+El P&L limpio muestra siempre la fila **`Δ vs P&L contable`** que prueba
+que cuadra. La fórmula:
+
+```
+residual_501.01 = cogs501_01_actual − costoPrimo_BOM
+neta_limpia − neta_contable == residual_501.01   (debería ser exacto)
+```
+
+- `residual > 0`: falta CAPA pendiente (501.01 no se ha "limpiado" lo
+  suficiente — más costos en 501.01 de los que justifica la BOM).
+- `residual < 0`: te pasaste removiendo CAPA (raro).
+- `residual ≈ 0`: la BOM y la contabilidad están alineadas.
+
+### Otras secciones del P&L
+
+Encima de PnlLimpioTable hay otras dos cards que viven en el mismo bloque:
+
+- **PnlNormalizedCard**: detecta one-offs y ajustes year-end vía RPC
+  `get_pnl_normalization_adjustments`. Categorías: venta_activo_fijo,
+  siniestros_incobrables, otros_ingresos_extraordinarios,
+  ajuste_inventario_year_end (501.01.02 atípico),
+  depreciacion_catch_up (504.08-23 atípico). Calcula
+  `utilidad_normalizada = utilidad_reportada + Σ impactos detectados`.
+- **BreakEvenCard**: ventas para break-even = gastos_fijos / margen_contributivo_pct.
+
+### Archivos
+
+| Archivo | Qué hace |
+|---|---|
+| `src/lib/queries/sp13/finanzas/pnl.ts` | KPIs P&L (ventas, utilidad bruta/neta, gastos op por categoría) |
+| `src/lib/queries/sp13/finanzas/cogs-adjusted.ts` | Compara COGS contable vs BOM recursiva |
+| `src/lib/queries/sp13/finanzas/cogs-monthly.ts` | Serie histórica mensual con cache (`cogs_monthly_cache`) |
+| `src/lib/queries/sp13/finanzas/cogs-per-product.ts` | Top productos vendidos con desglose BOM |
+| `src/lib/queries/sp13/finanzas/mp-quality.ts` | % MP con avg_cost, top productos, BOM completeness |
+| `src/lib/queries/sp13/finanzas/pnl-normalized.ts` | One-offs detectados + utilidad normalizada |
+| `src/app/finanzas/page.tsx` (PnlLimpioTable) | Render de la tabla |
+
+### RPCs silver
+
+- `get_cogs_recursive_mp(date_from, date_to)` — costo primo recursivo
+- `_compute_cogs_comparison_monthly` — backfill del cache mensual
+- `refresh_cogs_monthly_cache` — refresh disparado por Vercel cron
+- `get_pnl_normalization_adjustments(date_from, date_to)` — one-offs
+
+### Boundary fix YTD
+
+Las funciones silver usaban `period < to_char(p_date_to, 'YYYY-MM')`,
+que para YTD parcial (e.g. `to=2026-04-25`) excluía abril. Fix:
+`period <= to_char((p_date_to - 1 day)::date, 'YYYY-MM')`. Ver
+migration `20260424_cogs_monthly_cache_boundary_fix.sql`.
+
+### IEPS triplet (productos con tabaco/alcohol — N/A para textil pero
+documentado por completitud):
+Algunas líneas en odoo_invoice_lines vienen como triplet
+(lista+, descuento−, neta+). Para qty: `DISTINCT ON (line_id)`. Para
+revenue: sum de las 3 líneas (cancelan aritméticamente). Sin esto, qty
+o revenue se cuentan 2x.
+
+### IMPORTANTE para futuras sesiones
+
+- **No "arreglar" el P&L contable**: el problema raíz vive en la
+  configuración de Odoo. Manejarlo desde el frontend con el limpio
+  es la decisión consciente del CEO mientras no se corrige en Odoo.
+- **No mezclar 501.01.01 con MP de la BOM**: son conceptos distintos.
+  501.01.01 contable = lo que dice Odoo. costoPrimo BOM = lo que
+  realmente costó la MP. La diferencia es justamente el bug.
+- **El residual debe cuadrar al peso**: si `Δ vs contable ≠ residual_501.01`,
+  hay un bug en cómo se sumaron las cuentas. Investigar antes de seguir.
+- **Period filter unificado**: solo usar `?period=` (no `pl_period`,
+  removido). HistorySelector global controla todo el P&L.
+
+---
+
 ## Addon Odoo (qb19)
 
 **Ubicacion:** `addons/quimibond_intelligence/`
