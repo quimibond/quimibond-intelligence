@@ -2380,71 +2380,61 @@ async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
       }
       actions={<ProjectionHorizonSelector paramName="proj_horizon" value={horizon} />}
     >
-      <Card>
-        <CardContent className="pt-6">
-          <div className="grid gap-4 sm:grid-cols-4">
-            <SummaryStat
-              label="Saldo inicial"
-              value={proj.openingBalance}
-            />
-            <SummaryStat
-              label="Entradas esperadas"
-              value={proj.totalInflow}
-              positive
-            />
-            <SummaryStat
-              label="Salidas programadas"
-              value={proj.totalOutflow}
-              negative
-            />
-            <SummaryStat
-              label="Saldo proyectado"
-              value={proj.closingBalance}
-              highlight={belowFloor}
-            />
-          </div>
+      <div className="grid gap-4 sm:grid-cols-4">
+        <SummaryStat label="Saldo inicial" value={proj.openingBalance} />
+        <SummaryStat
+          label="Entradas esperadas"
+          value={proj.totalInflow}
+          positive
+        />
+        <SummaryStat
+          label="Salidas programadas"
+          value={proj.totalOutflow}
+          negative
+        />
+        <SummaryStat
+          label="Saldo proyectado"
+          value={proj.closingBalance}
+          highlight={belowFloor}
+        />
+      </div>
 
-          <div className="mt-4">
-            <CashProjectionChart projection={proj} />
-          </div>
+      <CashProjectionChart projection={proj} />
 
-          <div className="mt-4">
-            <ProjectionTimeline
-              markers={proj.markers}
-              horizonDays={proj.horizonDays}
-            />
-          </div>
+      <ProjectionTimeline
+        markers={proj.markers}
+        horizonDays={proj.horizonDays}
+      />
 
-          <div className="mt-4">
-            <CashCategoryBreakdown
-              categoryTotals={proj.categoryTotals}
-              horizonDays={proj.horizonDays}
-            />
-          </div>
+      <CashCategoryBreakdown
+        categoryTotals={proj.categoryTotals}
+        horizonDays={proj.horizonDays}
+      />
 
-          {belowFloor && (
-            <div className="mt-3 rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-foreground">
-              Saldo mínimo proyectado <Currency amount={proj.minBalance} /> el {proj.minBalanceDate}
-              {" "}cruza el piso configurable de{" "}
-              <Currency amount={proj.safetyFloor} />.
-            </div>
-          )}
+      {belowFloor && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-foreground">
+          Saldo mínimo proyectado <Currency amount={proj.minBalance} /> el{" "}
+          {proj.minBalanceDate} cruza el piso configurable de{" "}
+          <Currency amount={proj.safetyFloor} />.
+        </div>
+      )}
 
-          {proj.overdueInflowCount > 0 && (
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-              <Badge variant="outline" className="border-warning/40 text-warning text-[10px]">
-                <AlertTriangle className="mr-1 size-3" aria-hidden />
-                {proj.overdueInflowCount} entradas ya vencidas
-              </Badge>
-              <span>
-                Entradas esperadas (ponderadas):{" "}
-                <Currency amount={proj.totalInflow} /> de{" "}
-                <Currency amount={proj.totalInflowNominal} /> nominales.
-              </span>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+      {proj.overdueInflowCount > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <Badge
+            variant="outline"
+            className="border-warning/40 text-warning text-[10px]"
+          >
+            <AlertTriangle className="mr-1 size-3" aria-hidden />
+            {proj.overdueInflowCount} entradas ya vencidas
+          </Badge>
+          <span>
+            Entradas esperadas (ponderadas):{" "}
+            <Currency amount={proj.totalInflow} /> de{" "}
+            <Currency amount={proj.totalInflowNominal} /> nominales.
+          </span>
+        </div>
+      )}
     </QuestionSection>
   );
 }
