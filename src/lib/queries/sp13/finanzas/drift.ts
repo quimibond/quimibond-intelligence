@@ -45,6 +45,7 @@ async function _getDriftSummaryRaw(range: HistoryRange): Promise<DriftSummary> {
     sb
       .from("canonical_invoices")
       .select("invoice_date, amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .neq("estado_sat", "cancelado")
       .gte("invoice_date", bounds.from)

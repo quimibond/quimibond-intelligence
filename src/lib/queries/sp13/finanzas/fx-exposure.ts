@@ -48,6 +48,7 @@ async function _getFxExposureRaw(): Promise<FxExposureSummary> {
       .select(
         "currency_odoo, direction, amount_residual_odoo, amount_residual_mxn_odoo"
       )
+      .eq("is_quimibond_relevant", true)
       .gt("amount_residual_mxn_odoo", 0)
       .neq("currency_odoo", "MXN"),
   ]);

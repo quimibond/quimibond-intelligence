@@ -239,6 +239,7 @@ export async function getSalesRevenueTrend(
     let q = sb
       .from("canonical_invoices")
       .select("invoice_date, amount_total_mxn_resolved")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .eq("estado_sat", "vigente");
     if (bounds.from) q = q.gte("invoice_date", bounds.from);
@@ -509,6 +510,7 @@ export async function getTopCustomersPage(
     let q = sb
       .from("canonical_invoices")
       .select("receptor_canonical_company_id, emisor_rfc, receptor_nombre, amount_total_mxn_resolved")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .eq("estado_sat", "vigente")
       .not("receptor_canonical_company_id", "is", null);

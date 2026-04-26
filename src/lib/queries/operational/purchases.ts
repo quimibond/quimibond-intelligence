@@ -212,6 +212,7 @@ async function _getPurchasesKpisRaw(): Promise<PurchasesKpis> {
     sb
       .from("canonical_invoices")
       .select("amount_residual_mxn_odoo")
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
       .in("payment_state_odoo", ["not_paid", "partial"]),
     // Last-30d outgoing payments — replaces cfo_dashboard.pagos_prov_30d
@@ -949,6 +950,7 @@ export async function getSupplierInvoices(
     .select(
       "canonical_id, sat_uuid, odoo_invoice_id, direction, estado_sat, invoice_date, due_date_odoo, amount_total_mxn_resolved, amount_residual_mxn_odoo, payment_state_odoo, match_confidence, emisor_canonical_company_id, receptor_canonical_company_id"
     )
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "received")
     .eq("emisor_canonical_company_id", supplierCompanyId)
     .not("estado_sat", "eq", "cancelado")

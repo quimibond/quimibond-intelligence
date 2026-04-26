@@ -49,6 +49,8 @@ async function _getArKpisRaw(): Promise<ArKpis> {
       .select(
         "amount_residual_mxn_resolved, amount_residual_mxn_odoo, due_date_resolved, due_date_odoo, receptor_canonical_company_id"
       )
+      // Tombstone filter (see migration 20260426): exclude personal CFDIs.
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .neq("estado_sat", "cancelado")
       .in("payment_state_odoo", ["not_paid", "partial"])
@@ -57,6 +59,8 @@ async function _getArKpisRaw(): Promise<ArKpis> {
     sb
       .from("canonical_invoices")
       .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+      // Tombstone filter (see migration 20260426): exclude personal CFDIs.
+      .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .neq("estado_sat", "cancelado")
       .gte("invoice_date", yearCutoff),

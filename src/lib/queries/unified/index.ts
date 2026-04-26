@@ -245,6 +245,11 @@ export async function getUnifiedRevenueAggregates(
       "amount_total_mxn_odoo, amount_total_mxn_resolved, sat_uuid, estado_sat, direction, invoice_date_resolved, has_sat_record"
     )
     .eq("direction", "issued")
+    // Tombstone filter: hide CFDIs from the CEO's personal Syntage account
+    // (Mizrahi/Penhos/Ortiz/condominios). Backed by a trigger on
+    // canonical_invoices that auto-flags new contaminants — see migration
+    // 20260426_quimibond_relevance_tombstone.sql.
+    .eq("is_quimibond_relevant", true)
     .gte("invoice_date_resolved", fromDate)
     .lte("invoice_date_resolved", toDate)
     .or("estado_sat.is.null,estado_sat.neq.cancelado");
@@ -288,6 +293,8 @@ export async function getUnifiedCashFlowAging(opts?: {
       "amount_residual_mxn_odoo, due_date_odoo, match_confidence, estado_sat, state_odoo, direction, payment_state_odoo"
     )
     .eq("direction", "issued")
+    // Tombstone filter (see migration 20260426).
+    .eq("is_quimibond_relevant", true)
     .in("match_confidence", ["match_uuid", "match_composite", "odoo_only"])
     .not("estado_sat", "eq", "cancelado")
     .in("payment_state_odoo", ["not_paid", "partial", "in_payment"]);

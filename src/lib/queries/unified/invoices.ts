@@ -50,6 +50,7 @@ export async function listInvoices(
   let q = sb
     .from("canonical_invoices")
     .select("*")
+    .eq("is_quimibond_relevant", true)
     .order("invoice_date", { ascending: false, nullsFirst: false });
   if (opts.direction) q = q.eq("direction", opts.direction);
   if (opts.matchStatus) q = q.eq("match_confidence", opts.matchStatus);
@@ -99,6 +100,7 @@ export async function invoicesReceivableAging(opts: { asOf?: string } = {}) {
   const { data } = await sb
     .from("canonical_invoices")
     .select("due_date_odoo, amount_residual_mxn_odoo")
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
     .gt("amount_residual_mxn_odoo", 0);
   const today = new Date(opts.asOf ?? Date.now());
@@ -309,6 +311,7 @@ async function _getOverdueInvoicesRaw(limit: number): Promise<OverdueInvoice[]> 
   const { data } = await sb
     .from("canonical_invoices")
     .select(OVERDUE_SELECT)
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
     .not("estado_sat", "eq", "cancelado")
     .in("payment_state_odoo", ["not_paid", "partial"])
@@ -365,6 +368,7 @@ async function _getOverdueInvoicesPageRaw(
   let query = sb
     .from("canonical_invoices")
     .select(OVERDUE_SELECT, { count: "exact" })
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
     .not("estado_sat", "eq", "cancelado")
     .in("payment_state_odoo", ["not_paid", "partial"])

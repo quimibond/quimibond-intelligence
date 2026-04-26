@@ -42,6 +42,8 @@ async function _getDsoTrendRaw(months: number): Promise<DsoMonth[]> {
     .select(
       "invoice_date, fiscal_fully_paid_at, payment_date_odoo, amount_total_mxn_resolved, amount_total_mxn_odoo, receptor_canonical_company_id"
     )
+    // Tombstone filter (see migration 20260426): exclude personal CFDIs.
+    .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
     .neq("estado_sat", "cancelado")
     .eq("payment_state_odoo", "paid")

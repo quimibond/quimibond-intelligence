@@ -120,6 +120,8 @@ export async function getArByCompany(
           .select(
             "receptor_canonical_company_id, due_date_resolved, due_date_odoo, amount_residual_mxn_resolved, amount_residual_mxn_odoo"
           )
+          // Tombstone filter (see migration 20260426): exclude personal CFDIs.
+          .eq("is_quimibond_relevant", true)
           .eq("direction", "issued")
           .neq("estado_sat", "cancelado")
           .in("payment_state_odoo", ["not_paid", "partial"])
