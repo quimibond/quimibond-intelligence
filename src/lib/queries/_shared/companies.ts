@@ -110,6 +110,10 @@ export async function fetchCompanyReceivables(canonical_company_id: number) {
     .eq("receptor_canonical_company_id", canonical_company_id)
     // SP5-NOTE: using amount_residual_mxn_odoo because _mxn_resolved is 0% filled pre-Task-24; Task 24 will switch this
     .gt("amount_residual_mxn_odoo", 0)
+    // Excluir canceladas SAT — defensa en profundidad. Hoy no hay canceladas
+    // con residual > 0 (validado 2026-04-26), pero el filtro previene que
+    // un edge case en silver muestre saldos fantasma en el detalle.
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .order("fiscal_days_to_due_date", { ascending: false, nullsFirst: false });
   if (error) throw error;
   return data ?? [];
@@ -125,6 +129,7 @@ export async function fetchCompanyPayables(canonical_company_id: number) {
     .eq("direction", "received")
     .eq("emisor_canonical_company_id", canonical_company_id)
     .gt("amount_residual_mxn_odoo", 0)
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .order("fiscal_days_to_due_date", { ascending: false, nullsFirst: false });
   if (error) throw error;
   return data ?? [];

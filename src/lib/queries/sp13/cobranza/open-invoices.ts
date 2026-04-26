@@ -30,7 +30,7 @@ export interface OpenInvoicesPage {
 const SORT_MAP: Record<string, string> = {
   residual: "amount_residual_mxn_odoo",
   total: "amount_total_mxn_odoo",
-  due: "due_date_odoo",
+  due: "due_date_resolved",
   invoice: "invoice_date",
   folio: "odoo_name",
 };
@@ -79,12 +79,23 @@ export async function getOpenInvoicesPage(
   if (params.bucket && params.bucket.length > 0) {
     const now = new Date();
     const orParts: string[] = [];
+    // El display de daysOverdue usa `due_date_resolved ?? due_date_odoo`
+    // (línea 160 abajo), así que el filtro de bucket debe seguir el mismo
+    // fallback. Sin esto, una factura con due_date_resolved en bucket
+    // 31-60 pero due_date_odoo en otro bucket podía aparecer en el bucket
+    // equivocado o quedar excluida.
+    const inRange = (gte: string, lt: string) =>
+      `and(due_date_resolved.gte.${gte},due_date_resolved.lt.${lt}),` +
+      `and(due_date_resolved.is.null,due_date_odoo.gte.${gte},due_date_odoo.lt.${lt})`;
+    const lt = (cutoff: string) =>
+      `due_date_resolved.lt.${cutoff},` +
+      `and(due_date_resolved.is.null,due_date_odoo.lt.${cutoff})`;
     for (const b of params.bucket) {
       if (b === "1-30") {
         const d30 = new Date(now.getTime() - 30 * 86400000)
           .toISOString()
           .slice(0, 10);
-        orParts.push(`and(due_date_odoo.gte.${d30},due_date_odoo.lt.${today})`);
+        orParts.push(inRange(d30, today));
       } else if (b === "31-60") {
         const d31 = new Date(now.getTime() - 31 * 86400000)
           .toISOString()
@@ -92,7 +103,7 @@ export async function getOpenInvoicesPage(
         const d60 = new Date(now.getTime() - 60 * 86400000)
           .toISOString()
           .slice(0, 10);
-        orParts.push(`and(due_date_odoo.gte.${d60},due_date_odoo.lt.${d31})`);
+        orParts.push(inRange(d60, d31));
       } else if (b === "61-90") {
         const d61 = new Date(now.getTime() - 61 * 86400000)
           .toISOString()
@@ -100,12 +111,12 @@ export async function getOpenInvoicesPage(
         const d90 = new Date(now.getTime() - 90 * 86400000)
           .toISOString()
           .slice(0, 10);
-        orParts.push(`and(due_date_odoo.gte.${d90},due_date_odoo.lt.${d61})`);
+        orParts.push(inRange(d90, d61));
       } else if (b === "90+") {
         const d90 = new Date(now.getTime() - 90 * 86400000)
           .toISOString()
           .slice(0, 10);
-        orParts.push(`due_date_odoo.lt.${d90}`);
+        orParts.push(lt(d90));
       }
     }
     if (orParts.length > 0) query = query.or(orParts.join(","));

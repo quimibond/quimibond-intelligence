@@ -817,7 +817,7 @@ const topMarginColumns: DataTableColumn<TopMarginProductRow>[] = [
   },
   {
     key: "margin",
-    header: "Margen %",
+    header: "Margen MP %",
     cell: (r) => (
       <span
         className={`font-semibold ${
@@ -831,8 +831,8 @@ const topMarginColumns: DataTableColumn<TopMarginProductRow>[] = [
         }`}
         title={
           r.weighted_margin_pct < 0
-            ? "PÉRDIDA: el producto se vende bajo costo."
-            : "Margen real = (price − cost) / price. Cost desde BOM o standard_price. Ex-markup values (anteriormente tabla mostraba markup%, ahora convertido a margen real)."
+            ? "PÉRDIDA: el producto se vende bajo el costo de su materia prima."
+            : "Margen MP = (precio − costo_BOM_recursivo_MP) / precio. Solo cubre materia prima — no incluye MOD, overhead fábrica ni depreciación. El margen operativo real es menor; ver /finanzas para el breakdown completo."
         }
       >
         {r.weighted_margin_pct < 0 && "⚠ "}

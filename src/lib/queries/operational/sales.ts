@@ -236,12 +236,16 @@ export async function getSalesRevenueTrend(
     // MXN total). The legacy fallback on `amount_total_mxn` was dead because
     // that column does not exist on canonical_invoices — selecting it 400s
     // the entire query and silently empties the trend chart.
+    // estado_sat puede ser NULL (timbrado pendiente) o 'vigente'/'cancelado'.
+    // Excluir solo canceladas — las nulas son facturas recientes aún no
+    // validadas contra SAT (~218 issued y ~$400k YTD al 2026-04-26).
+    // Filtrar a 'vigente' subestima el revenue del trend.
     let q = sb
       .from("canonical_invoices")
       .select("invoice_date, amount_total_mxn_resolved")
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .eq("estado_sat", "vigente");
+      .or("estado_sat.is.null,estado_sat.neq.cancelado");
     if (bounds.from) q = q.gte("invoice_date", bounds.from);
     if (bounds.to) q = q.lt("invoice_date", bounds.to);
     const { data: rows } = await q;
@@ -507,12 +511,14 @@ export async function getTopCustomersPage(
   // MXN total. Legacy fallback on amount_total_mxn was dead — selecting it
   // 400s the entire query and silently emptied the table.
   if (params.from || params.to) {
+    // estado_sat: incluir NULL (timbrado pendiente) y vigente, excluir cancelado.
+    // Filtrar a 'vigente' excluiría facturas recientes aún no validadas SAT.
     let q = sb
       .from("canonical_invoices")
       .select("receptor_canonical_company_id, emisor_rfc, receptor_nombre, amount_total_mxn_resolved")
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .eq("estado_sat", "vigente")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .not("receptor_canonical_company_id", "is", null);
     if (params.from) q = q.gte("invoice_date", params.from);
     if (params.to) q = q.lt("invoice_date", params.to);

@@ -244,11 +244,29 @@ async function Kpis() {
     );
   }
 
+  // Comparar mes-en-curso (parcial) vs mes-anterior (cerrado) siempre da
+  // MoM negativo durante los primeros días del mes — engañoso. Proyectar
+  // el mes en curso a tasa diaria para que la comparación tenga sentido,
+  // y etiquetar el subtitle como "(parcial)" para que el CEO sepa.
+  const today = new Date();
+  const dayOfMonth = today.getDate();
+  const daysInMonth = new Date(
+    today.getFullYear(),
+    today.getMonth() + 1,
+    0,
+  ).getDate();
+  const isPartialMonth = dayOfMonth < daysInMonth;
+  const projectedThisMonth = isPartialMonth
+    ? (k.revenue.this_month / dayOfMonth) * daysInMonth
+    : k.revenue.this_month;
   const momPct =
     k.revenue.last_month > 0
-      ? ((k.revenue.this_month - k.revenue.last_month) / k.revenue.last_month) *
+      ? ((projectedThisMonth - k.revenue.last_month) / k.revenue.last_month) *
         100
       : 0;
+  const partialLabel = isPartialMonth
+    ? ` · parcial (${dayOfMonth}/${daysInMonth}d)`
+    : "";
 
   return (
     <div className="space-y-2">
@@ -260,7 +278,7 @@ async function Kpis() {
           compact
           icon={TrendingUp}
           trend={{ value: momPct, good: "up" }}
-          subtitle={`YTD ${formatCurrencyMXN(k.revenue.ytd, { compact: true })}`}
+          subtitle={`YTD ${formatCurrencyMXN(k.revenue.ytd, { compact: true })}${partialLabel}`}
           tone={momPct >= 0 ? "success" : "warning"}
           href="/ventas"
         />
