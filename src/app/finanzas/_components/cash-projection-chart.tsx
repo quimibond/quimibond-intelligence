@@ -28,6 +28,18 @@ function fmtDate(iso: string): string {
   return d.toLocaleDateString("es-MX", { day: "2-digit", month: "short" });
 }
 
+function markerColor(m: CashProjectionMarker): string {
+  if (m.kind === "inflow") return "var(--success)";
+  if (m.category === "impuestos_sat") return "var(--warning)";
+  return "var(--destructive)";
+}
+
+function markerRadius(m: CashProjectionMarker): number {
+  if (m.amount >= 1000000) return 7;
+  if (m.amount >= 250000) return 6;
+  return 5;
+}
+
 export function CashProjectionChart({ projection }: Props) {
   const { points, safetyFloor, markers } = projection;
 
@@ -97,7 +109,7 @@ export function CashProjectionChart({ projection }: Props) {
             name=""
             legendType="none"
           />
-          {markers.slice(0, 15).map((m: CashProjectionMarker, i) => {
+          {markers.slice(0, 25).map((m: CashProjectionMarker, i) => {
             const pt = points.find((p) => p.date === m.date);
             if (!pt) return null;
             return (
@@ -105,8 +117,8 @@ export function CashProjectionChart({ projection }: Props) {
                 key={`${m.date}-${i}`}
                 x={m.date}
                 y={pt.balance}
-                r={5}
-                fill={m.kind === "inflow" ? "var(--success)" : "var(--danger)"}
+                r={markerRadius(m)}
+                fill={markerColor(m)}
                 stroke="var(--card)"
                 strokeWidth={2}
               />

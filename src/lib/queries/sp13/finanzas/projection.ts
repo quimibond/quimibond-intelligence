@@ -43,6 +43,9 @@ export interface CashProjectionMarker {
   companyId: number | null;
   probability: number | null;
   atRisk: boolean;
+  /** ar_cobranza | ap_proveedores | nomina | renta | servicios | arrendamiento | impuestos_sat | ventas_proyectadas */
+  category: string;
+  categoryLabel: string;
 }
 
 export interface CashFlowCategoryTotal {
@@ -199,6 +202,10 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
             ? null
             : Number(r.collection_probability),
         atRisk: isInflow && (r.days_overdue ?? 0) > 0,
+        category: isInflow ? "ar_cobranza" : "ap_proveedores",
+        categoryLabel: isInflow
+          ? "Cobranza AR"
+          : "AP a proveedor",
       });
     }
   }
@@ -238,6 +245,8 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
           companyId: null,
           probability: r.probability == null ? null : Number(r.probability),
           atRisk: false,
+          category: r.category,
+          categoryLabel: r.category_label,
         });
       }
     }
@@ -300,7 +309,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v3"],
+  ["sp13-finanzas-cash-projection-v4"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
