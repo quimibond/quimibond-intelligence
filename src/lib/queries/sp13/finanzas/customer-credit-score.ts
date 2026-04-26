@@ -187,18 +187,33 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
     arByCanonical.set(cid, acc);
   }
 
-  // Resolver canonical → bronze (reusing the same lookup pattern).
-  const customerCanonIds = new Set<number>();
-  for (const [cid, info] of counterparty.byBronzeId.entries()) {
-    void cid;
-    if (info.side === "customer") customerCanonIds.add(0); // placeholder
-  }
-  // Better: invert byBronzeId to find customers + map to canonical
-  // We need bronze → canonical reverse. Re-fetch.
+  // Resolver canonical → bronze + capturar nombres + filtrar partes relacionadas.
   const bronzeIds = [...counterparty.byBronzeId.keys()].filter(
     (id) => counterparty.byBronzeId.get(id)?.side === "customer"
   );
   const bronzeToCanonical = new Map<number, number>();
+  const bronzeNames = new Map<number, string>();
+  const relatedPartyBronzeIds = new Set<number>();
+
+  // Pull related party bronze IDs vía RFC (mismo patrón que projection.ts)
+  const { data: relatedRfcData } = await sb
+    .from("canonical_companies")
+    .select("rfc")
+    .eq("is_related_party", true)
+    .not("rfc", "is", null);
+  const relatedRfcs = ((relatedRfcData ?? []) as Array<{ rfc: string | null }>)
+    .map((r) => r.rfc)
+    .filter((r): r is string => !!r);
+  if (relatedRfcs.length > 0) {
+    const { data: bronzeRelData } = await sb
+      .from("companies")
+      .select("id")
+      .in("rfc", relatedRfcs);
+    for (const c of (bronzeRelData ?? []) as Array<{ id: number | null }>) {
+      if (c.id != null) relatedPartyBronzeIds.add(c.id);
+    }
+  }
+
   if (bronzeIds.length > 0) {
     const chunkSize = 200;
     for (let i = 0; i < bronzeIds.length; i += chunkSize) {
@@ -212,12 +227,13 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
         odoo_partner_id: number | null;
         name: string | null;
       };
-      const partnerIds = (data ?? []).map((r) => (r as Row).odoo_partner_id).filter((p): p is number => p != null);
-      const bronzeNameMap = new Map<number, string>();
-      for (const r of (data ?? []) as Row[]) {
-        if (r.id != null) bronzeNameMap.set(r.id, r.name ?? `#${r.id}`);
+      // Capture nombre por bronze id (fallback cuando no hay AR abierto)
+      for (const b of (data ?? []) as Row[]) {
+        if (b.id != null && b.name) bronzeNames.set(b.id, b.name);
       }
-      // Resolve to canonical
+      const partnerIds = (data ?? [])
+        .map((r) => (r as Row).odoo_partner_id)
+        .filter((p): p is number => p != null);
       const ccChunkSize = 200;
       for (let j = 0; j < partnerIds.length; j += ccChunkSize) {
         const pchunk = partnerIds.slice(j, j + ccChunkSize);
@@ -230,7 +246,6 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
           odoo_partner_id: number | null;
         }>) {
           if (c.id == null || c.odoo_partner_id == null) continue;
-          // Find bronze with same partner_id
           for (const b of (data ?? []) as Row[]) {
             if (b.id != null && b.odoo_partner_id === c.odoo_partner_id) {
               bronzeToCanonical.set(b.id, c.id);
@@ -239,19 +254,13 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
           }
         }
       }
-      // Fallback: for bronze without canonical, use name
-      for (const b of (data ?? []) as Row[]) {
-        if (b.id != null && !bronzeToCanonical.has(b.id)) {
-          // Will be filtered out (no AR data resolvable)
-          void b;
-        }
-      }
     }
   }
 
   // Compute score per customer
   const scores: CustomerCreditScore[] = [];
   for (const bronzeId of bronzeIds) {
+    if (relatedPartyBronzeIds.has(bronzeId)) continue; // intercompañía fuera
     const cp = counterparty.byBronzeId.get(bronzeId);
     if (!cp) continue;
     const sat = historical.byBronzeId.get(bronzeId);
@@ -340,7 +349,7 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
 
     scores.push({
       bronzeId,
-      customerName: ar?.name || `#${bronzeId}`,
+      customerName: ar?.name || bronzeNames.get(bronzeId) || `#${bronzeId}`,
       rfc: sat?.rfc ?? null,
       score,
       tier,
@@ -387,6 +396,6 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
 
 export const getCustomerCreditScores = unstable_cache(
   _getCustomerCreditScoresRaw,
-  ["sp13-finanzas-customer-credit-score-v1"],
+  ["sp13-finanzas-customer-credit-score-v2-name-and-related"],
   { revalidate: 3600, tags: ["finanzas"] }
 );

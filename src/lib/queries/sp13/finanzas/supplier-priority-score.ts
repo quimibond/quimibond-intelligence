@@ -192,20 +192,54 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     apByCanonical.set(cid, acc);
   }
 
-  // Resolver canonical → bronze para suppliers conocidos en learnedCounterparty
+  // Resolver canonical → bronze + nombre + flag related_party para suppliers
+  // conocidos en learnedCounterparty. Pull de companies.name como fallback
+  // cuando el supplier no tiene AP abierto (el nombre no estaba en apRows).
+  // Pull canonical_companies.is_related_party para excluir intercompañía
+  // (el filtro estaba en projection.ts pero no lo aplicaba aquí — bug).
   const supplierBronzeIds = [...counterparty.byBronzeId.keys()].filter(
     (id) => counterparty.byBronzeId.get(id)?.side === "supplier"
   );
   const bronzeToCanonical = new Map<number, number>();
+  const bronzeNames = new Map<number, string>();
+  const relatedPartyBronzeIds = new Set<number>();
+
+  // Pull related party bronze IDs vía RFC (mismo patrón que projection.ts)
+  const { data: relatedRfcData } = await sb
+    .from("canonical_companies")
+    .select("rfc")
+    .eq("is_related_party", true)
+    .not("rfc", "is", null);
+  const relatedRfcs = ((relatedRfcData ?? []) as Array<{ rfc: string | null }>)
+    .map((r) => r.rfc)
+    .filter((r): r is string => !!r);
+  if (relatedRfcs.length > 0) {
+    const { data: bronzeRelData } = await sb
+      .from("companies")
+      .select("id")
+      .in("rfc", relatedRfcs);
+    for (const c of (bronzeRelData ?? []) as Array<{ id: number | null }>) {
+      if (c.id != null) relatedPartyBronzeIds.add(c.id);
+    }
+  }
+
   if (supplierBronzeIds.length > 0) {
     const chunkSize = 200;
     for (let i = 0; i < supplierBronzeIds.length; i += chunkSize) {
       const chunk = supplierBronzeIds.slice(i, i + chunkSize);
       const { data } = await sb
         .from("companies")
-        .select("id, odoo_partner_id")
+        .select("id, odoo_partner_id, name")
         .in("id", chunk);
-      type Row = { id: number | null; odoo_partner_id: number | null };
+      type Row = {
+        id: number | null;
+        odoo_partner_id: number | null;
+        name: string | null;
+      };
+      // Capture name as fallback
+      for (const b of (data ?? []) as Row[]) {
+        if (b.id != null && b.name) bronzeNames.set(b.id, b.name);
+      }
       const partnerIds = (data ?? [])
         .map((r) => (r as Row).odoo_partner_id)
         .filter((p): p is number => p != null);
@@ -241,6 +275,7 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
   // Para v1 nos enfocamos en los que SÍ tienen learned data.
   const scores: SupplierPriorityScore[] = [];
   for (const bronzeId of supplierBronzeIds) {
+    if (relatedPartyBronzeIds.has(bronzeId)) continue; // intercompañía fuera
     const cp = counterparty.byBronzeId.get(bronzeId);
     if (!cp) continue;
     const sat = historical.byBronzeId.get(bronzeId);
@@ -284,7 +319,8 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     }
 
     // 5. Critical category (5 pts)
-    const name = ap?.name || `#${bronzeId}`;
+    // Nombre con fallback en cascada: AP nombre > Bronze companies.name > #id
+    const name = ap?.name || bronzeNames.get(bronzeId) || `#${bronzeId}`;
     const isCritical = isCriticalSupplierName(name);
     const criticalPts = isCritical ? 5 : 0;
 
@@ -369,6 +405,6 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
 
 export const getSupplierPriorityScores = unstable_cache(
   _getSupplierPriorityScoresRaw,
-  ["sp13-finanzas-supplier-priority-v1"],
+  ["sp13-finanzas-supplier-priority-v2-name-and-related"],
   { revalidate: 3600, tags: ["finanzas"] }
 );
