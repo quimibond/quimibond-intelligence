@@ -98,10 +98,21 @@ export async function getSalesKpis(): Promise<SalesKpis> {
   // total_income is negative (accounting credit); abs = revenue.
   // net_income is the bottom-line (≈ utilidad neta).
   // No utilidad_operativa equivalent — use net_income as proxy.
-  const [pl, monthlyRev, salesOrders] = await Promise.all([
+  // Ingresos del mes — leemos canonical_account_balances filtrado a 4xx
+  // (cuenta de Ventas de producto) en lugar de gold_pl_statement.total_income.
+  // Razón: total_income agrega 4xx + 7xx + 8xx (otros ingresos/gastos no
+  // afectables: FX, intereses, ventas de activo, arrendamientos misc).
+  // El 7xx neto suele tener gastos extraordinarios que reducen el "income",
+  // produciendo "Ingresos del mes" $1-2M abajo de las ventas reales (ej.
+  // abril 2026: total_income = $8.79M vs ventas 4xx = $10.10M, diferencia
+  // $1.31M de 7xx neto). /finanzas P&L lee 4xx — esto alinea ambas vistas.
+  const incomeWindowFrom = monthKey(yearAgo);
+  const incomeWindowTo = currKey;
+
+  const [pl, monthlyRev, salesOrders, salesIncome4xx] = await Promise.all([
     sb
       .from("gold_pl_statement")
-      .select("period, total_income, net_income")
+      .select("period, net_income")
       .order("period", { ascending: false })
       .limit(26),
     // Grand-total rows: canonical_company_id IS NULL
@@ -119,12 +130,20 @@ export async function getSalesKpis(): Promise<SalesKpis> {
       .lt("date_order", nextStart)
       .neq("state", "cancel")
       .not("canonical_company_id", "in", pgInList(selfIds)),
+    // 4xx-only revenue por periodo (curr / prev / yearAgo).
+    sb
+      .from("canonical_account_balances")
+      .select("period, balance, account_code")
+      .eq("balance_sheet_bucket", "income")
+      .eq("deprecated", false)
+      .gte("period", incomeWindowFrom)
+      .lte("period", incomeWindowTo)
+      .like("account_code", "4%"),
   ]);
 
   // P&L lookups — filter out bad/test years
   const plRows = ((pl.data ?? []) as Array<{
     period: string | null;
-    total_income: number | null;
     net_income: number | null;
   }>).filter((r) => {
     if (!r.period) return false;
@@ -134,13 +153,22 @@ export async function getSalesKpis(): Promise<SalesKpis> {
 
   // gold_pl_statement.period is "YYYY-MM"; match against monthKey
   const curr = plRows.find((r) => r.period?.slice(0, 7) === currKey);
-  const prevRow = plRows.find((r) => r.period?.slice(0, 7) === prevKey);
-  const yearAgoRow = plRows.find((r) => r.period?.slice(0, 7) === yearAgoKey);
 
-  // total_income is stored as negative; abs = revenue
-  const ingresosMes = Math.abs(Number(curr?.total_income) || 0);
-  const ingresosMesAnt = Math.abs(Number(prevRow?.total_income) || 0);
-  const ingresosYoy = Math.abs(Number(yearAgoRow?.total_income) || 0);
+  // Sumar 4xx por período (negar — accounts income son credit-normal)
+  const revenueByPeriod = new Map<string, number>();
+  type AbRow = {
+    period: string | null;
+    balance: number | null;
+    account_code: string | null;
+  };
+  for (const r of (salesIncome4xx.data ?? []) as AbRow[]) {
+    if (!r.period) continue;
+    const bal = Number(r.balance) || 0;
+    revenueByPeriod.set(r.period, (revenueByPeriod.get(r.period) ?? 0) - bal);
+  }
+  const ingresosMes = Math.max(0, revenueByPeriod.get(currKey) ?? 0);
+  const ingresosMesAnt = Math.max(0, revenueByPeriod.get(prevKey) ?? 0);
+  const ingresosYoy = Math.max(0, revenueByPeriod.get(yearAgoKey) ?? 0);
   const utilidadOperativaMes = Number(curr?.net_income) || 0;
   const ingresosMomPct =
     ingresosMesAnt > 0
@@ -276,28 +304,39 @@ export async function getSalesRevenueTrend(
     });
   }
 
-  // Default path: gold_pl_statement grand-total monthly series
-  // Fetch months+2 extra for ma3m context of the oldest window point
+  // Default path: ventas reales 4xx desde canonical_account_balances.
+  // Fetch months+2 extra para ma3m del punto más viejo. NOTA: usamos 4xx
+  // (no gold_pl_statement.total_income) porque total_income mezcla 4xx
+  // con 7xx (otros ingresos/gastos NETOS) — los 7xx típicamente tienen
+  // gastos extraordinarios que reducen el "income" y producen una serie
+  // que NO refleja las ventas reales. Alineado con /finanzas P&L.
+  const monthsToFetch = months + 4;
+  const now = new Date();
+  const fromDate = new Date(now.getFullYear(), now.getMonth() - monthsToFetch + 1, 1);
+  const fromKey = `${fromDate.getFullYear()}-${String(fromDate.getMonth() + 1).padStart(2, "0")}`;
   const { data } = await sb
-    .from("gold_pl_statement")
-    .select("period, total_income")
-    .order("period", { ascending: false })
-    .limit(months + 4);
+    .from("canonical_account_balances")
+    .select("period, balance, account_code")
+    .eq("balance_sheet_bucket", "income")
+    .eq("deprecated", false)
+    .like("account_code", "4%")
+    .gte("period", fromKey);
 
-  const rows = ((data ?? []) as Array<{
+  type AbRow = {
     period: string | null;
-    total_income: number | null;
-  }>)
-    .filter((r) => {
-      if (!r.period) return false;
-      const y = Number(r.period.split("-")[0]);
-      return y >= 2020 && y <= 2030;
-    })
-    .map((r) => ({
-      period: r.period!.slice(0, 7),
-      // total_income is negative (credit); abs = revenue
-      revenue: Math.abs(Number(r.total_income) || 0),
-    }))
+    balance: number | null;
+    account_code: string | null;
+  };
+  const byPeriod = new Map<string, number>();
+  for (const r of (data ?? []) as AbRow[]) {
+    if (!r.period) continue;
+    const y = Number(r.period.split("-")[0]);
+    if (y < 2020 || y > 2030) continue;
+    const bal = Number(r.balance) || 0;
+    byPeriod.set(r.period, (byPeriod.get(r.period) ?? 0) - bal);
+  }
+  const rows = [...byPeriod.entries()]
+    .map(([period, revenue]) => ({ period, revenue: Math.max(0, revenue) }))
     .sort((a, b) => a.period.localeCompare(b.period));
 
   const points: RevenueTrendPoint[] = rows.map((r, i) => {
