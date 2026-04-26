@@ -1060,3 +1060,107 @@ export async function fetchCompanyRevenueTrend(
     total_mxn: Number(r.resolved_mxn) || 0,
   }));
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Fiscal snapshot per company — canonical-native (replaces getCustomer360
+// which referenced fiscal_* columns that never landed on gold_company_360).
+//
+// Sources:
+//   - canonical_companies: total_invoiced_sat_mxn, total_credit_notes_mxn,
+//     invoices_count, invoices_with_syntage_match, sat_compliance_score,
+//     sat_open_issues_count, last_invoice_date.
+//   - canonical_invoices: cancellation rate (estado_sat='cancelado' /
+//     total) and first invoice date (min invoice_date for the company on
+//     either side: emitter or receptor).
+// ──────────────────────────────────────────────────────────────────────────
+export interface CompanyFiscalSnapshot {
+  /** Open SAT compliance issues today (sat_open_issues_count). */
+  satIssuesOpen: number;
+  /** Cancellation rate over total issued invoices for the company (0..1). */
+  cancellationRate: number;
+  /** Cancelled invoice count (numerator of cancellationRate). */
+  cancelledCount: number;
+  /** Total issued invoice count (denominator of cancellationRate). */
+  totalIssued: number;
+  /** Lifetime SAT-stamped revenue (canonical_companies.total_invoiced_sat_mxn). */
+  totalInvoicedSatMxn: number;
+  /** Lifetime credit notes total (canonical_companies.total_credit_notes_mxn). */
+  totalCreditNotesMxn: number;
+  /** SAT-Odoo match coverage (invoices_with_syntage_match / invoices_count). */
+  satMatchRate: number;
+  /** Compliance score from canonical_companies (0..1). Null when not computed. */
+  satComplianceScore: number | null;
+  /** First invoice date the company appears on (either side). */
+  firstInvoiceDate: string | null;
+  /** Last invoice date (canonical_companies.last_invoice_date). */
+  lastInvoiceDate: string | null;
+  /** Total invoice count from canonical_companies.invoices_count. */
+  invoicesCount: number;
+}
+
+export async function fetchCompanyFiscalSnapshot(
+  canonicalCompanyId: number,
+): Promise<CompanyFiscalSnapshot | null> {
+  const sb = getServiceClient();
+
+  const { data: cc } = await sb
+    .from("canonical_companies")
+    .select(
+      "total_invoiced_sat_mxn, total_credit_notes_mxn, invoices_count, invoices_with_syntage_match, sat_compliance_score, sat_open_issues_count, last_invoice_date",
+    )
+    .eq("id", canonicalCompanyId)
+    .maybeSingle();
+  if (!cc) return null;
+
+  const totalInvoiced = Number(cc.invoices_count) || 0;
+  const matched = Number(cc.invoices_with_syntage_match) || 0;
+
+  // Cancellation rate + first invoice date — single round-trip each, fired
+  // in parallel.
+  const [cancelledRes, issuedRes, firstRes] = await Promise.all([
+    sb
+      .from("canonical_invoices")
+      .select("canonical_id", { head: true, count: "exact" })
+      .eq("estado_sat", "cancelado")
+      .or(
+        `emisor_canonical_company_id.eq.${canonicalCompanyId},receptor_canonical_company_id.eq.${canonicalCompanyId}`,
+      ),
+    sb
+      .from("canonical_invoices")
+      .select("canonical_id", { head: true, count: "exact" })
+      .or(
+        `emisor_canonical_company_id.eq.${canonicalCompanyId},receptor_canonical_company_id.eq.${canonicalCompanyId}`,
+      ),
+    sb
+      .from("canonical_invoices")
+      .select("invoice_date")
+      .or(
+        `emisor_canonical_company_id.eq.${canonicalCompanyId},receptor_canonical_company_id.eq.${canonicalCompanyId}`,
+      )
+      .not("invoice_date", "is", null)
+      .order("invoice_date", { ascending: true })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  const cancelledCount = cancelledRes.count ?? 0;
+  const totalIssued = issuedRes.count ?? 0;
+  const firstInvoiceDate =
+    (firstRes.data as { invoice_date?: string | null } | null)?.invoice_date ??
+    null;
+
+  return {
+    satIssuesOpen: Number(cc.sat_open_issues_count) || 0,
+    cancellationRate: totalIssued > 0 ? cancelledCount / totalIssued : 0,
+    cancelledCount,
+    totalIssued,
+    totalInvoicedSatMxn: Number(cc.total_invoiced_sat_mxn) || 0,
+    totalCreditNotesMxn: Number(cc.total_credit_notes_mxn) || 0,
+    satMatchRate: totalInvoiced > 0 ? matched / totalInvoiced : 0,
+    satComplianceScore:
+      cc.sat_compliance_score != null ? Number(cc.sat_compliance_score) : null,
+    firstInvoiceDate,
+    lastInvoiceDate: cc.last_invoice_date ?? null,
+    invoicesCount: totalInvoiced,
+  };
+}

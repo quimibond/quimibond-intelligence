@@ -240,10 +240,25 @@ export async function getRevenueConcentration(
   topN = 30
 ): Promise<ConcentrationRow[]> {
   const sb = getServiceClient();
-  const { data } = await sb
-    .from("revenue_concentration") // SP5-EXCEPTION: §12 banned MV — revenue concentration portfolio read; no canonical replacement in SP5 scope. TODO SP6: derive from canonical_invoices aggregate.
+  // SP5-EXCEPTION: revenue_concentration was a §12 MV dropped in SP1 batch 1
+  // (migration 1068_silver_sp5_drop_batch_1_wrappers). PostgREST returns 404
+  // from the live DB. Until SP6 ships a canonical aggregate, swallow the
+  // error and return []; the consumer (`/` ConcentrationTripwires) hides
+  // itself when the array is empty.
+  // TODO SP6: derive from canonical_invoices aggregate.
+  const { data, error } = await sb
+    .from("revenue_concentration")
     .select("*")
     .lte("rank_in_portfolio", topN);
+  if (error) {
+    if (process.env.NODE_ENV !== "production") {
+      console.warn(
+        "[getRevenueConcentration] view unavailable; returning [] until SP6:",
+        error.message,
+      );
+    }
+    return [];
+  }
   return ((data ?? []) as Array<Partial<ConcentrationRow>>).map((r) => ({
     company_id: Number(r.company_id) || 0,
     company_name: r.company_name ?? "—",
