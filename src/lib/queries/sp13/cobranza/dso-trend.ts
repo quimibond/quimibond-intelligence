@@ -45,7 +45,7 @@ async function _getDsoTrendRaw(months: number): Promise<DsoMonth[]> {
     // Tombstone filter (see migration 20260426): exclude personal CFDIs.
     .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
-    .neq("estado_sat", "cancelado")
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .eq("payment_state_odoo", "paid")
     .or(
       `fiscal_fully_paid_at.gte.${startStr},payment_date_odoo.gte.${startStr}`
@@ -113,7 +113,7 @@ async function _getDsoTrendRaw(months: number): Promise<DsoMonth[]> {
 export async function getDsoTrend(months = 12): Promise<DsoMonth[]> {
   const cached = unstable_cache(
     () => _getDsoTrendRaw(months),
-    ["sp13-cobranza-dso-trend-v2", String(months)],
+    ["sp13-cobranza-dso-trend-v3-null-safe", String(months)],
     { revalidate: 300, tags: ["invoices-unified", "finance"] }
   );
   return cached();

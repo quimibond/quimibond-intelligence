@@ -52,7 +52,7 @@ async function _getArKpisRaw(): Promise<ArKpis> {
       // Tombstone filter (see migration 20260426): exclude personal CFDIs.
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or(OPEN_FILTER)
       .not("receptor_canonical_company_id", "in", pgInList(selfIds)),
@@ -62,7 +62,7 @@ async function _getArKpisRaw(): Promise<ArKpis> {
       // Tombstone filter (see migration 20260426): exclude personal CFDIs.
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .gte("invoice_date", yearCutoff),
   ]);
 
@@ -110,7 +110,7 @@ async function _getArKpisRaw(): Promise<ArKpis> {
   };
 }
 
-export const getArKpis = unstable_cache(_getArKpisRaw, ["sp13-cobranza-ar-kpis-v1"], {
+export const getArKpis = unstable_cache(_getArKpisRaw, ["sp13-cobranza-ar-kpis-v2-null-safe"], {
   revalidate: 60,
   tags: ["invoices-unified", "finance"],
 });

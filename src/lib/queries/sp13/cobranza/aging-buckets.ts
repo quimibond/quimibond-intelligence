@@ -63,7 +63,7 @@ async function _getAgingBucketsRaw(): Promise<AgingBucketsResult> {
     // Tombstone filter (see migration 20260426): exclude personal CFDIs.
     .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
-    .neq("estado_sat", "cancelado")
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .in("payment_state_odoo", ["not_paid", "partial"])
     .or("amount_residual_mxn_resolved.gt.0.01,amount_residual_mxn_odoo.gt.0.01")
     .not("receptor_canonical_company_id", "in", pgInList(selfIds));
@@ -104,6 +104,6 @@ async function _getAgingBucketsRaw(): Promise<AgingBucketsResult> {
 
 export const getAgingBuckets = unstable_cache(
   _getAgingBucketsRaw,
-  ["sp13-cobranza-aging-buckets-v1"],
+  ["sp13-cobranza-aging-buckets-v2-null-safe"],
   { revalidate: 60, tags: ["invoices-unified"] }
 );
