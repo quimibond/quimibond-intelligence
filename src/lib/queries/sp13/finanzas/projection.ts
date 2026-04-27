@@ -450,6 +450,37 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   };
   const projRows = (projRes.data ?? []) as ProjRow[];
 
+  // Filtro defensivo `payment_state_odoo='in_payment'`: la matview
+  // cashflow_projection es legacy aplicada vía MCP y a veces incluye
+  // facturas en estado `in_payment` (ya conciliadas con el banco pero
+  // pendientes de booking final en Odoo). Si las dejamos pasar, se
+  // doble-cuentan con canonical_payments en el horizonte 0-14d.
+  // Audit 2026-04-27 finding #10. Cuando exista paridad SQL para la
+  // matview (audit finding #1), mover este filtro a su definición.
+  const projInvoiceNames = Array.from(
+    new Set(
+      projRows
+        .map((r) => r.invoice_name)
+        .filter((n): n is string => typeof n === "string" && n.length > 0)
+    )
+  );
+  const inPaymentNames = new Set<string>();
+  if (projInvoiceNames.length > 0) {
+    // Chunkeamos por seguridad si la lista crece (PostgREST `in.()` ~2k items).
+    const chunkSize = 1000;
+    for (let i = 0; i < projInvoiceNames.length; i += chunkSize) {
+      const chunk = projInvoiceNames.slice(i, i + chunkSize);
+      const { data: settled } = await sb
+        .from("canonical_invoices")
+        .select("odoo_name")
+        .in("odoo_name", chunk)
+        .eq("payment_state_odoo", "in_payment");
+      for (const row of (settled ?? []) as Array<{ odoo_name: string | null }>) {
+        if (row.odoo_name) inPaymentNames.add(row.odoo_name);
+      }
+    }
+  }
+
   const inflowByDay = new Map<string, number>();
   const outflowByDay = new Map<string, number>();
   const markers: CashProjectionMarker[] = [];
@@ -494,6 +525,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   for (const r of projRows) {
     const origDate = r.projected_date;
     if (!origDate) continue;
+    if (r.invoice_name && inPaymentNames.has(r.invoice_name)) continue;
     const isInflow = r.flow_type === "receivable_detail";
     const nominal = Number(r.amount_residual) || 0;
     const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
