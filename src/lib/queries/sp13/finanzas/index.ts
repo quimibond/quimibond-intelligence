@@ -136,11 +136,14 @@ export {
 } from "./invoice-discrepancies";
 export {
   getInventoryAdjustments,
+  getInventoryAdjustmentsPhysical,
   ACCOUNT_BUCKET_LABEL,
   JOURNAL_CATEGORY_LABEL,
   PHYSICAL_SUBCAT_LABEL,
   type InventoryAdjustmentsSummary,
+  type InventoryAdjustmentsPhysicalSummary,
   type InventoryAdjMonthlyRow,
+  type InventoryAdjPhysicalMonthlyRow,
   type InventoryAdjTopProduct,
   type AdjAccountBucket,
   type AdjJournalCategory,

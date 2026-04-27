@@ -123,6 +123,17 @@ type TopRpcRow = {
   line_count: number | string | null;
 };
 
+type PhysicalMonthlyRpcRow = {
+  period: string;
+  physical_subcategory: string;
+  account_bucket: string;
+  debit: number | string | null;
+  credit: number | string | null;
+  net: number | string | null;
+  line_count: number | string | null;
+  product_count: number | string | null;
+};
+
 const num = (v: number | string | null | undefined) => Number(v ?? 0) || 0;
 
 export async function getInventoryAdjustments(
@@ -195,6 +206,107 @@ export async function getInventoryAdjustments(
     focusedAccountCodes,
     focusedNetMxn,
     focusedGrossMxn,
+  };
+}
+
+/* ── Physical lens (stock_moves joined) ────────────────────────────────── */
+
+export interface InventoryAdjPhysicalMonthlyRow {
+  period: string;
+  physicalSubcategory: AdjPhysicalSubcategory;
+  accountBucket: AdjAccountBucket;
+  debit: number;
+  credit: number;
+  net: number;
+  lineCount: number;
+  productCount: number;
+}
+
+export interface InventoryAdjustmentsPhysicalSummary {
+  period: HistoryRange;
+  periodLabel: string;
+  periodFrom: string;
+  periodTo: string;
+  /** Monthly rows by physical_subcategory × account_bucket. */
+  monthly: InventoryAdjPhysicalMonthlyRow[];
+  /** Top SKUs by net Dr in the period. */
+  topProducts: InventoryAdjTopProduct[];
+  focusedAccountCodes: string[];
+  focusedNetMxn: number;
+}
+
+export async function getInventoryAdjustmentsPhysical(
+  range: HistoryRange,
+  opts: { focusedAccountCodes?: string[]; topLimit?: number } = {}
+): Promise<InventoryAdjustmentsPhysicalSummary> {
+  const focusedAccountCodes = opts.focusedAccountCodes ?? ["501.01.02"];
+  const topLimit = opts.topLimit ?? 20;
+  const sb = getServiceClient();
+  const bounds = periodBoundsForRange(range);
+
+  const [physicalRes, topRes] = await Promise.all([
+    sb.rpc("get_inventory_adjustments_physical_monthly", {
+      p_date_from: bounds.from,
+      p_date_to: bounds.to,
+      p_account_codes: focusedAccountCodes,
+    }),
+    sb.rpc("get_inventory_adjustments_top_products", {
+      p_date_from: bounds.from,
+      p_date_to: bounds.to,
+      p_account_codes: focusedAccountCodes,
+      p_limit: topLimit,
+    }),
+  ]);
+
+  if (physicalRes.error) {
+    console.error(
+      "[getInventoryAdjustmentsPhysical] physical_monthly",
+      physicalRes.error.message
+    );
+  }
+  if (topRes.error) {
+    console.error(
+      "[getInventoryAdjustmentsPhysical] top",
+      topRes.error.message
+    );
+  }
+
+  const monthly: InventoryAdjPhysicalMonthlyRow[] = (
+    (physicalRes.data ?? []) as PhysicalMonthlyRpcRow[]
+  ).map((r) => ({
+    period: r.period,
+    physicalSubcategory: r.physical_subcategory as AdjPhysicalSubcategory,
+    accountBucket: r.account_bucket as AdjAccountBucket,
+    debit: num(r.debit),
+    credit: num(r.credit),
+    net: num(r.net),
+    lineCount: Number(r.line_count ?? 0) || 0,
+    productCount: Number(r.product_count ?? 0) || 0,
+  }));
+
+  const topProducts: InventoryAdjTopProduct[] = (
+    (topRes.data ?? []) as TopRpcRow[]
+  ).map((r) => ({
+    productRef: r.product_ref,
+    odooProductId: r.odoo_product_id,
+    topSubcategory: (r.physical_subcategory_top as AdjPhysicalSubcategory) ?? null,
+    debit: num(r.debit),
+    credit: num(r.credit),
+    net: num(r.net),
+    lineCount: Number(r.line_count ?? 0) || 0,
+  }));
+
+  const focusedNetMxn = monthly.reduce((s, r) => s + r.net, 0);
+
+  return {
+    period: range,
+    periodLabel: bounds.label,
+    periodFrom: bounds.from,
+    periodTo: bounds.to,
+    monthly,
+    topProducts,
+    focusedAccountCodes,
+    focusedNetMxn,
   };
 }
 

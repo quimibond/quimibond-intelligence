@@ -45,6 +45,7 @@ import {
 import { parseTableParams, parseVisibleKeys } from "@/lib/queries/_shared/table-params";
 
 import { OtdWeeklyChart } from "./_components/otd-weekly-chart";
+import { InventoryPhysicalBlock } from "./_components/inventory-physical-block";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
@@ -96,6 +97,7 @@ export default async function OperacionesPage({
           { id: "otd", label: "¿Cómo va OTD?" },
           { id: "deliveries", label: "¿Qué entregas?" },
           { id: "manufacturing", label: "¿Qué se produce?" },
+          { id: "inventory-physical", label: "Mermas y ajustes" },
         ]}
       />
 
@@ -213,6 +215,12 @@ export default async function OperacionesPage({
           </Suspense>
         </QuestionSection>
       </div>
+
+      <Suspense
+        fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}
+      >
+        <InventoryPhysicalBlock />
+      </Suspense>
     </PageLayout>
   );
 }
