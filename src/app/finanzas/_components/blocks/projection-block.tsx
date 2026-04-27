@@ -34,7 +34,12 @@ export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
       actions={<ProjectionHorizonSelector paramName="proj_horizon" value={horizon} />}
     >
       <div className="grid gap-4 sm:grid-cols-4">
-        <SummaryStat label="Saldo inicial" value={proj.openingBalance} />
+        <SummaryStat
+          label="Saldo inicial"
+          value={proj.openingBalance}
+          stale={proj.openingBalanceStale}
+          staleHours={proj.openingBalanceStaleHours}
+        />
         <SummaryStat
           label="Entradas esperadas"
           value={proj.totalInflow}
@@ -51,6 +56,15 @@ export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
           highlight={belowFloor}
         />
       </div>
+
+      {proj.openingBalanceStale && (
+        <div className="rounded-md border border-warning/40 bg-warning/5 px-3 py-2 text-xs text-foreground">
+          <span className="font-semibold">Saldo bancario stale:</span> última
+          actualización hace {proj.openingBalanceStaleHours}h. El sync de
+          banco lleva más de 48h sin refrescar — el saldo proyectado se
+          calcula sobre un punto inicial posiblemente desactualizado.
+        </div>
+      )}
 
       <CashProjectionChart projection={proj} />
 
@@ -258,24 +272,39 @@ function SummaryStat({
   positive,
   negative,
   highlight,
+  stale,
+  staleHours,
 }: {
   label: string;
   value: number;
   positive?: boolean;
   negative?: boolean;
   highlight?: boolean;
+  stale?: boolean;
+  staleHours?: number;
 }) {
-  const color = positive
-    ? "text-success"
-    : negative
-      ? "text-danger"
-      : highlight
-        ? "text-warning"
-        : "text-foreground";
+  const color = stale
+    ? "text-warning"
+    : positive
+      ? "text-success"
+      : negative
+        ? "text-danger"
+        : highlight
+          ? "text-warning"
+          : "text-foreground";
   return (
     <div>
-      <div className="text-[11px] uppercase tracking-wider text-muted-foreground">
+      <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wider text-muted-foreground">
         {label}
+        {stale && (
+          <Badge
+            variant="outline"
+            className="border-warning/40 px-1 py-0 text-[9px] leading-tight text-warning"
+            title={`Saldo bancario stale: hace ${staleHours}h`}
+          >
+            stale {staleHours}h
+          </Badge>
+        )}
       </div>
       <div className={`mt-1 text-xl font-semibold tabular-nums ${color}`}>
         {formatCurrencyMXN(value, { compact: true })}
