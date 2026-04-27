@@ -114,6 +114,11 @@ BEGIN
   -- canonical_invoices). Para overdue, sí necesitamos canonical_invoices
   -- porque no hay aggregate pre-computed para "AR vencido > 60d".
   WITH overdue_stats AS (
+    -- Usa due_date_resolved (silver canonical, sí populado) en vez de
+    -- fiscal_days_to_due_date (NULL en 100% de las rows). Audit
+    -- 2026-04-27: el campo fiscal_days nunca se popla, mientras que
+    -- due_date_resolved sí — 316 AR open con due date válido, 88 con
+    -- vencimiento >60d que ahora sí caen en at_risk.
     SELECT
       cc.id,
       COALESCE(SUM(ci.amount_residual_mxn_resolved), 0) AS overdue_60d_amount
@@ -123,7 +128,8 @@ BEGIN
      AND ci.direction = 'issued'
      AND COALESCE(ci.estado_sat, 'vigente') <> 'cancelado'
      AND COALESCE(ci.amount_residual_mxn_resolved, 0) > 0
-     AND COALESCE(ci.fiscal_days_to_due_date, 1) <= -60
+     AND ci.due_date_resolved IS NOT NULL
+     AND ci.due_date_resolved < (CURRENT_DATE - INTERVAL '60 days')
     GROUP BY cc.id
   )
   UPDATE canonical_companies cc
