@@ -87,7 +87,7 @@ async function _getActionListRaw(top: number): Promise<ActionListItem[]> {
     // Tombstone filter (see migration 20260426): exclude personal CFDIs.
     .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
-    .neq("estado_sat", "cancelado")
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .in("payment_state_odoo", ["not_paid", "partial"])
     .lt("due_date_odoo", todayStr)
     .or("amount_residual_mxn_resolved.gt.0.01,amount_residual_mxn_odoo.gt.0.01")
@@ -191,7 +191,7 @@ async function _getActionListRaw(top: number): Promise<ActionListItem[]> {
 export async function getActionList(top = 20): Promise<ActionListItem[]> {
   const cached = unstable_cache(
     () => _getActionListRaw(top),
-    ["sp13-cobranza-action-list-v1", String(top)],
+    ["sp13-cobranza-action-list-v2-null-safe", String(top)],
     { revalidate: 60, tags: ["invoices-unified"] }
   );
   return cached();

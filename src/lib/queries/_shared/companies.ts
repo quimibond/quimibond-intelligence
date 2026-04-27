@@ -434,7 +434,7 @@ export async function getCompanyDetail(id: number): Promise<CompanyDetail | null
     .eq("receptor_canonical_company_id", id)
     .eq("direction", "received")
     .not("sat_uuid", "is", null)
-    .neq("estado_sat", "cancelado");
+    .or("estado_sat.is.null,estado_sat.neq.cancelado");
   for (const r of satReceivedRows ?? []) {
     totalInvoicedSatReceived += Number(r.amount_total_mxn_resolved ?? 0);
   }

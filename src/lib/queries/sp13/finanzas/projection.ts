@@ -289,7 +289,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         .select("fecha_emision, total_mxn, subtotal")
         .eq("tipo_comprobante", "N")
         .eq("direction", "issued")
-        .neq("estado_sat", "cancelado")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
         .gte("fecha_emision", `${nominaLookbackFromMonth}-01`)
         .gt("total_mxn", 0),
     ]);
@@ -1768,7 +1768,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v21-seasonality-applied"],
+  ["sp13-finanzas-cash-projection-v22-null-safe-estado-sat"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

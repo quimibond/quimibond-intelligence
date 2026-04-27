@@ -47,7 +47,7 @@ async function _getDriftSummaryRaw(range: HistoryRange): Promise<DriftSummary> {
       .select("invoice_date, amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo")
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .gte("invoice_date", bounds.from)
       .lt("invoice_date", bounds.to),
   ]);
@@ -138,6 +138,6 @@ function fmt(n: number): string {
 
 export const getDriftSummary = unstable_cache(
   _getDriftSummaryRaw,
-  ["sp13-finanzas-drift"],
+  ["sp13-finanzas-drift-v2-null-safe"],
   { revalidate: 60, tags: ["finanzas"] }
 );

@@ -60,7 +60,7 @@ export async function getOpenInvoicesPage(
     // Tombstone filter (see migration 20260426): exclude personal CFDIs.
     .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
-    .neq("estado_sat", "cancelado")
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .in("payment_state_odoo", ["not_paid", "partial"])
     .or("amount_residual_mxn_resolved.gt.0.01,amount_residual_mxn_odoo.gt.0.01")
     .not("receptor_canonical_company_id", "in", pgInList(selfIds));

@@ -215,7 +215,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     )
     .eq("is_quimibond_relevant", true)
     .eq("direction", "issued")
-    .neq("estado_sat", "cancelado")
+    .or("estado_sat.is.null,estado_sat.neq.cancelado")
     .gte("invoice_date", bounds.from)
     .lt("invoice_date", bounds.to);
   if (satErr) {
@@ -272,7 +272,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis", range],
+    ["sp13-finanzas-pnl-kpis-v2-null-safe", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

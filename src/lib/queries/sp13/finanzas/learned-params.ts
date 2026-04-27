@@ -465,7 +465,7 @@ async function _getLearnedHistoricalRecurrenceRaw(): Promise<LearnedHistoricalRe
         .select("direction, emisor_rfc, receptor_rfc, fecha_emision, total_mxn")
         .eq("tipo_comprobante", "I")
         .eq("direction", direction)
-        .neq("estado_sat", "cancelado")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
         .gte("fecha_emision", lookback60mIso)
         .gt("total_mxn", 0)
         .range(offset, offset + PAGE - 1);
@@ -630,7 +630,7 @@ async function _getLearnedHistoricalRecurrenceRaw(): Promise<LearnedHistoricalRe
 
 export const getLearnedHistoricalRecurrence = unstable_cache(
   _getLearnedHistoricalRecurrenceRaw,
-  ["sp13-finanzas-learned-historical-v1"],
+  ["sp13-finanzas-learned-historical-v2-null-safe"],
   { revalidate: 3600, tags: ["finanzas"] }
 );
 

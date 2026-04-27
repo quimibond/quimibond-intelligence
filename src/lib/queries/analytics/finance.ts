@@ -67,7 +67,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
       )
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .eq("state_odoo", "posted")
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or(
@@ -81,7 +81,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
       )
       .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .eq("state_odoo", "posted")
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or(
@@ -210,7 +210,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
 
 export const getCfoSnapshot = unstable_cache(
   _getCfoSnapshotRaw,
-  ["finance-cfo-snapshot-v2"],
+  ["finance-cfo-snapshot-v3-null-safe"],
   { revalidate: 60, tags: ["finance"] }
 );
 
@@ -492,7 +492,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
       .select("amount_residual_mxn_resolved, amount_residual_mxn_odoo")
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .eq("state_odoo", "posted")
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or("amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"),
@@ -501,7 +501,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
       .select("amount_residual_mxn_resolved, amount_residual_mxn_odoo")
       .eq("is_quimibond_relevant", true)
       .eq("direction", "received")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .eq("state_odoo", "posted")
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or("amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"),
@@ -511,7 +511,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
       .eq("is_quimibond_relevant", true)
       .eq("direction", "issued")
       .eq("state_odoo", "posted")
-      .neq("estado_sat", "cancelado")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .gte("invoice_date", cutoff365),
     sb
       .from("gold_pl_statement")
@@ -610,7 +610,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
 
 export const getWorkingCapitalCycle = unstable_cache(
   _getWorkingCapitalCycleRaw,
-  ["finance-wcc-canonical-v1"],
+  ["finance-wcc-canonical-v2-null-safe"],
   { revalidate: 300, tags: ["finance"] }
 );
 
