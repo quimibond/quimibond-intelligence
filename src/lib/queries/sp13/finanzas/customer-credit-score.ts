@@ -130,10 +130,13 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
 
   // AR exposure y blacklist por bronze id (top customers).
   // amount_residual_mxn_resolved > 0 → AR abierto.
+  // Nota: fiscal_days_to_due_date está NULL en 100% de las rows (nunca
+  // se popla — audit 2026-04-27). Usamos due_date_resolved para
+  // detectar overdue. due_date_resolved < today → vencida.
   type ArRow = {
     receptor_canonical_company_id: number | null;
     amount_residual_mxn_resolved: number | null;
-    fiscal_days_to_due_date: number | null;
+    due_date_resolved: string | null;
     receptor_blacklist_status: string | null;
     receptor_nombre: string | null;
   };
@@ -144,7 +147,7 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
     const { data, error } = await sb
       .from("canonical_invoices")
       .select(
-        "receptor_canonical_company_id, amount_residual_mxn_resolved, fiscal_days_to_due_date, receptor_blacklist_status, receptor_nombre"
+        "receptor_canonical_company_id, amount_residual_mxn_resolved, due_date_resolved, receptor_blacklist_status, receptor_nombre"
       )
       .eq("direction", "issued")
       .eq("is_quimibond_relevant", true)
@@ -173,7 +176,7 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
       arByCanonical.get(cid) ?? { open: 0, overdue: 0, blacklist: null, name: "" };
     const amt = Number(r.amount_residual_mxn_resolved) || 0;
     acc.open += amt;
-    if ((r.fiscal_days_to_due_date ?? 1) <= 0) {
+    if (r.due_date_resolved && r.due_date_resolved < todayIso) {
       acc.overdue += amt;
     }
     if (

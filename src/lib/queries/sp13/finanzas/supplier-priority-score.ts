@@ -152,10 +152,12 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
   ]);
 
   // AP exposure por bronze id (current open + overdue + nombre proveedor)
+  // fiscal_days_to_due_date está NULL en 100% de las rows (audit
+  // 2026-04-27); usamos due_date_resolved < today para overdue.
   type ApRow = {
     emisor_canonical_company_id: number | null;
     amount_residual_mxn_resolved: number | null;
-    fiscal_days_to_due_date: number | null;
+    due_date_resolved: string | null;
     emisor_nombre: string | null;
   };
   const PAGE = 1000;
@@ -165,7 +167,7 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     const { data, error } = await sb
       .from("canonical_invoices")
       .select(
-        "emisor_canonical_company_id, amount_residual_mxn_resolved, fiscal_days_to_due_date, emisor_nombre"
+        "emisor_canonical_company_id, amount_residual_mxn_resolved, due_date_resolved, emisor_nombre"
       )
       .eq("direction", "received")
       .eq("is_quimibond_relevant", true)
@@ -187,7 +189,7 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     const acc = apByCanonical.get(cid) ?? { open: 0, overdue: 0, name: "" };
     const amt = Number(r.amount_residual_mxn_resolved) || 0;
     acc.open += amt;
-    if ((r.fiscal_days_to_due_date ?? 1) <= 0) acc.overdue += amt;
+    if (r.due_date_resolved && r.due_date_resolved < todayIso) acc.overdue += amt;
     if (!acc.name && r.emisor_nombre) acc.name = r.emisor_nombre;
     apByCanonical.set(cid, acc);
   }
