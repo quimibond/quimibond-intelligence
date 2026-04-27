@@ -310,6 +310,111 @@ export async function getInventoryAdjustmentsPhysical(
   };
 }
 
+/* ── Anomaly detection ──────────────────────────────────────────────── */
+
+export interface InventoryAdjAnomaly {
+  /** Period that's anomalous, "YYYY-MM". */
+  period: string;
+  /** Net Dr 501.01.02 in this period. */
+  netMxn: number;
+  /** Rolling 12-month avg (excluding `period` itself). */
+  rollingAvgMxn: number;
+  /** |net| / |rollingAvg|. */
+  ratio: number;
+  severity: "info" | "warning" | "critical";
+}
+
+/**
+ * Detect months where 501.01.02 NET is atypically large vs the trailing
+ * 12-month average of magnitudes. Limits to anomalies in the last
+ * `recentMonths` so historical events fade from the banner over time
+ * (Dec-2025 +$10.54M won't keep showing forever).
+ *
+ * Thresholds: ratio>3 = info, ratio>5 = warning, ratio>10 = critical.
+ */
+export async function getInventoryAdjustmentsAnomalies(opts: {
+  accountCodes?: string[];
+  /** How many recent months to consider for surfacing (default 6). */
+  recentMonths?: number;
+  /** How many anomalies to return (default 2). */
+  limit?: number;
+} = {}): Promise<InventoryAdjAnomaly[]> {
+  const accountCodes = opts.accountCodes ?? ["501.01.02"];
+  const recentMonths = opts.recentMonths ?? 6;
+  const limit = opts.limit ?? 2;
+  const sb = getServiceClient();
+
+  // Window: previous 24 months so we can compute a rolling avg
+  // for any month within `recentMonths`.
+  const today = new Date();
+  const start = new Date(today.getFullYear() - 2, today.getMonth(), 1);
+  const startStr = start.toISOString().slice(0, 10);
+  const endStr = new Date(today.getFullYear(), today.getMonth() + 1, 1)
+    .toISOString()
+    .slice(0, 10);
+
+  const { data, error } = await sb.rpc("get_inventory_adjustments_monthly", {
+    p_date_from: startStr,
+    p_date_to: endStr,
+    p_account_codes: accountCodes,
+  });
+
+  if (error) {
+    console.error("[getInventoryAdjustmentsAnomalies]", error.message);
+    return [];
+  }
+
+  type Row = {
+    period: string;
+    net: number | string | null;
+  };
+  const rows = (data ?? []) as Row[];
+
+  // Sum by period
+  const byPeriod = new Map<string, number>();
+  for (const r of rows) {
+    byPeriod.set(r.period, (byPeriod.get(r.period) ?? 0) + (Number(r.net) || 0));
+  }
+  const periods = [...byPeriod.keys()].sort();
+  if (periods.length < 6) return [];
+
+  // Cutoff: only surface anomalies for periods in the last `recentMonths`.
+  const cutoff = new Date(
+    today.getFullYear(),
+    today.getMonth() - recentMonths + 1,
+    1
+  )
+    .toISOString()
+    .slice(0, 7);
+
+  const anomalies: InventoryAdjAnomaly[] = [];
+  for (let i = 12; i < periods.length; i++) {
+    const period = periods[i];
+    if (period < cutoff) continue;
+    const net = byPeriod.get(period) ?? 0;
+    const window = periods.slice(Math.max(0, i - 12), i);
+    if (window.length < 6) continue;
+    const avgAbs =
+      window.reduce((s, p) => s + Math.abs(byPeriod.get(p) ?? 0), 0) /
+      window.length;
+    if (avgAbs < 1000) continue;
+    const ratio = Math.abs(net) / avgAbs;
+    if (ratio < 3) continue;
+    const severity: InventoryAdjAnomaly["severity"] =
+      ratio > 10 ? "critical" : ratio > 5 ? "warning" : "info";
+    anomalies.push({
+      period,
+      netMxn: net,
+      rollingAvgMxn: avgAbs,
+      ratio,
+      severity,
+    });
+  }
+
+  // Most recent first, capped at limit
+  return anomalies.reverse().slice(0, limit);
+}
+
 /* ── Display helpers ────────────────────────────────────────────────────── */
 
 export const ACCOUNT_BUCKET_LABEL: Record<AdjAccountBucket, string> = {

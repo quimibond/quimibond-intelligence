@@ -137,6 +137,7 @@ export {
 export {
   getInventoryAdjustments,
   getInventoryAdjustmentsPhysical,
+  getInventoryAdjustmentsAnomalies,
   ACCOUNT_BUCKET_LABEL,
   JOURNAL_CATEGORY_LABEL,
   PHYSICAL_SUBCAT_LABEL,
@@ -145,6 +146,7 @@ export {
   type InventoryAdjMonthlyRow,
   type InventoryAdjPhysicalMonthlyRow,
   type InventoryAdjTopProduct,
+  type InventoryAdjAnomaly,
   type AdjAccountBucket,
   type AdjJournalCategory,
   type AdjPhysicalSubcategory,

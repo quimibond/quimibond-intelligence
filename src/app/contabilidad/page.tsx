@@ -18,6 +18,7 @@ import {
   MpQualityBlock,
   PnlByAccountBlock,
   InventoryAdjustmentsBlock,
+  InventoryAnomalyBanner,
   InvoiceDiscrepanciesBlock,
   TaxBlock,
 } from "./_components/blocks";
@@ -142,6 +143,10 @@ export default async function ContabilidadPage({
 
       {tab === "detalle" && (
         <>
+          <Suspense fallback={null}>
+            <InventoryAnomalyBanner />
+          </Suspense>
+
           <Suspense
             fallback={<Skeleton className="h-[360px] w-full rounded-lg" />}
           >
