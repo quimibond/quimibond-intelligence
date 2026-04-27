@@ -27,6 +27,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: la proyección asume que cobramos/pagamos en el due date. Realidad (validada): mediana 9d delay AR, p75 28d, max 172d. AP es peor (pateo intencional).
 - **Impacto**: ~2-3 semanas de desfase en el chart vs cobranza/pago real. Causa raíz #1 de "alarmas falsas" de cash crisis.
 - **Esfuerzo**: M (RPC ya existe, queda mapear `company_id → avg_delay_days` y sumar al `projected_date`).
+- **Status (2026-04-27)**: **YA RESUELTO** — verificación post-audit confirma que `projection.ts:465-491` construye `apDelayMap`/`arDelayMap` desde los RPCs v2 y los aplica vía `shiftDate(origDate, delay.delayDays)` en líneas 669/675. El finding estaba desactualizado.
 
 ### 4. Cache TTL prolongado con key `v21` (invalidación silenciosa)
 - **Dónde**: `src/lib/queries/sp13/finanzas/projection.ts:1771` cache key `sp13-finanzas-cash-projection-v21-seasonality-applied`.

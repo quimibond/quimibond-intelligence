@@ -573,18 +573,65 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     )
   );
   const inPaymentNames = new Set<string>();
+  // Audit 2026-04-27 finding #16: canonical_credit_notes (NCs) descontadas
+  // del AR/AP billed. Si el cliente emite/recibe una NC contra una factura
+  // abierta, el `amount_residual` de cashflow_projection no siempre la
+  // refleja (especialmente NCs solo-SAT no reconciliadas en Odoo).
+  // Construimos un mapa odoo_name → total_credit_amount para subtraer en
+  // el loop principal.
+  const creditByInvoiceName = new Map<string, number>();
   if (projInvoiceNames.length > 0) {
-    // Chunkeamos por seguridad si la lista crece (PostgREST `in.()` ~2k items).
     const chunkSize = 1000;
+    // Bridge: odoo_name → canonical_id desde canonical_invoices.
+    const nameToCanonical = new Map<string, string>();
+    const canonicalToName = new Map<string, string>();
     for (let i = 0; i < projInvoiceNames.length; i += chunkSize) {
       const chunk = projInvoiceNames.slice(i, i + chunkSize);
-      const { data: settled } = await sb
+      const { data: invs } = await sb
         .from("canonical_invoices")
-        .select("odoo_name")
-        .in("odoo_name", chunk)
-        .eq("payment_state_odoo", "in_payment");
-      for (const row of (settled ?? []) as Array<{ odoo_name: string | null }>) {
-        if (row.odoo_name) inPaymentNames.add(row.odoo_name);
+        .select("canonical_id, odoo_name, payment_state_odoo")
+        .in("odoo_name", chunk);
+      for (const row of (invs ?? []) as Array<{
+        canonical_id: string | null;
+        odoo_name: string | null;
+        payment_state_odoo: string | null;
+      }>) {
+        if (!row.odoo_name) continue;
+        if (row.payment_state_odoo === "in_payment") inPaymentNames.add(row.odoo_name);
+        if (row.canonical_id) {
+          nameToCanonical.set(row.odoo_name, row.canonical_id);
+          canonicalToName.set(row.canonical_id, row.odoo_name);
+        }
+      }
+    }
+    // NCs ligadas a las facturas en horizonte. is_quimibond_relevant=true y
+    // estado_sat <> cancelado para excluir NCs canceladas o personales.
+    const canonicalIds = Array.from(nameToCanonical.values());
+    if (canonicalIds.length > 0) {
+      for (let i = 0; i < canonicalIds.length; i += chunkSize) {
+        const chunk = canonicalIds.slice(i, i + chunkSize);
+        const { data: ncs } = await sb
+          .from("canonical_credit_notes")
+          .select("related_invoice_canonical_id, amount_total_mxn_resolved, estado_sat, is_quimibond_relevant")
+          .in("related_invoice_canonical_id", chunk)
+          .eq("is_quimibond_relevant", true);
+        for (const nc of (ncs ?? []) as Array<{
+          related_invoice_canonical_id: string | null;
+          amount_total_mxn_resolved: number | null;
+          estado_sat: string | null;
+          is_quimibond_relevant: boolean | null;
+        }>) {
+          if (!nc.related_invoice_canonical_id) continue;
+          if (nc.estado_sat === "cancelado") continue;
+          const amount = Number(nc.amount_total_mxn_resolved) || 0;
+          if (amount <= 0) continue;
+          const invName = canonicalToName.get(nc.related_invoice_canonical_id);
+          if (!invName) continue;
+          creditByInvoiceName.set(
+            invName,
+            (creditByInvoiceName.get(invName) ?? 0) + amount
+          );
+        }
       }
     }
   }
@@ -635,8 +682,19 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (!origDate) continue;
     if (r.invoice_name && inPaymentNames.has(r.invoice_name)) continue;
     const isInflow = r.flow_type === "receivable_detail";
-    const nominal = Number(r.amount_residual) || 0;
+    let nominal = Number(r.amount_residual) || 0;
     let expected = Number(r.expected_amount ?? r.amount_residual) || 0;
+    // Audit 2026-04-27 finding #16: descontar NCs ligadas a esta factura.
+    // amount_residual del matview no siempre las refleja (NCs SAT-only).
+    // Cap a 0 — una NC > residual deja la factura efectivamente cancelada.
+    const creditAmount = r.invoice_name
+      ? creditByInvoiceName.get(r.invoice_name) ?? 0
+      : 0;
+    if (creditAmount > 0) {
+      const ratio = nominal > 0 ? Math.max(0, (nominal - creditAmount) / nominal) : 0;
+      nominal = Math.max(0, nominal - creditAmount);
+      expected = expected * ratio;
+    }
     if (expected <= 0) continue;
 
     // Capa 1 lifecycle filter: lost customers → expected × 0.05.
@@ -1901,7 +1959,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v24-classification-wired"],
+  ["sp13-finanzas-cash-projection-v25-credit-notes"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
