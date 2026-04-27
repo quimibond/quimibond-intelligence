@@ -91,9 +91,13 @@ BEGIN
            '\m(telmex|cfe\M|comisi[oó]n federal de electricidad|gas natural|naturgy|telcel|axtel|izzi|megacable|totalplay|engie|iberdrola)\M'
         THEN 'utility'
 
+      -- one_off: SOLO si el nombre parece empresa real (≥5 chars, sin
+      -- '/' que indica número de factura/PO o ID de partner spam).
       WHEN s.total_invoice_count = 1
         AND s.max_invoice_amount > 1000000
         AND s.effective_last_invoice_date < (CURRENT_DATE - INTERVAL '12 months')
+        AND length(coalesce(s.name_lower, '')) >= 5
+        AND s.name_lower !~ '/'
         THEN 'one_off'
 
       ELSE 'operativo'

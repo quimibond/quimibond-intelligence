@@ -556,32 +556,22 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
     if (expected <= 0) continue;
 
-    // Detección autoritativa de partes relacionadas: si el company_id
-    // pertenece al set RFC-based (canonical_companies.is_related_party),
-    // o si apDelayMap lo marcó (invoice ya pagada con flag heredado),
-    // tratamos la fila como intercompañía.
-    const isRelatedParty =
-      (r.company_id != null && relatedPartyIds.has(r.company_id)) ||
-      (r.company_id != null &&
-        apDelayMap.get(r.company_id)?.isRelatedParty === true);
-
-    // Aplicar delay histórico (proveedor para AP, cliente para AR) sobre
-    // el due date original.
-    //  - intercompañía → push 180d FUERA del horizonte. NO contamina
-    //    outflowByDay, totalOutflow ni markers; solo aparece en el
-    //    breakdown como categoría aparte (ver CLAUDE.md /finanzas).
-    //  - factura no vencida + delay 30d → pagamos/cobramos due+30d
-    //  - factura vencida 10d con delay 30d → esperada en today + 20d
-    //  - factura vencida 60d con delay 30d → past-due post-delay;
-    //    spreadPastDue() la distribuye sobre [today, today + max(delay, 14)]
-    //    para evitar cliff artificial cuando hay backlog grande past-due.
+    // Las facturas intercompañía donde Quimibond es la contraparte
+    // (emisor o receptor) son cash flow real — se tratan como AR/AP
+    // normal. cashflow_projection solo contiene rows con Quimibond
+    // involucrado, así que no hay riesgo de incluir flujos entre
+    // partes relacionadas que no nos involucren.
+    //
+    // Nota histórica: antes había push 180d preventivo por el préstamo
+    // accionista de $12.81M en 205.04 (CLAUDE.md). Pero ese vive a
+    // nivel GL, no como factura — no afecta cashflow_projection. Si
+    // en el futuro emiten factura intercompañía, ya entra como cash
+    // real (es real). Decisión CEO 2026-04-27.
     const invoiceKey =
       r.invoice_name ?? `${r.flow_type}-${r.company_id}-${origDate}-${nominal}`;
     let date = origDate;
     let delayForSpread = 0;
-    if (isRelatedParty) {
-      date = shiftDate(origDate, 180);
-    } else if (r.company_id != null) {
+    if (r.company_id != null) {
       if (!isInflow) {
         const delay = apDelayMap.get(r.company_id);
         if (delay && delay.delayDays > 0) {
@@ -596,21 +586,9 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         }
       }
     }
-    if (!isRelatedParty) {
-      date = spreadPastDue(date, delayForSpread, invoiceKey);
-    }
+    date = spreadPastDue(date, delayForSpread, invoiceKey);
 
     if (isInflow) {
-      if (isRelatedParty) {
-        // AR intercompañía: visibilidad en breakdown, fuera del flujo diario.
-        addToCategory(
-          "ar_intercompania",
-          "AR a partes relacionadas (intercompañía)",
-          "inflow",
-          expected
-        );
-        continue;
-      }
       inflowByDay.set(date, (inflowByDay.get(date) ?? 0) + expected);
       totalInflow += expected;
       totalInflowNominal += nominal;
@@ -647,15 +625,6 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         probCount++;
       }
       if ((r.days_overdue ?? 0) > 0) overdueInflowCount++;
-    } else if (isRelatedParty) {
-      // AP intercompañía: visibilidad en breakdown, fuera del flujo
-      // diario y del total operativo (push 180d ya descarta del horizonte).
-      addToCategory(
-        "ap_intercompania",
-        "AP a partes relacionadas (intercompañía)",
-        "outflow",
-        nominal
-      );
     } else {
       outflowByDay.set(date, (outflowByDay.get(date) ?? 0) + nominal);
       totalOutflow += nominal;
@@ -687,7 +656,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     }
 
     const amtForMarker = isInflow ? expected : nominal;
-    if (!isRelatedParty && amtForMarker >= MARKER_THRESHOLD) {
+    if (amtForMarker >= MARKER_THRESHOLD) {
       markers.push({
         date,
         kind: isInflow ? "inflow" : "outflow",
@@ -1827,7 +1796,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v22-audit-2026-04-27"],
+  ["sp13-finanzas-cash-projection-v23-intercom-included"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
