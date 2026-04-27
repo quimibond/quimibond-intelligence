@@ -802,7 +802,8 @@ calendario típico:
 | Categoría | Día del mes | Cuentas |
 |---|---|---|
 | `nomina` | 15 + último día (quincenas) | 501.06.* (excl. 0020-23) + 602.01-25 + 603.01-25 |
-| `impuestos_sat` | 17 del mes siguiente | 501.06.0020-23 (cuotas IMSS/SAR/INFONAVIT) + 602.26-29 + 603.26-29 (retenciones e ISN) |
+| `impuestos_sat` | 17 del mes siguiente | 501.06.0020 + 0023 (IMSS patrón + otros mensuales) + 602.26-29 + 603.26-29 (retenciones e ISN) |
+| `sar_infonavit` | 17 meses pares (feb/abr/jun/ago/oct/dic) | 501.06.0021 (SAR) + 501.06.0022 (INFONAVIT) — accrual mensual ×2 cada bimestre |
 | `renta` | 1 | 504.01.0008 + 603.45.* |
 | `servicios` | 10 | 504.01.0002-0043 (energía/agua/gas/mtto) |
 | `arrendamiento` | 5 | 701.11.* |
@@ -938,6 +939,7 @@ UI muestra 4 partes:
 - `20260425_cash_projection_recurring_v2_taxes.sql` (separa impuestos_sat día 17)
 - `20260426_ap_delay_related_party.sql` (RPC + is_related_party + 5 RFCs marcados)
 - `20260426_ar_collection_delay.sql` (RPC AR delay)
+- `20260427_recurring_v3_bimestral.sql` (split SAR/INFONAVIT bimestral del IMSS/ISR mensual)
 
 ### Cache
 

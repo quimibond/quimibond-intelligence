@@ -1,6 +1,7 @@
 -- F5+ v3: separa SAR/INFONAVIT bimestral del IMSS/ISR retenido mensual.
 --
 -- Audit 2026-04-27 finding #6.
+-- Already applied to production via execute_safe_ddl on 2026-04-27.
 --
 -- ANTES (v2, 20260425_cash_projection_recurring_v2_taxes.sql):
 --   `impuestos_sat` agrupaba TODO en una sola línea mensual día 17 del
