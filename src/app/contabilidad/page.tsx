@@ -17,6 +17,7 @@ import {
   BalanceSheetBlock,
   MpQualityBlock,
   PnlByAccountBlock,
+  InventoryAdjustmentsBlock,
   InvoiceDiscrepanciesBlock,
   TaxBlock,
 } from "./_components/blocks";
@@ -45,6 +46,7 @@ const TAB_NAV: Record<
   detalle: [
     { id: "mp-quality", label: "Costos de MP" },
     { id: "pnl-by-account", label: "Gastos por cuenta" },
+    { id: "inventory-adjustments", label: "Ajustes de inventario" },
   ],
   fiscal: [
     { id: "discrepancies", label: "Odoo ↔ SAT" },
@@ -150,6 +152,12 @@ export default async function ContabilidadPage({
             fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
           >
             <PnlByAccountBlock range={period} />
+          </Suspense>
+
+          <Suspense
+            fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}
+          >
+            <InventoryAdjustmentsBlock range={period} />
           </Suspense>
         </>
       )}

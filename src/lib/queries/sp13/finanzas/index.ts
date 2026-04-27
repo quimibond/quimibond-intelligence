@@ -134,4 +134,16 @@ export {
   type DiscrepancyKind,
   type InvoiceDirection,
 } from "./invoice-discrepancies";
+export {
+  getInventoryAdjustments,
+  ACCOUNT_BUCKET_LABEL,
+  JOURNAL_CATEGORY_LABEL,
+  PHYSICAL_SUBCAT_LABEL,
+  type InventoryAdjustmentsSummary,
+  type InventoryAdjMonthlyRow,
+  type InventoryAdjTopProduct,
+  type AdjAccountBucket,
+  type AdjJournalCategory,
+  type AdjPhysicalSubcategory,
+} from "./inventory-adjustments";
 export { periodBoundsForRange, daysBetween } from "./_period";
