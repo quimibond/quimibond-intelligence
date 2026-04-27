@@ -257,12 +257,55 @@ async function _getCustomerCreditScoresRaw(): Promise<CustomerCreditScoreSummary
     }
   }
 
+  // Counterparty classification map: canonicalId → { type, lifecycle }.
+  // Solo cargar las que tienen clasificación no-default. Default = operativo+active.
+  // Migration 20260427_counterparty_classification.sql.
+  const classByCanonical = new Map<
+    number,
+    { counterpartyType: string; lifecycle: string }
+  >();
+  const allCanonicalIds = Array.from(bronzeToCanonical.values());
+  if (allCanonicalIds.length > 0) {
+    const ccChunkSize = 200;
+    for (let i = 0; i < allCanonicalIds.length; i += ccChunkSize) {
+      const chunk = allCanonicalIds.slice(i, i + ccChunkSize);
+      const { data: classData } = await sb
+        .from("canonical_companies")
+        .select("id, counterparty_type, customer_lifecycle")
+        .in("id", chunk)
+        .or("counterparty_type.neq.operativo,customer_lifecycle.neq.active");
+      for (const c of (classData ?? []) as Array<{
+        id: number | null;
+        counterparty_type: string | null;
+        customer_lifecycle: string | null;
+      }>) {
+        if (c.id == null) continue;
+        classByCanonical.set(c.id, {
+          counterpartyType: c.counterparty_type ?? "operativo",
+          lifecycle: c.customer_lifecycle ?? "active",
+        });
+      }
+    }
+  }
+
   // Compute score per customer
   const scores: CustomerCreditScore[] = [];
   for (const bronzeId of bronzeIds) {
     if (relatedPartyBronzeIds.has(bronzeId)) continue; // intercompañía fuera
     const cp = counterparty.byBronzeId.get(bronzeId);
     if (!cp) continue;
+    // Filter por counterparty_type/lifecycle: no scoring para
+    // financiera/blacklisted (no son clientes de producto), gobierno/utility
+    // (no extendemos crédito a SAT/CFE), one_off (transacción única ya
+    // cerrada), o lifecycle lost/dormant (no van a regresar).
+    const canonicalIdForClass = bronzeToCanonical.get(bronzeId);
+    if (canonicalIdForClass != null) {
+      const cls = classByCanonical.get(canonicalIdForClass);
+      if (cls) {
+        if (cls.counterpartyType !== "operativo") continue;
+        if (cls.lifecycle === "lost" || cls.lifecycle === "dormant") continue;
+      }
+    }
     const sat = historical.byBronzeId.get(bronzeId);
     const canonicalId = bronzeToCanonical.get(bronzeId);
     const ar = canonicalId != null ? arByCanonical.get(canonicalId) : null;

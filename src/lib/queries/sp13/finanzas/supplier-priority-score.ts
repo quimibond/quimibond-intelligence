@@ -270,6 +270,36 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     }
   }
 
+  // Counterparty classification map: canonicalId → { type, lifecycle }.
+  // Migration 20260427_counterparty_classification.sql.
+  const classByCanonical = new Map<
+    number,
+    { counterpartyType: string; lifecycle: string }
+  >();
+  const allCanonicalIds = Array.from(bronzeToCanonical.values());
+  if (allCanonicalIds.length > 0) {
+    const ccChunkSize = 200;
+    for (let i = 0; i < allCanonicalIds.length; i += ccChunkSize) {
+      const chunk = allCanonicalIds.slice(i, i + ccChunkSize);
+      const { data: classData } = await sb
+        .from("canonical_companies")
+        .select("id, counterparty_type, customer_lifecycle")
+        .in("id", chunk)
+        .or("counterparty_type.neq.operativo,customer_lifecycle.neq.active");
+      for (const c of (classData ?? []) as Array<{
+        id: number | null;
+        counterparty_type: string | null;
+        customer_lifecycle: string | null;
+      }>) {
+        if (c.id == null) continue;
+        classByCanonical.set(c.id, {
+          counterpartyType: c.counterparty_type ?? "operativo",
+          lifecycle: c.customer_lifecycle ?? "active",
+        });
+      }
+    }
+  }
+
   // Suppliers que SOLO aparecen en AP (no en learned via canonical_invoices
   // del último año) — los procesamos también con datos limitados.
   // Para v1 nos enfocamos en los que SÍ tienen learned data.
@@ -278,6 +308,14 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     if (relatedPartyBronzeIds.has(bronzeId)) continue; // intercompañía fuera
     const cp = counterparty.byBronzeId.get(bronzeId);
     if (!cp) continue;
+    // Filter por lifecycle: skip lost (proveedor que ya no usamos —
+    // si tiene AP abierto seguirá en obligations.ts pero no necesita
+    // priority scoring para flujo nuevo).
+    const canonicalIdForClass = bronzeToCanonical.get(bronzeId);
+    const cls = canonicalIdForClass != null
+      ? classByCanonical.get(canonicalIdForClass)
+      : null;
+    if (cls?.lifecycle === "lost") continue;
     const sat = historical.byBronzeId.get(bronzeId);
     const canonicalId = bronzeToCanonical.get(bronzeId);
     const ap = canonicalId != null ? apByCanonical.get(canonicalId) : null;
@@ -321,7 +359,16 @@ async function _getSupplierPriorityScoresRaw(): Promise<SupplierPrioritySummary>
     // 5. Critical category (5 pts)
     // Nombre con fallback en cascada: AP nombre > Bronze companies.name > #id
     const name = ap?.name || bronzeNames.get(bronzeId) || `#${bronzeId}`;
-    const isCritical = isCriticalSupplierName(name);
+    // Crítico si nombre matchea SAT/IMSS/CFE/Leasing (heurística histórica),
+    // O counterparty_type es financiera/gobierno_fiscal/utility
+    // (clasificación explícita post-2026-04-27). Las financieras NO
+    // negociables — defaultear genera intereses + cierre de línea de
+    // crédito.
+    const isCriticalByType =
+      cls?.counterpartyType === "financiera" ||
+      cls?.counterpartyType === "gobierno_fiscal" ||
+      cls?.counterpartyType === "utility";
+    const isCritical = isCriticalSupplierName(name) || isCriticalByType;
     const criticalPts = isCritical ? 5 : 0;
 
     let score = Math.round(

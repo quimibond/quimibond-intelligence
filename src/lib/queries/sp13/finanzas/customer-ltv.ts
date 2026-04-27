@@ -121,6 +121,10 @@ async function _getCustomerLtvRaw(): Promise<CustomerLtvSummary> {
   type Computed = Omit<CustomerLtvRow, "rankByLtv" | "rankByRevenue" | "rankDelta">;
   const computed: Computed[] = [];
 
+  // credit.rows ya está filtrado por counterparty_type (solo operativo)
+  // y customer_lifecycle (no lost/dormant) en customer-credit-score.ts.
+  // Las financieras (Lepezo), intercompañía y blacklisted no aparecen
+  // aquí — son ruido para LTV de clientes operativos.
   for (const c of credit.rows) {
     const cp = counterparty.byBronzeId.get(c.bronzeId);
     const sat = historical.byBronzeId.get(c.bronzeId);

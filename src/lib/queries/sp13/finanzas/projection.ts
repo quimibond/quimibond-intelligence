@@ -221,6 +221,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     soHeaderRes,
     soLinesRes,
     nominaCfdiRes,
+    classifRes,
   ] = await Promise.all([
       sb
         .from("canonical_bank_balances")
@@ -297,6 +298,15 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         .neq("estado_sat", "cancelado")
         .gte("fecha_emision", `${nominaLookbackFromMonth}-01`)
         .gt("total_mxn", 0),
+      // Counterparty classification (counterparty_type + customer_lifecycle).
+      // Solo cargar las que tienen clasificación no-default — ahorra
+      // ~70% de rows. Las que no aparecen quedan default (operativo+active).
+      // Migration 20260427_counterparty_classification.sql.
+      sb
+        .from("canonical_companies")
+        .select("id, odoo_partner_id, counterparty_type, customer_lifecycle")
+        .or("counterparty_type.neq.operativo,customer_lifecycle.neq.active")
+        .not("odoo_partner_id", "is", null),
     ]);
 
   // Capa 3: run rate por cliente activo. Pulled separately después del
@@ -370,6 +380,79 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       if (c.id != null) relatedPartyIds.add(c.id);
     }
   }
+
+  // Map Bronze company.id → { counterpartyType, lifecycle }.
+  // canonical_companies.odoo_partner_id ↔ companies.odoo_partner_id ↔ companies.id.
+  // Default (no entry) = operativo + active.
+  type ClassRow = {
+    id: number | null;
+    odoo_partner_id: number | null;
+    counterparty_type: string | null;
+    customer_lifecycle: string | null;
+  };
+  const classifRows = (classifRes.data ?? []) as ClassRow[];
+  const classByBronze = new Map<
+    number,
+    { counterpartyType: string; lifecycle: string }
+  >();
+  if (classifRows.length > 0) {
+    const partnerIds = classifRows
+      .map((c) => c.odoo_partner_id)
+      .filter((p): p is number => p != null);
+    if (partnerIds.length > 0) {
+      const { data: bronzeMap } = await sb
+        .from("companies")
+        .select("id, odoo_partner_id")
+        .in("odoo_partner_id", partnerIds);
+      const partnerToBronze = new Map<number, number>();
+      for (const b of (bronzeMap ?? []) as Array<{
+        id: number | null;
+        odoo_partner_id: number | null;
+      }>) {
+        if (b.id != null && b.odoo_partner_id != null) {
+          partnerToBronze.set(b.odoo_partner_id, b.id);
+        }
+      }
+      for (const c of classifRows) {
+        if (c.odoo_partner_id == null) continue;
+        const bronzeId = partnerToBronze.get(c.odoo_partner_id);
+        if (bronzeId != null) {
+          classByBronze.set(bronzeId, {
+            counterpartyType: c.counterparty_type ?? "operativo",
+            lifecycle: c.customer_lifecycle ?? "active",
+          });
+        }
+      }
+    }
+  }
+  const getClass = (bronzeId: number | null) =>
+    bronzeId == null ? null : classByBronze.get(bronzeId) ?? null;
+  const isLost = (bronzeId: number | null) =>
+    getClass(bronzeId)?.lifecycle === "lost";
+  // Excluir de SO pipeline (capa 2): financiera/blacklisted como type, o
+  // lifecycle marcado lost/dormant. Decisión CEO 2026-04-27.
+  // NOTA: intercom NO se excluye en capa 2 — facturas intercom donde
+  // Quimibond es contraparte son cash real (consistente con capa 1).
+  const isExcludedFromSoPipeline = (bronzeId: number | null) => {
+    const c = getClass(bronzeId);
+    if (!c) return false;
+    if (c.counterpartyType === "financiera" || c.counterpartyType === "blacklisted")
+      return true;
+    if (c.lifecycle === "lost" || c.lifecycle === "dormant") return true;
+    return false;
+  };
+  // Excluir de RUN RATE (capa 3): cualquier counterparty_type no-operativo
+  // (intercom, financiera, gobierno, utility, one_off, blacklisted) o
+  // lifecycle no-active/at_risk (lost, dormant, prospect). El run rate
+  // es proyección especulativa de demanda futura — solo aplicamos a
+  // clientes/proveedores activos genuinos.
+  const isExcludedFromRunRate = (bronzeId: number | null) => {
+    const c = getClass(bronzeId);
+    if (!c) return false;
+    if (c.counterpartyType !== "operativo") return true;
+    if (c.lifecycle !== "active" && c.lifecycle !== "at_risk") return true;
+    return false;
+  };
 
   // Mapa company_id → { delay days, is_related_party }
   type ApDelayRow = {
@@ -553,8 +636,18 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (r.invoice_name && inPaymentNames.has(r.invoice_name)) continue;
     const isInflow = r.flow_type === "receivable_detail";
     const nominal = Number(r.amount_residual) || 0;
-    const expected = Number(r.expected_amount ?? r.amount_residual) || 0;
+    let expected = Number(r.expected_amount ?? r.amount_residual) || 0;
     if (expected <= 0) continue;
+
+    // Capa 1 lifecycle filter: lost customers → expected × 0.05.
+    // Mantén la factura visible (es cobro legalmente exigible) pero
+    // realista del cash que va a entrar. Solo aplica a inflows (AR);
+    // AP a proveedores no se ajusta por lifecycle (debemos lo que
+    // debemos sin importar su status comercial).
+    if (isInflow && isLost(r.company_id)) {
+      expected = expected * 0.05;
+      if (expected <= 0) continue;
+    }
 
     // Las facturas intercompañía donde Quimibond es la contraparte
     // (emisor o receptor) son cash flow real — se tratan como AR/AP
@@ -822,7 +915,11 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (amts.deliveredAmt <= 0 && amts.undeliveredAmt <= 0) continue;
     const header = soHeaders.get(orderId);
     if (!header || !header.date_order) continue;
-    if (header.company_id != null && relatedPartyIds.has(header.company_id)) {
+    // Capa 2 filter: excluir SOs de financiera/blacklisted (no son
+    // clientes de producto), o de clientes lost/dormant (no van a
+    // pagar). Intercom NO se excluye — es Quimibond cobrándose a sí
+    // misma, cash real (consistente con capa 1). Decisión CEO 2026-04-27.
+    if (isExcludedFromSoPipeline(header.company_id)) {
       continue;
     }
     const arDelay =
@@ -1006,7 +1103,11 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (monthlyAvg <= 0) continue;
     const bronzeId = canonicalToBronzeMap.get(canonicalId);
     if (bronzeId == null) continue;
-    if (relatedPartyIds.has(bronzeId)) continue;
+    // Capa 3 filter: solo operativo + active/at_risk. Excluye intercom,
+    // financiera, gobierno, utility, one_off, blacklisted, lost, dormant,
+    // prospect. Run rate es proyección especulativa de demanda futura —
+    // solo aplicar a clientes operativos genuinamente activos.
+    if (isExcludedFromRunRate(bronzeId)) continue;
     const canonicalActive3m = customerActiveMonths.get(canonicalId)?.size ?? 0;
     // Capa de aprendizaje: combinar canonical (12m precise) + SAT (24m
     // long-term). El signal más fuerte gana — un cliente puede ser
@@ -1307,7 +1408,11 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     if (monthlyAvg <= 0) continue;
     const bronzeId = supplierCanonicalToBronze.get(canonicalId);
     if (bronzeId == null) continue;
-    if (relatedPartyIds.has(bronzeId)) continue; // intercompañía fuera
+    // Capa 3 supplier filter: mismo principio que customers — solo
+    // operativo + active. Excluye intercom, financiera (no compramos
+    // producto a banco), gobierno (impuestos viven en recurrentes),
+    // utility (en recurrentes), one_off, lost, dormant.
+    if (isExcludedFromRunRate(bronzeId)) continue;
 
     const supplierActive3m = supplierActiveMonths.get(canonicalId)?.size ?? 0;
     // Combinar canonical 12m + SAT 24m igual que con clientes
@@ -1796,7 +1901,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v23-intercom-included"],
+  ["sp13-finanzas-cash-projection-v24-classification-wired"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
