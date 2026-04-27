@@ -3,10 +3,17 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
- * F1 — Cash snapshot: effective total + credit-card debt.
- * Source: canonical_bank_balances (classification ∈ {cash, debt, other}).
+ * F1 — Cash snapshot: efectivo total + deuda tarjetas.
  *
- * Returns totals in MXN. `asOf` is the most recent refreshed_at across rows.
+ * Source autoritativa: `gold_cashflow` (view oficial sobre canonical_bank_balances).
+ * Antes leía canonical_bank_balances directo, lo que creaba un camino paralelo
+ * Hero↔gold con riesgo de drift si gold cambiaba su definición. Ver audit
+ * Supabase+Frontend 2026-04-27, Issue #5 (top 5 estructura).
+ *
+ * `asOfDate` se obtiene de canonical_bank_balances.refreshed_at MAX porque
+ * gold_cashflow.refreshed_at es now() at query time (no refleja staleness real).
+ * `cashAccountsCount` / `debtAccountsCount` vienen del bank_breakdown jsonb
+ * que gold_cashflow ya agrega.
  */
 export interface CashKpis {
   efectivoTotalMxn: number;
@@ -17,13 +24,33 @@ export interface CashKpis {
   asOfDate: string | null;
 }
 
+type GoldCashflow = {
+  current_cash_mxn: number | null;
+  current_debt_mxn: number | null;
+  bank_breakdown: Array<{
+    classification: string | null;
+    total_mxn: number | null;
+    journals: number | null;
+  }> | null;
+};
+
 async function _getCashKpisRaw(): Promise<CashKpis> {
   const sb = getServiceClient();
-  const { data, error } = await sb
-    .from("canonical_bank_balances")
-    .select("classification, current_balance_mxn, refreshed_at");
-  if (error) {
-    console.error("[getCashKpis] query failure", error.message);
+  const [goldRes, asOfRes] = await Promise.all([
+    sb
+      .from("gold_cashflow")
+      .select("current_cash_mxn, current_debt_mxn, bank_breakdown")
+      .maybeSingle(),
+    sb
+      .from("canonical_bank_balances")
+      .select("refreshed_at")
+      .order("refreshed_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (goldRes.error) {
+    console.error("[getCashKpis] gold_cashflow query failure", goldRes.error.message);
     return {
       efectivoTotalMxn: 0,
       deudaTarjetasMxn: 0,
@@ -33,28 +60,22 @@ async function _getCashKpisRaw(): Promise<CashKpis> {
       asOfDate: null,
     };
   }
-  type Row = {
-    classification: string | null;
-    current_balance_mxn: number | null;
-    refreshed_at: string | null;
-  };
-  const rows = (data ?? []) as Row[];
-  let cash = 0;
-  let debt = 0;
+
+  const cf = (goldRes.data ?? null) as GoldCashflow | null;
+  const cash = Number(cf?.current_cash_mxn) || 0;
+  const debt = Math.abs(Number(cf?.current_debt_mxn) || 0);
+
   let cashCount = 0;
   let debtCount = 0;
-  let asOf: string | null = null;
-  for (const r of rows) {
-    const bal = Number(r.current_balance_mxn) || 0;
-    if (r.classification === "cash") {
-      cash += bal;
-      cashCount++;
-    } else if (r.classification === "debt") {
-      debt += Math.abs(bal);
-      debtCount++;
-    }
-    if (r.refreshed_at && (!asOf || r.refreshed_at > asOf)) asOf = r.refreshed_at;
+  for (const b of cf?.bank_breakdown ?? []) {
+    const journals = Number(b?.journals) || 0;
+    if (b?.classification === "cash") cashCount += journals;
+    else if (b?.classification === "debt") debtCount += journals;
   }
+
+  const asOf =
+    (asOfRes.data as { refreshed_at: string | null } | null)?.refreshed_at ?? null;
+
   return {
     efectivoTotalMxn: cash,
     deudaTarjetasMxn: debt,
@@ -67,6 +88,6 @@ async function _getCashKpisRaw(): Promise<CashKpis> {
 
 export const getCashKpis = unstable_cache(
   _getCashKpisRaw,
-  ["sp13-finanzas-cash-kpis"],
+  ["sp13-finanzas-cash-kpis-v2-gold"],
   { revalidate: 60, tags: ["finanzas"] }
 );

@@ -121,6 +121,12 @@ export {
   type PnlAdjustment,
 } from "./pnl-normalized";
 export {
+  getInventoryAdjustments,
+  type InventoryAdjustmentsSummary,
+  type InventoryAdjustmentRow,
+  type InventoryMoveCategory,
+} from "./inventory-adjustments";
+export {
   getObligationsSummary,
   type ObligationsSummary,
   type ObligationCategory,

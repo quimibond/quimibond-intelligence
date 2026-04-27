@@ -28,22 +28,26 @@ import {
   getCogsMonthly,
   getCogsPerProduct,
   getPnlNormalized,
+  getInventoryAdjustments,
   type CogsMonthlyPoint,
   type CogsPerProductRow,
   type PnlAdjustment,
+  type InventoryAdjustmentsSummary,
 } from "@/lib/queries/sp13/finanzas";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 
 /* ── F3 P&L — contable vs ajustado a materia prima ───────────────────── */
 export async function PnlBlock({ range }: { range: HistoryRange }) {
-  const [kpis, cogs, monthly, perProduct, normalized] = await Promise.all([
-    getPnlKpis(range),
-    getCogsComparison(range),
-    getCogsMonthly(range),
-    getCogsPerProduct(range),
-    getPnlNormalized(range),
-  ]);
+  const [kpis, cogs, monthly, perProduct, normalized, inventoryAdj] =
+    await Promise.all([
+      getPnlKpis(range),
+      getCogsComparison(range),
+      getCogsMonthly(range),
+      getCogsPerProduct(range),
+      getPnlNormalized(range),
+      getInventoryAdjustments(range),
+    ]);
 
   const hasData = kpis.monthsCovered > 0;
   const utilidadBrutaContable = cogs.revenueMxn - cogs.cogsContableMxn;
@@ -287,6 +291,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
             totalImpact={normalized.totalAdjustmentImpactMxn}
             adjustments={normalized.adjustments}
             ventas={cogs.revenueMxn}
+            inventoryAdj={inventoryAdj}
           />
 
           <BreakEvenCard
@@ -353,16 +358,21 @@ export function PnlNormalizedCard({
   totalImpact,
   adjustments,
   ventas,
+  inventoryAdj,
 }: {
   reportedNeta: number;
   normalizedNeta: number;
   totalImpact: number;
   adjustments: PnlAdjustment[];
   ventas: number;
+  inventoryAdj?: InventoryAdjustmentsSummary;
 }) {
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
   const fmtFull = (n: number) => formatCurrencyMXN(n);
   const detected = adjustments.filter((a) => a.detected);
+  const hasInventoryAdj =
+    !!inventoryAdj &&
+    detected.some((a) => a.category === "ajuste_inventario_year_end");
 
   if (detected.length === 0) {
     return (
@@ -536,8 +546,140 @@ export function PnlNormalizedCard({
           depreciación, inventario) son contables — el cash ya se gastó cuando
           se incurrió, este ejercicio solo separa el efecto en el P&L del mes.
         </p>
+
+        {hasInventoryAdj && inventoryAdj && (
+          <InventoryAdjustmentsDrilldown summary={inventoryAdj} />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+/* Drilldown del residual inventario via canonical_stock_moves ─────────── */
+function InventoryAdjustmentsDrilldown({
+  summary,
+}: {
+  summary: InventoryAdjustmentsSummary;
+}) {
+  const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
+  const fmtFull = (n: number) => formatCurrencyMXN(n);
+
+  // Agregamos por categoría sumando todos los meses del rango
+  const byCategoryMap = new Map<
+    string,
+    {
+      label: string;
+      moves: number;
+      products: Set<string>;
+      qty: number;
+      value: number;
+    }
+  >();
+  let totalAdjustment = 0;
+  for (const r of summary.rows) {
+    const ex = byCategoryMap.get(r.category) ?? {
+      label: r.categoryLabel,
+      moves: 0,
+      products: new Set<string>(),
+      qty: 0,
+      value: 0,
+    };
+    ex.moves += r.movesCount;
+    // distinct products union via fake set keyed por period+count (proxy)
+    ex.qty += r.qtyTotal;
+    ex.value += r.valueTotalMxn;
+    byCategoryMap.set(r.category, ex);
+    if (r.category === "ajuste_inventario") totalAdjustment += r.valueTotalMxn;
+  }
+  const byCategory = Array.from(byCategoryMap.entries())
+    .map(([cat, v]) => ({
+      category: cat,
+      label: v.label,
+      moves: v.moves,
+      qty: v.qty,
+      value: v.value,
+    }))
+    .sort((a, b) => Math.abs(b.value) - Math.abs(a.value));
+
+  if (byCategory.length === 0) return null;
+
+  return (
+    <details className="rounded-md border bg-muted/20">
+      <summary className="cursor-pointer px-3 py-2 text-xs font-medium hover:bg-muted/40 sm:px-4">
+        <span>
+          Drilldown: stock moves por categoría · {summary.periodLabel}
+        </span>
+        <span className="ml-2 text-muted-foreground">
+          (ajuste_inventario total {fmt(totalAdjustment)})
+        </span>
+      </summary>
+      <div className="border-t px-3 py-3 sm:px-4">
+        <p className="mb-2 text-[11px] text-muted-foreground">
+          Decomposición de movimientos en <code>canonical_stock_moves</code>{" "}
+          por categoría derivada del par <code>location_usage</code>. El residual
+          year-end típicamente vive en{" "}
+          <code className="rounded bg-muted px-1">ajuste_inventario</code>{" "}
+          (movimientos <em>inventory ↔ internal</em>: conteos físicos, reclas
+          de cuentas, mermas reconocidas).
+          {summary.hottestPeriod && (
+            <>
+              {" "}
+              Mes con mayor ajuste:{" "}
+              <strong>{summary.hottestPeriod.period}</strong> ·{" "}
+              {fmtFull(summary.hottestPeriod.valueMxn)}.
+            </>
+          )}
+        </p>
+        <div className="overflow-hidden rounded-md border bg-card">
+          <table className="w-full text-xs">
+            <thead className="bg-muted/30 text-[10px] uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-2 py-1.5 text-left">Categoría</th>
+                <th className="px-2 py-1.5 text-right tabular-nums">Moves</th>
+                <th className="px-2 py-1.5 text-right tabular-nums">Qty</th>
+                <th className="px-2 py-1.5 text-right tabular-nums">Valor MXN</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y">
+              {byCategory.map((r) => (
+                <tr
+                  key={r.category}
+                  className={cn(
+                    r.category === "ajuste_inventario" && "bg-warning/5"
+                  )}
+                >
+                  <td className="px-2 py-1.5 font-medium">
+                    {r.label}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums">
+                    {r.moves.toLocaleString()}
+                  </td>
+                  <td className="px-2 py-1.5 text-right tabular-nums text-muted-foreground">
+                    {Math.abs(r.qty) >= 1000
+                      ? `${(r.qty / 1000).toFixed(1)}k`
+                      : r.qty.toFixed(0)}
+                  </td>
+                  <td
+                    className={cn(
+                      "px-2 py-1.5 text-right tabular-nums",
+                      r.value >= 0 ? "text-foreground" : "text-destructive"
+                    )}
+                  >
+                    {fmtFull(r.value)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-[10px] text-muted-foreground">
+          Source:{" "}
+          <code>get_inventory_adjustments(p_from, p_to)</code> sobre{" "}
+          <code>canonical_stock_moves</code> (1.6M rows promovidos del bronze
+          en migration 20260427_canonical_stock_moves.sql).
+        </p>
+      </div>
+    </details>
   );
 }
 
