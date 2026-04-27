@@ -145,6 +145,11 @@ export interface CashFlowCategoryTotal {
 export interface CashProjection {
   horizonDays: number;
   openingBalance: number;
+  // Stale cuando algun banco con classification=cash tiene is_stale=true
+  // (updated_at > 48h). UI deberia mostrar badge "saldo bancario stale".
+  // Audit 2026-04-27 finding #11.
+  openingBalanceStale: boolean;
+  openingBalanceStaleHours: number;
   minBalance: number;
   minBalanceDate: string;
   closingBalance: number;
@@ -219,7 +224,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   ] = await Promise.all([
       sb
         .from("canonical_bank_balances")
-        .select("classification, current_balance_mxn"),
+        .select("classification, current_balance_mxn, is_stale, updated_at"),
       sb
         .from("cashflow_projection")
         .select(
@@ -432,11 +437,31 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     return shiftDate(todayIso, offset);
   };
 
-  type Bank = { classification: string | null; current_balance_mxn: number | null };
+  type Bank = {
+    classification: string | null;
+    current_balance_mxn: number | null;
+    is_stale: boolean | null;
+    updated_at: string | null;
+  };
   const banks = (cashRes.data ?? []) as Bank[];
-  const opening = banks
-    .filter((b) => b.classification === "cash")
-    .reduce((s, b) => s + (Number(b.current_balance_mxn) || 0), 0);
+  const cashBanks = banks.filter((b) => b.classification === "cash");
+  const opening = cashBanks.reduce(
+    (s, b) => s + (Number(b.current_balance_mxn) || 0),
+    0
+  );
+
+  // Audit 2026-04-27 finding #11. canonical_bank_balances.is_stale=true
+  // cuando updated_at > 48h. Si Belvo cae, opening balance es snapshot
+  // viejo y el resto del chart suma sobre un punto inicial obsoleto.
+  // Surfacing la condicion deja al usuario decidir si confiar.
+  const openingBalanceStale = cashBanks.some((b) => b.is_stale === true);
+  const openingBalanceStaleHours = cashBanks.reduce((max, b) => {
+    if (!b.updated_at) return max;
+    const ageMs = today.getTime() - new Date(b.updated_at).getTime();
+    if (ageMs <= 0) return max;
+    const hours = ageMs / 3_600_000;
+    return hours > max ? hours : max;
+  }, 0);
 
   type ProjRow = {
     company_id: number | null;
@@ -1766,6 +1791,8 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   return {
     horizonDays,
     openingBalance: Math.round(opening),
+    openingBalanceStale,
+    openingBalanceStaleHours: Math.round(openingBalanceStaleHours),
     closingBalance: points.at(-1)?.balance ?? Math.round(opening),
     minBalance: Math.round(minBal),
     minBalanceDate: minDate,
