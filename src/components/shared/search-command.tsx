@@ -117,6 +117,7 @@ const NAV_GROUPS: SearchGroup[] = [
       { key: "ventas", href: "/ventas", icon: TrendingUp, label: "Ventas" },
       { key: "cobranza", href: "/cobranza", icon: AlertTriangle, label: "Cobranza" },
       { key: "finanzas", href: "/finanzas", icon: Banknote, label: "Finanzas" },
+      { key: "contabilidad", href: "/contabilidad", icon: FileText, label: "Contabilidad" },
     ],
   },
   {

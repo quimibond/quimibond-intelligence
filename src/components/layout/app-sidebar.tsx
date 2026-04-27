@@ -95,6 +95,7 @@ const topGroups: NavGroup[] = [
       { href: "/operaciones", label: "Operaciones", icon: Factory },
       { href: "/equipo", label: "Equipo", icon: Users },
       { href: "/finanzas", label: "Finanzas", icon: Banknote },
+      { href: "/contabilidad", label: "Contabilidad", icon: FileText },
     ],
   },
   {

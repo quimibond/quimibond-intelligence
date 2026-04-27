@@ -72,6 +72,7 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
     tabs: [
       { href: "/ventas", label: "Ventas", icon: TrendingUp },
       { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
+      { href: "/contabilidad", label: "Contabilidad", icon: FileText },
     ],
   },
   {

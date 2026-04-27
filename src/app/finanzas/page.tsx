@@ -22,19 +22,13 @@ import {
   CashConversionCycleBlock,
   DriftBanner,
   HeroKpis,
-  PnlBlock,
-  MpQualityBlock,
   CashReconciliationBlock,
   WorkingCapitalBlock,
   ProjectionBlock,
   BankDetailBlock,
   AnomaliesBanner,
-  BalanceSheetBlock,
-  InvoiceDiscrepanciesBlock,
   ObligationsBlock,
-  PnlByAccountBlock,
   FxExposureBlock,
-  TaxBlock,
 } from "./_components/blocks";
 
 export const revalidate = 60;
@@ -42,11 +36,11 @@ export const metadata = { title: "Finanzas" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
-type FinanzasTab = "hoy" | "mes" | "detalle";
+type FinanzasTab = "hoy" | "mes" | "decisiones" | "detalle";
 
 function parseTab(raw: string | string[] | undefined): FinanzasTab {
   const v = Array.isArray(raw) ? raw[0] : raw;
-  if (v === "mes" || v === "detalle") return v;
+  if (v === "mes" || v === "decisiones" || v === "detalle") return v;
   return "hoy";
 }
 
@@ -61,29 +55,26 @@ const TAB_NAV: Record<
   ],
   mes: [
     { id: "cash-reconciliation", label: "¿Dónde está el dinero?" },
-    { id: "pnl", label: "P&L" },
-    { id: "balance-sheet", label: "Balance" },
     { id: "ccc", label: "Cash conversion" },
-  ],
-  detalle: [
     { id: "working-capital", label: "Capital trabajo" },
-    { id: "mp-quality", label: "Costos de MP" },
-    { id: "pnl-by-account", label: "Gastos por cuenta" },
-    { id: "discrepancies", label: "Odoo ↔ SAT" },
+  ],
+  decisiones: [
     { id: "credit-score", label: "Riesgo cliente" },
     { id: "supplier-priority", label: "Prioridad proveedor" },
     { id: "customer-ltv", label: "LTV" },
     { id: "model-accuracy", label: "Precisión proyección" },
+  ],
+  detalle: [
     { id: "fx", label: "FX" },
-    { id: "tax", label: "Fiscal" },
     { id: "bank-detail", label: "Detalle bancario" },
   ],
 };
 
 const TAB_DEFS: Array<{ id: FinanzasTab; label: string; subtitle: string }> = [
   { id: "hoy", label: "Hoy", subtitle: "Lo accionable de cada día" },
-  { id: "mes", label: "Mes en curso", subtitle: "Cómo va el negocio" },
-  { id: "detalle", label: "Detalle", subtitle: "Drilldowns analíticos" },
+  { id: "mes", label: "Mes en curso", subtitle: "Cómo va el cash" },
+  { id: "decisiones", label: "Decisiones", subtitle: "Scoring para acción" },
+  { id: "detalle", label: "Detalle", subtitle: "Drilldowns" },
 ];
 
 function FinanzasTabsNav({
@@ -198,51 +189,21 @@ export default async function FinanzasPage({
           </Suspense>
 
           <Suspense
-            fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}
-          >
-            <PnlBlock range={period} />
-          </Suspense>
-
-          <Suspense
-            fallback={<Skeleton className="h-[220px] w-full rounded-lg" />}
-          >
-            <BalanceSheetBlock />
-          </Suspense>
-
-          <Suspense
             fallback={<Skeleton className="h-[240px] w-full rounded-lg" />}
           >
             <CashConversionCycleBlock />
           </Suspense>
-        </>
-      )}
 
-      {tab === "detalle" && (
-        <>
           <Suspense
             fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
           >
             <WorkingCapitalBlock />
           </Suspense>
+        </>
+      )}
 
-          <Suspense
-            fallback={<Skeleton className="h-[360px] w-full rounded-lg" />}
-          >
-            <MpQualityBlock range={period} />
-          </Suspense>
-
-          <Suspense
-            fallback={<Skeleton className="h-[320px] w-full rounded-lg" />}
-          >
-            <PnlByAccountBlock range={period} />
-          </Suspense>
-
-          <Suspense
-            fallback={<Skeleton className="h-[280px] w-full rounded-lg" />}
-          >
-            <InvoiceDiscrepanciesBlock range={period} />
-          </Suspense>
-
+      {tab === "decisiones" && (
+        <>
           <Suspense
             fallback={<Skeleton className="h-[280px] w-full rounded-lg" />}
           >
@@ -266,17 +227,15 @@ export default async function FinanzasPage({
           >
             <ProjectionAccuracyBlock />
           </Suspense>
+        </>
+      )}
 
+      {tab === "detalle" && (
+        <>
           <Suspense
             fallback={<Skeleton className="h-[200px] w-full rounded-lg" />}
           >
             <FxExposureBlock />
-          </Suspense>
-
-          <Suspense
-            fallback={<Skeleton className="h-[260px] w-full rounded-lg" />}
-          >
-            <TaxBlock range={period} />
           </Suspense>
 
           <Suspense fallback={<Skeleton className="h-[160px] w-full rounded-lg" />}>
