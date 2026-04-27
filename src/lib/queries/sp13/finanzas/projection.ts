@@ -1827,7 +1827,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v21-seasonality-applied"],
+  ["sp13-finanzas-cash-projection-v22-audit-2026-04-27"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

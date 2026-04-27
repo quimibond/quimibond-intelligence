@@ -20,6 +20,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Impacto**: ~3-7% del AR billed bruto (según conteo de NULL en `canonical_invoices.due_date_resolved`).
 - **Fix recomendado**: fallback `invoice_date + 30d` aplicado a nivel matview o en el cliente leyendo `canonical_invoices` directamente cuando `cashflow_projection` no tiene la fila.
 - **Esfuerzo**: M (cliente) / L (matview, requiere SQL parity de #1).
+- **Status (2026-04-27)**: **DEFERRED** del batch de quick wins. El fix client-side requiere (a) resolver `canonical_companies → companies.id` para que `apDelayMap`/`relatedPartyIds` funcionen, (b) recalcular aging probabilities con fallback synthetic due date, (c) deduplicar contra projRows existentes. Ya sale del scope "S/M". Mover a sprint dedicado junto a #1 (matview SQL parity).
 
 ### 3. AR/AP delays de v2 (RPCs) no aplicados al `projected_date`
 - **Dónde**: `supabase/migrations/20260426_ap_delay_related_party.sql`, `20260426_ar_collection_delay.sql` crean `get_ar_collection_delay_v2` y `get_ap_payment_delay_v2`. `projection.ts:494-649` no los consume aún — sigue usando `due_date_resolved` directo.
@@ -96,6 +97,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: pagos a Grupo Quimibond (renta intercompany), familia Mizrahi, etc., entran como recurring operativo. El flag `is_related_party` ya existe (#20260426).
 - **Impacto**: ~$100-300k MXN/mes de outflows que no son operativos puros.
 - **Esfuerzo**: M (nueva migración v3 con LEFT JOIN canonical_companies + filtro WHERE is_related_party = false).
+- **Status (2026-04-27)**: **DEFERRED**. La RPC actual lee `canonical_account_balances` que es aggregate por (período, account_code) y NO tiene counterparty. Para subtraer la porción related-party hace falta cruzar a nivel `account.move.line` (que sí tiene partner_id + account_code juntos), pero esa tabla NO está sincronizada en Bronze. `odoo_invoice_lines` sí existe pero NO tiene `account_code`. Antes de implementar #14 hay que (a) extender el sync Odoo para traer account.move.line completo o (b) agregar `account_code` a `odoo_invoice_lines`. Mover a sprint estructural junto con #1.
 
 ### 15. CFDIs con `is_quimibond_relevant=false` aún consumidos por algunos paths
 - **Dónde**: `supabase/migrations/20260426_quimibond_relevance_tombstone.sql` agregó la columna, pero no auditamos cada query downstream.
