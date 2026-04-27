@@ -13,6 +13,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: la definición vive solo en el proyecto Supabase (aplicada vía MCP). Re-bootstrapear desde cero falla; rollback imposible vía git.
 - **Impacto**: bloqueador para CI/CD reproducible. Riesgo alto de drift entre lo que se asume en TS y lo que la matview devuelve.
 - **Esfuerzo**: L (extraer DDL + escribir migración + verificar índices y refresh policy).
+- **Status (2026-04-27)**: **RESUELTO**. DDL extraído via `pg_get_viewdef` y escrito a `supabase/migrations/20260427_cashflow_projection_matview_parity.sql`. Hallazgos cruzados: matview ya filtraba `payment_state IN ('not_paid','partial')` (confirma que #10 era defensa redundante pero válida). Sin indexes previos — agregados 2 indexes nuevos a producción (`flow_type, projected_date` y `company_id`) para acelerar el query principal de projection.ts. Sin pg_cron job de refresh — TODO seguimiento para definir refresh strategy explícito.
 
 ### 2. `due_date_resolved IS NULL` quedan fuera del horizonte
 - **Dónde**: `src/lib/queries/sp13/finanzas/projection.ts:226-255` filtra con `.lte("projected_date", endIso)`. Las filas con `projected_date NULL` (porque `due_date_resolved` es NULL en la matview) caen fuera por el `lte` pero NO se cuentan tampoco en backlog.
