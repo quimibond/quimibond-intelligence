@@ -95,6 +95,10 @@
     {
       "path": "/api/finanzas/projection-drift-check",
       "schedule": "45 6 * * *"
+    },
+    {
+      "path": "/api/syntage/cron-daily",
+      "schedule": "0 5 * * *"
     }
   ]
 }
