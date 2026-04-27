@@ -58,7 +58,6 @@ import {
   getCashKpis,
   getRunwayKpis,
   getPnlKpis,
-  getPnlWaterfall,
   getWorkingCapital,
   getCashProjection,
   type CashFlowCategoryTotal,
@@ -110,7 +109,6 @@ import { formatCurrencyMXN } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import type { HistoryRange } from "@/components/patterns/history-range";
 
-import { PnlWaterfallChart } from "./_components/pnl-waterfall-chart";
 import { CashProjectionChart } from "./_components/cash-projection-chart";
 import { ProjectionHorizonSelector } from "./_components/projection-horizon-selector";
 import { BankDetailExpand } from "./_components/bank-detail-expand";
@@ -396,15 +394,13 @@ async function HeroKpis() {
 
 /* ── F3 P&L — contable vs ajustado a materia prima ───────────────────── */
 async function PnlBlock({ range }: { range: HistoryRange }) {
-  const [kpis, waterfall, cogs, monthly, perProduct, normalized] =
-    await Promise.all([
-      getPnlKpis(range),
-      getPnlWaterfall(range),
-      getCogsComparison(range),
-      getCogsMonthly(range),
-      getCogsPerProduct(range),
-      getPnlNormalized(range),
-    ]);
+  const [kpis, cogs, monthly, perProduct, normalized] = await Promise.all([
+    getPnlKpis(range),
+    getCogsComparison(range),
+    getCogsMonthly(range),
+    getCogsPerProduct(range),
+    getPnlNormalized(range),
+  ]);
 
   const hasData = kpis.monthsCovered > 0;
   const utilidadBrutaContable = cogs.revenueMxn - cogs.cogsContableMxn;
@@ -614,34 +610,23 @@ async function PnlBlock({ range }: { range: HistoryRange }) {
           </StatGrid>
 
           <Card>
-            <CardHeader>
+            <CardHeader className="pb-3">
               <CardTitle className="text-base">
-                Waterfall: cómo llego de Ventas a Utilidad neta
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <PnlWaterfallChart data={waterfall} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">
-                P&L limpio — costo primo real (BOM recursiva)
+                P&L contable vs limpio · comparación
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                501.01 reemplazado por costo primo real de la BOM recursiva hasta
-                materia prima. Los demás costos (mano de obra 501.06, overhead
-                fábrica 504.01, depreciación 504.08-23, gastos op 6xx) quedan
-                en su cuenta. La CAPA de valoración deshace la duplicación que
-                Odoo mete automáticamente a 501.01.
+                Una tabla, dos modelos. El contable usa 501.01 con CAPA
+                inflada (Odoo). El limpio reemplaza 501.01 por el costo
+                primo real (BOM recursiva hasta materia prima). Los demás
+                costos quedan idénticos en ambos. La columna Δ muestra
+                exactamente dónde se concentra la duplicación contable.
               </p>
             </CardHeader>
             <CardContent className="px-0 pb-0">
-              <PnlLimpioTable
+              <PnlComparisonTable
                 ventas={kpis.ingresosPl}
-                costoPrimo={cogs.cogsRecursiveMpMxn}
                 cogs501_01Actual={kpis.cogs501_01Mxn}
+                costoPrimo={cogs.cogsRecursiveMpMxn}
                 mod={kpis.mod501_06Mxn}
                 compras={kpis.compras502Mxn}
                 overhead={kpis.overhead504_01Mxn}
@@ -1078,10 +1063,11 @@ function BreakEvenCard({
   );
 }
 
-function PnlLimpioTable({
+/* P&L contable vs limpio — tabla comparativa unificada ──────────────── */
+function PnlComparisonTable({
   ventas,
-  costoPrimo,
   cogs501_01Actual,
+  costoPrimo,
   mod,
   compras,
   overhead,
@@ -1091,8 +1077,8 @@ function PnlLimpioTable({
   netaContable,
 }: {
   ventas: number;
-  costoPrimo: number;
   cogs501_01Actual: number;
+  costoPrimo: number;
   mod: number;
   compras: number;
   overhead: number;
@@ -1105,109 +1091,195 @@ function PnlLimpioTable({
   const pct = (num: number, den: number) =>
     den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—";
 
-  // 501.01 residual = lo que tiene 501.01 y NO es MP (CAPA pendiente o exceso)
-  // Si positivo: falta CAPA. Si negativo: te pasaste.
+  // Totales por columna. costoVentas = COGS + MOD + Compras + Overhead + Dep
+  const costoVentasContable =
+    cogs501_01Actual + mod + compras + overhead + depFabrica;
+  const costoVentasLimpio = costoPrimo + mod + compras + overhead + depFabrica;
+  const utilBrutaContable = ventas - costoVentasContable;
+  const utilBrutaLimpio = ventas - costoVentasLimpio;
+  const ebitContable = utilBrutaContable - gastosOp;
+  const ebitLimpio = utilBrutaLimpio - gastosOp;
+  const netaLimpio = ebitLimpio + otros;
   const residual501_01 = cogs501_01Actual - costoPrimo;
-
-  const margenContributivo = ventas - costoPrimo;
-  const ebit = margenContributivo - mod - compras - overhead - depFabrica - gastosOp;
-  const neta = ebit + otros;
-
-  // Diferencia vs neta contable (debe ser exactamente el residual).
-  const deltaNeta = neta - netaContable;
+  const deltaNeta = netaLimpio - netaContable;
 
   type Row = {
     label: string;
-    amount: number;
-    total?: boolean;
-    subtotal?: boolean;
+    contable: number | null;
+    limpio: number | null;
+    isSubtotal?: boolean;
+    isTotal?: boolean;
+    isHeader?: boolean;
+    isDetail?: boolean;
     note?: string;
-    muted?: boolean;
   };
+
   const rows: Row[] = [
-    { label: "Ventas de producto (4xx)", amount: ventas, total: true },
-    { label: "− Costo primo real (BOM recursiva → MP)", amount: -costoPrimo },
+    { label: "Ventas de producto (4xx)", contable: ventas, limpio: ventas, isTotal: true },
+    { label: "Costo de ventas:", contable: null, limpio: null, isHeader: true },
     {
-      label: "= Margen contributivo material",
-      amount: margenContributivo,
-      subtotal: true,
-      note: `${pct(margenContributivo, ventas)} del ingreso. Cada peso vendido deja esto para cubrir MOD, overhead y gastos.`,
+      label: "501.01 contable (con CAPA inflada de Odoo)",
+      contable: cogs501_01Actual,
+      limpio: null,
+      isDetail: true,
     },
-    { label: "− Mano de obra directa (501.06)", amount: -mod },
-    { label: "− Compras de importación (502)", amount: -compras },
-    { label: "− Overhead fábrica (504.01 renta/energía/servicios)", amount: -overhead },
-    { label: "− Depreciación fábrica (504.08-23)", amount: -depFabrica },
-    { label: "− Gastos operativos (6xx + 613 dep.)", amount: -gastosOp },
-    { label: "= EBIT", amount: ebit, subtotal: true, note: pct(ebit, ventas) },
-    { label: "+ Otros ingresos (7xx: FX, intereses, venta activo)", amount: otros },
-    { label: "= UTILIDAD NETA (P&L limpio)", amount: neta, total: true },
+    {
+      label: "Costo primo BOM (MP real, recursivo)",
+      contable: null,
+      limpio: costoPrimo,
+      isDetail: true,
+    },
+    {
+      label: "Mano de obra directa (501.06)",
+      contable: mod, limpio: mod, isDetail: true,
+    },
+    {
+      label: "Compras de importación (502)",
+      contable: compras, limpio: compras, isDetail: true,
+    },
+    {
+      label: "Overhead fábrica (504.01 renta/energía/mtto)",
+      contable: overhead, limpio: overhead, isDetail: true,
+    },
+    {
+      label: "Depreciación fábrica (504.08-23)",
+      contable: depFabrica, limpio: depFabrica, isDetail: true,
+    },
+    {
+      label: "Total costo de ventas",
+      contable: costoVentasContable, limpio: costoVentasLimpio, isSubtotal: true,
+    },
+    {
+      label: "= Utilidad bruta",
+      contable: utilBrutaContable, limpio: utilBrutaLimpio, isSubtotal: true,
+      note: `${pct(utilBrutaLimpio, ventas)} sobre ventas (limpio)`,
+    },
+    {
+      label: "− Gastos operativos (6xx + 613 dep.)",
+      contable: gastosOp, limpio: gastosOp, isDetail: true,
+    },
+    {
+      label: "= EBIT",
+      contable: ebitContable, limpio: ebitLimpio, isSubtotal: true,
+      note: `${pct(ebitLimpio, ventas)} sobre ventas (limpio)`,
+    },
+    {
+      label: "+ Otros (7xx: FX, intereses, venta activo)",
+      contable: otros, limpio: otros, isDetail: true,
+    },
+    {
+      label: "= UTILIDAD NETA",
+      contable: netaContable, limpio: netaLimpio, isTotal: true,
+    },
   ];
 
+  const renderAmt = (n: number | null, dim: boolean = false) => {
+    if (n === null) return <span className="text-muted-foreground/40">—</span>;
+    return (
+      <span className={dim ? "text-muted-foreground" : ""}>{fmt(n)}</span>
+    );
+  };
+
+  const renderDelta = (contable: number | null, limpio: number | null) => {
+    if (contable === null || limpio === null) {
+      // Sólo aparece en una columna → la diferencia es el monto entero
+      const v = contable ?? -(limpio ?? 0);
+      // Para "501.01 contable" sólo en contable: Δ = -contable (al pasar a limpio se elimina)
+      if (contable !== null && limpio === null) {
+        return (
+          <span className="font-medium tabular-nums text-destructive">
+            −{fmt(contable)}
+          </span>
+        );
+      }
+      // "Costo primo BOM" sólo en limpio: Δ = +limpio (aparece en limpio)
+      if (limpio !== null && contable === null) {
+        return (
+          <span className="font-medium tabular-nums text-success">
+            +{fmt(limpio)}
+          </span>
+        );
+      }
+      return <span className="text-muted-foreground/40">—</span>;
+    }
+    const d = limpio - contable;
+    if (Math.abs(d) < 1) {
+      return <span className="text-muted-foreground/40">—</span>;
+    }
+    return (
+      <span
+        className={cn(
+          "font-medium tabular-nums",
+          d > 0 ? "text-success" : "text-destructive"
+        )}
+      >
+        {d > 0 ? "+" : ""}
+        {fmt(d)}
+      </span>
+    );
+  };
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[70%]">Concepto</TableHead>
-          <TableHead className="text-right">Monto</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {rows.map((r, i) => (
-          <TableRow
-            key={i}
-            className={
-              r.total
-                ? "font-semibold bg-muted/60"
-                : r.subtotal
-                  ? "font-medium bg-muted/30"
-                  : ""
-            }
-          >
-            <TableCell>
-              {r.label}
-              {r.note && (
-                <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
-                  {r.note}
-                </p>
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[44%]">Concepto</TableHead>
+            <TableHead className="text-right">Contable</TableHead>
+            <TableHead className="text-right">Limpio</TableHead>
+            <TableHead className="text-right">Δ (limpio − contable)</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r, i) => (
+            <TableRow
+              key={i}
+              className={cn(
+                r.isTotal && "bg-muted/60 font-semibold",
+                r.isSubtotal && "bg-muted/30 font-medium",
+                r.isHeader && "bg-muted/15 text-xs uppercase tracking-wide text-muted-foreground"
               )}
-            </TableCell>
-            <TableCell
-              className={`text-right tabular-nums ${r.amount < 0 && !r.total && !r.subtotal ? "text-muted-foreground" : ""}`}
             >
-              {fmt(r.amount)}
+              <TableCell className={r.isDetail ? "pl-8 text-sm" : ""}>
+                {r.label}
+                {r.note && (
+                  <p className="mt-0.5 text-[11px] font-normal text-muted-foreground">
+                    {r.note}
+                  </p>
+                )}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.isHeader ? null : renderAmt(r.contable, r.isDetail && r.contable !== null && r.contable < 0 ? false : false)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.isHeader ? null : renderAmt(r.limpio)}
+              </TableCell>
+              <TableCell className="text-right tabular-nums">
+                {r.isHeader ? null : renderDelta(r.contable, r.limpio)}
+              </TableCell>
+            </TableRow>
+          ))}
+          <TableRow className="border-t-2 bg-warning/5">
+            <TableCell colSpan={4}>
+              <p className="text-[11px] leading-snug text-muted-foreground">
+                <span className="font-medium text-foreground">
+                  Δ utilidad neta = {fmt(deltaNeta)}
+                </span>
+                {" — "}
+                debería == residual 501.01 ({fmt(residual501_01)}).
+                {Math.abs(deltaNeta - residual501_01) < 10
+                  ? " ✓ Cuadra al peso."
+                  : " ⚠ Drift detectado, revisar."}
+                {" "}
+                501.01 contable {fmt(cogs501_01Actual)} − costo primo BOM {fmt(costoPrimo)} ={" "}
+                {fmt(residual501_01)} de CAPA{" "}
+                {residual501_01 > 0 ? "pendiente que falta remover" : "removida en exceso"}.
+              </p>
             </TableCell>
           </TableRow>
-        ))}
-        <TableRow className="border-t-2 bg-warning/5">
-          <TableCell>
-            <span className="text-xs font-medium">
-              Δ vs P&L contable
-            </span>
-            <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">
-              501.01 contable actual = {fmt(cogs501_01Actual)}, MP real = {fmt(costoPrimo)}.
-              Residual de {fmt(residual501_01)} es {residual501_01 > 0
-                ? "CAPA pendiente que te falta remover"
-                : "CAPA en exceso (removiste de más)"}.
-              Neta contable: {fmt(netaContable)} · Neta limpia: {fmt(neta)}.
-            </p>
-          </TableCell>
-          <TableCell className="text-right tabular-nums text-xs">
-            <span
-              className={
-                Math.abs(deltaNeta) < 1
-                  ? "text-muted-foreground"
-                  : deltaNeta > 0
-                    ? "text-success"
-                    : "text-destructive"
-              }
-            >
-              {deltaNeta > 0 ? "+" : ""}
-              {fmt(deltaNeta)}
-            </span>
-          </TableCell>
-        </TableRow>
-      </TableBody>
-    </Table>
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
