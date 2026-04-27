@@ -1495,8 +1495,15 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     case "equipo_dir": {
       const [reorderByVendor, activities, employees, stalledThreads, salesByPerson, overdueByPerson] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, reorder_status, days_overdue_reorder, avg_order_value, salesperson_name, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).not("salesperson_name", "is", null).order("total_revenue", { ascending: false }).limit(30),
-        sb.from("odoo_activities").select("assigned_to, activity_type, is_overdue, summary").eq("is_overdue", true).order("assigned_to").limit(30), // SP5-EXCEPTION: Bronze — no canonical_activities in SP4 scope
-        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20), // SP5-EXCEPTION: Bronze — no canonical_users yet; odoo_users is not in §12 drop list
+        // Source: canonical_activities (silver). FK canonical_company_id +
+        // assigned_canonical_contact_id resueltos. Migrado 2026-04-27.
+        sb.from("canonical_activities").select("assigned_to, activity_type, is_overdue, summary").eq("is_overdue", true).order("assigned_to").limit(30),
+        // odoo_users es catálogo de 40 filas; canonical_employees (VIEW
+        // sobre canonical_contacts + odoo_employees + odoo_users) es la
+        // silver natural pero depende de contact_type IN ('internal_*').
+        // Mantengo lectura directa por compactez del prompt y porque un
+        // canonical_users propio sería redundante.
+        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20),
         sb.from("threads").select("subject, last_sender, hours_without_response, account, company_id").eq("last_sender_type", "external").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(15),
         // SP5: replaced odoo_sale_orders with canonical_sale_orders
         sb.from("canonical_sale_orders").select("salesperson_name, canonical_company_id, amount_total_mxn").eq("state", "sale").order("amount_total_mxn", { ascending: false }).limit(50), // SP5: replaced odoo_sale_orders

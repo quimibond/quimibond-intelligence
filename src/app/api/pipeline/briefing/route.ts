@@ -114,9 +114,11 @@ export async function POST(request: NextRequest) {
         .limit(10),
 
       // 6. Recent payments (real payments with bank/method detail)
+      // Source: canonical_account_payments (silver). FK canonical_company_id
+      // resuelto + journal_name/payment_method preservados desde bronze.
       supabase
-        .from("odoo_account_payments") // SP5-EXCEPTION: briefing recent-payments — odoo_account_payments is Bronze-authoritative for bank journal detail (journal_name, payment_method). TODO SP6: replace with canonical_payments + journal FK.
-        .select("company_id, amount, date, journal_name, payment_method")
+        .from("canonical_account_payments")
+        .select("canonical_company_id, amount, date, journal_name, payment_method")
         .gte("date", new Date(Date.now() - 3 * 24 * 3600_000).toISOString().split("T")[0])
         .order("amount", { ascending: false })
         .limit(5),
