@@ -3,6 +3,46 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
+ * ─────────────────────────────────────────────────────────────────────────
+ * CACHING POLICY (audit 2026-04-28)
+ * ─────────────────────────────────────────────────────────────────────────
+ *
+ * Regla simple para decidir si una query nueva debe envolver con
+ * `unstable_cache`:
+ *
+ *   CACHE  → lecturas de gold_* / canonical_* views o aggregates estables.
+ *            Son materialized views o joins agregados que se refrescan en
+ *            pg_cron cada hora/2h. La frescura "real" del dato ya está
+ *            limitada por el cron upstream — cachear 60-300s no agrega
+ *            staleness perceptible para el CEO. Reduce drásticamente la
+ *            carga en Supabase y la latencia de pages que cargan 5+ KPIs.
+ *
+ *            Patrón:
+ *              async function _xRaw(p) { ... }
+ *              export const x = unstable_cache(
+ *                _xRaw,
+ *                ["module-name-v1", String(p)],   // bump v si rompes shape
+ *                { revalidate: 60, tags: ["domain"] }
+ *              );
+ *
+ *            TTL típico: 60s (KPIs cambiantes), 300s (cash projection),
+ *            1h-12h (aging buckets, drift, cohort, COGS mensual).
+ *
+ *   NO CACHE → lecturas que dependen de webhooks o de input free-text
+ *              del usuario.
+ *              · fiscal/syntage-*  — los webhooks reescriben las tablas
+ *                continuamente, cachear da datos contradictorios.
+ *              · intelligence/inbox.ts:listInbox  — `q` libre + priority_score
+ *                que cambia hourly + cardinalidad alta de filtros.
+ *              · single-row detail reads (invoice/contact/empresa por id) —
+ *                ya son rápidos y la cardinalidad de IDs explota la cache.
+ *
+ * Cuando dudes: cachea 60s. Es trivialmente reversible (quitar el wrapper)
+ * y casi nunca causa bugs visibles.
+ * ─────────────────────────────────────────────────────────────────────────
+ */
+
+/**
  * IDs de empresas marcadas como `relationship_type='self'` (la propia
  * Quimibond + variantes basura del knowledge graph). Hay que excluirlas
  * de TODA query de cobranza/cartera/CxC porque generan facturas

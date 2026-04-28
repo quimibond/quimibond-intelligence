@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
@@ -69,7 +70,7 @@ export interface DashboardKpis {
  * SP5-VERIFIED: get_dashboard_kpis() RPC is live and still consumed by page.tsx.
  * Retained until page.tsx is migrated to gold views.
  */
-export async function getDashboardKpis(): Promise<DashboardKpis | null> {
+async function _getDashboardKpisRaw(): Promise<DashboardKpis | null> {
   const sb = getServiceClient();
   // SP5-VERIFIED: get_dashboard_kpis() RPC is live and authoritative for CEO dashboard KPIs
   const { data, error } = await sb.rpc("get_dashboard_kpis");
@@ -103,6 +104,12 @@ export async function getDashboardKpis(): Promise<DashboardKpis | null> {
   return kpis;
 }
 
+export const getDashboardKpis = unstable_cache(
+  _getDashboardKpisRaw,
+  ["analytics-dashboard-kpis-rpc-v1"],
+  { revalidate: 60, tags: ["dashboard"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Gold layer — fetchDashboardKpis (new, reads gold views directly)
 // ──────────────────────────────────────────────────────────────────────────
@@ -112,7 +119,7 @@ export interface MonthlyRevenuePoint {
   revenue: number;
 }
 
-export async function fetchDashboardKpis() {
+async function _fetchDashboardKpisRaw() {
   const sb = getServiceClient();
   const ytdFrom = new Date(new Date().getFullYear(), 0, 1)
     .toISOString()
@@ -136,6 +143,12 @@ export async function fetchDashboardKpis() {
   };
 }
 
+export const fetchDashboardKpis = unstable_cache(
+  _fetchDashboardKpisRaw,
+  ["analytics-dashboard-gold-v1"],
+  { revalidate: 60, tags: ["dashboard"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Dashboard Alerts (gold_ceo_inbox)
 // ──────────────────────────────────────────────────────────────────────────
@@ -148,7 +161,7 @@ export interface CeoInboxRow {
   impact_mxn: number | null;
 }
 
-export async function fetchDashboardAlerts(limit = 5): Promise<CeoInboxRow[]> {
+async function _fetchDashboardAlertsRaw(limit = 5): Promise<CeoInboxRow[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("gold_ceo_inbox")
@@ -157,6 +170,12 @@ export async function fetchDashboardAlerts(limit = 5): Promise<CeoInboxRow[]> {
     .limit(limit);
   return (data ?? []) as CeoInboxRow[];
 }
+
+export const fetchDashboardAlerts = unstable_cache(
+  _fetchDashboardAlertsRaw,
+  ["analytics-dashboard-alerts-v1"],
+  { revalidate: 60, tags: ["dashboard"] },
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Revenue trend sparkline — last N months from gold_pl_statement.
@@ -169,7 +188,7 @@ export async function fetchDashboardAlerts(limit = 5): Promise<CeoInboxRow[]> {
 // so abs() = revenue.
 // ──────────────────────────────────────────────────────────────────────────
 
-export async function getRevenueTrend(
+async function _getRevenueTrendRaw(
   months = 12
 ): Promise<MonthlyRevenuePoint[]> {
   const sb = getServiceClient();
@@ -198,6 +217,12 @@ export async function getRevenueTrend(
     .reverse();
 }
 
+export const getRevenueTrend = unstable_cache(
+  _getRevenueTrendRaw,
+  ["analytics-revenue-trend-v1"],
+  { revalidate: 300, tags: ["dashboard", "finanzas"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // At-risk clients — reads gold_company_360 (was customer_ltv_health MV, dropped SP1)
 // ──────────────────────────────────────────────────────────────────────────
@@ -217,7 +242,7 @@ export interface AtRiskClient {
   churn_risk_score: number | null;
 }
 
-export async function getTopAtRiskClients(limit = 5): Promise<AtRiskClient[]> {
+async function _getTopAtRiskClientsRaw(limit = 5): Promise<AtRiskClient[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("gold_company_360")
@@ -246,3 +271,9 @@ export async function getTopAtRiskClients(limit = 5): Promise<AtRiskClient[]> {
     churn_risk_score: null, // gold_company_360 has no churn_risk_score — use overdue_amount_mxn as proxy
   }));
 }
+
+export const getTopAtRiskClients = unstable_cache(
+  _getTopAtRiskClientsRaw,
+  ["analytics-top-at-risk-v1"],
+  { revalidate: 60, tags: ["dashboard", "empresas"] },
+);
