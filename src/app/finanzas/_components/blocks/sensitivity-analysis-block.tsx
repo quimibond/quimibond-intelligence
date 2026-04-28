@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 import { formatCurrencyMXN } from "@/lib/formatters";
 import {
   type CashProjection,
@@ -160,6 +162,14 @@ export function SensitivityAnalysisBlock({
           {fmt(sens.monteCarlo.closingP90Mxn)} con 80% de probabilidad. La
           banda es ancha cuando hay mucha incertidumbre concentrada en
           pocas variables — el tornado de arriba muestra cuáles.
+        </div>
+        <div className="flex justify-end">
+          <Link
+            href={`/finanzas/scenarios?proj_horizon=${sens.horizonDays}`}
+            className="inline-flex items-center gap-1 rounded border border-info/40 bg-info/10 px-2 py-1 text-[11px] font-medium text-info hover:bg-info/20"
+          >
+            Construir escenarios manuales →
+          </Link>
         </div>
       </div>
     </details>

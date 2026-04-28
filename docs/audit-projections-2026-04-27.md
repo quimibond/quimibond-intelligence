@@ -95,6 +95,10 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: no hay distribución probabilística — solo 3 puntos. Imposible decir "P10 está en quiebra técnica".
 - **Impacto**: stress testing limitado para negociación con bancos / planeación.
 - **Esfuerzo**: XL (hooks ya existen, requiere UI + 1000-iter Monte Carlo).
+- **Status (2026-04-27)**: **RESUELTO**. Tres capas de UI:
+  1. **Banda P25-P75 en chart de proyección** (#22, ya implementado): visualiza la incertidumbre del Monte Carlo automático.
+  2. **`SensitivityAnalysisBlock`** (existente): tornado chart de top 8 variables + tabla de percentiles P10/P25/P50/P75/P90.
+  3. **NEW `/finanzas/scenarios`**: página dedicada con sliders interactivos por categoría (0.5×–1.5×) + 5 presets (Reset, Stress moderado, Stress agresivo, Optimista, Recesión textil). Live-update del closing balance + delta vs baseline + alerta si cae bajo el safety floor. Modelo lineal (independiente entre categorías). Link desde el SensitivityAnalysisBlock.
 
 ### 13. Nómina CFDIs no separa aguinaldo / PTU / bonos del run rate mensual
 - **Dónde**: `src/lib/queries/sp13/finanzas/projection.ts:1372-1604` nómina desde CFDIs.
