@@ -140,6 +140,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: no sabemos si el bucket 60-90 paga 50% (hardcode) o 65% (real). Solo lo aprendemos cuando #9 se implementa.
 - **Impacto**: prerequisito para calibrar #9 con confianza.
 - **Esfuerzo**: M (vista/RPC sobre canonical_invoices pagadas con bucket-at-payment).
+- **Status (2026-04-27)**: **RESUELTO**. Nuevo componente `AgingCalibrationBlock` (server) en /finanzas debajo del Sensitivity Block. Tabla 5-bucket: Heurística (95/85/70/50/25) | Real (Quimibond últimos 18m, derivado del cálculo global de #9) | Δ en puntos porcentuales (verde/rojo según signo) | sample size (⚠ si <10). Footer: count de clientes con override personalizado (#9). Sin RPC nueva — reusa `getLearnedAgingCalibration` que ya se computa para #9.
 
 ### 20. Falta `category_breakdown` JSON poblado en snapshots
 - **Dónde**: `supabase/migrations/20260426_projection_snapshots.sql:29` define la columna pero `projection-snapshots.ts` no la llena.

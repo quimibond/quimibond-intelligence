@@ -42,10 +42,17 @@ export {
 export {
   captureProjectionSnapshot,
   getProjectionAccuracy,
+  getProjectionDriftStatus,
   type SnapshotCaptureResult,
   type ProjectionAccuracySummary,
   type AccuracyComparisonRow,
+  type ProjectionDriftStatus,
+  type DriftSeverity,
 } from "./projection-snapshots";
+export {
+  getLearnedAgingCalibration,
+  type LearnedAgingCalibration,
+} from "./learned-params";
 export {
   getCashConversionCycle,
   type CashConversionCycleSnapshot,

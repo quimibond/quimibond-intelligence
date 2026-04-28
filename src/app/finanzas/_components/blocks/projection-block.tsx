@@ -15,6 +15,7 @@ import { CashProjectionChart } from "../cash-projection-chart";
 import { ProjectionHorizonSelector } from "../projection-horizon-selector";
 import { CustomerInflowBreakdownTable } from "./customer-inflow-breakdown-table";
 import { SensitivityAnalysisBlock } from "./sensitivity-analysis-block";
+import { AgingCalibrationBlock } from "./aging-calibration-block";
 import { ModelLearningBadge } from "./model-learning-badge";
 import { ProjectionTimeline } from "./projection-timeline";
 
@@ -90,6 +91,8 @@ export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
       />
 
       <SensitivityAnalysisBlock projection={proj} sens={sens} />
+
+      <AgingCalibrationBlock />
 
       <ModelLearningBadge learning={proj.learning} />
 
