@@ -65,6 +65,11 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: trend se calcula sobre serie cruda incluyendo estacionalidad. Cuando ambos factores se multiplican, se sobre-pondera la estacionalidad reciente.
 - **Impacto**: drift +/- 8% en horizonte 30-90d.
 - **Esfuerzo**: L (deseasonalizar antes de calcular trend).
+- **Status (2026-04-27)**: **RESUELTO**. Doble fix:
+  1. **`learned-params.ts`**: extiende `Aggregate.monthlyAmounts: Map<YYYY-MM, number>`. Computa seasonality global por side (customer/supplier) sobre canonical_invoices 12m. En el cálculo de trend, divide cada mes por su seasonality factor antes del avg recent3m vs prior9m. Trend ahora refleja crecimiento subyacente sin ruido estacional. Fallback al método raw si no hay seasonality (sample insuficiente).
+  2. **`projection.ts`**: aplica deseasonalización al `monthlyAvg` (lookback 90d) — divide por avg de seasonality de los últimos 3 meses ANTES de multiplicar por seasonality del futuro horizonte. Sin esto, `monthlyAvg × seasonalityFactor` también double-cuenta.
+  
+  Cache: learned-counterparty v1→v2-deseasonalized-trend, projection v29→v30.
 
 ### 9. Aging buckets fijos 95/85/70/50/25 — no calibrados por cliente
 - **Dónde**: `src/lib/queries/sp13/finanzas/projection.ts` constants de bucket probabilities.

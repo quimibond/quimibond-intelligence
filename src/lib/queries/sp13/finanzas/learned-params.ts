@@ -390,6 +390,9 @@ async function _getLearnedCounterpartyParamsRaw(): Promise<LearnedCounterpartyPa
     totalRecent3m: number;
     totalPrior9m: number;
     delays: number[];
+    // Audit 2026-04-27 finding #8: amounts por YYYY-MM para deseasonalizar
+    // antes de calcular trend.
+    monthlyAmounts: Map<string, number>;
   };
   const byCanonical = new Map<number, Aggregate>();
 
@@ -412,9 +415,12 @@ async function _getLearnedCounterpartyParamsRaw(): Promise<LearnedCounterpartyPa
         totalRecent3m: 0,
         totalPrior9m: 0,
         delays: [],
+        monthlyAmounts: new Map<string, number>(),
       } as Aggregate);
-    acc.months.add(r.invoice_date.slice(0, 7));
+    const ym = r.invoice_date.slice(0, 7);
+    acc.months.add(ym);
     acc.total12m += amt;
+    acc.monthlyAmounts.set(ym, (acc.monthlyAmounts.get(ym) ?? 0) + amt);
     if (r.invoice_date >= recent3mStart) acc.totalRecent3m += amt;
     else acc.totalPrior9m += amt;
     if (r.payment_date_odoo && r.due_date_resolved) {
@@ -502,18 +508,89 @@ async function _getLearnedCounterpartyParamsRaw(): Promise<LearnedCounterpartyPa
     }
   >();
 
+  // Audit 2026-04-27 finding #8: deseasonalizar antes de calcular trend.
+  // Trend cruda (recent3m/prior9m sobre raw amounts) double-cuenta con la
+  // seasonality que projection.ts aplica después. Computamos seasonality
+  // global por side desde los amounts agregados; luego dividimos cada mes
+  // por su factor antes del avg recent/prior.
+  type MonthAgg = { total: number; count: number };
+  const monthlyBySide = new Map<"customer" | "supplier", Map<number, MonthAgg>>();
+  for (const [, agg] of byCanonical) {
+    const sideMap = monthlyBySide.get(agg.side) ?? new Map<number, MonthAgg>();
+    for (const [ym, amt] of agg.monthlyAmounts) {
+      const m = parseInt(ym.slice(5, 7), 10);
+      const cur = sideMap.get(m) ?? { total: 0, count: 0 };
+      cur.total += amt;
+      cur.count += 1;
+      sideMap.set(m, cur);
+    }
+    monthlyBySide.set(agg.side, sideMap);
+  }
+  const buildSeasonality = (side: "customer" | "supplier") => {
+    const sideMap = monthlyBySide.get(side);
+    if (!sideMap) return null;
+    let totalAvg = 0;
+    let count = 0;
+    for (const [, v] of sideMap) {
+      if (v.count > 0) {
+        totalAvg += v.total / v.count;
+        count++;
+      }
+    }
+    if (count === 0) return null;
+    const overallMonthlyAvg = totalAvg / count;
+    if (overallMonthlyAvg <= 0) return null;
+    const factors: Record<number, number> = {};
+    for (const [m, v] of sideMap) {
+      factors[m] = v.count > 0 ? v.total / v.count / overallMonthlyAvg : 1.0;
+    }
+    return factors;
+  };
+  const customerSeasonality = buildSeasonality("customer");
+  const supplierSeasonality = buildSeasonality("supplier");
+
+  const recentCutoffYm = recent3mStart.slice(0, 7);
+
   for (const [canonicalId, agg] of byCanonical) {
     const bronzeId = canonicalToBronze.get(canonicalId);
     if (bronzeId == null) continue;
     const monthlyAvg12 = agg.total12m / 12;
     const monthlyAvgRecent = agg.totalRecent3m / 3;
     const monthlyAvgPrior = agg.totalPrior9m / 9;
+    // Trend deseasonalizado: divide cada mes por seasonality global del
+    // side antes de promediar recent vs prior. Si no hay seasonality
+    // (sample insuficiente), cae al método raw como fallback.
+    const seasonality =
+      agg.side === "customer" ? customerSeasonality : supplierSeasonality;
     let trend = 1.0;
-    if (monthlyAvgPrior > 0) {
-      trend = Math.max(
-        0.5,
-        Math.min(2.0, monthlyAvgRecent / monthlyAvgPrior)
-      );
+    if (seasonality) {
+      let recentDes = 0;
+      let priorDes = 0;
+      let recentN = 0;
+      let priorN = 0;
+      for (const [ym, amt] of agg.monthlyAmounts) {
+        const m = parseInt(ym.slice(5, 7), 10);
+        const seasFactor = seasonality[m] ?? 1.0;
+        const desAmt = seasFactor > 0 ? amt / seasFactor : amt;
+        if (ym >= recentCutoffYm) {
+          recentDes += desAmt;
+          recentN++;
+        } else {
+          priorDes += desAmt;
+          priorN++;
+        }
+      }
+      if (recentN > 0 && priorN > 0) {
+        const recentAvgDes = recentDes / recentN;
+        const priorAvgDes = priorDes / priorN;
+        if (priorAvgDes > 0) {
+          trend = Math.max(0.5, Math.min(2.0, recentAvgDes / priorAvgDes));
+        }
+      }
+    } else if (monthlyAvgPrior > 0) {
+      // Fallback: trend raw (mantiene comportamiento previo si no hay
+      // seasonality global).
+      trend = Math.max(0.5, Math.min(2.0, monthlyAvgRecent / monthlyAvgPrior));
     }
     byBronzeId.set(bronzeId, {
       side: agg.side,
@@ -537,7 +614,7 @@ async function _getLearnedCounterpartyParamsRaw(): Promise<LearnedCounterpartyPa
 
 export const getLearnedCounterpartyParams = unstable_cache(
   _getLearnedCounterpartyParamsRaw,
-  ["sp13-finanzas-learned-counterparty-v1"],
+  ["sp13-finanzas-learned-counterparty-v2-deseasonalized-trend"],
   { revalidate: 3600, tags: ["finanzas"] }
 );
 

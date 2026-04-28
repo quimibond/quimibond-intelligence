@@ -1243,14 +1243,15 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     // Calibración empírica: usar la tasa REAL de cobro fresh observada
     // en últimos 18m de Quimibond (vs heurística asumida 0.95).
     const customerProb = probabilityForCustomerRecurrence(effectiveActive12m, freshPaymentRate);
-    // Trend factor: si cliente está creciendo (recent3m/prior9m > 1),
-    // ajustar monthlyAvg para reflejar la tendencia.
+    // Trend factor (deseasonalizado en learned-params.ts #8): refleja
+    // crecimiento/decrecimiento subyacente sin el ruido estacional.
     const trendFactor = learnedCp?.trendFactor ?? 1.0;
-    // Seasonality: si cliente histórico vende ~1.4x en Q4 y el horizonte
-    // cae sobre Q4, ajustar al alza. Calculamos como avg de las
-    // seasonalityByMonth para los meses en el horizonte (cap [0.5, 2.0]).
+    // Seasonality del horizonte futuro: si cliente histórico vende ~1.4x
+    // en Q4 y el horizonte cae sobre Q4, ajustar al alza. Calculamos como
+    // avg de las seasonalityByMonth para los meses en el horizonte (cap [0.5, 2.0]).
     const sat = learnedSat;
     let seasonalityFactor = 1.0;
+    let lookbackSeasonality = 1.0;
     if (sat?.seasonalityByMonth && sat.seasonalityByMonth.length === 13) {
       const cursor = new Date(today);
       const factors: number[] = [];
@@ -1263,8 +1264,24 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         const avg = factors.reduce((s, f) => s + f, 0) / factors.length;
         seasonalityFactor = Math.max(0.5, Math.min(2.0, avg));
       }
+      // Audit 2026-04-27 finding #8: monthlyAvg viene de los últimos 90d
+      // de canonical_invoices (raw, con seasonal bias de esos meses).
+      // Para que × seasonalityFactor del horizonte futuro NO double-count,
+      // dividimos primero por la seasonality promedio del lookback.
+      const lookbackFactors: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const m = ((today.getMonth() - i + 12) % 12) + 1;
+        lookbackFactors.push(sat.seasonalityByMonth[m] ?? 1.0);
+      }
+      if (lookbackFactors.length > 0) {
+        const avg =
+          lookbackFactors.reduce((s, f) => s + f, 0) / lookbackFactors.length;
+        lookbackSeasonality = Math.max(0.5, Math.min(2.0, avg));
+      }
     }
-    const monthlyAvgAdjusted = monthlyAvg * trendFactor * seasonalityFactor;
+    // baseline = monthlyAvg deseasonalizado (revenue subyacente sin ruido del trimestre)
+    const baselineMonthly = monthlyAvg / lookbackSeasonality;
+    const monthlyAvgAdjusted = baselineMonthly * trendFactor * seasonalityFactor;
     if (customerProb <= 0) {
       // One-off customer (1 mes activo): NO proyectar como recurrente.
       // Su AR ya facturado sigue en bucket 1; aquí solo descartamos
@@ -1568,6 +1585,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     const supplierTrend = learnedSp?.trendFactor ?? 1.0;
     // Seasonality del proveedor sobre meses del horizonte
     let supplierSeasonality = 1.0;
+    let supplierLookbackSeas = 1.0;
     if (learnedSatSp?.seasonalityByMonth?.length === 13) {
       const cursor = new Date(today);
       const factors: number[] = [];
@@ -1580,9 +1598,22 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
         const avg = factors.reduce((s, f) => s + f, 0) / factors.length;
         supplierSeasonality = Math.max(0.5, Math.min(2.0, avg));
       }
+      // Audit 2026-04-27 finding #8: deseasonalizar el monthlyAvg del lookback
+      // (90d) antes de multiplicar por seasonality del futuro horizonte.
+      const lookbackFactors: number[] = [];
+      for (let i = 0; i < 3; i++) {
+        const m = ((today.getMonth() - i + 12) % 12) + 1;
+        lookbackFactors.push(learnedSatSp.seasonalityByMonth[m] ?? 1.0);
+      }
+      if (lookbackFactors.length > 0) {
+        const avg =
+          lookbackFactors.reduce((s, f) => s + f, 0) / lookbackFactors.length;
+        supplierLookbackSeas = Math.max(0.5, Math.min(2.0, avg));
+      }
     }
+    const supplierBaseline = monthlyAvg / supplierLookbackSeas;
     const expectedInHorizon =
-      monthlyAvg * supplierTrend * supplierSeasonality * horizonProportion;
+      supplierBaseline * supplierTrend * supplierSeasonality * horizonProportion;
     const apCommitted = apCommittedBySupplier.get(bronzeId) ?? 0;
     const residualNominal = Math.max(0, expectedInHorizon - apCommitted);
     if (residualNominal <= 0) continue;
@@ -2094,7 +2125,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v30-null-safe-record-cache"],
+  ["sp13-finanzas-cash-projection-v31-deseasonalized-trend"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
