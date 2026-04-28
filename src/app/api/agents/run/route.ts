@@ -11,10 +11,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServiceClient } from "@/lib/supabase-server";
 import { callClaudeJSON, logTokenUsage } from "@/lib/claude";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
   try {
     const body = await request.json();
     const { agent_slug, run_all } = body as { agent_slug?: string; run_all?: boolean };

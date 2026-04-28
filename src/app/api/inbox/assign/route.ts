@@ -13,8 +13,12 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { getServiceClient } from "@/lib/supabase-server";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export async function POST(req: NextRequest) {
+  const authError = validatePipelineAuth(req);
+  if (authError) return authError;
+
   const body = await req.json().catch(() => ({} as Record<string, unknown>));
   const { issue_id, assignee_canonical_contact_id } = body as {
     issue_id?: string;

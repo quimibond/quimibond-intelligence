@@ -19,17 +19,22 @@
  * NEVER deletes data. NEVER modifies schema. NEVER touches code.
  * Only fills in missing links and connections.
  */
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@supabase/supabase-js";
 import { getServiceClient } from "@/lib/supabase-server";
+import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 120;
 
-export async function GET() {
-  return POST();
+export async function GET(request: NextRequest) {
+  return POST(request);
 }
 
-export async function POST() {  const supabase = getServiceClient();
+export async function POST(request: NextRequest) {
+  const authError = validatePipelineAuth(request);
+  if (authError) return authError;
+
+  const supabase = getServiceClient();
 
   const fixes: { action: string; count: number }[] = [];
 
