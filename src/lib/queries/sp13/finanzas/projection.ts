@@ -1141,12 +1141,42 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // Run rate mensual por cliente: SUM(invoiced last 90d con IVA) / 3.
   // Track también # distinct months para clasificar recurrencia y aplicar
   // probabilidad por tier (recurrente fuerte vs débil vs one-off).
+  //
+  // Audit 2026-04-27 finding #7: cap cada invoice a 2× la mediana del
+  // cliente para evitar que outliers (cierres de año, pedidos atípicos,
+  // facturas grandes one-off) inflen el run rate. Preserves la señal
+  // central — solo recorta el extremo superior. Cap solo aplica si el
+  // cliente tiene >=4 facturas en el window; con menos, no hay base
+  // estadística para identificar outlier.
+  const invoicesByCustomer = new Map<number, number[]>();
+  for (const r of customerInvRows) {
+    const cid = r.receptor_canonical_company_id;
+    if (cid == null) continue;
+    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    if (amt <= 0) continue;
+    const arr = invoicesByCustomer.get(cid) ?? [];
+    arr.push(amt);
+    invoicesByCustomer.set(cid, arr);
+  }
+  const median = (arr: number[]): number => {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  };
   const monthlyRunRateByCanonical = new Map<number, number>();
   const customerActiveMonths = new Map<number, Set<string>>();
   for (const r of customerInvRows) {
     const cid = r.receptor_canonical_company_id;
     if (cid == null) continue;
-    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    let amt = Number(r.amount_total_mxn_resolved) || 0;
+    const arr = invoicesByCustomer.get(cid) ?? [];
+    if (arr.length >= 4) {
+      const med = median(arr);
+      if (med > 0) amt = Math.min(amt, med * 2);
+    }
     monthlyRunRateByCanonical.set(
       cid,
       (monthlyRunRateByCanonical.get(cid) ?? 0) + amt
@@ -1453,12 +1483,28 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // Track también # distinct months para clasificar recurrencia y aplicar
   // probabilidad por tier (igual que clientes — evita inflar el outflow
   // con compras grandes one-off como ICOMATEX $12M en marzo).
+  // Audit #7: misma winsorización per-proveedor que customers (cap 2× median).
+  const supplierInvoicesByCanonical = new Map<number, number[]>();
+  for (const r of supplierInvRows) {
+    const cid = r.emisor_canonical_company_id;
+    if (cid == null) continue;
+    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    if (amt <= 0) continue;
+    const arr = supplierInvoicesByCanonical.get(cid) ?? [];
+    arr.push(amt);
+    supplierInvoicesByCanonical.set(cid, arr);
+  }
   const monthlySupplierRunRate = new Map<number, number>();
   const supplierActiveMonths = new Map<number, Set<string>>();
   for (const r of supplierInvRows) {
     const cid = r.emisor_canonical_company_id;
     if (cid == null) continue;
-    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    let amt = Number(r.amount_total_mxn_resolved) || 0;
+    const arr = supplierInvoicesByCanonical.get(cid) ?? [];
+    if (arr.length >= 4) {
+      const med = median(arr);
+      if (med > 0) amt = Math.min(amt, med * 2);
+    }
     monthlySupplierRunRate.set(
       cid,
       (monthlySupplierRunRate.get(cid) ?? 0) + amt
@@ -1989,7 +2035,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v26-aging-per-customer"],
+  ["sp13-finanzas-cash-projection-v27-winsorize-runrate"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

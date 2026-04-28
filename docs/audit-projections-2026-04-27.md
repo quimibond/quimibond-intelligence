@@ -45,6 +45,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: SO se incluye con flag binario (cumple/no cumple criterio). No hay weighting por etapa de pipeline (cotización 20%, OC 60%, en producción 90%).
 - **Impacto**: sobrestima inflows ~15-20% en horizonte 30-90d cuando hay SO largos en etapas tempranas.
 - **Esfuerzo**: M (mapear `state` Odoo a probabilidad + multiplicar).
+- **Status (2026-04-27)**: **YA RESUELTO**. `projection.ts:942-947` define `probabilityForUndelivered(ageDays)` con tiering por edad/entrega: delivered=0.95, undelivered <30d=0.85, 30-90d=0.70, 90-180d=0.45, >180d=skip. Es weighting por etapa usando delivery + age como proxies de "cuán cerca está del revenue". Validación: 691 SOs en producción 2026, todos en state='sale' (Quimibond no usa el flow draft/sent/quotation, así que no hay etapas tempranas que considerar). El audit estaba desactualizado.
 
 ### 6. Recurring v2 nómina mezcla bimestral con mensual
 - **Dónde**: `supabase/migrations/20260425_cash_projection_recurring_v2_taxes.sql` `get_cash_projection_recurring`. Categoriza 501.06.0020-23 como "cuotas patronales" mensual, pero SAR e INFONAVIT son bimestrales en realidad (febrero, abril, junio, …).
@@ -57,6 +58,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: el run rate se calcula sobre 12 meses con factor estacional aplicado luego, pero no hay cap superior. Diciembre 2025 (atípico por cierre) infla enero 2026.
 - **Impacto**: 2-3 outliers afectan ~5-10% del run rate proyectado.
 - **Esfuerzo**: M (winsorize p95 antes de promediar).
+- **Status (2026-04-27)**: **RESUELTO**. Winsorización per-cliente y per-proveedor: cada invoice se cap al `min(amount, 2 × median(invoices_del_cliente))`. Solo aplica cuando el cliente tiene ≥4 facturas en el window de 90d (con menos no hay base estadística). Preserva la señal central, solo recorta el extremo superior. Cache v26 → v27.
 
 ### 8. Trend factor doble-cuenta con seasonality
 - **Dónde**: `src/lib/queries/sp13/finanzas/learned-params.ts` (trend) y `projection.ts` (seasonality).
