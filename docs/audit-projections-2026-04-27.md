@@ -133,6 +133,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: si el modelo se degrada (MAPE sube de 12% a 30%), nadie se entera.
 - **Impacto**: pérdida de loop de auto-aprendizaje. Justifica el effort de #14 backtesting.
 - **Esfuerzo**: M (cron diario que compute MAPE últimas 8 semanas + envío Slack/email si > umbral).
+- **Status (2026-04-27)**: **RESUELTO**. `getProjectionDriftStatus(weeksBack=8)` en `projection-snapshots.ts` clasifica MAPE/bias en severity (ok/low/medium/high/critical). Umbrales: MAPE >25% high, >40% critical; bias |x|>30% high, >50% critical. Min sample 4 semanas. Endpoint `/api/finanzas/projection-drift-check` cron diario (45 6 * * *), inserta `agent_insight` con severity=high/critical (skip low/medium para no inundar). Idempotente — no crea duplicado si ya existe insight con misma severity para hoy. Routea al agente "finance" (slug=2). Logueado en `pipeline_logs.phase=projection_drift_check`.
 
 ### 19. Falta backtest dashboard de aging buckets reales vs esperados
 - **Dónde**: ninguna pieza la calcula hoy. Relacionado a #9.
@@ -145,6 +146,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: post-hoc analysis "¿qué fue lo que falló — AR, AP, run rate, recurring?" imposible.
 - **Impacto**: limita root cause analysis cuando MAPE sube.
 - **Esfuerzo**: M (extender el snapshot writer para volcar componentes).
+- **Status (2026-04-27)**: **YA RESUELTO**. `projection-snapshots.ts:108` escribe `category_breakdown: w.byCategory` en el upsert. Validación en producción: `SELECT category_breakdown FROM projection_snapshots ORDER BY snapshot_date DESC LIMIT 1` retorna JSON con desglose por categoría (renta, nómina, ar_cobranza, ap_proveedores, runrate_clientes, ventas_confirmadas, etc). El audit estaba desactualizado.
 
 ### 21. Sin telemetría de latencia de cobro (días issued → cobrado)
 - **Dónde**: `learned-params.ts` calcula medianas pero no expone histograma para UI/alertas.

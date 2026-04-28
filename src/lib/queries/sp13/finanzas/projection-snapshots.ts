@@ -350,3 +350,106 @@ export const getProjectionAccuracy = (weeksBack = 12) =>
     ["sp13-finanzas-projection-accuracy-v1", weeksBack.toString()],
     { revalidate: 3600, tags: ["finanzas"] }
   )();
+
+/**
+ * Audit 2026-04-27 finding #18: drift detection.
+ *
+ * Compara MAPE rolling de últimas N semanas contra umbrales. Devuelve
+ * severity para que el caller decida si crear insight (cron drift-check).
+ *
+ * Umbrales basados en lo razonable para cash projection en SMB:
+ *   < 15%  → ok (modelo bien calibrado)
+ *   15-25% → warning (degradación leve, vigilar)
+ *   25-40% → high (degradación importante, recalibrar)
+ *   > 40%  → critical (modelo no confiable, intervenir)
+ *
+ * Bias > 30% (signed) → alerta separada: el modelo está sistemáticamente
+ * optimista o pesimista, no solo ruidoso.
+ *
+ * Min sample: 4 semanas. Con menos no hay base estadística.
+ */
+export type DriftSeverity = "ok" | "low" | "medium" | "high" | "critical";
+
+export interface ProjectionDriftStatus {
+  weeksCompared: number;
+  mapeInflow: number;
+  mapeOutflow: number;
+  biasInflow: number;
+  biasOutflow: number;
+  inflowSeverity: DriftSeverity;
+  outflowSeverity: DriftSeverity;
+  /** signed: inflow|outflow systematically off in one direction */
+  biasInflowSeverity: DriftSeverity;
+  biasOutflowSeverity: DriftSeverity;
+  /** El más severo de los 4 — drives la severidad del insight */
+  overallSeverity: DriftSeverity;
+  asOfDate: string;
+}
+
+const SEVERITY_RANK: Record<DriftSeverity, number> = {
+  ok: 0,
+  low: 1,
+  medium: 2,
+  high: 3,
+  critical: 4,
+};
+
+const mapeSeverity = (mape: number): DriftSeverity => {
+  if (mape > 40) return "critical";
+  if (mape > 25) return "high";
+  if (mape > 15) return "medium";
+  if (mape > 8) return "low";
+  return "ok";
+};
+
+const biasSeverity = (bias: number): DriftSeverity => {
+  const abs = Math.abs(bias);
+  if (abs > 50) return "critical";
+  if (abs > 30) return "high";
+  if (abs > 15) return "medium";
+  return "ok";
+};
+
+export async function getProjectionDriftStatus(
+  weeksBack = 8
+): Promise<ProjectionDriftStatus> {
+  const summary = await _getProjectionAccuracyRaw(weeksBack);
+  if (summary.weeksCompared < 4) {
+    return {
+      weeksCompared: summary.weeksCompared,
+      mapeInflow: summary.mapeInflow,
+      mapeOutflow: summary.mapeOutflow,
+      biasInflow: summary.biasInflow,
+      biasOutflow: summary.biasOutflow,
+      inflowSeverity: "ok",
+      outflowSeverity: "ok",
+      biasInflowSeverity: "ok",
+      biasOutflowSeverity: "ok",
+      overallSeverity: "ok",
+      asOfDate: summary.asOfDate,
+    };
+  }
+  const inflowSev = mapeSeverity(summary.mapeInflow);
+  const outflowSev = mapeSeverity(summary.mapeOutflow);
+  const biasInSev = biasSeverity(summary.biasInflow);
+  const biasOutSev = biasSeverity(summary.biasOutflow);
+  const overall = (
+    [inflowSev, outflowSev, biasInSev, biasOutSev] as DriftSeverity[]
+  ).reduce<DriftSeverity>(
+    (max, s) => (SEVERITY_RANK[s] > SEVERITY_RANK[max] ? s : max),
+    "ok"
+  );
+  return {
+    weeksCompared: summary.weeksCompared,
+    mapeInflow: summary.mapeInflow,
+    mapeOutflow: summary.mapeOutflow,
+    biasInflow: summary.biasInflow,
+    biasOutflow: summary.biasOutflow,
+    inflowSeverity: inflowSev,
+    outflowSeverity: outflowSev,
+    biasInflowSeverity: biasInSev,
+    biasOutflowSeverity: biasOutSev,
+    overallSeverity: overall,
+    asOfDate: summary.asOfDate,
+  };
+}
