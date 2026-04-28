@@ -53,14 +53,67 @@ describe("/inbox page", () => {
     expect(listInboxMock).toHaveBeenCalledWith(expect.objectContaining({ severity: undefined }));
   });
 
-  it("filters results by q substring on description (client-side)", async () => {
+  it("forwards q to listInbox (filter applied SQL-side post-a0824c2)", async () => {
+    // Pre-a0824c2 the page filtered JS-side; that loop was removed and the
+    // `q` now goes down to the SQL ilike inside listInbox(). The page no
+    // longer filters — it just trusts the rows it gets back.
     listInboxMock.mockResolvedValue([
-      { ...makeRow("a", "critical"), description: "ACME vencida" },
       { ...makeRow("b", "high"), description: "Contitech sin UUID" },
     ]);
-    const ui = await InboxPage({ searchParams: Promise.resolve({ q: "contitech" }) });
+    const ui = await InboxPage({
+      searchParams: Promise.resolve({ q: "contitech" }),
+    });
     render(ui);
+    expect(listInboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({ q: "contitech" }),
+    );
     expect(screen.getByText(/Contitech/)).toBeInTheDocument();
-    expect(screen.queryByText(/ACME/)).toBeNull();
+  });
+});
+
+describe("/inbox page — zod schema for q (commit a0824c2: trim + max 100 + catch)", () => {
+  it("trims surrounding whitespace from q before reaching listInbox", async () => {
+    listInboxMock.mockResolvedValue([]);
+    await InboxPage({
+      searchParams: Promise.resolve({ q: "   shawmut   " }),
+    });
+    expect(listInboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({ q: "shawmut" }),
+    );
+  });
+
+  it("rejects q over 100 chars via .catch('') so listInbox receives empty string", async () => {
+    listInboxMock.mockResolvedValue([]);
+    const long = "x".repeat(101);
+    await InboxPage({ searchParams: Promise.resolve({ q: long }) });
+    expect(listInboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({ q: "" }),
+    );
+  });
+
+  it("accepts q at exactly 100 chars (boundary)", async () => {
+    listInboxMock.mockResolvedValue([]);
+    const exactly100 = "x".repeat(100);
+    await InboxPage({ searchParams: Promise.resolve({ q: exactly100 }) });
+    expect(listInboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({ q: exactly100 }),
+    );
+  });
+
+  it("clamps limit to [10, 200] range via zod (catch defaults to 50 on invalid)", async () => {
+    listInboxMock.mockResolvedValue([]);
+    // limit=999 is above max(200) → catch → fallback to default 50
+    await InboxPage({ searchParams: Promise.resolve({ limit: "999" }) });
+    expect(listInboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 50 }),
+    );
+  });
+
+  it("clamps non-numeric limit via zod catch (fallback 50)", async () => {
+    listInboxMock.mockResolvedValue([]);
+    await InboxPage({ searchParams: Promise.resolve({ limit: "abc" }) });
+    expect(listInboxMock).toHaveBeenCalledWith(
+      expect.objectContaining({ limit: 50 }),
+    );
   });
 });
