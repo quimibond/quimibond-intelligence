@@ -54,20 +54,13 @@ export default async function InboxPage({
 }
 
 async function buildInboxContent(params: Params) {
-  const rows = await listInbox({
+  const filtered = await listInbox({
     severity: params.severity,
     canonicalEntityType: params.entity,
     assigneeCanonicalContactId: params.assignee,
     limit: params.limit,
+    q: params.q,
   });
-
-  // Client-side q filter (TODO sp6-01.1: push down to DB when helper supports it)
-  const q = params.q.toLowerCase();
-  const filtered = q
-    ? rows.filter((r) =>
-        (r.description ?? "").toLowerCase().includes(q)
-      )
-    : rows;
 
   const counts = {
     critical: filtered.filter((r) => r.severity === "critical").length,

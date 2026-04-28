@@ -70,6 +70,7 @@ export interface ListInboxOptions {
     | "contact"
     | "product";
   assigneeCanonicalContactId?: number;
+  q?: string;
 }
 
 /**
@@ -104,6 +105,12 @@ export async function listInbox(
       "assignee_canonical_contact_id",
       opts.assigneeCanonicalContactId
     );
+  }
+  // Free-text filter on description. Escape % and _ in user input so Postgres
+  // treats them as literals (zod already trims and caps to 100 chars upstream).
+  if (opts.q && opts.q.trim()) {
+    const safe = opts.q.trim().replace(/[%_\\]/g, (c) => `\\${c}`);
+    q = q.ilike("description", `%${safe}%`);
   }
   q = q.limit(fetchLimit);
 
