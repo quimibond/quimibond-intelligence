@@ -166,6 +166,6 @@ async function _getDriftingCompaniesUncached(
 
 export const getDriftingCompanies = unstable_cache(
   _getDriftingCompaniesUncached,
-  ["sp13-empresas-drifting"],
+  ["sp13-empresas-drifting-v2-mdm-cleanup"],
   { revalidate: 300, tags: ["companies", "finance"] },
 );

@@ -72,6 +72,6 @@ async function _getTopLtvCustomersUncached(
 
 export const getTopLtvCustomers = unstable_cache(
   _getTopLtvCustomersUncached,
-  ["sp13-empresas-top-ltv"],
+  ["sp13-empresas-top-ltv-v2-mdm-cleanup"],
   { revalidate: 300, tags: ["companies"] },
 );

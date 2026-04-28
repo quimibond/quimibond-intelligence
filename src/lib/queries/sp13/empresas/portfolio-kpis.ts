@@ -76,6 +76,6 @@ async function _getPortfolioKpisUncached(): Promise<SP13PortfolioKpis> {
 
 export const getPortfolioKpis = unstable_cache(
   _getPortfolioKpisUncached,
-  ["sp13-empresas-portfolio-kpis"],
+  ["sp13-empresas-portfolio-kpis-v2-mdm-cleanup"],
   { revalidate: 300, tags: ["companies"] },
 );

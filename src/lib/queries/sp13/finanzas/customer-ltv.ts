@@ -219,6 +219,6 @@ async function _getCustomerLtvRaw(): Promise<CustomerLtvSummary> {
 
 export const getCustomerLtv = unstable_cache(
   _getCustomerLtvRaw,
-  ["sp13-finanzas-customer-ltv-v1"],
+  ["sp13-finanzas-customer-ltv-v2-mdm-cleanup"],
   { revalidate: 3600, tags: ["finanzas"] }
 );

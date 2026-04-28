@@ -196,6 +196,6 @@ async function _getAtRiskOverviewRaw(
 
 export const getAtRiskOverview = unstable_cache(
   _getAtRiskOverviewRaw,
-  ["sp13-empresas-at-risk-overview"],
+  ["sp13-empresas-at-risk-overview-v2-mdm-cleanup"],
   { revalidate: 300, tags: ["companies"] },
 );
