@@ -161,6 +161,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: usuario ve solo línea expected. No sabe si "$2M el viernes" tiene banda ±$500k o ±$50k.
 - **Impacto**: decisiones bajo certeza falsa.
 - **Esfuerzo**: M (banda ya disponible en `bestCase`/`worstCase`, falta render).
+- **Status (2026-04-27)**: **RESUELTO**. `projection-block.tsx` lifteó la llamada a `computeSensitivity` (antes 2× — se eliminó la duplicación). Pasa `monteCarlo` al chart y al SensitivityAnalysisBlock. Chart renderea banda P25-P75 escalada linealmente: 0 ancho hoy, full ancho al closing (refleja que la incertidumbre crece con el horizonte). Líneas P25/P75 punteadas + área sombreada. Tooltip incluye P25 y P75 además del expected. Si la banda es despreciable (<0.5% del baseline), no se renderea para evitar ruido visual.
 
 ### 23. Sin indicador visual cuando opening balance es stale >48h
 - **Dónde**: header del chart de proyección.

@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { cn } from "@/lib/utils";
 import {
+  computeSensitivity,
   getCashProjection,
   type CashFlowCategoryTotal,
 } from "@/lib/queries/sp13/finanzas";
@@ -20,6 +21,11 @@ import { ProjectionTimeline } from "./projection-timeline";
 /* ── F5 Projection ───────────────────────────────────────────────────── */
 export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
   const proj = await getCashProjection(horizon);
+  // Audit 2026-04-27 finding #22: Monte Carlo se computa una vez aquí y
+  // se pasa al chart (banda P25/P75 en tooltip + área visual) y al
+  // SensitivityAnalysisBlock (tornado + percentiles del closing). Antes
+  // se computaba 2× — una por cada componente.
+  const sens = computeSensitivity(proj, 500);
   const belowFloor = proj.minBalance < proj.safetyFloor;
 
   return (
@@ -66,7 +72,7 @@ export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
         </div>
       )}
 
-      <CashProjectionChart projection={proj} />
+      <CashProjectionChart projection={proj} monteCarlo={sens.monteCarlo} />
 
       <ProjectionTimeline
         events={proj.events}
@@ -83,7 +89,7 @@ export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
         horizonDays={proj.horizonDays}
       />
 
-      <SensitivityAnalysisBlock projection={proj} />
+      <SensitivityAnalysisBlock projection={proj} sens={sens} />
 
       <ModelLearningBadge learning={proj.learning} />
 

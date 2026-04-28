@@ -1,6 +1,5 @@
 import { formatCurrencyMXN } from "@/lib/formatters";
 import {
-  computeSensitivity,
   type CashProjection,
   type SensitivitySnapshot,
 } from "@/lib/queries/sp13/finanzas";
@@ -18,10 +17,11 @@ import {
  */
 export function SensitivityAnalysisBlock({
   projection,
+  sens,
 }: {
   projection: CashProjection;
+  sens: SensitivitySnapshot;
 }) {
-  const sens: SensitivitySnapshot = computeSensitivity(projection, 500);
   const fmt = (n: number) => formatCurrencyMXN(n, { compact: true });
   const fmtFull = (n: number) => formatCurrencyMXN(n);
 
