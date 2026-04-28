@@ -4,7 +4,6 @@ import { getServiceClient } from "@/lib/supabase-server";
 
 /**
  * Analytics queries — wrappers tipados sobre modelos Silver/Gold SP5:
- * - `rfm_segments` (matview)         — segmentación RFM 8-buckets + priority score
  * - `collection_effectiveness_index` — CEI cohort mensual + health_status
  * - `revenue_concentration` (view)   — rank Pareto + tripwires top 5/10
  * - `stockout_queue` (view)          — cola de productos en riesgo de faltante
@@ -13,6 +12,7 @@ import { getServiceClient } from "@/lib/supabase-server";
  *
  * Banned (dropped SP1) — reads removed in Task 7:
  * - supplier_price_index   → getSupplierPriceAlerts() returns [] (TODO SP6: canonical_order_lines)
+ * - rfm_segments           → getRfmSegments / getRfmSegmentSummary removed (no consumers; churn proxy via gold_company_360)
  *
  * Barrel re-exports for domain files:
  */
@@ -24,129 +24,6 @@ export * from "./products";
 
 // Note: finance.ts and products.ts are exported separately by their pages;
 // they are NOT re-exported here to avoid circular conflicts on large bundlers.
-
-// ──────────────────────────────────────────────────────────────────────────
-// RFM Segments
-// ──────────────────────────────────────────────────────────────────────────
-export type RfmSegment =
-  | "CHAMPIONS"
-  | "LOYAL"
-  | "AT_RISK"
-  | "NEW"
-  | "NEED_ATTENTION"
-  | "HIBERNATING"
-  | "LOST"
-  | "OCCASIONAL";
-
-export interface RfmSegmentRow {
-  company_id: number;
-  company_name: string;
-  tier: string | null;
-  segment: RfmSegment;
-  recency_days: number;
-  frequency: number;
-  monetary_2y: number;
-  monetary_12m: number;
-  monetary_90d: number;
-  avg_ticket: number;
-  outstanding: number;
-  max_days_overdue: number | null;
-  last_purchase: string | null;
-  first_purchase: string | null;
-  r_score: number;
-  f_score: number;
-  m_score: number;
-  rfm_code: number;
-  contact_priority_score: number;
-}
-
-async function _getRfmSegmentsRaw(
-  segment?: RfmSegment,
-  limit = 200
-): Promise<RfmSegmentRow[]> {
-  const sb = getServiceClient();
-  let q = sb
-    .from("rfm_segments") // SP5-EXCEPTION: §12 banned MV — RFM segmentation read; no canonical replacement in SP5 scope. TODO SP6: replace with gold_rfm_segments or canonical_company_metrics.
-    .select(
-      "company_id, company_name, tier, segment, recency_days, frequency, monetary_2y, monetary_12m, monetary_90d, avg_ticket, outstanding, max_days_overdue, last_purchase, first_purchase, r_score, f_score, m_score, rfm_code, contact_priority_score"
-    )
-    .order("contact_priority_score", { ascending: false })
-    .limit(limit);
-  if (segment) q = q.eq("segment", segment);
-  const { data } = await q;
-  return ((data ?? []) as Array<Partial<RfmSegmentRow>>).map((r) => ({
-    company_id: Number(r.company_id) || 0,
-    company_name: r.company_name ?? "—",
-    tier: r.tier ?? null,
-    segment: (r.segment as RfmSegment) ?? "OCCASIONAL",
-    recency_days: Number(r.recency_days) || 0,
-    frequency: Number(r.frequency) || 0,
-    monetary_2y: Number(r.monetary_2y) || 0,
-    monetary_12m: Number(r.monetary_12m) || 0,
-    monetary_90d: Number(r.monetary_90d) || 0,
-    avg_ticket: Number(r.avg_ticket) || 0,
-    outstanding: Number(r.outstanding) || 0,
-    max_days_overdue: r.max_days_overdue != null ? Number(r.max_days_overdue) : null,
-    last_purchase: r.last_purchase ?? null,
-    first_purchase: r.first_purchase ?? null,
-    r_score: Number(r.r_score) || 0,
-    f_score: Number(r.f_score) || 0,
-    m_score: Number(r.m_score) || 0,
-    rfm_code: Number(r.rfm_code) || 0,
-    contact_priority_score: Number(r.contact_priority_score) || 0,
-  }));
-}
-
-// Cache RFM full-table fetch for 60s — rfm_segments is a MV refreshed by pg_cron,
-// so 60s staleness is acceptable and eliminates 4 identical round-trips per cold render
-// of /companies (CompaniesResumen + ReactivacionSection each call this).
-const _getRfmSegmentsCached = unstable_cache(
-  _getRfmSegmentsRaw,
-  ["rfm_segments"],
-  { revalidate: 60, tags: ["rfm_segments"] }
-);
-
-export async function getRfmSegments(
-  segment?: RfmSegment,
-  limit = 200
-): Promise<RfmSegmentRow[]> {
-  return _getRfmSegmentsCached(segment, limit);
-}
-
-export interface RfmSegmentSummary {
-  segment: RfmSegment;
-  customers: number;
-  revenue_12m: number;
-  outstanding: number;
-  avg_priority: number;
-}
-
-export async function getRfmSegmentSummary(): Promise<RfmSegmentSummary[]> {
-  const rows = await getRfmSegments(undefined, 1000);
-  const map = new Map<RfmSegment, RfmSegmentSummary>();
-  for (const r of rows) {
-    const cur =
-      map.get(r.segment) ??
-      ({
-        segment: r.segment,
-        customers: 0,
-        revenue_12m: 0,
-        outstanding: 0,
-        avg_priority: 0,
-      } satisfies RfmSegmentSummary);
-    cur.customers += 1;
-    cur.revenue_12m += r.monetary_12m;
-    cur.outstanding += r.outstanding;
-    cur.avg_priority += r.contact_priority_score;
-    map.set(r.segment, cur);
-  }
-  return [...map.values()]
-    .map((s) => ({
-      ...s,
-      avg_priority: s.customers > 0 ? Math.round(s.avg_priority / s.customers) : 0,
-    }))
-    .sort((a, b) => b.revenue_12m - a.revenue_12m);
-}
 
 // ──────────────────────────────────────────────────────────────────────────
 // Collection Effectiveness Index

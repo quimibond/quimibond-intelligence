@@ -18,7 +18,6 @@
  *   - odoo_users        (Bronze) — action_item assignee resolution; no canonical_users yet → SP5-EXCEPTION
  *   - company_profile   (§12 banned MV) — multiple domains; replaced by gold_company_360 below
  *   - customer_ltv_health (§12 banned MV) — comercial; replaced by gold_company_360 below
- *   - rfm_segments      (§12 banned MV) — comercial; dropped, no canonical replacement → SP5-EXCEPTION
  *   - supplier_product_matrix (§12 banned MV) — comercial + compras + riesgo_dir; dropped → SP5-EXCEPTION
  *   - supplier_price_index (§12 banned MV) — compras; dropped → SP5-EXCEPTION
  *   - supplier_concentration_herfindahl (§12 banned MV) — riesgo_dir; dropped → SP5-EXCEPTION
@@ -1381,7 +1380,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
     // NEW: 7 DIRECTORS
     // ═══════════════════════════════════════════════════════════════
     case "comercial": {
-      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue, atRiskContacts, ltvChurning, rfmAtRisk] = await Promise.all([
+      const [reorderRisk, top, margins, concentration, recentOrders, crmLeads, clientThreads, clientOverdue, atRiskContacts, ltvChurning] = await Promise.all([
         sb.from("client_reorder_predictions").select("company_name, tier, avg_cycle_days, days_since_last, days_overdue_reorder, avg_order_value, reorder_status, salesperson_name, top_product_ref, total_revenue").in("reorder_status", ["overdue", "at_risk", "critical", "lost"]).in("tier", ["strategic", "important"]).order("total_revenue", { ascending: false }).limit(15),
         sb.from("gold_company_360").select("canonical_company_id, display_name, total_revenue_mxn, revenue_90d_mxn, overdue_mxn, last_sale_date, tier, trend_pct").gt("total_revenue_mxn", 0).order("total_revenue_mxn", { ascending: false }).limit(15), // SP5: replaced company_profile
         sb.from("product_margin_analysis").select("product_ref, company_name, avg_order_price, avg_invoice_price, price_delta_pct, total_order_value, gross_margin_pct").not("price_delta_pct", "is", null).not("gross_margin_pct", "is", null).order("total_order_value", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — no canonical margin view yet; TODO SP6
@@ -1393,10 +1392,8 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         Promise.resolve({ data: [] }), // SP5 T29: health_scores dropped — use gold_company_360 overdue_mxn as proxy
         // SP5: customer_ltv_health (§12 banned MV) replaced by gold_company_360 churn proxy
         sb.from("gold_company_360").select("display_name, tier, total_revenue_mxn, revenue_90d_mxn, overdue_mxn, last_sale_date, trend_pct").in("tier", ["strategic", "important"]).order("revenue_90d_mxn", { ascending: true }).limit(15), // SP5: replaced customer_ltv_health; no churn_risk_score equivalent — use revenue_90d trend as proxy
-        // SP5-EXCEPTION: rfm_segments (§12 banned MV) — dropped, no canonical replacement. TODO SP6: build canonical RFM from canonical_sale_orders
-        sb.from("rfm_segments").select("company_name, tier, segment, recency_days, frequency, monetary_12m, avg_ticket, last_purchase, contact_priority_score").in("segment", ["cant_lose", "at_risk", "hibernating", "need_attention"]).gt("monetary_12m", 200000).order("contact_priority_score", { ascending: false }).limit(15), // SP5-EXCEPTION: §12 banned MV — TODO SP6
       ]);
-      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## LTV & CHURN RISK (gold_company_360: clientes estrategicos/important con revenue_90d bajo)\n${safeJSON(ltvChurning.data)}\n## RFM SEGMENTACION (SP5-EXCEPTION: §12 banned MV)\n${safeJSON(rfmAtRisk.data)}\n## CLIENTES CON CARTERA VENCIDA (gold_company_360 overdue_mxn)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas, SP5-EXCEPTION Bronze)\n${safeJSON(crmLeads.data)}\n## Top clientes (gold_company_360: tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes (canonical_sale_orders)\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente (SP5-EXCEPTION §12 MV)\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto (SP5-EXCEPTION §12 MV)\n${safeJSON(concentration.data)}`;
+      return `${profileSection}## REORDEN VENCIDO: clientes que deberian haber comprado\n${safeJSON(reorderRisk.data)}\n## LTV & CHURN RISK (gold_company_360: clientes estrategicos/important con revenue_90d bajo)\n${safeJSON(ltvChurning.data)}\n## CLIENTES CON CARTERA VENCIDA (gold_company_360 overdue_mxn)\n${safeJSON(clientOverdue.data)}\n## CONTACTOS CON HEALTH SCORE BAJO (churn risk temprano)\n${safeJSON(atRiskContacts.data)}\n## EMAILS DE CLIENTES SIN RESPUESTA (>24h)\n${safeJSON(clientThreads.data)}\n## Pipeline CRM (oportunidades activas, SP5-EXCEPTION Bronze)\n${safeJSON(crmLeads.data)}\n## Top clientes (gold_company_360: tendencia + cartera)\n${safeJSON(top.data)}\n## Ordenes recientes (canonical_sale_orders)\n${safeJSON(recentOrders.data)}\n## Margenes por producto+cliente (SP5-EXCEPTION §12 MV)\n${safeJSON(margins.data)}\n## Concentracion >50% en 1 producto (SP5-EXCEPTION §12 MV)\n${safeJSON(concentration.data)}`;
     }
     case "financiero": {
       const modes = directorConfig?.mode_rotation?.length
