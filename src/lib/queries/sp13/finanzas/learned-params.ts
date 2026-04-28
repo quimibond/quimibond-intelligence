@@ -36,6 +36,29 @@ export interface LearnedAgingCalibration {
     overdue_61_90: { rate: number; sampleSize: number };
     overdue_90_plus: { rate: number; sampleSize: number };
   };
+  /**
+   * Audit 2026-04-27 finding #9: rates por cliente (bronze company.id) con
+   * shrinkage empírico Bayesiano hacia el global. Override del rate global
+   * cuando un cliente tiene histórico suficiente.
+   *
+   * Shrinkage: adjusted = (n × customer + k × global) / (n + k)
+   * con k=10 (pseudocount). Cliente con n=2 → casi 100% global; con n=50
+   * → 83% personalizado, 17% global.
+   *
+   * Solo populated para AR (direction='issued'). AP no tiene aging-prob
+   * (always 1.0) — no se beneficia.
+   */
+  perCustomerByBronzeId: Map<
+    number,
+    {
+      fresh: number;
+      overdue_1_30: number;
+      overdue_31_60: number;
+      overdue_61_90: number;
+      overdue_90_plus: number;
+      totalSample: number;
+    }
+  >;
   asOfDate: string;
   totalSample: number;
 }
@@ -83,9 +106,11 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
     .slice(0, 10);
 
   // Pull 18m de issued invoices con fechas; solo necesitamos las que
-  // tienen due_date para calcular aging.
+  // tienen due_date para calcular aging. Incluimos receptor canonical_id
+  // para per-customer aggregation (audit #9).
   const PAGE = 1000;
   type Row = {
+    receptor_canonical_company_id: number | null;
     invoice_date: string | null;
     due_date_resolved: string | null;
     payment_date_odoo: string | null;
@@ -99,7 +124,7 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
     const { data, error } = await sb
       .from("canonical_invoices")
       .select(
-        "invoice_date, due_date_resolved, payment_date_odoo, payment_state_odoo, estado_sat, amount_total_mxn_resolved"
+        "receptor_canonical_company_id, invoice_date, due_date_resolved, payment_date_odoo, payment_state_odoo, estado_sat, amount_total_mxn_resolved"
       )
       .eq("direction", "issued")
       .eq("is_quimibond_relevant", true)
@@ -116,13 +141,22 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
     offset += PAGE;
   }
 
-  const buckets = {
+  type BucketName =
+    | "fresh"
+    | "overdue_1_30"
+    | "overdue_31_60"
+    | "overdue_61_90"
+    | "overdue_90_plus";
+  const emptyBuckets = (): Record<BucketName, { paid: number; total: number }> => ({
     fresh: { paid: 0, total: 0 },
     overdue_1_30: { paid: 0, total: 0 },
     overdue_31_60: { paid: 0, total: 0 },
     overdue_61_90: { paid: 0, total: 0 },
     overdue_90_plus: { paid: 0, total: 0 },
-  };
+  });
+
+  const globalBuckets = emptyBuckets();
+  const byCanonical = new Map<number, ReturnType<typeof emptyBuckets>>();
 
   for (const r of all) {
     if (!r.due_date_resolved) continue;
@@ -136,40 +170,149 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
     );
     const wasPaid = r.payment_state_odoo === "paid";
 
-    let bucket: keyof typeof buckets;
+    let bucket: BucketName;
     if (maxAging === 0) bucket = "fresh";
     else if (maxAging <= 30) bucket = "overdue_1_30";
     else if (maxAging <= 60) bucket = "overdue_31_60";
     else if (maxAging <= 90) bucket = "overdue_61_90";
     else bucket = "overdue_90_plus";
 
-    buckets[bucket].total++;
-    if (wasPaid) buckets[bucket].paid++;
+    globalBuckets[bucket].total++;
+    if (wasPaid) globalBuckets[bucket].paid++;
+
+    const cid = r.receptor_canonical_company_id;
+    if (cid != null) {
+      let cust = byCanonical.get(cid);
+      if (!cust) {
+        cust = emptyBuckets();
+        byCanonical.set(cid, cust);
+      }
+      cust[bucket].total++;
+      if (wasPaid) cust[bucket].paid++;
+    }
   }
 
   const rate = (b: { paid: number; total: number }) =>
     b.total === 0 ? 0 : b.paid / b.total;
 
+  const globalRates = {
+    fresh: rate(globalBuckets.fresh),
+    overdue_1_30: rate(globalBuckets.overdue_1_30),
+    overdue_31_60: rate(globalBuckets.overdue_31_60),
+    overdue_61_90: rate(globalBuckets.overdue_61_90),
+    overdue_90_plus: rate(globalBuckets.overdue_90_plus),
+  };
+
+  // Resolver canonical_id → bronze company.id para que projection.ts pueda
+  // cruzar con r.company_id de cashflow_projection. Mismo patrón que
+  // _getLearnedCounterpartyParamsRaw.
+  const canonicalIds = [...byCanonical.keys()];
+  const canonicalToBronze = new Map<number, number>();
+  if (canonicalIds.length > 0) {
+    const chunkSize = 200;
+    for (let i = 0; i < canonicalIds.length; i += chunkSize) {
+      const chunk = canonicalIds.slice(i, i + chunkSize);
+      const { data } = await sb
+        .from("canonical_companies")
+        .select("id, odoo_partner_id")
+        .in("id", chunk)
+        .not("odoo_partner_id", "is", null);
+      const partnerIds: number[] = [];
+      const ccByPartner = new Map<number, number>();
+      for (const c of (data ?? []) as Array<{
+        id: number | null;
+        odoo_partner_id: number | null;
+      }>) {
+        if (c.id != null && c.odoo_partner_id != null) {
+          partnerIds.push(c.odoo_partner_id);
+          ccByPartner.set(c.odoo_partner_id, c.id);
+        }
+      }
+      if (partnerIds.length > 0) {
+        for (let j = 0; j < partnerIds.length; j += chunkSize) {
+          const pchunk = partnerIds.slice(j, j + chunkSize);
+          const { data: bronze } = await sb
+            .from("companies")
+            .select("id, odoo_partner_id")
+            .in("odoo_partner_id", pchunk);
+          for (const b of (bronze ?? []) as Array<{
+            id: number | null;
+            odoo_partner_id: number | null;
+          }>) {
+            if (b.id != null && b.odoo_partner_id != null) {
+              const ccid = ccByPartner.get(b.odoo_partner_id);
+              if (ccid != null) canonicalToBronze.set(ccid, b.id);
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Shrinkage: clientes con poco sample se acercan al global. k=10 es
+  // razonable — n=10 → 50/50, n=50 → 83% cliente, n=2 → 83% global.
+  const PSEUDOCOUNT_K = 10;
+  const shrinkRate = (
+    customer: { paid: number; total: number },
+    global: number
+  ) =>
+    (customer.paid + PSEUDOCOUNT_K * global) /
+    (customer.total + PSEUDOCOUNT_K);
+
+  const perCustomerByBronzeId = new Map<
+    number,
+    {
+      fresh: number;
+      overdue_1_30: number;
+      overdue_31_60: number;
+      overdue_61_90: number;
+      overdue_90_plus: number;
+      totalSample: number;
+    }
+  >();
+  for (const [cid, custBuckets] of byCanonical) {
+    const bronzeId = canonicalToBronze.get(cid);
+    if (bronzeId == null) continue;
+    const totalSample =
+      custBuckets.fresh.total +
+      custBuckets.overdue_1_30.total +
+      custBuckets.overdue_31_60.total +
+      custBuckets.overdue_61_90.total +
+      custBuckets.overdue_90_plus.total;
+    // Solo populated cuando hay algo de evidencia; vacío si el cliente
+    // tiene 0 facturas con outcome (lo deja en el global).
+    if (totalSample === 0) continue;
+    perCustomerByBronzeId.set(bronzeId, {
+      fresh: shrinkRate(custBuckets.fresh, globalRates.fresh),
+      overdue_1_30: shrinkRate(custBuckets.overdue_1_30, globalRates.overdue_1_30),
+      overdue_31_60: shrinkRate(custBuckets.overdue_31_60, globalRates.overdue_31_60),
+      overdue_61_90: shrinkRate(custBuckets.overdue_61_90, globalRates.overdue_61_90),
+      overdue_90_plus: shrinkRate(custBuckets.overdue_90_plus, globalRates.overdue_90_plus),
+      totalSample,
+    });
+  }
+
   return {
     paymentRateByBucket: {
-      fresh: { rate: rate(buckets.fresh), sampleSize: buckets.fresh.total },
+      fresh: { rate: globalRates.fresh, sampleSize: globalBuckets.fresh.total },
       overdue_1_30: {
-        rate: rate(buckets.overdue_1_30),
-        sampleSize: buckets.overdue_1_30.total,
+        rate: globalRates.overdue_1_30,
+        sampleSize: globalBuckets.overdue_1_30.total,
       },
       overdue_31_60: {
-        rate: rate(buckets.overdue_31_60),
-        sampleSize: buckets.overdue_31_60.total,
+        rate: globalRates.overdue_31_60,
+        sampleSize: globalBuckets.overdue_31_60.total,
       },
       overdue_61_90: {
-        rate: rate(buckets.overdue_61_90),
-        sampleSize: buckets.overdue_61_90.total,
+        rate: globalRates.overdue_61_90,
+        sampleSize: globalBuckets.overdue_61_90.total,
       },
       overdue_90_plus: {
-        rate: rate(buckets.overdue_90_plus),
-        sampleSize: buckets.overdue_90_plus.total,
+        rate: globalRates.overdue_90_plus,
+        sampleSize: globalBuckets.overdue_90_plus.total,
       },
     },
+    perCustomerByBronzeId,
     asOfDate: todayIso,
     totalSample: all.length,
   };
@@ -177,7 +320,7 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
 
 export const getLearnedAgingCalibration = unstable_cache(
   _getLearnedAgingCalibrationRaw,
-  ["sp13-finanzas-learned-aging-v1"],
+  ["sp13-finanzas-learned-aging-v2-per-customer"],
   { revalidate: 3600, tags: ["finanzas"] }
 );
 

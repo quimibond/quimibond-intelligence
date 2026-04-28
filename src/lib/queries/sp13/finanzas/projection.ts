@@ -677,6 +677,26 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     else categoryAcc.set(cat, { label, flowType: flow, amount });
   };
 
+  // Audit 2026-04-27 finding #9: aging probability per cliente con
+  // shrinkage hacia el global. Override del expected_amount del matview
+  // (que usa heurísticas hardcoded 95/85/70/50/25) cuando tenemos
+  // histórico suficiente del cliente.
+  const perCustAging = agingCalibration.perCustomerByBronzeId;
+  const pickPersonalizedRate = (
+    customerId: number | null,
+    daysOverdue: number | null
+  ): number | null => {
+    if (customerId == null) return null;
+    const rates = perCustAging.get(customerId);
+    if (!rates) return null;
+    const od = daysOverdue ?? 0;
+    if (od <= 0) return rates.fresh;
+    if (od <= 30) return rates.overdue_1_30;
+    if (od <= 60) return rates.overdue_31_60;
+    if (od <= 90) return rates.overdue_61_90;
+    return rates.overdue_90_plus;
+  };
+
   for (const r of projRows) {
     const origDate = r.projected_date;
     if (!origDate) continue;
@@ -696,6 +716,16 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       expected = expected * ratio;
     }
     if (expected <= 0) continue;
+
+    // Audit #9: si el cliente tiene histórico, override expected con su
+    // rate personalizado (shrinked al global). Solo AR — AP es 1.0 always.
+    if (isInflow) {
+      const personalRate = pickPersonalizedRate(r.company_id, r.days_overdue);
+      if (personalRate != null && nominal > 0) {
+        expected = nominal * personalRate;
+        if (expected <= 0) continue;
+      }
+    }
 
     // Capa 1 lifecycle filter: lost customers → expected × 0.05.
     // Mantén la factura visible (es cobro legalmente exigible) pero
@@ -1959,7 +1989,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v25-credit-notes"],
+  ["sp13-finanzas-cash-projection-v26-aging-per-customer"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
