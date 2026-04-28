@@ -47,9 +47,12 @@ export interface LearnedAgingCalibration {
    *
    * Solo populated para AR (direction='issued'). AP no tiene aging-prob
    * (always 1.0) — no se beneficia.
+   *
+   * Plain object (no Map) porque unstable_cache puede serializar via JSON
+   * y Maps no sobreviven el roundtrip. Keys son bronze_id stringified.
    */
-  perCustomerByBronzeId: Map<
-    number,
+  perCustomerByBronzeId: Record<
+    string,
     {
       fresh: number;
       overdue_1_30: number;
@@ -259,8 +262,8 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
     (customer.paid + PSEUDOCOUNT_K * global) /
     (customer.total + PSEUDOCOUNT_K);
 
-  const perCustomerByBronzeId = new Map<
-    number,
+  const perCustomerByBronzeId: Record<
+    string,
     {
       fresh: number;
       overdue_1_30: number;
@@ -269,7 +272,7 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
       overdue_90_plus: number;
       totalSample: number;
     }
-  >();
+  > = {};
   for (const [cid, custBuckets] of byCanonical) {
     const bronzeId = canonicalToBronze.get(cid);
     if (bronzeId == null) continue;
@@ -282,14 +285,14 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
     // Solo populated cuando hay algo de evidencia; vacío si el cliente
     // tiene 0 facturas con outcome (lo deja en el global).
     if (totalSample === 0) continue;
-    perCustomerByBronzeId.set(bronzeId, {
+    perCustomerByBronzeId[String(bronzeId)] = {
       fresh: shrinkRate(custBuckets.fresh, globalRates.fresh),
       overdue_1_30: shrinkRate(custBuckets.overdue_1_30, globalRates.overdue_1_30),
       overdue_31_60: shrinkRate(custBuckets.overdue_31_60, globalRates.overdue_31_60),
       overdue_61_90: shrinkRate(custBuckets.overdue_61_90, globalRates.overdue_61_90),
       overdue_90_plus: shrinkRate(custBuckets.overdue_90_plus, globalRates.overdue_90_plus),
       totalSample,
-    });
+    };
   }
 
   return {
@@ -320,7 +323,7 @@ async function _getLearnedAgingCalibrationRaw(): Promise<LearnedAgingCalibration
 
 export const getLearnedAgingCalibration = unstable_cache(
   _getLearnedAgingCalibrationRaw,
-  ["sp13-finanzas-learned-aging-v2-per-customer"],
+  ["sp13-finanzas-learned-aging-v3-record"],
   { revalidate: 3600, tags: ["finanzas"] }
 );
 

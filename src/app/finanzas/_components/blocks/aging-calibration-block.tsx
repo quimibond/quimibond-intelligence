@@ -44,7 +44,8 @@ export async function AgingCalibrationBlock() {
   }).filter((x): x is NonNullable<typeof x> => x !== null);
 
   // Override count: cuántos clientes tienen calibración personalizada (#9).
-  const perCustCount = cal.perCustomerByBronzeId.size;
+  // perCustomerByBronzeId es Record<string, ...> (no Map) por cache safety.
+  const perCustCount = Object.keys(cal.perCustomerByBronzeId ?? {}).length;
 
   return (
     <div className="overflow-hidden rounded-md border bg-card">

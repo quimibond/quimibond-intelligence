@@ -681,13 +681,14 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // shrinkage hacia el global. Override del expected_amount del matview
   // (que usa heurísticas hardcoded 95/85/70/50/25) cuando tenemos
   // histórico suficiente del cliente.
+  // perCustomerByBronzeId es Record<string, ...> (no Map) por cache safety.
   const perCustAging = agingCalibration.perCustomerByBronzeId;
   const pickPersonalizedRate = (
     customerId: number | null,
     daysOverdue: number | null
   ): number | null => {
     if (customerId == null) return null;
-    const rates = perCustAging.get(customerId);
+    const rates = perCustAging[String(customerId)];
     if (!rates) return null;
     const od = daysOverdue ?? 0;
     if (od <= 0) return rates.fresh;
@@ -2093,7 +2094,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v28-nomina-winsorize"],
+  ["sp13-finanzas-cash-projection-v29-record-cache"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
