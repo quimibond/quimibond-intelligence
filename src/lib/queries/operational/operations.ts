@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import {
   endOfDay,
@@ -30,7 +31,7 @@ export interface OperationsKpis {
   avgLeadDays: number | null;
 }
 
-export async function getOperationsKpis(): Promise<OperationsKpis> {
+async function _getOperationsKpisRaw(): Promise<OperationsKpis> {
   const sb = getServiceClient();
   const [otd, late, pending, mfgProgress, mfgToClose] = await Promise.all([
     sb
@@ -90,6 +91,12 @@ export async function getOperationsKpis(): Promise<OperationsKpis> {
   };
 }
 
+export const getOperationsKpis = unstable_cache(
+  _getOperationsKpisRaw,
+  ["ops-kpis-v1"],
+  { revalidate: 60, tags: ["operations"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Weekly trend (last 12 weeks)
 // ──────────────────────────────────────────────────────────────────────────
@@ -102,7 +109,7 @@ export interface WeeklyTrendPoint {
   avg_lead_days: number | null;
 }
 
-export async function getWeeklyTrend(weeks = 12): Promise<WeeklyTrendPoint[]> {
+async function _getWeeklyTrendRaw(weeks = 12): Promise<WeeklyTrendPoint[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("ops_delivery_health_weekly") // SP5-VERIFIED: §12 KEEP — weekly OTD trend MV
@@ -128,6 +135,12 @@ export async function getWeeklyTrend(weeks = 12): Promise<WeeklyTrendPoint[]> {
     }))
     .reverse();
 }
+
+export const getWeeklyTrend = unstable_cache(
+  _getWeeklyTrendRaw,
+  ["ops-weekly-trend-v1"],
+  { revalidate: 300, tags: ["operations"] },
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Deliveries — canonical_deliveries
@@ -174,7 +187,7 @@ export interface LateDeliveryRow {
   origin: string | null;
 }
 
-export async function getLateDeliveries(
+async function _getLateDeliveriesRaw(
   limit = 30
 ): Promise<LateDeliveryRow[]> {
   const sb = getServiceClient();
@@ -216,6 +229,12 @@ export async function getLateDeliveries(
   }));
 }
 
+export const getLateDeliveries = unstable_cache(
+  _getLateDeliveriesRaw,
+  ["ops-late-deliveries-v1"],
+  { revalidate: 60, tags: ["operations"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Pending deliveries (assigned/confirmed/waiting)
 // ──────────────────────────────────────────────────────────────────────────
@@ -232,7 +251,7 @@ export interface PendingDeliveryRow {
   is_late: boolean | null;
 }
 
-export async function getPendingDeliveries(
+async function _getPendingDeliveriesRaw(
   limit = 30
 ): Promise<PendingDeliveryRow[]> {
   const sb = getServiceClient();
@@ -274,6 +293,12 @@ export async function getPendingDeliveries(
   }));
 }
 
+export const getPendingDeliveries = unstable_cache(
+  _getPendingDeliveriesRaw,
+  ["ops-pending-deliveries-v1"],
+  { revalidate: 60, tags: ["operations"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Deliveries unified page (filterable by state, date range, late flag)
 // ──────────────────────────────────────────────────────────────────────────
@@ -304,7 +329,7 @@ const DELIVERY_SORT_MAP: Record<string, string> = {
   state: "state",
 };
 
-export async function getDeliveriesPage(
+async function _getDeliveriesPageRaw(
   params: TableParams & {
     state?: string[];
     picking_type?: string[];
@@ -384,6 +409,12 @@ export async function getDeliveriesPage(
   return { rows, total: count ?? rows.length };
 }
 
+export const getDeliveriesPage = unstable_cache(
+  _getDeliveriesPageRaw,
+  ["ops-deliveries-page-v1"],
+  { revalidate: 30, tags: ["operations"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Manufacturing — canonical_manufacturing
 // ──────────────────────────────────────────────────────────────────────────
@@ -413,7 +444,7 @@ const MFG_SORT_MAP: Record<string, string> = {
   qty_produced: "qty_produced",
 };
 
-export async function getManufacturingPage(
+async function _getManufacturingPageRaw(
   params: TableParams & { state?: string[]; assigned?: string[] }
 ): Promise<ManufacturingPage> {
   const sb = getServiceClient();
@@ -468,7 +499,13 @@ export async function getManufacturingPage(
   return { rows, total: count ?? rows.length };
 }
 
-export async function getManufacturingAssigneeOptions(): Promise<string[]> {
+export const getManufacturingPage = unstable_cache(
+  _getManufacturingPageRaw,
+  ["ops-manufacturing-page-v1"],
+  { revalidate: 30, tags: ["operations"] },
+);
+
+async function _getManufacturingAssigneeOptionsRaw(): Promise<string[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("canonical_manufacturing")
@@ -482,7 +519,13 @@ export async function getManufacturingAssigneeOptions(): Promise<string[]> {
   return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
 }
 
-export async function getActiveManufacturing(
+export const getManufacturingAssigneeOptions = unstable_cache(
+  _getManufacturingAssigneeOptionsRaw,
+  ["ops-manufacturing-assignee-options-v1"],
+  { revalidate: 3600, tags: ["operations"] },
+);
+
+async function _getActiveManufacturingRaw(
   limit = 30
 ): Promise<ManufacturingRow[]> {
   const sb = getServiceClient();
@@ -507,6 +550,12 @@ export async function getActiveManufacturing(
     origin: r.origin ?? null,
   }));
 }
+
+export const getActiveManufacturing = unstable_cache(
+  _getActiveManufacturingRaw,
+  ["ops-active-manufacturing-v1"],
+  { revalidate: 60, tags: ["operations"] },
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Required SP5 exports: listDeliveries, listManufacturingOrders, listInventory
@@ -602,7 +651,7 @@ export async function listInventory(opts: { limit?: number; onlyStockout?: boole
   }>;
 }
 
-export async function fetchInventoryVelocity(limit = 100) {
+async function _fetchInventoryVelocityRaw(limit = 100) {
   const sb = getServiceClient();
   const { data } = await sb
     .from("inventory_velocity") // SP5-VERIFIED: §12 KEEP — velocity analytics MV
@@ -612,7 +661,13 @@ export async function fetchInventoryVelocity(limit = 100) {
   return (data ?? []) as Record<string, unknown>[];
 }
 
-export async function fetchDeadStockAnalysis(limit = 100) {
+export const fetchInventoryVelocity = unstable_cache(
+  _fetchInventoryVelocityRaw,
+  ["ops-inventory-velocity-v1"],
+  { revalidate: 300, tags: ["operations"] },
+);
+
+async function _fetchDeadStockAnalysisRaw(limit = 100) {
   const sb = getServiceClient();
   const { data } = await sb
     .from("dead_stock_analysis") // SP5-VERIFIED: §12 KEEP — dead stock analytics MV
@@ -620,3 +675,9 @@ export async function fetchDeadStockAnalysis(limit = 100) {
     .limit(limit);
   return (data ?? []) as Record<string, unknown>[];
 }
+
+export const fetchDeadStockAnalysis = unstable_cache(
+  _fetchDeadStockAnalysisRaw,
+  ["ops-dead-stock-analysis-v1"],
+  { revalidate: 300, tags: ["operations"] },
+);

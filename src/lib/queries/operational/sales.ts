@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "../_shared/_helpers";
 import {
@@ -78,7 +79,7 @@ function monthStart(d: Date) {
  * Reads gold_pl_statement (replaces pl_estado_resultados) and
  * gold_revenue_monthly (replaces monthly_revenue_by_company).
  */
-export async function getSalesKpis(): Promise<SalesKpis> {
+async function _getSalesKpisRaw(): Promise<SalesKpis> {
   const sb = getServiceClient();
   const now = new Date();
   const currKey = monthKey(now);
@@ -232,6 +233,12 @@ export async function getSalesKpis(): Promise<SalesKpis> {
   };
 }
 
+export const getSalesKpis = unstable_cache(
+  _getSalesKpisRaw,
+  ["sales-kpis-v1"],
+  { revalidate: 60, tags: ["sales"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Revenue trend con MA3m
 // ──────────────────────────────────────────────────────────────────────────
@@ -250,7 +257,7 @@ export interface RevenueTrendPoint {
  * gold_pl_statement.total_income is stored as NEGATIVE (accounting credit side).
  * ma3m computed client-side with rolling 3-month window.
  */
-export async function getSalesRevenueTrend(
+async function _getSalesRevenueTrendRaw(
   months = 12,
   bounds?: { from?: string | null; to?: string | null }
 ): Promise<RevenueTrendPoint[]> {
@@ -351,6 +358,12 @@ export async function getSalesRevenueTrend(
   return points.slice(-months);
 }
 
+export const getSalesRevenueTrend = unstable_cache(
+  _getSalesRevenueTrendRaw,
+  ["sales-revenue-trend-v1"],
+  { revalidate: 300, tags: ["sales"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Reorder risk — clientes que deberían haber comprado y no
 // ──────────────────────────────────────────────────────────────────────────
@@ -449,7 +462,7 @@ export async function getReorderRiskPage(
 }
 
 // SP5-VERIFIED: client_reorder_predictions retained per §12 KEEP
-export async function getReorderRisk(
+async function _getReorderRiskRaw(
   limit = 30
 ): Promise<ReorderRiskRow[]> {
   const sb = getServiceClient();
@@ -491,6 +504,12 @@ export async function getReorderRisk(
     predicted_next_order: r.predicted_next_order,
   }));
 }
+
+export const getReorderRisk = unstable_cache(
+  _getReorderRiskRaw,
+  ["sales-reorder-risk-v1"],
+  { revalidate: 300, tags: ["sales"] },
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Top customers
@@ -697,7 +716,7 @@ export async function getTopCustomersPage(
  * Reads gold_company_360 (replaces company_profile and company_profile_sat — §12 drop-list).
  * SP5-VERIFIED: overhead_factor_12m retained per §12 KEEP.
  */
-export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
+async function _getTopCustomersRaw(limit = 15): Promise<TopCustomerRow[]> {
   const sb = getServiceClient();
   const selfIds = await getSelfCompanyIds();
 
@@ -748,6 +767,12 @@ export async function getTopCustomers(limit = 15): Promise<TopCustomerRow[]> {
   }));
 }
 
+export const getTopCustomers = unstable_cache(
+  _getTopCustomersRaw,
+  ["sales-top-customers-v1"],
+  { revalidate: 300, tags: ["sales"] },
+);
+
 // ──────────────────────────────────────────────────────────────────────────
 // Top salespeople del mes — canonical_sale_orders
 // ──────────────────────────────────────────────────────────────────────────
@@ -757,7 +782,7 @@ export interface SalespersonRow {
   order_count: number;
 }
 
-export async function getTopSalespeople(): Promise<SalespersonRow[]> {
+async function _getTopSalespeopleRaw(): Promise<SalespersonRow[]> {
   const sb = getServiceClient();
   const now = new Date();
   const thisStart = monthStart(new Date(now.getFullYear(), now.getMonth(), 1));
@@ -795,6 +820,12 @@ export async function getTopSalespeople(): Promise<SalespersonRow[]> {
     }))
     .sort((a, b) => b.total_amount - a.total_amount);
 }
+
+export const getTopSalespeople = unstable_cache(
+  _getTopSalespeopleRaw,
+  ["sales-top-salespeople-v1"],
+  { revalidate: 60, tags: ["sales"] },
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // Recent sale orders — canonical_sale_orders
@@ -834,7 +865,7 @@ const SALE_ORDER_SORT_MAP: Record<string, string> = {
  * Sale orders paginadas + filtrables para la tabla de ventas.
  * Reads from canonical_sale_orders.
  */
-export async function getSaleOrdersPage(
+async function _getSaleOrdersPageRaw(
   params: TableParams & { state?: string[]; salesperson?: string[] }
 ): Promise<RecentSaleOrderPage> {
   const sb = getServiceClient();
@@ -916,7 +947,13 @@ export async function getSaleOrdersPage(
   };
 }
 
-export async function getSaleOrderSalespeopleOptions(): Promise<string[]> {
+export const getSaleOrdersPage = unstable_cache(
+  _getSaleOrdersPageRaw,
+  ["sales-sale-orders-page-v1"],
+  { revalidate: 30, tags: ["sales"] },
+);
+
+async function _getSaleOrderSalespeopleOptionsRaw(): Promise<string[]> {
   const sb = getServiceClient();
   const since = new Date();
   since.setMonth(since.getMonth() - 6);
@@ -932,6 +969,12 @@ export async function getSaleOrderSalespeopleOptions(): Promise<string[]> {
   }
   return Array.from(set).sort((a, b) => a.localeCompare(b, "es"));
 }
+
+export const getSaleOrderSalespeopleOptions = unstable_cache(
+  _getSaleOrderSalespeopleOptionsRaw,
+  ["sales-salesperson-options-v1"],
+  { revalidate: 3600, tags: ["sales"] },
+);
 
 /** Serie temporal de sale orders para el chart stacked area. */
 export interface SaleOrdersTimelineBucket {
@@ -956,7 +999,7 @@ function isoMondayKey(date: Date): string {
   return monday.toISOString().slice(0, 10);
 }
 
-export async function getSaleOrdersTimeline(params: {
+async function _getSaleOrdersTimelineRaw(params: {
   from?: string | null;
   to?: string | null;
   q?: string | null;
@@ -1022,7 +1065,13 @@ export async function getSaleOrdersTimeline(params: {
   );
 }
 
-export async function getRecentSaleOrders(
+export const getSaleOrdersTimeline = unstable_cache(
+  _getSaleOrdersTimelineRaw,
+  ["sales-sale-orders-timeline-v1"],
+  { revalidate: 60, tags: ["sales"] },
+);
+
+async function _getRecentSaleOrdersRaw(
   limit = 25
 ): Promise<RecentSaleOrder[]> {
   const sb = getServiceClient();
@@ -1077,6 +1126,12 @@ export async function getRecentSaleOrders(
     state: row.state,
   }));
 }
+
+export const getRecentSaleOrders = unstable_cache(
+  _getRecentSaleOrdersRaw,
+  ["sales-recent-sale-orders-v1"],
+  { revalidate: 60, tags: ["sales"] },
+);
 
 // ──────────────────────────────────────────────────────────────────────────
 // New canonical exports (SP5 Task 8 required)
@@ -1224,7 +1279,7 @@ export async function listCrmLeads(opts: {
  * Sales aggregated by salesperson for a given month window.
  * Uses canonical_sale_orders.
  */
-export async function salesBySalesperson(opts: {
+async function _salesBySalespersonRaw(opts: {
   from?: string | null;
   to?: string | null;
   limit?: number;
@@ -1266,6 +1321,12 @@ export async function salesBySalesperson(opts: {
     .sort((a, b) => b.total_amount - a.total_amount);
 }
 
+export const salesBySalesperson = unstable_cache(
+  _salesBySalespersonRaw,
+  ["sales-by-salesperson-v1"],
+  { revalidate: 300, tags: ["sales"] },
+);
+
 /**
  * Fetch internal salesperson metadata from canonical_contacts.
  * Replaces the old odoo_users lookup.
@@ -1281,7 +1342,7 @@ export interface SalespersonMeta {
   odoo_user_id: number | null;
 }
 
-export async function fetchSalespersonMetadata(): Promise<SalespersonMeta[]> {
+async function _fetchSalespersonMetadataRaw(): Promise<SalespersonMeta[]> {
   const sb = getServiceClient();
   const { data } = await sb
     .from("canonical_contacts")
@@ -1307,3 +1368,9 @@ export async function fetchSalespersonMetadata(): Promise<SalespersonMeta[]> {
     odoo_user_id: r.odoo_user_id,
   }));
 }
+
+export const fetchSalespersonMetadata = unstable_cache(
+  _fetchSalespersonMetadataRaw,
+  ["sales-salesperson-metadata-v1"],
+  { revalidate: 3600, tags: ["sales"] },
+);

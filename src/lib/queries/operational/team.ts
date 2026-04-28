@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 
 /**
@@ -25,7 +26,7 @@ export interface TeamKpis {
   insightsActive: number;
 }
 
-export async function getTeamKpis(): Promise<TeamKpis> {
+async function _getTeamKpisRaw(): Promise<TeamKpis> {
   const sb = getServiceClient();
   const [emp, empAll, insights] = await Promise.all([
     sb
@@ -90,7 +91,7 @@ export interface UserBacklogRow {
   insights_assigned: number;
 }
 
-export async function getUserBacklog(limit = 30): Promise<UserBacklogRow[]> {
+async function _getUserBacklogRaw(limit = 30): Promise<UserBacklogRow[]> {
   const sb = getServiceClient();
   const [employees, insights] = await Promise.all([
     sb
@@ -159,7 +160,7 @@ export interface DepartmentRow {
   description: string | null;
 }
 
-export async function getDepartments(): Promise<DepartmentRow[]> {
+async function _getDepartmentsRaw(): Promise<DepartmentRow[]> {
   const sb = getServiceClient();
 
   // Distinct department names from active canonical_employees + manager
@@ -231,7 +232,7 @@ export interface InsightsByDepartment {
   high: number;
 }
 
-export async function getInsightsByDepartment(): Promise<
+async function _getInsightsByDepartmentRaw(): Promise<
   InsightsByDepartment[]
 > {
   const sb = getServiceClient();
@@ -284,7 +285,7 @@ export interface EmployeeRow {
   manager_name: string | null;
 }
 
-export async function getEmployees(limit = 100): Promise<EmployeeRow[]> {
+async function _getEmployeesRaw(limit = 100): Promise<EmployeeRow[]> {
   const sb = getServiceClient();
 
   // canonical_employees is the source of truth, but
@@ -432,7 +433,7 @@ export async function listDepartments(): Promise<Array<{
  * If odooUserId is provided, it is used directly against agent_insights.assignee_user_id.
  * If neither is provided, returns workload for all active employees.
  */
-export async function fetchEmployeeWorkload(opts: {
+async function _fetchEmployeeWorkloadRaw(opts: {
   employeeContactId?: number;
   odooUserId?: number;
   limit?: number;
@@ -512,3 +513,43 @@ export async function fetchEmployeeWorkload(opts: {
       : 0,
   }));
 }
+
+// ──────────────────────────────────────────────────────────────────────────
+// Cached exports — gold/canonical reads, ver caching policy en _shared/_helpers.ts
+// ──────────────────────────────────────────────────────────────────────────
+
+export const getTeamKpis = unstable_cache(
+  _getTeamKpisRaw,
+  ["team-kpis-v1"],
+  { revalidate: 60, tags: ["team"] },
+);
+
+export const getUserBacklog = unstable_cache(
+  _getUserBacklogRaw,
+  ["team-user-backlog-v1"],
+  { revalidate: 60, tags: ["team"] },
+);
+
+export const getDepartments = unstable_cache(
+  _getDepartmentsRaw,
+  ["team-departments-v1"],
+  { revalidate: 300, tags: ["team"] },
+);
+
+export const getInsightsByDepartment = unstable_cache(
+  _getInsightsByDepartmentRaw,
+  ["team-insights-by-department-v1"],
+  { revalidate: 60, tags: ["team"] },
+);
+
+export const getEmployees = unstable_cache(
+  _getEmployeesRaw,
+  ["team-employees-v1"],
+  { revalidate: 300, tags: ["team"] },
+);
+
+export const fetchEmployeeWorkload = unstable_cache(
+  _fetchEmployeeWorkloadRaw,
+  ["team-employee-workload-v1"],
+  { revalidate: 60, tags: ["team"] },
+);

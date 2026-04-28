@@ -1,4 +1,5 @@
 import "server-only";
+import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import type { Database } from "@/lib/database.types";
 import { computeDelta, type Comparison } from "@/lib/kpi";
@@ -214,7 +215,7 @@ export interface InboxKpis {
  * Cada métrica trae Comparison vs la semana previa para alimentar
  * ComparisonCell / KpiCard.comparison.
  */
-export async function getInboxKpis(): Promise<InboxKpis> {
+async function _getInboxKpisRaw(): Promise<InboxKpis> {
   const sb = getServiceClient();
   const now = new Date();
   const weekMs = 7 * 24 * 60 * 60 * 1000;
@@ -305,6 +306,12 @@ export async function getInboxKpis(): Promise<InboxKpis> {
         : now.toISOString().slice(0, 10),
   };
 }
+
+export const getInboxKpis = unstable_cache(
+  _getInboxKpisRaw,
+  ["inbox-kpis-v1"],
+  { revalidate: 60, tags: ["inbox"] },
+);
 
 /**
  * Count stale invoice issues so KPI counts match what listInbox renders.
