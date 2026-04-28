@@ -343,45 +343,61 @@ CEO INBOX (web + mobile)
 
 ---
 
-## Agentes de IA (9 total)
+## Agentes de IA — 8 Directores activos
 
-### Agentes de negocio (automaticos, cada 15 min)
+Round-robin via `/api/agents/orchestrate` (Vercel cron, hourly). Cada director
+corre con Sonnet 4.6, max 5 insights por corrida, confianza ≥80%, dedup por
+(agent + company + título) en ventana 7d.
 
-| Agente | Dominio | Que analiza |
-|---|---|---|
-| **Sales** | Ventas | Ordenes, CRM, top clientes, oportunidades |
-| **Finance** | Finanzas | Facturas, cartera vencida, cash flow |
-| **Operations** | Operaciones | Entregas, inventario, manufactura |
-| **Relationships** | Relaciones | Health scores, threads sin respuesta, sentimiento |
-| **Risk** | Riesgo | Facturas vencidas >30d, entregas atrasadas, contactos criticos |
-| **Growth** | Crecimiento | Top clientes, tendencias, cross-sell |
-| **Meta** | Sistema | Evalua rendimiento de otros agentes |
+### Directores activos (vivos en `ai_agents` con `is_active=true`)
 
-### Agentes de sistema
+| Slug | Nombre | Dominio | Que analiza |
+|---|---|---|---|
+| **comercial** | Director Comercial | comercial | Reorden risk, top clientes, márgenes, concentración, CRM, churn LTV, RFM |
+| **financiero** | Director Financiero | financiero | Cobranza vencida, payment predictions, runway, FX exposure, working capital |
+| **operaciones** | Director de Operaciones | operaciones_dir | OTD, entregas tardías, manufactura, inventario, stockouts, orderpoints |
+| **compras** | Director de Compras | compras | Proveedores top, single-source, price anomalies, urgent stockouts |
+| **costos** | Director de Costos | costos | COGS contable vs BOM, normalización P&L, margen contributivo, overhead |
+| **riesgo** | Director de Riesgo | riesgo_dir | Concentración cliente, contactos críticos, riesgo cartera, drift |
+| **equipo** | Director de Equipo | equipo_dir | Backlog por persona, métricas equipo, actividades pendientes/vencidas |
+| **compliance** | Director Cumplimiento Fiscal | compliance | CFDIs sin respaldo, declaraciones, blacklist 69-B, opinión cumplimiento |
 
-| Agente | Dominio | Que analiza |
-|---|---|---|
-| **Data Quality** | Supabase | Datos faltantes, links rotos, metricas de calidad |
-| **Odoo** | Odoo (manual) | Gaps en sync, modelos faltantes, recomendaciones para addon |
+### Agentes legacy (deactivated 2026-04-05, conservados en DB con `is_active=false`)
+
+`sales`, `finance`, `operations`, `risk`, `growth`, `meta`, `data_quality`,
+`odoo`, `cleanup`, `relationships`, `suppliers`, `predictive` — quedaron en
+la tabla por compatibilidad histórica pero no se ejecutan. La orquestación
+real son los 8 directores. **NO usar estos slugs** al hablar del sistema vivo.
 
 ---
 
 ## Routing de Insights
 
-Cada insight se asigna automaticamente a un responsable via trigger:
+Cada insight se asigna automaticamente a un responsable via trigger.
+Los patrones son regex sobre `category` (case-insensitive); el primero que
+coincide gana (priority asc).
 
-| Categoria | Departamento | Responsable |
+| Patrón categoría | Departamento | Responsable |
 |---|---|---|
-| Pagos, facturas, cobranza | Cobranza | Sandra Davila |
-| Ventas, CRM, clientes | Ventas | Guadalupe Guerrero |
-| Entregas, logistica | Logistica | Dario Manriquez |
-| Manufactura, produccion | Produccion | Guadalupe Ramos |
-| Stock, almacen | Almacen | Gustavo Delgado |
-| Calidad, muestras | Calidad | Oscar Gonzalez |
-| Compras, proveedores | Compras | Elena Delgado |
-| Riesgo, estrategia | Direccion | Jose Mizrahi |
+| `payment\|factura\|cobr\|cartera\|credito\|overdue` | Cobranza | Sandra Dávila |
+| `ventas\|sales\|crm\|lead\|oportunidad\|upsell\|cross-sell\|churn\|revenue` | Ventas | Guadalupe Guerrero García |
+| `relationship\|comunicacion\|sentimiento\|contact\|engagement` | Ventas | Guadalupe Guerrero García |
+| `operations\|entrega\|delivery\|despacho\|logistic\|envio` | Logística | Dario Manriquez |
+| `manufactura\|produccion\|operaciones\|mrp\|linea\|paro` | Producción | Guadalupe Ramos |
+| `stock\|inventario\|almacen\|desabasto\|reorder\|warehouse` | Almacén | Gustavo Delgado |
+| `calidad\|quality\|inflamabilidad\|muestra\|prueba` | Calidad | Oscar Gonzalez |
+| `compra\|purchase\|proveedor\|supplier\|materia.prima\|cadena.suministro` | Compras | Elena Delgado Ruiz |
+| `innovacion\|desarrollo\|diseño\|producto.nuevo` | Innovación | Jessica Francisco |
+| `planeacion\|forecast\|capacidad` | Planeación | Paris César Villordo |
+| `employee\|empleado\|rh\|nomina\|hr\|team\|equipo` | RH | Miguel Medina |
+| `sistema\|data\|datos\|schema\|pipeline\|agente\|tech` | Sistemas | Mariano Dominguez |
+| `growth\|crecimiento\|expansion\|mercado\|estrateg` | Dirección | Jose J. Mizrahi |
+| `risk\|riesgo\|amenaza\|concentracion` | Dirección | Jose J. Mizrahi |
 
-Configurado en tabla `insight_routing` → `departments` → `odoo_users` (todo por FK, no texto).
+Configurado en tabla `insight_routing` (columna `category_pattern` regex)
+→ `departments` → `odoo_users` (todo por FK, no texto). Para añadir/cambiar,
+INSERT/UPDATE en `insight_routing` — el trigger `route_insight` corre on
+INSERT en `agent_insights`.
 
 ---
 
@@ -581,7 +597,7 @@ Pattern C master data management layer:
 | `/inbox` | Inbox de insights — desktop: lista, mobile: swipe Tinder |
 | `/inbox/insight/[id]` | Detalle con trazabilidad hasta email original |
 | `/dashboard` | Centro de control con KPIs, agentes, equipo |
-| `/agents` | 9 agentes con status, insights, boton ejecutar |
+| `/agents` | 8 directores activos con status, insights, boton ejecutar |
 | `/companies` | Lista de empresas con filtros |
 | `/companies/[id]` | Detalle con 10 tabs |
 | `/contacts` | Lista con health score visual |
