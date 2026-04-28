@@ -54,6 +54,11 @@ export {
   type LearnedAgingCalibration,
 } from "./learned-params";
 export {
+  getCollectionLatencyTrend,
+  type CollectionLatencyTrend,
+  type CollectionLatencyMonth,
+} from "./collection-latency-trend";
+export {
   getCashConversionCycle,
   type CashConversionCycleSnapshot,
 } from "./cash-conversion-cycle";

@@ -159,6 +159,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: tendencia de "tardamos cada vez más en cobrar" invisible salvo correr query manual.
 - **Impacto**: detección tardía de deterioro AR.
 - **Esfuerzo**: L (vista + chart en /finanzas).
+- **Status (2026-04-27)**: **RESUELTO**. Nuevo módulo `collection-latency-trend.ts`: agrupa facturas issued+paid por mes-de-pago (últimos 12m) y computa p50/p75/p90 de `payment_date_odoo - due_date_resolved`. Trend slope (días/mes vía least-squares sobre meses con sample ≥5) detecta deterioro estructural. UI: `CollectionLatencyBlock` en /finanzas debajo del aging calibration con `CollectionLatencyChart` (recharts ComposedChart): bar de sample + 3 líneas p50/p75/p90 + dual Y-axis. Header muestra trend (Empeorando/Mejorando/Estable) + mediana global + n total.
 
 ---
 

@@ -16,6 +16,7 @@ import { ProjectionHorizonSelector } from "../projection-horizon-selector";
 import { CustomerInflowBreakdownTable } from "./customer-inflow-breakdown-table";
 import { SensitivityAnalysisBlock } from "./sensitivity-analysis-block";
 import { AgingCalibrationBlock } from "./aging-calibration-block";
+import { CollectionLatencyBlock } from "./collection-latency-block";
 import { ModelLearningBadge } from "./model-learning-badge";
 import { ProjectionTimeline } from "./projection-timeline";
 
@@ -93,6 +94,8 @@ export async function ProjectionBlock({ horizon }: { horizon: 13 | 30 | 90 }) {
       <SensitivityAnalysisBlock projection={proj} sens={sens} />
 
       <AgingCalibrationBlock />
+
+      <CollectionLatencyBlock />
 
       <ModelLearningBadge learning={proj.learning} />
 
