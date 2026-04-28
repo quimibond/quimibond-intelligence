@@ -15,57 +15,131 @@ Plataforma de inteligencia comercial para Quimibond (empresa textil mexicana). C
 ## Arquitectura
 
 ```
-ODOO ERP (qb19 addon)
-  ↓ sync cada 1 hora
-SUPABASE (PostgreSQL)
-  ↑ emails via Gmail API
-  ↓
-PIPELINE (Vercel crons)
-  ↓ extrae datos de emails
-AI AGENTS (7 de negocio + 2 de sistema)
-  ↓ generan insights curados
-CEO INBOX (web + mobile)
+ODOO ERP (qb19 addon)         SAT (Syntage webhooks)        Gmail
+  ↓ push cada 1h                ↓ realtime                   ↓ cada 30min
+┌──────────────────────────────────────────────────────────────────┐
+│ BRONZE (raw ingest)                                              │
+│   odoo_*  (24 tablas, ~1.29 GB)                                  │
+│   syntage_*  (12 tablas, ~707 MB)                                │
+│   emails / threads (Gmail, ~570 MB)                              │
+└──────────────────────────────────────────────────────────────────┘
+  ↓ matchers + reconcile (pg_cron 30min/1h/2h)
+┌──────────────────────────────────────────────────────────────────┐
+│ SILVER (reconciled, dedupped, FK-resolved)                       │
+│   canonical_* (11 tablas + 5 MVs + 7 vistas, ~1.12 GB)           │
+│   mv_* (4 MVs intermedias, ~127 MB)                              │
+│   reconciliation_issues / mdm_manual_overrides / source_links    │
+└──────────────────────────────────────────────────────────────────┘
+  ↓ vistas SQL (no materializadas, evaluadas on-read)
+┌──────────────────────────────────────────────────────────────────┐
+│ GOLD (CEO-facing aggregates)                                     │
+│   gold_* (12 vistas)                                             │
+└──────────────────────────────────────────────────────────────────┘
+  ↓ src/lib/queries/** (con unstable_cache para gold/canonical)
+PIPELINE → AGENTES (8 directores) → CEO INBOX
 ```
 
-### Flujo de datos
+### Capas — inventario verificado (2026-04-28)
 
-1. **Odoo → Supabase** (qb19 addon, cada 1h, 20 modelos)
-   - res.partner → contacts + companies (con financials: receivable, payable, invoiced)
-   - product.product → odoo_products
-   - sale.order.line + purchase.order.line → odoo_order_lines
-   - account.move → odoo_invoices + odoo_invoice_lines
-   - account.move (pagos proxy) → odoo_payments
-   - account.payment → odoo_account_payments (pagos reales con banco/método)
-   - account.account → odoo_chart_of_accounts (plan de cuentas)
-   - account.move.line (agregado) → odoo_account_balances (P&L mensual)
-   - account.journal → odoo_bank_balances (saldos bancarios)
-   - stock.picking → odoo_deliveries
-   - stock.warehouse.orderpoint → odoo_orderpoints
-   - crm.lead → odoo_crm_leads
-   - mail.activity → odoo_activities
-   - mrp.production → odoo_manufacturing
-   - hr.employee → odoo_employees
-   - hr.department → odoo_departments
-   - sale.order → odoo_sale_orders
-   - purchase.order → odoo_purchase_orders
-   - res.users → odoo_users
+#### BRONZE — raw ingest, no se modifica
 
-2. **Gmail → Supabase** (pipeline sync-emails, cada 30 min)
-   - Emails ingestados via Gmail API
-   - Threads detectados automaticamente
+**Odoo (24 tablas, push qb19 cada 1h):**
+- Catálogo: `odoo_chart_of_accounts`, `odoo_currency_rates`, `odoo_stock_locations`, `odoo_workcenters`
+- Maestros: `odoo_products`, `odoo_users`, `odoo_employees`, `odoo_departments`, `odoo_orderpoints`
+- Transaccionales: `odoo_invoices`, `odoo_invoice_lines`, `odoo_sale_orders`, `odoo_order_lines`, `odoo_purchase_orders`, `odoo_deliveries`, `odoo_account_payments`, `odoo_activities`, `odoo_crm_leads`
+- Manufactura: `odoo_manufacturing`, `odoo_workorders`, `odoo_stock_moves` (1.65M rows), `odoo_account_entries_stock` (240k rows)
+- Saldos: `odoo_account_balances` (P&L mensual agregado), `odoo_bank_balances`
+- Sentinela: `odoo_sync_freshness`, `odoo_push_last_events` (auxiliares)
 
-3. **Pipeline → Knowledge Graph** (analyze, cada 30 min)
-   - Procesa 1 cuenta de email por invocacion
-   - Extrae: entities, facts, relationships, person profiles
-   - NO genera alertas ni acciones (los agentes se encargan)
+**Syntage SAT (12 tablas, webhook + pull-sync):**
+- `syntage_invoices` (130k rows, CFDIs), `syntage_invoice_line_items` (181k rows)
+- `syntage_invoice_payments` (25k rows, complementos de pago)
+- `syntage_tax_returns`, `syntage_tax_retentions`, `syntage_tax_status`, `syntage_electronic_accounting`
+- `syntage_files` (PDFs/XMLs blob), `syntage_webhook_events` (audit log)
+- Maestros: `syntage_taxpayers`, `syntage_entity_map`, `syntage_extractions`
 
-4. **Agentes → Insights** (orchestrate, cada 15 min)
-   - 1 agente por invocacion (el menos reciente primero)
-   - Claude analiza datos + memorias → genera insights
-   - Insights filtrados por confianza (>=80%)
-   - Asignados automaticamente: vendedor real de sale_orders > comprador de purchase_orders > departamento por categoria
-   - Max 5 insights por agente por ejecucion
-   - 8 categorias fijas: cobranza, ventas, entregas, operaciones, proveedores, riesgo, equipo, datos
+**Gmail (3 tablas):**
+- `emails` (117k rows), `threads` (50k), `email_recipients`
+
+**Knowledge graph (extraído de emails):**
+- `entities`, `entity_relationships`, `facts`, `ai_extracted_facts`, `action_items`
+
+#### SILVER — reconciliado, dedup, FKs resueltas
+
+**Canonical (Pattern A + C, 11 tablas + 5 MVs + 7 views):**
+- MDM (Pattern C): `canonical_companies` (4.9k), `canonical_contacts` (2k), `canonical_products` (6k), `canonical_employees` (view)
+- Operativo refresh-on-write (tablas): `canonical_invoices` (84k), `canonical_payments` (42k), `canonical_payment_allocations` (25k), `canonical_credit_notes` (2.2k), `canonical_tax_events` (398), `canonical_account_payments` (17k), `canonical_activities` (184k)
+- Operativo MVs (refresh sp11/sp12 hourly): `canonical_sale_orders` (12k), `canonical_purchase_orders` (5.7k), `canonical_order_lines` (32k), `canonical_deliveries` (25k), `canonical_manufacturing` (5k)
+- Append-only fact: `canonical_stock_moves` (1.64M, 853 MB) — espejo silver de `odoo_stock_moves` con `move_category` derivado
+
+**Reconciliación + MDM:**
+- `reconciliation_issues` (245k rows, 692 MB; retention 30d via pg_cron `recon_issues_retention_cleanup`)
+- `mdm_manual_overrides` (audit/bridge)
+- `source_links` (172k traceability links)
+- `audit_runs` + `audit_tolerances` (invariantes config + history; retention 90d)
+
+**MVs intermedias (refresh hourly via sp11/sp12):**
+- `mv_entry_lines_flat` (308k, P&L drilldown)
+- `mv_stock_move_account_matches` (350k, residual 501.01)
+- `mv_bom_standard_cost`, `mv_mo_actual_material_cost` (BOM real cost)
+
+**Legacy MVs (NO en convención canonical_*/mv_*, refresh `refresh-all-matviews` cada 2h):**
+- `client_reorder_predictions`, `payment_predictions`, `cashflow_projection`
+- `inventory_velocity`, `dead_stock_analysis`, `purchase_price_intelligence`
+- `customer_product_matrix`, `accounting_anomalies`, `bom_duplicate_components`
+- `ar_aging_detail`, `ops_delivery_health_weekly`, `journal_flow_profile`
+- `product_real_cost`, `real_sale_price`
+
+#### GOLD — vistas SQL no materializadas, evaluadas on-read
+
+**12 vistas activas (todas devuelven datos hoy):**
+| Vista | Filas | Para |
+|---|---|---|
+| `gold_company_360` | 4,511 | Detalle por empresa (revenue, AR/AP, OTD, tier) |
+| `gold_ceo_inbox` | 50 | Inbox priorizado (`reconciliation_issues` con context) |
+| `gold_pl_statement` | 60 | P&L mensual (60 meses) |
+| `gold_cashflow` | 1 | Snapshot cash + AR + AP |
+| `gold_revenue_monthly` | 20,542 | Revenue mensual por empresa |
+| `gold_balance_sheet` | 106 | Balance sheet por período |
+| `gold_reconciliation_health` | 1 | Health score global recon |
+| `gold_company_odoo_sat_drift` | 1,942 | Drift Odoo↔SAT por empresa |
+| `gold_inventory_valuation_drift_monthly` | 25 | Drift inventario mensual |
+| `gold_product_performance` | 6,016 | Ranking productos |
+| `gold_sale_chain_trace` | 12,401 | SO → delivery → invoice → payment |
+| `gold_state_mismatch_watchlist` | 85 | Discrepancias state cancel/posted |
+
+### Pipelines de datos
+
+1. **Odoo → Bronze** (qb19 addon, hourly push)
+   - 24 tablas, último sync verificado 2026-04-28 19:48 UTC (todas <2h freshness, excepto `odoo_workorders` 24h por baja prioridad)
+   - Bug `account_balances` 'tuple' fixeado en qb19 commit `ccec751c`
+2. **SAT → Bronze** (Syntage webhook + pull-sync)
+   - Real-time webhooks + nightly pull (`syntage/cron-daily` 5:00 AM)
+   - Bug `matcher_payment` resuelto con stub (2026-04-28); webhook ya no falla
+3. **Gmail → Bronze** (pipeline `sync-emails`, every 30 min)
+4. **Bronze → Silver** (pg_cron + Bronze triggers)
+   - Triggers `auto_link_*` en INSERT/UPDATE de bronze
+   - `matcher_*()` family ejecutada cada 2h (`silver_sp3_matcher_all_pending`)
+   - Refresh canonical aggregations cada 30min/45min
+   - MVs canonical refresh cada 2h (`refresh-all-matviews`)
+   - MVs sp11/sp12 refresh cada hora
+5. **Silver → Reconciliation Issues** (pg_cron)
+   - `silver_sp2_reconcile_hourly` (HH:05): invariantes con `cadence='hourly'`
+   - `silver_sp2_reconcile_2h` (HH:15 every 2h): invariantes con `cadence='2h'`
+   - `silver_sp4_reconcile_daily` (6:30 AM): invariantes daily
+   - `silver_sp2_refresh_canonical_nightly` (3:30 AM): full refresh
+   - 16+ invariantes activas (`audit_tolerances` controla cadence)
+6. **Silver → Gold** (vistas evaluadas on-read, sin pg_cron — la "frescura" la limita el último refresh upstream)
+7. **Gold → Frontend** (`src/lib/queries/**` con `unstable_cache` 60-300s para gold/canonical reads; uncached para fiscal/syntage webhook-driven)
+8. **Frontend → Agentes → Insights** (orchestrate cada hora, 8 directores activos — ver sección "Agentes de IA")
+
+### Health checks (estado verificado 2026-04-28 19:50 UTC)
+
+- **Bronze ingest:** 0 errores en últimas 6h (vs 49 errores en 7d antes de fixes 28-abr)
+- **Silver canonical:** todos los matchers corren, FKs validadas
+- **Gold:** 12/12 vistas vivas devolviendo datos
+- **pg_cron:** 15 jobs activos, todos con `active=true`
+- **Recent warnings (6h):** 9 syntage_webhook (transient), 2 health_check, 1 odoo_push, 1 data_quality (no críticos)
 
 ---
 
