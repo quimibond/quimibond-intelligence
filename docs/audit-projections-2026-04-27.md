@@ -96,6 +96,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: aguinaldo (dic), PTU (mayo), bonos extraordinarios entran al promedio mensual de nómina y aparecen mes a mes.
 - **Impacto**: outflow nómina inflado ~8-12% durante 11 meses, deflado en mes real de pago.
 - **Esfuerzo**: M (filtrar `tipoNomina` en CFDI nómina + tratar como evento puntual).
+- **Status (2026-04-27)**: **PARCIALMENTE RESUELTO**. Aguinaldo ya estaba aislado: el baseline excluye diciembre (`if b.iso.slice(5,7) === "12"`) y se proyecta separadamente al 20-dic. Para PTU/bonos extraordinarios: agregada winsorización per-tipo de evento — cada quincena/viernes que excede `2× mediana` se cap, el exceso queda registrado en `fortnightExtraordinaryDetected` / `weeklyExtraordinaryDetected`. Solo aplica con ≥4 eventos del tipo. **Pendiente**: proyectar PTU al 30-may como categoría puntual (requiere histórico ≥1 año para detectar mes-de-pago confiable). Cache v27 → v28.
 
 ### 14. Recurring 701.11/504.01.0008 contabiliza partes relacionadas
 - **Dónde**: `supabase/migrations/20260425_cash_projection_recurring_v2_taxes.sql` no filtra por `is_related_party`.
@@ -121,6 +122,7 @@ Cada item incluye: descripción, ubicación aproximada, impacto cuantificado (cu
 - **Síntoma**: si la matview ofrece `invoice_date NULL`, el bucket asignado es indeterminado (NULLS FIRST/LAST depende del DBMS y el ORDER BY).
 - **Impacto**: bajo (raro), pero en worst case asigna 95% probability a una factura realmente vieja.
 - **Esfuerzo**: S (COALESCE con due_date - 30 o invoice_date sintético).
+- **Status (2026-04-27)**: **NO-OP**. Validación empírica: `odoo_invoices` con state=posted y NULL invoice_date → 0 filas. `canonical_invoices` con NULL invoice_date → 56,701 (SAT-only historicals viejos), pero todos los queries upstream usan `.gte("invoice_date", lookback_iso)` que filtra implícitamente NULLs. Bucket assignment usa `days_overdue` del matview (computed server-side), no `invoice_date` directo. Sin riesgo en producción.
 
 ---
 

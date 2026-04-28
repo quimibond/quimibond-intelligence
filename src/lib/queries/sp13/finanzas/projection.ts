@@ -1711,6 +1711,12 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   let totalFortnightSubtotal = 0;
   const weeklyEventsObserved = new Set<string>(); // ISO de viernes únicos
   const decemberDayBuckets: DayBucket[] = [];
+  // Audit 2026-04-27 finding #13: PTU (mayo), bonos extraordinarios, primas
+  // de antigüedad, etc. inflan el avg si caen en el lookback. Aplicamos
+  // winsorización per-tipo: cap cada evento a 2× la mediana de su grupo.
+  // Aguinaldo ya está aislado (excluye diciembre del baseline).
+  const fortnightEventTotals: number[] = [];
+  const weeklyEventTotals: number[] = [];
   for (const b of dayBuckets.values()) {
     const ym = b.iso.slice(0, 7);
     if (ym === currentMonthKey) continue; // mes parcial
@@ -1719,18 +1725,70 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
       continue; // diciembre se trata aparte
     }
     if (isFortnightDay(b.dayOfMonth)) {
-      totalFortnight += b.total;
-      totalFortnightSubtotal += b.subtotal;
+      fortnightEventTotals.push(b.total);
+    } else if (b.dayOfWeek === 5) {
+      weeklyEventTotals.push(b.total);
+    }
+  }
+  const medianForArr = (arr: number[]): number => {
+    if (arr.length === 0) return 0;
+    const sorted = [...arr].sort((a, b) => a - b);
+    const mid = Math.floor(sorted.length / 2);
+    return sorted.length % 2 === 0
+      ? (sorted[mid - 1] + sorted[mid]) / 2
+      : sorted[mid];
+  };
+  // Cap solo cuando hay ≥4 eventos del tipo (estadística). Con menos
+  // mantenemos el dato crudo (puede ser empresa nueva o data limitada).
+  const fortnightMed = fortnightEventTotals.length >= 4 ? medianForArr(fortnightEventTotals) : 0;
+  const weeklyMed = weeklyEventTotals.length >= 4 ? medianForArr(weeklyEventTotals) : 0;
+  // Tracker de eventos extraordinarios identificados (suma del exceso) →
+  // futuro: proyectar como pagos puntuales en su mes correspondiente.
+  let fortnightExtraordinaryDetected = 0;
+  let weeklyExtraordinaryDetected = 0;
+
+  for (const b of dayBuckets.values()) {
+    const ym = b.iso.slice(0, 7);
+    if (ym === currentMonthKey) continue; // mes parcial
+    if (b.iso.slice(5, 7) === "12") continue; // ya en decemberDayBuckets
+    if (isFortnightDay(b.dayOfMonth)) {
+      let total = b.total;
+      let subtotal = b.subtotal;
+      if (fortnightMed > 0 && total > fortnightMed * 2) {
+        const excess = total - fortnightMed * 2;
+        fortnightExtraordinaryDetected += excess;
+        const ratio = total > 0 ? (fortnightMed * 2) / total : 0;
+        subtotal = subtotal * ratio;
+        total = fortnightMed * 2;
+      }
+      totalFortnight += total;
+      totalFortnightSubtotal += subtotal;
       countFortnightEvents++;
     } else {
-      totalWeekly += b.total;
-      totalWeeklySubtotal += b.subtotal;
+      let total = b.total;
+      let subtotal = b.subtotal;
+      // Solo cap eventos de viernes (los otros días son ruido — días que
+      // ocasionalmente reciben CFDIs sueltos por correcciones).
+      if (b.dayOfWeek === 5 && weeklyMed > 0 && total > weeklyMed * 2) {
+        const excess = total - weeklyMed * 2;
+        weeklyExtraordinaryDetected += excess;
+        const ratio = total > 0 ? (weeklyMed * 2) / total : 0;
+        subtotal = subtotal * ratio;
+        total = weeklyMed * 2;
+      }
+      totalWeekly += total;
+      totalWeeklySubtotal += subtotal;
       // Contar viernes únicos como "evento semanal"
       if (b.dayOfWeek === 5) {
         weeklyEventsObserved.add(b.iso);
       }
     }
   }
+  // NOTA: fortnightExtraordinaryDetected + weeklyExtraordinaryDetected
+  // representan el "exceso" de PTU/bonos detectado en el lookback. No los
+  // proyectamos al horizonte porque no sabemos si caerán dentro (PTU es
+  // típicamente mayo, bonos varían). Quedan como señal en el log para
+  // futuras iteraciones — proyectar PTU al 30-may por categoría aparte.
 
   // Promedio por evento. Si no hay viernes (datos cortos), usar fallback.
   const fortnightAvgNet =
@@ -2035,7 +2093,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v27-winsorize-runrate"],
+  ["sp13-finanzas-cash-projection-v28-nomina-winsorize"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 
