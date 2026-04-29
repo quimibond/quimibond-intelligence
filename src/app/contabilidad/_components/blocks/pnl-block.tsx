@@ -274,7 +274,8 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 compras={kpis.compras502Mxn}
                 overhead={kpis.overhead504_01Mxn}
                 depFabrica={kpis.depFabrica504Mxn}
-                gastosOp={kpis.gastosOp6xxMxn + kpis.depCorpoMxn}
+                gastosOp={kpis.gastosOp6xxMxn}
+                depCorpo={kpis.depCorpoMxn}
                 otros={kpis.otrosIngresosNetoMxn}
                 netaContable={kpis.utilidadNeta}
               />
@@ -716,6 +717,7 @@ export function PnlComparisonTable({
   overhead,
   depFabrica,
   gastosOp,
+  depCorpo,
   otros,
   netaContable,
 }: {
@@ -727,6 +729,7 @@ export function PnlComparisonTable({
   overhead: number;
   depFabrica: number;
   gastosOp: number;
+  depCorpo: number;
   otros: number;
   netaContable: number;
 }) {
@@ -734,15 +737,22 @@ export function PnlComparisonTable({
   const pct = (num: number, den: number) =>
     den > 0 ? `${((num / den) * 100).toFixed(1)}%` : "—";
 
-  // Totales por columna. costoVentas = COGS + MOD + Compras + Overhead + Dep
-  const costoVentasContable =
-    cogs501_01Actual + mod + compras + overhead + depFabrica;
-  const costoVentasLimpio = costoPrimo + mod + compras + overhead + depFabrica;
+  // Estructura alineada al Estado de Resultados de Odoo:
+  //   Ventas − Costo de ingresos = Ganancia bruta
+  //   − Gasto de operación = EBIT
+  //   + Otros − Depreciación = Utilidad neta
+  // La depreciación (fábrica + CORPO) viaja como línea separada después
+  // de "Otros ingresos" — Odoo la pone en "Total Menos gastos de otro
+  // tipo". El residual_501.01 es independiente de dónde se ponga la
+  // depreciación: solo depende del swap 501.01 ↔ costoPrimo BOM.
+  const costoVentasContable = cogs501_01Actual + mod + compras + overhead;
+  const costoVentasLimpio = costoPrimo + mod + compras + overhead;
   const utilBrutaContable = ventas - costoVentasContable;
   const utilBrutaLimpio = ventas - costoVentasLimpio;
   const ebitContable = utilBrutaContable - gastosOp;
   const ebitLimpio = utilBrutaLimpio - gastosOp;
-  const netaLimpio = ebitLimpio + otros;
+  const depTotal = depFabrica + depCorpo;
+  const netaLimpio = ebitLimpio + otros - depTotal;
   const residual501_01 = cogs501_01Actual - costoPrimo;
   const deltaNeta = netaLimpio - netaContable;
 
@@ -759,7 +769,7 @@ export function PnlComparisonTable({
 
   const rows: Row[] = [
     { label: "Ventas de producto (4xx)", contable: ventas, limpio: ventas, isTotal: true },
-    { label: "Costo de ventas:", contable: null, limpio: null, isHeader: true },
+    { label: "Costo de ingresos:", contable: null, limpio: null, isHeader: true },
     {
       label: "501.01 contable (con CAPA inflada de Odoo)",
       contable: cogs501_01Actual,
@@ -785,30 +795,39 @@ export function PnlComparisonTable({
       contable: overhead, limpio: overhead, isDetail: true,
     },
     {
-      label: "Depreciación fábrica (504.08-23)",
-      contable: depFabrica, limpio: depFabrica, isDetail: true,
-    },
-    {
-      label: "Total costo de ventas",
+      label: "Total costo de ingresos",
       contable: costoVentasContable, limpio: costoVentasLimpio, isSubtotal: true,
     },
     {
-      label: "= Utilidad bruta",
+      label: "= Ganancia bruta",
       contable: utilBrutaContable, limpio: utilBrutaLimpio, isSubtotal: true,
       note: `${pct(utilBrutaLimpio, ventas)} sobre ventas (limpio)`,
     },
     {
-      label: "− Gastos operativos (6xx + 613 dep.)",
+      label: "− Gasto de operación (6xx)",
       contable: gastosOp, limpio: gastosOp, isDetail: true,
     },
     {
-      label: "= EBIT",
+      label: "= Ingreso de operación (EBIT)",
       contable: ebitContable, limpio: ebitLimpio, isSubtotal: true,
       note: `${pct(ebitLimpio, ventas)} sobre ventas (limpio)`,
     },
     {
-      label: "+ Otros (7xx: FX, intereses, venta activo)",
+      label: "+ Otros ingresos (7xx: FX, intereses, venta activo)",
       contable: otros, limpio: otros, isDetail: true,
+    },
+    { label: "Menos gastos de otro tipo:", contable: null, limpio: null, isHeader: true },
+    {
+      label: "Depreciación fábrica (504.08-23)",
+      contable: depFabrica, limpio: depFabrica, isDetail: true,
+    },
+    {
+      label: "Depreciación CORPO (613)",
+      contable: depCorpo, limpio: depCorpo, isDetail: true,
+    },
+    {
+      label: "Total depreciación",
+      contable: depTotal, limpio: depTotal, isSubtotal: true,
     },
     {
       label: "= UTILIDAD NETA",
