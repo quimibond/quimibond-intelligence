@@ -213,10 +213,8 @@ describe("axe-core a11y scan — SP6 new/consolidated components", () => {
       detected_at: "2026-04-18T09:00:00Z",
       invariant_key: null,
       metadata: null,
-      email_signals: [],
       ai_extracted_facts: [],
       manual_notes: [],
-      attachments: [],
     };
     const { container } = render(<IssueDetailClient item={item} />);
     const results = await runAxe(container);

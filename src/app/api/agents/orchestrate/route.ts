@@ -1120,7 +1120,7 @@ async function buildAgentContext(
   const [emailFacts, emailIntel, recentFeedback, pendingTickets, recentKGFacts, myDismissed] = await Promise.all([
     // Email facts per company (reduced from 15 to 8)
     supabase
-      .from("company_email_intelligence") // SP5-EXCEPTION: §12 banned MV — no canonical email-intel view yet; TODO SP6 replace with email_signals/ai_extracted_facts aggregate
+      .from("company_email_intelligence") // SP5-EXCEPTION: §12 banned MV — no canonical email-intel view yet; TODO SP6 replace with ai_extracted_facts aggregate
       .select("company_name, fact_type, fact_text")
       .in("fact_type", ["complaint", "commitment", "request", "price"])
       .limit(8),

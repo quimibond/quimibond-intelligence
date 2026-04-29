@@ -124,8 +124,8 @@ export async function listInbox(
 
 /**
  * Fetch a single gold_ceo_inbox row by issue_id (UUID), plus evidence arrays
- * from email_signals, ai_extracted_facts, manual_notes, and attachments.
- * Evidence is correlated on canonical_entity_type + canonical_entity_id.
+ * from ai_extracted_facts and manual_notes. Evidence is correlated on
+ * canonical_entity_type + canonical_entity_id.
  */
 export async function fetchInboxItem(issue_id: string) {
   const sb = getServiceClient();
@@ -144,25 +144,15 @@ export async function fetchInboxItem(issue_id: string) {
   if (!entityType || !entityId) {
     return {
       ...row,
-      email_signals: [],
       ai_extracted_facts: [],
       manual_notes: [],
-      attachments: [],
     };
   }
 
   const [
-    { data: signals },
     { data: facts },
     { data: notes },
-    { data: atts },
   ] = await Promise.all([
-    sb
-      .from("email_signals")
-      .select("*")
-      .eq("canonical_entity_type", entityType)
-      .eq("canonical_entity_id", entityId)
-      .limit(25),
     sb
       .from("ai_extracted_facts")
       .select("*")
@@ -176,20 +166,12 @@ export async function fetchInboxItem(issue_id: string) {
       .eq("canonical_entity_id", entityId)
       .order("created_at", { ascending: false })
       .limit(25),
-    sb
-      .from("attachments")
-      .select("*")
-      .eq("canonical_entity_type", entityType)
-      .eq("canonical_entity_id", entityId)
-      .limit(25),
   ]);
 
   return {
     ...row,
-    email_signals: signals ?? [],
     ai_extracted_facts: facts ?? [],
     manual_notes: notes ?? [],
-    attachments: atts ?? [],
   };
 }
 

@@ -27,19 +27,14 @@ import type { InboxRow } from "@/lib/queries/intelligence/inbox";
 import type { InvariantExplainer } from "@/lib/queries/intelligence/invariant-explainers";
 import type { IssueEntityContext } from "@/lib/queries/intelligence/issue-entity-context";
 import { EvidenceSection } from "./EvidenceSection";
-import { AttachmentsSection } from "./AttachmentsSection";
 import { NotesSection } from "./NotesSection";
 
-type EmailSignal = Database["public"]["Tables"]["email_signals"]["Row"];
 type AiFact = Database["public"]["Tables"]["ai_extracted_facts"]["Row"];
 type ManualNote = Database["public"]["Tables"]["manual_notes"]["Row"];
-type Attachment = Database["public"]["Tables"]["attachments"]["Row"];
 
 export type IssueDetailItem = InboxRow & {
-  email_signals: EmailSignal[];
   ai_extracted_facts: AiFact[];
   manual_notes: ManualNote[];
-  attachments: Attachment[];
 };
 
 type CtaKey = "operationalize" | "confirm_cancel" | "link_manual" | "resolve";
@@ -310,25 +305,19 @@ export function IssueDetailClient({
           </p>
         </section>
 
-        {/* Existing evidence/files/notes — secondary content below the fold */}
+        {/* Existing evidence/notes — secondary content below the fold */}
         <details className="group">
           <summary className="flex cursor-pointer items-center gap-1.5 text-sm font-semibold hover:text-foreground">
             <HelpCircleIcon className="size-4 text-muted-foreground" aria-hidden />
-            Evidencia, archivos y notas
+            Evidencia y notas
             <span className="text-[10px] font-normal text-muted-foreground">
-              ({item.email_signals.length + item.ai_extracted_facts.length} señales ·{" "}
-              {item.attachments.length} archivos · {item.manual_notes.length} notas)
+              ({item.ai_extracted_facts.length} hechos · {item.manual_notes.length} notas)
             </span>
           </summary>
           <div className="mt-3 space-y-4">
             <section aria-labelledby="evidencia-heading" className="space-y-3">
               <SectionHeader title="Evidencia" />
-              <EvidenceSection signals={item.email_signals} facts={item.ai_extracted_facts} />
-            </section>
-
-            <section aria-labelledby="archivos-heading" className="space-y-3">
-              <SectionHeader title="Archivos" />
-              <AttachmentsSection items={item.attachments} />
+              <EvidenceSection facts={item.ai_extracted_facts} />
             </section>
 
             <section aria-labelledby="notas-heading" className="space-y-3">

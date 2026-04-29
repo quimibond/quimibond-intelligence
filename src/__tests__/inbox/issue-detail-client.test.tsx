@@ -26,10 +26,8 @@ const makeItem = (overrides: Partial<IssueDetailItem> = {}): IssueDetailItem => 
   detected_at: "2026-04-18T09:00:00Z",
   invariant_key: null,
   metadata: null,
-  email_signals: [],
   ai_extracted_facts: [],
   manual_notes: [],
-  attachments: [],
   ...overrides,
 });
 

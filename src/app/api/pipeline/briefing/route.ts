@@ -107,7 +107,7 @@ export async function POST(request: NextRequest) {
 
       // 5. Email facts: actual complaints, commitments, requests
       supabase
-        .from("company_email_intelligence") // SP5-EXCEPTION: §12 banned MV — briefing email-facts snapshot; no canonical email-intel view yet. TODO SP6: replace with email_signals/ai_extracted_facts aggregate.
+        .from("company_email_intelligence") // SP5-EXCEPTION: §12 banned MV — briefing email-facts snapshot; no canonical email-intel view yet. TODO SP6: replace with ai_extracted_facts aggregate.
         .select("company_name, fact_type, fact_text")
         .in("fact_type", ["complaint", "commitment", "request"])
         .order("created_at", { ascending: false })

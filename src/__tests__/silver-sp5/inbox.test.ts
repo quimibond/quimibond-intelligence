@@ -65,10 +65,8 @@ describeIntegration("intelligence/inbox.ts — live DB", () => {
     if (first && first.issue_id) {
       const item = await mod.fetchInboxItem(first.issue_id);
       expect(item).toBeTruthy();
-      expect(Array.isArray(item!.email_signals)).toBe(true);
       expect(Array.isArray(item!.ai_extracted_facts)).toBe(true);
       expect(Array.isArray(item!.manual_notes)).toBe(true);
-      expect(Array.isArray(item!.attachments)).toBe(true);
     }
   });
 
