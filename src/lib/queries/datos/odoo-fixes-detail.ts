@@ -27,7 +27,7 @@ export const getOdooFixById = unstable_cache(fetchOdooFixById, ["odoo-fix-by-id"
 });
 
 // ─────────────────────────────────────────────────────────────────
-// A) odoo_sat_invoice_drift detail — reconciliation_issues by invariant_key
+// A) odoo_sat_invoice_drift
 // ─────────────────────────────────────────────────────────────────
 
 export interface SatInvoiceDriftDetailRow {
@@ -69,7 +69,7 @@ export const getSatInvoiceDriftDetail = unstable_cache(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// B) odoo_duplicate_partner_rfc detail — companies bronze with same RFC
+// B) odoo_duplicate_partner_rfc
 // ─────────────────────────────────────────────────────────────────
 
 export interface DuplicatePartnerRfcDetailRow {
@@ -105,7 +105,7 @@ export const getDuplicatePartnerRfcDetail = unstable_cache(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// C) odoo_partner_no_canonical detail — payments by orphan partner_id
+// C) odoo_partner_no_canonical
 // ─────────────────────────────────────────────────────────────────
 
 export interface PartnerNoCanonicalDetailRow {
@@ -142,7 +142,7 @@ export const getPartnerNoCanonicalDetail = unstable_cache(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// D) odoo_foreign_tax_id_in_rfc detail — single bronze company
+// D) odoo_foreign_tax_id_in_rfc
 // ─────────────────────────────────────────────────────────────────
 
 export interface ForeignTaxIdDetailRow {
@@ -186,7 +186,7 @@ export const getForeignTaxIdDetail = unstable_cache(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// E) mdm_contacts_duplicates detail — all dup groups with members
+// E) mdm_contacts_duplicates
 // ─────────────────────────────────────────────────────────────────
 
 export interface ContactDuplicateGroup {
@@ -238,7 +238,7 @@ export const getContactsDuplicatesDetail = unstable_cache(
 );
 
 // ─────────────────────────────────────────────────────────────────
-// F) mdm_products_duplicates detail — same as E but for products
+// F) mdm_products_duplicates
 // ─────────────────────────────────────────────────────────────────
 
 export interface ProductDuplicateGroup {
@@ -287,5 +287,119 @@ async function fetchProductsDuplicatesDetail(): Promise<ProductDuplicateGroup[]>
 export const getProductsDuplicatesDetail = unstable_cache(
   fetchProductsDuplicatesDetail,
   ["products-duplicates-detail"],
+  { revalidate: 60, tags: ["odoo-fixes"] }
+);
+
+// ─────────────────────────────────────────────────────────────────
+// G) mdm_contact_name_is_email — contacts con email como canonical_name
+// ─────────────────────────────────────────────────────────────────
+
+export interface ContactNameIsEmailDetailRow {
+  id: number;
+  canonical_name: string;
+  primary_email: string | null;
+  canonical_company_id: number | null;
+}
+
+async function fetchContactNameIsEmailDetail(): Promise<ContactNameIsEmailDetailRow[]> {
+  const sb = getServiceClient();
+  const { data, error } = await sb
+    .from("canonical_contacts")
+    .select("id, canonical_name, primary_email, canonical_company_id")
+    .like("canonical_name", "%@%")
+    .order("id")
+    .limit(500);
+
+  if (error) throw new Error(`getContactNameIsEmailDetail: ${error.message}`);
+  return (data ?? []) as ContactNameIsEmailDetailRow[];
+}
+
+export const getContactNameIsEmailDetail = unstable_cache(
+  fetchContactNameIsEmailDetail,
+  ["contact-name-is-email-detail"],
+  { revalidate: 60, tags: ["odoo-fixes"] }
+);
+
+// ─────────────────────────────────────────────────────────────────
+// H) canonical_partner_orphan — canonical companies con partner_id sin bronze
+// ─────────────────────────────────────────────────────────────────
+
+export interface CanonicalPartnerOrphanDetailRow {
+  id: number;
+  canonical_name: string;
+  rfc: string | null;
+  odoo_partner_id: number;
+  is_customer: boolean | null;
+  is_supplier: boolean | null;
+}
+
+async function fetchCanonicalPartnerOrphanDetail(): Promise<CanonicalPartnerOrphanDetailRow[]> {
+  const sb = getServiceClient();
+  // Pull all canonical_companies with partner_id, then filter client-side
+  // against bronze companies (more efficient than NOT EXISTS subquery for ~2k rows).
+  const { data: cans, error: e1 } = await sb
+    .from("canonical_companies")
+    .select("id, canonical_name, rfc, odoo_partner_id, is_customer, is_supplier")
+    .not("odoo_partner_id", "is", null)
+    .limit(5000);
+  if (e1) throw new Error(`getCanonicalPartnerOrphanDetail: ${e1.message}`);
+
+  const partnerIds = (cans ?? []).map((c) => (c as { odoo_partner_id: number }).odoo_partner_id);
+  const bronzeSet = new Set<number>();
+  // Batch fetch bronze companies in chunks of 1000
+  for (let i = 0; i < partnerIds.length; i += 1000) {
+    const chunk = partnerIds.slice(i, i + 1000);
+    const { data: bronze, error: e2 } = await sb
+      .from("companies")
+      .select("odoo_partner_id")
+      .in("odoo_partner_id", chunk);
+    if (e2) throw new Error(`getCanonicalPartnerOrphanDetail bronze: ${e2.message}`);
+    for (const b of bronze ?? []) {
+      bronzeSet.add((b as { odoo_partner_id: number }).odoo_partner_id);
+    }
+  }
+
+  return (cans ?? []).filter(
+    (c) => !bronzeSet.has((c as { odoo_partner_id: number }).odoo_partner_id)
+  ) as CanonicalPartnerOrphanDetailRow[];
+}
+
+export const getCanonicalPartnerOrphanDetail = unstable_cache(
+  fetchCanonicalPartnerOrphanDetail,
+  ["canonical-partner-orphan-detail"],
+  { revalidate: 60, tags: ["odoo-fixes"] }
+);
+
+// ─────────────────────────────────────────────────────────────────
+// I) canonical_invoice_pre_history — facturas pre-2013
+// ─────────────────────────────────────────────────────────────────
+
+export interface PreHistoryInvoiceDetailRow {
+  sat_uuid: string;
+  invoice_date_resolved: string;
+  amount_total_mxn_resolved: number | null;
+  direction: string | null;
+  emisor_canonical_company_id: number | null;
+  receptor_canonical_company_id: number | null;
+}
+
+async function fetchPreHistoryInvoiceDetail(): Promise<PreHistoryInvoiceDetailRow[]> {
+  const sb = getServiceClient();
+  const { data, error } = await sb
+    .from("canonical_invoices")
+    .select(
+      "sat_uuid, invoice_date_resolved, amount_total_mxn_resolved, direction, emisor_canonical_company_id, receptor_canonical_company_id"
+    )
+    .lt("invoice_date_resolved", "2013-01-01")
+    .order("invoice_date_resolved")
+    .limit(100);
+
+  if (error) throw new Error(`getPreHistoryInvoiceDetail: ${error.message}`);
+  return (data ?? []) as PreHistoryInvoiceDetailRow[];
+}
+
+export const getPreHistoryInvoiceDetail = unstable_cache(
+  fetchPreHistoryInvoiceDetail,
+  ["pre-history-invoice-detail"],
   { revalidate: 60, tags: ["odoo-fixes"] }
 );
