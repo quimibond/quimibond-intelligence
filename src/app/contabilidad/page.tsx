@@ -23,7 +23,9 @@ import {
   TaxBlock,
 } from "./_components/blocks";
 
-export const revalidate = 60;
+// Temporal: force-dynamic para bypasear ISR stale cache tras row-limit fix.
+// Volver a `revalidate = 60` después de confirmar que P&L cuadra al peso.
+export const dynamic = "force-dynamic";
 export const metadata = { title: "Contabilidad" };
 
 type SearchParams = Record<string, string | string[] | undefined>;
