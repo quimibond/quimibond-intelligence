@@ -1139,6 +1139,27 @@ la lógica para invalidar Vercel ISR.
 5. **Odoo agent:** Solo analiza y recomienda — no modifica Odoo.
 6. **Audit trail:** Todas las operaciones loggeadas en pipeline_logs y schema_changes.
 
+### RLS posture (decisión 2026-04-28, audit P2-8)
+
+**Postura adoptada: anon-key seguro / RLS no requerido.**
+
+- El frontend (Next.js 15 server components) accede a Supabase via
+  **`SUPABASE_SERVICE_KEY` exclusivamente**, en `getServiceClient()`
+  (`src/lib/supabase-server.ts`). Service role bypassea RLS por diseño.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` se setea en env vars pero **no se usa**
+  para reads del backend; queda disponible solo para futuros client
+  components que requieran RLS (no hay ninguno hoy).
+- Auth UI no expone anon-key a usuarios externos — la app está detrás
+  de `AUTH_PASSWORD` middleware (single-tenant, CEO-only).
+
+**Por eso los 49 ERROR-level lints de RLS están suprimidos conscientemente:**
+no aplican al modelo de acceso real. Si en el futuro se agrega un cliente
+público (móvil, embed externo, multi-tenant), revisitar y cerrar RLS por
+tabla con policies por rol antes de exponer anon-key.
+
+**No habilitar RLS sin auditar uso de service vs anon en queries** —
+romperia getServiceClient flows que asumen bypass.
+
 ---
 
 ## Environment Variables
