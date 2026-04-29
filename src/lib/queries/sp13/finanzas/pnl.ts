@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import type { HistoryRange } from "@/components/patterns/history-range";
 import { periodBoundsForRange } from "./_period";
+import { paginateAll } from "@/lib/queries/_shared/paginate";
 
 /**
  * F3 — P&L KPIs + waterfall for a given HistoryRange.
@@ -238,27 +239,36 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
   const agg = await fetchPlAggregates(range);
   const t = deriveTotals(agg);
 
-  // SAT revenue for the same window (emitidas dentro del rango)
+  // SAT revenue for the same window (emitidas dentro del rango). Paginated:
+  // canonical_invoices issued for a year > 1000 rows (audit 2026-04-29).
   const bounds = periodBoundsForRange(range);
-  const { data: satData, error: satErr } = await sb
-    .from("canonical_invoices")
-    .select(
-      "amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo, invoice_date"
-    )
-    .eq("is_quimibond_relevant", true)
-    .eq("direction", "issued")
-    .or("estado_sat.is.null,estado_sat.neq.cancelado")
-    .gte("invoice_date", bounds.from)
-    .lt("invoice_date", bounds.to);
-  if (satErr) {
-    console.error("[getPnlKpis] SAT aggregation failure", satErr.message);
-  }
   type SatRow = {
     amount_total_mxn_sat: number | null;
     amount_total_mxn_resolved: number | null;
     amount_total_mxn_odoo: number | null;
+    invoice_date: string | null;
   };
-  const ingresosSat = (satData ?? []).reduce(
+  let satData: SatRow[] = [];
+  try {
+    satData = await paginateAll<SatRow>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select(
+          "amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo, invoice_date"
+        )
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "issued")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .gte("invoice_date", bounds.from)
+        .lt("invoice_date", bounds.to)
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    );
+  } catch (err) {
+    console.error("[getPnlKpis] SAT aggregation failure", err instanceof Error ? err.message : String(err));
+  }
+  const ingresosSat = satData.reduce(
     (s, r) =>
       s +
       (Number(
@@ -306,7 +316,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v6-paginated", range],
+    ["sp13-finanzas-pnl-kpis-v7-paginated-sat", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import type { HistoryRange } from "@/components/patterns/history-range";
 import { periodBoundsForRange } from "./_period";
+import { paginateAll } from "@/lib/queries/_shared/paginate";
 
 /**
  * F-COGS — Costo de ventas: contable vs recursive BOM (solo materia prima).
@@ -79,6 +80,8 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
 
+  // Paginated: odoo_invoice_lines out_invoice y:2025 has 9k+ rows (audit
+  // 2026-04-29) and would silently truncate at the PostgREST 1000-row cap.
   const [cogsAcctRes, capaRes, recursiveRes, bomFlatLinesRes, invoiceRevRes] =
     await Promise.all([
       // 1a. COGS contable actual (501.01 post-adjustment ya aplicado)
@@ -103,22 +106,31 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
         p_date_from: bounds.from,
         p_date_to: bounds.to,
       }),
-      // 3. Flat BOM reference (legacy MV — solo para tarjeta de referencia)
-      sb
-        .from("odoo_invoice_lines")
-        .select("odoo_product_id, quantity")
-        .eq("move_type", "out_invoice")
-        .gte("invoice_date", bounds.from)
-        .lt("invoice_date", bounds.to),
-      // 4. Revenue invoice-basis (para detectar venta de activos: el gap
-      //    vs cuenta 4xx revela máquina/equipo vendidos facturados pero
-      //    cuyo P&L solo reconoce la utilidad en 7xx).
-      sb
-        .from("odoo_invoice_lines")
-        .select("price_subtotal_mxn")
-        .eq("move_type", "out_invoice")
-        .gte("invoice_date", bounds.from)
-        .lt("invoice_date", bounds.to),
+      // 3. Flat BOM reference — paginated (>1000 rows for typical year).
+      paginateAll<{ odoo_product_id: number | null; quantity: number | null }>(
+        ({ from, to }) =>
+          sb
+            .from("odoo_invoice_lines")
+            .select("odoo_product_id, quantity")
+            .eq("move_type", "out_invoice")
+            .gte("invoice_date", bounds.from)
+            .lt("invoice_date", bounds.to)
+            .order("invoice_date", { ascending: true })
+            .order("odoo_line_id", { ascending: true })
+            .range(from, to)
+      ).then((data) => ({ data, error: null })),
+      // 4. Revenue invoice-basis — paginated.
+      paginateAll<{ price_subtotal_mxn: number | null }>(({ from, to }) =>
+        sb
+          .from("odoo_invoice_lines")
+          .select("price_subtotal_mxn")
+          .eq("move_type", "out_invoice")
+          .gte("invoice_date", bounds.from)
+          .lt("invoice_date", bounds.to)
+          .order("invoice_date", { ascending: true })
+          .order("odoo_line_id", { ascending: true })
+          .range(from, to)
+      ).then((data) => ({ data, error: null })),
     ]);
 
   type AcctRow = { balance: number | null; period: string };
@@ -268,7 +280,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
 export const getCogsComparison = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison", range],
+    ["sp13-finanzas-cogs-comparison-v2-paginated", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -278,6 +290,6 @@ export { _getCogsComparisonRaw as _getCogsComparisonForTests };
 export const getCogsComparisonCached = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison", range],
+    ["sp13-finanzas-cogs-comparison-v2-paginated", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();

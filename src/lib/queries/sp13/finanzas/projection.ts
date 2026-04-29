@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import { paginateAll } from "@/lib/queries/_shared/paginate";
 import {
   getLearnedAgingCalibration,
   getLearnedCounterpartyParams,
@@ -329,33 +330,56 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   const freshPaymentRate =
     agingCalibration.paymentRateByBucket.fresh.rate || 0.95;
 
+  // Paginated: canonical_invoices over a multi-month lookback regularly
+  // exceeds 1000 rows (audit 2026-04-29). Single-shot queries silently
+  // truncated and underestimated run-rate inflow/outflow.
+  type CustomerInvRow = {
+    receptor_canonical_company_id: number | null;
+    amount_total_mxn_resolved: number | null;
+    invoice_date: string | null;
+  };
+  type SupplierInvRow = {
+    emisor_canonical_company_id: number | null;
+    amount_total_mxn_resolved: number | null;
+    invoice_date: string | null;
+  };
   const [customerInvRes, supplierInvRes] = await Promise.all([
-    sb
-      .from("canonical_invoices")
-      .select(
-        "receptor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
-      )
-      .eq("direction", "issued")
-      .eq("is_quimibond_relevant", true)
-      .or("estado_sat.is.null,estado_sat.neq.cancelado")
-      .gte("invoice_date", customerLookbackIso)
-      .gt("amount_total_mxn_resolved", 0),
+    paginateAll<CustomerInvRow>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select(
+          "receptor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
+        )
+        .eq("direction", "issued")
+        .eq("is_quimibond_relevant", true)
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .gte("invoice_date", customerLookbackIso)
+        .gt("amount_total_mxn_resolved", 0)
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ).then((data) => ({ data, error: null })),
     // Idéntico para proveedores: run rate de COMPRAS nuevas esperadas.
     // Sin esto, el modelo era asimétrico (3 capas de inflow vs 2 de
     // outflow) y subestimaba los outflows porque solo proyectaba AP
     // existente + recurrentes. La realidad: la empresa va a recibir
     // facturas NUEVAS de proveedores en el horizonte que aún no están
     // registradas hoy.
-    sb
-      .from("canonical_invoices")
-      .select(
-        "emisor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
-      )
-      .eq("direction", "received")
-      .eq("is_quimibond_relevant", true)
-      .or("estado_sat.is.null,estado_sat.neq.cancelado")
-      .gte("invoice_date", customerLookbackIso)
-      .gt("amount_total_mxn_resolved", 0),
+    paginateAll<SupplierInvRow>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select(
+          "emisor_canonical_company_id, amount_total_mxn_resolved, invoice_date"
+        )
+        .eq("direction", "received")
+        .eq("is_quimibond_relevant", true)
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .gte("invoice_date", customerLookbackIso)
+        .gt("amount_total_mxn_resolved", 0)
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ).then((data) => ({ data, error: null })),
   ]);
 
   // Set autoritativo de Bronze company.id para partes relacionadas.
@@ -2125,7 +2149,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
 
 export const getCashProjection = unstable_cache(
   _getCashProjectionRaw,
-  ["sp13-finanzas-cash-projection-v31-deseasonalized-trend"],
+  ["sp13-finanzas-cash-projection-v32-paginated-runrate"],
   { revalidate: 600, tags: ["finanzas"] }
 );
 

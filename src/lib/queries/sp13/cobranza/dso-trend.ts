@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "../../_shared/_helpers";
+import { paginateAll } from "../../_shared/paginate";
 
 // C8 — monthly DSO proxy for last N months.
 //
@@ -35,32 +36,34 @@ async function _getDsoTrendRaw(months: number): Promise<DsoMonth[]> {
   const startStr = start.toISOString().slice(0, 10);
 
   // Pull issued, non-cancelled invoices that became fully paid in window.
-  // We OR over fiscal_fully_paid_at + payment_date_odoo so the row is
-  // included if either source places its payment inside the window.
-  const { data } = await sb
-    .from("canonical_invoices")
-    .select(
-      "invoice_date, fiscal_fully_paid_at, payment_date_odoo, amount_total_mxn_resolved, amount_total_mxn_odoo, receptor_canonical_company_id"
-    )
-    // Tombstone filter (see migration 20260426): exclude personal CFDIs.
-    .eq("is_quimibond_relevant", true)
-    .eq("direction", "issued")
-    .or("estado_sat.is.null,estado_sat.neq.cancelado")
-    .eq("payment_state_odoo", "paid")
-    .or(
-      `fiscal_fully_paid_at.gte.${startStr},payment_date_odoo.gte.${startStr}`
-    )
-    .not("receptor_canonical_company_id", "in", pgInList(selfIds));
-
+  // Paginated: 14k+ paid invoices in history (audit 2026-04-29 row-limit fix).
   type Row = {
     invoice_date: string | null;
     fiscal_fully_paid_at: string | null;
     payment_date_odoo: string | null;
     amount_total_mxn_resolved: number | null;
     amount_total_mxn_odoo: number | null;
+    receptor_canonical_company_id: number | null;
   };
-
-  const rows = (data ?? []) as Row[];
+  const rows = await paginateAll<Row>(({ from, to }) =>
+    sb
+      .from("canonical_invoices")
+      .select(
+        "invoice_date, fiscal_fully_paid_at, payment_date_odoo, amount_total_mxn_resolved, amount_total_mxn_odoo, receptor_canonical_company_id"
+      )
+      // Tombstone filter (see migration 20260426): exclude personal CFDIs.
+      .eq("is_quimibond_relevant", true)
+      .eq("direction", "issued")
+      .or("estado_sat.is.null,estado_sat.neq.cancelado")
+      .eq("payment_state_odoo", "paid")
+      .or(
+        `fiscal_fully_paid_at.gte.${startStr},payment_date_odoo.gte.${startStr}`
+      )
+      .not("receptor_canonical_company_id", "in", pgInList(selfIds))
+      .order("invoice_date", { ascending: true })
+      .order("canonical_id", { ascending: true })
+      .range(from, to)
+  );
 
   // Bucket by month of payment.
   const monthMap = new Map<
@@ -113,7 +116,7 @@ async function _getDsoTrendRaw(months: number): Promise<DsoMonth[]> {
 export async function getDsoTrend(months = 12): Promise<DsoMonth[]> {
   const cached = unstable_cache(
     () => _getDsoTrendRaw(months),
-    ["sp13-cobranza-dso-trend-v3-null-safe", String(months)],
+    ["sp13-cobranza-dso-trend-v4-paginated", String(months)],
     { revalidate: 300, tags: ["invoices-unified", "finance"] }
   );
   return cached();

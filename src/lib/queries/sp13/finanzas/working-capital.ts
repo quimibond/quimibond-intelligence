@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import { paginateAll } from "@/lib/queries/_shared/paginate";
 
 /**
  * F4 — Working capital.
@@ -98,26 +99,55 @@ async function _getWorkingCapitalRaw(): Promise<WorkingCapitalSummary> {
       .from("canonical_companies")
       .select("total_payable_mxn")
       .gt("total_payable_mxn", 0),
-    sb
-      .from("canonical_invoices")
-      .select("amount_total_mxn_odoo, amount_total_mxn_resolved")
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "issued")
-      .gte("invoice_date", daysAgoIso(365)),
-    sb
-      .from("canonical_invoices")
-      .select("amount_total_mxn_odoo, amount_total_mxn_resolved")
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "received")
-      .gte("invoice_date", daysAgoIso(365)),
-    // AP overdue: count + amount from invoice level (no company aggregate exists)
-    sb
-      .from("canonical_invoices")
-      .select("amount_residual_mxn_odoo, due_date_odoo, emisor_canonical_company_id")
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "received")
-      .gt("amount_residual_mxn_odoo", 0)
-      .lt("due_date_odoo", today),
+    // AR/AP 365d aggregates — paginated. canonical_invoices issued/received
+    // per year exceed 1000 rows (audit 2026-04-29: 2,433 issued + 3,512
+    // received). Truncation here understates AR/AP totals.
+    paginateAll<{
+      amount_total_mxn_odoo: number | null;
+      amount_total_mxn_resolved: number | null;
+    }>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select("amount_total_mxn_odoo, amount_total_mxn_resolved")
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "issued")
+        .gte("invoice_date", daysAgoIso(365))
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ).then((data) => ({ data, error: null })),
+    paginateAll<{
+      amount_total_mxn_odoo: number | null;
+      amount_total_mxn_resolved: number | null;
+    }>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select("amount_total_mxn_odoo, amount_total_mxn_resolved")
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "received")
+        .gte("invoice_date", daysAgoIso(365))
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ).then((data) => ({ data, error: null })),
+    // AP overdue: count + amount from invoice level (no company aggregate
+    // exists). 193 rows currently — safe but paginated for resilience.
+    paginateAll<{
+      amount_residual_mxn_odoo: number | null;
+      due_date_odoo: string | null;
+      emisor_canonical_company_id: number | null;
+    }>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select("amount_residual_mxn_odoo, due_date_odoo, emisor_canonical_company_id")
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "received")
+        .gt("amount_residual_mxn_odoo", 0)
+        .lt("due_date_odoo", today)
+        .order("due_date_odoo", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ).then((data) => ({ data, error: null })),
   ]);
 
   type Cashflow = {
@@ -230,7 +260,7 @@ async function _getWorkingCapitalRaw(): Promise<WorkingCapitalSummary> {
 
 export const getWorkingCapital = unstable_cache(
   _getWorkingCapitalRaw,
-  ["sp13-finanzas-working-capital-gold"],
+  ["sp13-finanzas-working-capital-gold-v2-paginated"],
   { revalidate: 60, tags: ["finanzas"] }
 );
 

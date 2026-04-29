@@ -3,6 +3,7 @@ import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import type { HistoryRange } from "@/components/patterns/history-range";
 import { periodBoundsForRange } from "./_period";
+import { paginateAll } from "@/lib/queries/_shared/paginate";
 
 /**
  * F7 — Drift systemico SAT ↔ P&L.
@@ -36,30 +37,37 @@ async function _getDriftSummaryRaw(range: HistoryRange): Promise<DriftSummary> {
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
 
-  const [plRes, satRes] = await Promise.all([
-    sb
-      .from("gold_pl_statement")
-      .select("period, total_income")
-      .gte("period", bounds.fromMonth)
-      .lte("period", bounds.toMonth.slice(0, 7)),
-    sb
-      .from("canonical_invoices")
-      .select("invoice_date, amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo")
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "issued")
-      .or("estado_sat.is.null,estado_sat.neq.cancelado")
-      .gte("invoice_date", bounds.from)
-      .lt("invoice_date", bounds.to),
-  ]);
-
-  const satByMonth = new Map<string, number>();
+  // Paginated: canonical_invoices issued for a year > 1000 rows (audit
+  // 2026-04-29). The non-paginated query was undercounting SAT revenue.
   type SatRow = {
     invoice_date: string | null;
     amount_total_mxn_sat: number | null;
     amount_total_mxn_resolved: number | null;
     amount_total_mxn_odoo: number | null;
   };
-  for (const r of (satRes.data ?? []) as SatRow[]) {
+  const [plRes, satRows] = await Promise.all([
+    sb
+      .from("gold_pl_statement")
+      .select("period, total_income")
+      .gte("period", bounds.fromMonth)
+      .lte("period", bounds.toMonth.slice(0, 7)),
+    paginateAll<SatRow>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select("invoice_date, amount_total_mxn_sat, amount_total_mxn_resolved, amount_total_mxn_odoo")
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "issued")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .gte("invoice_date", bounds.from)
+        .lt("invoice_date", bounds.to)
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ),
+  ]);
+
+  const satByMonth = new Map<string, number>();
+  for (const r of satRows) {
     if (!r.invoice_date) continue;
     const period = r.invoice_date.slice(0, 7);
     const amt =
@@ -138,6 +146,6 @@ function fmt(n: number): string {
 
 export const getDriftSummary = unstable_cache(
   _getDriftSummaryRaw,
-  ["sp13-finanzas-drift-v2-null-safe"],
+  ["sp13-finanzas-drift-v3-paginated"],
   { revalidate: 60, tags: ["finanzas"] }
 );

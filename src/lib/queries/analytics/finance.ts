@@ -1,6 +1,7 @@
 import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
+import { paginateAll } from "@/lib/queries/_shared/paginate";
 
 /**
  * Finance queries — Silver SP5 canonical/gold rewrite.
@@ -209,7 +210,7 @@ async function _getCfoSnapshotRaw(): Promise<CfoSnapshot | null> {
 
 export const getCfoSnapshot = unstable_cache(
   _getCfoSnapshotRaw,
-  ["finance-cfo-snapshot-v3-null-safe"],
+  ["finance-cfo-snapshot-v4-paginated"],
   { revalidate: 60, tags: ["finance"] }
 );
 
@@ -504,14 +505,22 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
       .eq("state_odoo", "posted")
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or("amount_residual_mxn_resolved.gt.0,amount_residual_mxn_odoo.gt.0"),
-    sb
-      .from("canonical_invoices")
-      .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "issued")
-      .eq("state_odoo", "posted")
-      .or("estado_sat.is.null,estado_sat.neq.cancelado")
-      .gte("invoice_date", cutoff365),
+    paginateAll<{
+      amount_total_mxn_resolved: number | null;
+      amount_total_mxn_odoo: number | null;
+    }>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "issued")
+        .eq("state_odoo", "posted")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .gte("invoice_date", cutoff365)
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ).then((data) => ({ data, error: null })),
     sb
       .from("gold_pl_statement")
       .select("period, by_level_1, total_expense")
@@ -609,7 +618,7 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
 
 export const getWorkingCapitalCycle = unstable_cache(
   _getWorkingCapitalCycleRaw,
-  ["finance-wcc-canonical-v2-null-safe"],
+  ["finance-wcc-canonical-v3-paginated"],
   { revalidate: 300, tags: ["finance"] }
 );
 
@@ -762,28 +771,54 @@ export async function getPartnerPaymentProfiles(
   cutoff24m.setMonth(cutoff24m.getMonth() - 24);
   const cutoff24mStr = cutoff24m.toISOString().slice(0, 10);
 
-  // Fetch issued invoices (inbound AR) and received invoices (outbound AP) in last 24m
+  // Fetch issued invoices (inbound AR) and received invoices (outbound AP) in last 24m.
+  // Paginated: 12k+ canonical_invoices in 24m (audit 2026-04-29).
   const direction = paymentType === 'inbound' ? 'issued' : paymentType === 'outbound' ? 'received' : undefined;
 
-  let invQ = sb
-    .from("canonical_invoices")
-    .select("odoo_partner_id, direction, invoice_date, due_date_odoo, amount_total_mxn_resolved, payment_state_odoo, fiscal_days_to_due_date")
-    .eq("is_quimibond_relevant", true)
-    .not("odoo_partner_id", "is", null)
-    .gte("invoice_date", cutoff24mStr);
-  if (direction) invQ = invQ.eq("direction", direction);
-  const { data: invData } = await invQ;
+  type InvDataRow = {
+    odoo_partner_id: number;
+    direction: string;
+    invoice_date: string | null;
+    due_date_odoo: string | null;
+    amount_total_mxn_resolved: number | null;
+    payment_state_odoo: string | null;
+    fiscal_days_to_due_date: number | null;
+  };
+  const invData = await paginateAll<InvDataRow>(({ from, to }) => {
+    let q = sb
+      .from("canonical_invoices")
+      .select("odoo_partner_id, direction, invoice_date, due_date_odoo, amount_total_mxn_resolved, payment_state_odoo, fiscal_days_to_due_date")
+      .eq("is_quimibond_relevant", true)
+      .not("odoo_partner_id", "is", null)
+      .gte("invoice_date", cutoff24mStr)
+      .order("invoice_date", { ascending: true })
+      .order("canonical_id", { ascending: true });
+    if (direction) q = q.eq("direction", direction);
+    return q.range(from, to);
+  });
 
-  // Fetch payments in last 24m
-  let payQ = sb
-    .from("canonical_payments")
-    .select("odoo_partner_id, direction, payment_date_resolved, amount_mxn_resolved, journal_name, payment_method_odoo")
-    .not("odoo_partner_id", "is", null)
-    .gte("payment_date_resolved", cutoff24mStr);
-  if (paymentType !== 'all') {
-    payQ = payQ.eq("direction", paymentType);
-  }
-  const { data: payData } = await payQ;
+  // Fetch payments in last 24m. Paginated: 6.6k payments in 24m.
+  type PayDataRow = {
+    odoo_partner_id: number;
+    direction: string | null;
+    payment_date_resolved: string | null;
+    amount_mxn_resolved: number | null;
+    journal_name: string | null;
+    payment_method_odoo: string | null;
+  };
+  const payData = await paginateAll<PayDataRow>(({ from, to }) => {
+    let q = sb
+      .from("canonical_payments")
+      .select("odoo_partner_id, direction, payment_date_resolved, amount_mxn_resolved, journal_name, payment_method_odoo")
+      .not("odoo_partner_id", "is", null)
+      .gte("payment_date_resolved", cutoff24mStr)
+      .order("payment_date_resolved", { ascending: true })
+      .order("canonical_id", { ascending: true });
+    if (paymentType !== 'all') {
+      q = q.eq("direction", paymentType);
+    }
+    return q.range(from, to);
+  });
 
   type InvRow = {
     odoo_partner_id: number;
@@ -1033,13 +1068,7 @@ export async function getAccountPaymentProfiles(
   cutoff12m.setMonth(cutoff12m.getMonth() - 12);
   const cutoff12mStr = cutoff12m.toISOString().slice(0, 10);
 
-  let q = sb
-    .from("canonical_payments")
-    .select("payment_method_odoo, journal_name, journal_type, amount_mxn_resolved, payment_date_resolved, direction")
-    .gte("payment_date_resolved", cutoff12mStr);
-  if (categoryFilter) q = q.eq("journal_name", categoryFilter);
-
-  const { data } = await q;
+  // Paginated: 5.9k payments in 12m (audit 2026-04-29).
   type PayRow = {
     payment_method_odoo: string | null;
     journal_name: string | null;
@@ -1048,8 +1077,16 @@ export async function getAccountPaymentProfiles(
     payment_date_resolved: string | null;
     direction: string | null;
   };
-
-  const rows = (data ?? []) as PayRow[];
+  const rows = await paginateAll<PayRow>(({ from, to }) => {
+    let q = sb
+      .from("canonical_payments")
+      .select("payment_method_odoo, journal_name, journal_type, amount_mxn_resolved, payment_date_resolved, direction")
+      .gte("payment_date_resolved", cutoff12mStr)
+      .order("payment_date_resolved", { ascending: true })
+      .order("canonical_id", { ascending: true });
+    if (categoryFilter) q = q.eq("journal_name", categoryFilter);
+    return q.range(from, to);
+  });
 
   // Aggregate by method
   type MethodAgg = {

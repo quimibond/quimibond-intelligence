@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "../../_shared/_helpers";
+import { paginateAll } from "../../_shared/paginate";
 
 // AR snapshot is always "today" — the period param only scopes DSO / collections.
 // Source: canonical_invoices where direction='issued', not cancelled, residual > 0.
@@ -43,7 +44,13 @@ async function _getArKpisRaw(): Promise<ArKpis> {
   cutoffYear.setFullYear(cutoffYear.getFullYear() - 1);
   const yearCutoff = cutoffYear.toISOString().slice(0, 10);
 
-  const [openAr, revenue12m] = await Promise.all([
+  // openAr is small (~378 rows); revenue12m exceeds 1000 (audit 2026-04-29:
+  // 2,433 issued in last 365d). Paginate the latter.
+  type RevRow = {
+    amount_total_mxn_resolved: number | null;
+    amount_total_mxn_odoo: number | null;
+  };
+  const [openAr, revenue12mRows] = await Promise.all([
     sb
       .from("canonical_invoices")
       .select(
@@ -56,14 +63,19 @@ async function _getArKpisRaw(): Promise<ArKpis> {
       .in("payment_state_odoo", ["not_paid", "partial"])
       .or(OPEN_FILTER)
       .not("receptor_canonical_company_id", "in", pgInList(selfIds)),
-    sb
-      .from("canonical_invoices")
-      .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
-      // Tombstone filter (see migration 20260426): exclude personal CFDIs.
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "issued")
-      .or("estado_sat.is.null,estado_sat.neq.cancelado")
-      .gte("invoice_date", yearCutoff),
+    paginateAll<RevRow>(({ from, to }) =>
+      sb
+        .from("canonical_invoices")
+        .select("amount_total_mxn_resolved, amount_total_mxn_odoo")
+        // Tombstone filter (see migration 20260426): exclude personal CFDIs.
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "issued")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .gte("invoice_date", yearCutoff)
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true })
+        .range(from, to)
+    ),
   ]);
 
   const arRows = (openAr.data ?? []) as OpenInv[];
@@ -87,12 +99,7 @@ async function _getArKpisRaw(): Promise<ArKpis> {
   const overdue90plusMxn = veryOverdue.reduce((s, r) => s + residual(r), 0);
   const overdue90plusCount = veryOverdue.length;
 
-  type Inv = {
-    amount_total_mxn_resolved: number | null;
-    amount_total_mxn_odoo: number | null;
-  };
-  const revenueRows = (revenue12m.data ?? []) as Inv[];
-  const revenue12mMxn = revenueRows.reduce(
+  const revenue12mMxn = revenue12mRows.reduce(
     (s, r) => s + (Number(r.amount_total_mxn_resolved ?? r.amount_total_mxn_odoo) || 0),
     0
   );
@@ -110,7 +117,7 @@ async function _getArKpisRaw(): Promise<ArKpis> {
   };
 }
 
-export const getArKpis = unstable_cache(_getArKpisRaw, ["sp13-cobranza-ar-kpis-v2-null-safe"], {
+export const getArKpis = unstable_cache(_getArKpisRaw, ["sp13-cobranza-ar-kpis-v3-paginated-revenue"], {
   revalidate: 60,
   tags: ["invoices-unified", "finance"],
 });
