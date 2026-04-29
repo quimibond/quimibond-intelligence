@@ -760,21 +760,32 @@ Los demás costos de producción quedan cada uno en su cuenta:
 | `6xx + 613` | Gastos operativos (admin, ventas, dep corporativa) | Línea aparte |
 | `7xx` | Otros ingresos / gastos (FX, intereses, venta activo) | Después de EBIT |
 
-### Estructura del P&L limpio
+### Estructura del P&L (contable + limpio, alineada a Odoo)
+
+Ambas vistas (contable y limpio) usan la misma estructura del Estado de
+Resultados que muestra Odoo, para que cualquier subtotal cuadre al peso
+con el reporte oficial. La diferencia entre ambas es **solo** que el
+limpio reemplaza `501.01.01` por el costo primo real (BOM recursiva).
 
 ```
 Ventas de producto (4xx)
-− Costo primo real (BOM recursiva → MP)        ← reemplaza 501.01.01
-= Margen contributivo material
-− Mano de obra directa (501.06)
-− Compras de importación (502)
-− Overhead fábrica (504.01)
-− Depreciación fábrica (504.08-23)
-− Gastos operativos (6xx + 613)
-= EBIT
-+ Otros (7xx: FX, intereses, venta activo)
-= UTILIDAD NETA (P&L limpio)
+− Costo de ingresos:
+    501.01 contable (CAPA inflada)  /  Costo primo BOM    ← swap
+  + Mano de obra directa (501.06)
+  + Compras de importación (502)
+  + Overhead fábrica (504.01)
+= Ganancia bruta
+− Gasto de operación (6xx, sin dep CORPO)
+= Ingreso de operación (EBIT)
++ Otros ingresos (7xx + 503 + 899: FX, intereses, venta activo)
+− Depreciación (504.08-23 fábrica + 613 CORPO)
+= UTILIDAD NETA
 ```
+
+El **margen contributivo material** (= ventas − costo primo BOM) sigue
+existiendo como KPI dedicado en la fila 2 de `/contabilidad`, pero no
+como subtotal dentro de la tabla — la tabla mantiene la estructura
+contable estándar para facilitar la conciliación con Odoo.
 
 ### Validación: residual 501.01
 
