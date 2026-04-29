@@ -152,6 +152,18 @@ export async function POST(request: NextRequest) {
     });
 
     if (!eligibleAgents.length) {
+      // Health-check observability: log idle ticks too, otherwise health
+      // check thinks orchestrate is stale during the daily 20h cooldown
+      // window (after all 7 directors round-robin'd through 9-15 UTC, none
+      // is eligible again until ~5 UTC next day).
+      try {
+        await supabase.from("pipeline_logs").insert({
+          level: "info",
+          phase: "agent_orchestration",
+          message: "Orchestrate: idle (no agents due per analysis_schedule)",
+          details: { agents_ran: 0, total_active_agents: agents.length },
+        });
+      } catch { /* don't let logging failure mask success */ }
       return NextResponse.json({
         success: true,
         message: "No agents due per analysis_schedule",
