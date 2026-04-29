@@ -13,14 +13,24 @@ import { periodBoundsForRange } from "./_period";
  * distinción entre expense_direct_cost y expense_depreciation dentro del
  * mismo prefijo (504.01 vs 504.08-23).
  *
- * Breakdown por cuenta para "P&L limpio con costo primo real":
- *   501.01  Cost of sales (debería ser solo MP; residuo vs BOM = CAPA pendiente)
- *   501.06  Mano de obra directa
- *   502     Compras importación
- *   504.01  Overhead fábrica (renta, energía, servicios)
- *   504.08-23 Depreciación fábrica
- *   6xx     Gastos operativos admin/ventas
- *   613     Depreciación CORPO
+ * Breakdown por cuenta:
+ *   501.01    Cost of sales (debería ser solo MP; residuo vs BOM = CAPA pendiente)
+ *   501.06    Mano de obra directa
+ *   502       Compras importación
+ *   504.01    Overhead fábrica (renta, energía, servicios)
+ *   504.08-23 Depreciación fábrica  ← Odoo la pone debajo de EBIT
+ *   6xx       Gastos operativos admin/ventas
+ *   613       Depreciación CORPO    ← Odoo la pone debajo de EBIT
+ *
+ * Estructura de subtotales (alineada al Estado de Resultados de Odoo):
+ *   Ventas (4xx)
+ *   − Costo de ingresos (501 + 502 + 504.01)        ← NO incluye depreciación
+ *   = Ganancia bruta
+ *   − Gasto de operación (6xx, sin 613 dep.)        ← NO incluye depreciación
+ *   = Ingreso de operación (EBIT)
+ *   + Otros ingresos (7xx + 503 + 899)
+ *   − Depreciación (504.08-23 + 613)                ← línea separada
+ *   = Utilidad neta
  *
  * SIGN CONVENTION (Mexican chart of accounts):
  * - income accounts  → balance stored NEGATIVE → negate for display
@@ -33,20 +43,23 @@ export interface PnlKpis {
   ingresosPl: number; // cuenta 4xx — ventas de producto
   otrosIngresosNetoMxn: number; // cuenta 7xx neto
   ingresosSat: number;
-  // COGS totales (legacy — suma de todas las expense_direct_cost)
+  // Costo de ingresos (Odoo: "Total Menos costo de ingresos") — NO incluye dep
   costoVentas: number;
   // COGS breakdown por cuenta
   cogs501_01Mxn: number; // Cost of sales (debería ser solo MP)
   mod501_06Mxn: number; // Mano de obra directa
   compras502Mxn: number; // Compras importación
-  overhead504_01Mxn: number; // Overhead fábrica
-  depFabrica504Mxn: number; // Depreciación maquinaria/edificio fábrica
-  // Gastos op
+  overhead504_01Mxn: number; // Overhead fábrica (504.01-07, sin dep)
+  depFabrica504Mxn: number; // Depreciación maquinaria/edificio fábrica (504.08-23)
+  // Gasto de operación (Odoo: "Total Menos gasto de operación") — NO incluye dep
   gastosOperativos: number;
-  gastosOp6xxMxn: number; // 6xx expense
-  depCorpoMxn: number; // 613 expense_depreciation
-  // Totales / derivados
-  utilidadBruta: number;
+  gastosOp6xxMxn: number; // 6xx expense (sin 613 dep)
+  depCorpoMxn: number; // 613 expense_depreciation (CORPO)
+  // Depreciación total (Odoo: "Total Menos gastos de otro tipo")
+  depreciacionTotalMxn: number; // 504.08-23 + 613
+  // Subtotales (alineados a Odoo)
+  utilidadBruta: number; // Ganancia bruta = ventas − costoVentas
+  utilidadOperativaMxn: number; // EBIT = utilidadBruta − gastosOperativos
   utilidadNeta: number;
   netIncome: number;
   driftPct: number | null;
@@ -185,20 +198,24 @@ function round2(n: number) {
 }
 
 function deriveTotals(agg: Aggregates) {
+  // Estructura Odoo: depreciación va como línea separada después de EBIT,
+  // no se mezcla con costo de ingresos ni con gasto de operación.
   const costoVentas =
-    agg.cogs501_01 +
-    agg.mod501_06 +
-    agg.compras502 +
-    agg.overhead504_01 +
-    agg.depFabrica504;
-  const gastosOperativos = agg.gastosOp6xx + agg.depCorpo613;
+    agg.cogs501_01 + agg.mod501_06 + agg.compras502 + agg.overhead504_01;
+  const gastosOperativos = agg.gastosOp6xx;
+  const depreciacionTotal = agg.depFabrica504 + agg.depCorpo613;
   const utilidadBruta = agg.ventasProducto - costoVentas;
+  const utilidadOperativa = utilidadBruta - gastosOperativos;
   const utilidadNeta =
-    agg.ventasProducto +
-    agg.otrosIngresosNeto -
-    costoVentas -
-    gastosOperativos;
-  return { costoVentas, gastosOperativos, utilidadBruta, utilidadNeta };
+    utilidadOperativa + agg.otrosIngresosNeto - depreciacionTotal;
+  return {
+    costoVentas,
+    gastosOperativos,
+    depreciacionTotal,
+    utilidadBruta,
+    utilidadOperativa,
+    utilidadNeta,
+  };
 }
 
 async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
@@ -258,7 +275,9 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     gastosOperativos: round2(t.gastosOperativos),
     gastosOp6xxMxn: round2(agg.gastosOp6xx),
     depCorpoMxn: round2(agg.depCorpo613),
+    depreciacionTotalMxn: round2(t.depreciacionTotal),
     utilidadBruta: round2(t.utilidadBruta),
+    utilidadOperativaMxn: round2(t.utilidadOperativa),
     utilidadNeta: round2(t.utilidadNeta),
     netIncome: round2(t.utilidadNeta),
     monthsCovered: agg.window.monthsCovered,
@@ -272,7 +291,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v2-null-safe", range],
+    ["sp13-finanzas-pnl-kpis-v3-odoo-structure", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -281,17 +300,21 @@ async function _getPnlWaterfallRaw(
 ): Promise<WaterfallPoint[]> {
   const agg = await fetchPlAggregates(range);
   const t = deriveTotals(agg);
-  const ebit = t.utilidadBruta - t.gastosOperativos;
   return [
     { label: "Ventas de producto", value: round2(agg.ventasProducto), kind: "positive" },
-    { label: "COGS", value: round2(-t.costoVentas), kind: "negative" },
-    { label: "Utilidad bruta", value: round2(t.utilidadBruta), kind: "total" },
-    { label: "Gastos op.", value: round2(-t.gastosOperativos), kind: "negative" },
-    { label: "EBIT", value: round2(ebit), kind: "total" },
+    { label: "Costo de ingresos", value: round2(-t.costoVentas), kind: "negative" },
+    { label: "Ganancia bruta", value: round2(t.utilidadBruta), kind: "total" },
+    { label: "Gasto de operación", value: round2(-t.gastosOperativos), kind: "negative" },
+    { label: "EBIT", value: round2(t.utilidadOperativa), kind: "total" },
     {
       label: "Otros ingresos",
       value: round2(agg.otrosIngresosNeto),
       kind: agg.otrosIngresosNeto >= 0 ? "positive" : "negative",
+    },
+    {
+      label: "Depreciación",
+      value: round2(-t.depreciacionTotal),
+      kind: "negative",
     },
     { label: "Utilidad neta", value: round2(t.utilidadNeta), kind: "total" },
   ];
@@ -300,6 +323,6 @@ async function _getPnlWaterfallRaw(
 export const getPnlWaterfall = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlWaterfallRaw(range),
-    ["sp13-finanzas-pnl-waterfall", range],
+    ["sp13-finanzas-pnl-waterfall-v2-odoo-structure", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
