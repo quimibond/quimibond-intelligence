@@ -18,6 +18,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Database,
   Factory,
   FileText,
   Home,
@@ -40,7 +41,7 @@ import { Button } from "@/components/ui/button";
 //   1. Decisión     — home, inbox, briefings, chat
 //   2. Operación    — ventas, cobranza, compras, operaciones, equipo, finanzas
 //   3. Entidades    — empresas, contactos, productos
-//   4. Sistema      — directores, sistema, perfil
+//   4. Sistema      — directores, datos, sistema, perfil
 // ──────────────────────────────────────────────────────────────────────────
 
 interface NavItem {
@@ -114,6 +115,7 @@ const topGroups: NavGroup[] = [
     storageKey: "sidebar-group-sistema",
     items: [
       { href: "/directores", label: "Directores", icon: Bot },
+      { href: "/datos", label: "Datos", icon: Database },
       { href: "/sistema", label: "Sistema", icon: Settings },
       { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
