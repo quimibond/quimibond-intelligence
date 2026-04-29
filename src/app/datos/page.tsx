@@ -79,6 +79,14 @@ function detailFromEvidence(row: OdooFixRow): string {
     const rfc = ev.invalid_rfc;
     return `partner #${pid} · ${rfc}`;
   }
+  if (
+    row.insight_type === "mdm_contacts_duplicates" ||
+    row.insight_type === "mdm_products_duplicates"
+  ) {
+    const groups = ev.groups;
+    const total = ev.total_rows;
+    return `${groups ?? "?"} grupos · ${total ?? "?"} rows`;
+  }
   return "";
 }
 
@@ -155,7 +163,7 @@ export default async function DatosPage() {
     <PageLayout>
       <PageHeader
         title="Datos · Cosas a arreglar en Odoo"
-        subtitle="Problemas detectados en res.partner + drift Odoo↔SAT. Cada fila es una acción concreta para el área de calidad de datos."
+        subtitle="Problemas detectados en res.partner + drift Odoo↔SAT. Cada fila es una acción concreta — click para ver desglose."
       />
 
       <Suspense
@@ -255,6 +263,7 @@ async function DatosTable() {
           data={rows}
           columns={columns}
           rowKey={(r) => r.id}
+          rowHref={(r) => `/datos/${r.id}`}
           stickyHeader
           density="normal"
         />
