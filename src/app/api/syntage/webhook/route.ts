@@ -83,6 +83,24 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, skipped: "malformed_event" });
   }
 
+  // ─────────────────────────────────────────────────────────────────
+  // Early entity check: rechazar SILENCIOSAMENTE webhooks de RFCs no
+  // mapeados o con is_active=false (e.g. Jacobo Mizrahi Penhos, Jose
+  // Mizrahi Daniel, Jose Jaime Mizrahi). NO log, NO record, NO dispatch.
+  //
+  // Antes este check estaba después de recordWebhookEvent + insertaba un
+  // warning, lo que causaba ~19,441 rows acumuladas en syntage_webhook_events
+  // y pipeline_logs (limpiados en PR #58 + #61). Mover el filtro arriba +
+  // omitir el log evita la acumulación en origen.
+  // ─────────────────────────────────────────────────────────────────
+  const entity = await resolveEntity(
+    supabaseEntityMapStore(supabase),
+    event.taxpayer.id,
+  );
+  if (!entity) {
+    return NextResponse.json({ ok: true, skipped: "unmapped_taxpayer" });
+  }
+
   const status = await recordWebhookEvent(
     supabaseEventStore(supabase),
     event.id,
@@ -91,20 +109,6 @@ export async function POST(request: NextRequest) {
   );
   if (status === "duplicate") {
     return NextResponse.json({ ok: true, duplicate: true });
-  }
-
-  const entity = await resolveEntity(
-    supabaseEntityMapStore(supabase),
-    event.taxpayer.id,
-  );
-  if (!entity) {
-    await supabase.from("pipeline_logs").insert({
-      level: "warning",
-      phase: "syntage_webhook",
-      message: `Unmapped taxpayer RFC: ${event.taxpayer.id}`,
-      details: { event_id: event.id, event_type: event.type, rfc: event.taxpayer.id },
-    });
-    return NextResponse.json({ ok: true, skipped: "unmapped_taxpayer" });
   }
 
   try {
