@@ -291,7 +291,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v3-odoo-structure", range],
+    ["sp13-finanzas-pnl-kpis-v4-cache-bust", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -323,6 +323,6 @@ async function _getPnlWaterfallRaw(
 export const getPnlWaterfall = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlWaterfallRaw(range),
-    ["sp13-finanzas-pnl-waterfall-v2-odoo-structure", range],
+    ["sp13-finanzas-pnl-waterfall-v3-cache-bust", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
