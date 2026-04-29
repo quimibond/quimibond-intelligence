@@ -10,7 +10,10 @@ export type OdooFixInsightType =
   | "odoo_foreign_tax_id_in_rfc"
   | "odoo_sat_invoice_drift"
   | "mdm_contacts_duplicates"
-  | "mdm_products_duplicates";
+  | "mdm_products_duplicates"
+  | "mdm_contact_name_is_email"
+  | "canonical_partner_orphan"
+  | "canonical_invoice_pre_history";
 
 export interface OdooFixRow {
   id: number;
@@ -33,6 +36,9 @@ const ODOO_FIX_TYPES: OdooFixInsightType[] = [
   "odoo_sat_invoice_drift",
   "mdm_contacts_duplicates",
   "mdm_products_duplicates",
+  "mdm_contact_name_is_email",
+  "canonical_partner_orphan",
+  "canonical_invoice_pre_history",
 ];
 
 const SEVERITY_RANK: Record<OdooFixSeverity, number> = {
@@ -73,7 +79,7 @@ async function fetchOdooFixes(): Promise<OdooFixRow[]> {
 
 export const getOdooFixes = unstable_cache(
   fetchOdooFixes,
-  ["odoo-fixes-v2"],
+  ["odoo-fixes-v3"],
   { revalidate: 60, tags: ["odoo-fixes"] }
 );
 
@@ -92,6 +98,9 @@ export function summarizeOdooFixes(rows: OdooFixRow[]): OdooFixSummary {
     odoo_sat_invoice_drift: 0,
     mdm_contacts_duplicates: 0,
     mdm_products_duplicates: 0,
+    mdm_contact_name_is_email: 0,
+    canonical_partner_orphan: 0,
+    canonical_invoice_pre_history: 0,
   };
   const bySeverity: Record<OdooFixSeverity, number> = {
     critical: 0,
@@ -120,4 +129,7 @@ export const INSIGHT_TYPE_LABEL: Record<OdooFixInsightType, string> = {
   odoo_sat_invoice_drift: "Drift Odoo↔SAT",
   mdm_contacts_duplicates: "Contactos duplicados",
   mdm_products_duplicates: "Productos duplicados",
+  mdm_contact_name_is_email: "Contacto con email como nombre",
+  canonical_partner_orphan: "Partner orphan",
+  canonical_invoice_pre_history: "Factura pre-2013",
 };
