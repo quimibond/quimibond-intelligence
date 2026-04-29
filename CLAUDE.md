@@ -92,7 +92,7 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 
 #### GOLD — vistas SQL no materializadas, evaluadas on-read
 
-**12 vistas activas (todas devuelven datos hoy):**
+**9 vistas activas (todas con consumers y datos vivos):**
 | Vista | Filas | Para |
 |---|---|---|
 | `gold_company_360` | 4,511 | Detalle por empresa (revenue, AR/AP, OTD, tier) |
@@ -103,10 +103,10 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 | `gold_balance_sheet` | 106 | Balance sheet por período |
 | `gold_reconciliation_health` | 1 | Health score global recon |
 | `gold_company_odoo_sat_drift` | 1,942 | Drift Odoo↔SAT por empresa |
-| `gold_inventory_valuation_drift_monthly` | 25 | Drift inventario mensual |
 | `gold_product_performance` | 6,016 | Ranking productos |
 | `gold_sale_chain_trace` | 12,401 | SO → delivery → invoice → payment |
-| `gold_state_mismatch_watchlist` | 85 | Discrepancias state cancel/posted |
+
+> **Audit 2026-04-29 — dropped 3 views sin consumers:** `v_mo_material_variance`, `gold_state_mismatch_watchlist`, `gold_inventory_valuation_drift_monthly`. Migration `20260429_drop_unused_gold_views.sql`.
 
 ### Pipelines de datos
 
