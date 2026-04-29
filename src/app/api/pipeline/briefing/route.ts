@@ -355,6 +355,22 @@ REGLAS:
       }
     }
 
+    // Health-check observability (audit 2026-04-29): log success so
+    // /api/system/health detects a fresh run.
+    try {
+      await supabase.from("pipeline_logs").insert({
+        level: "info",
+        phase: "briefing",
+        message: `Briefing ${today}: ${top3.length} top + ${narratives.length} at-risk + ${insights.length} insights`,
+        details: {
+          briefing_date: today,
+          top3: top3.length,
+          companies_at_risk: narratives.length,
+          insights: insights.length,
+        },
+      });
+    } catch { /* don't let logging failure mask success */ }
+
     return NextResponse.json({
       success: true,
       briefing_date: today,

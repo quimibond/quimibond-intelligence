@@ -13,20 +13,21 @@ import { validatePipelineAuth } from "@/lib/pipeline/auth";
 
 export const maxDuration = 30;
 
-// Expected intervals for each cron job (in minutes)
+// Expected intervals for each cron job (in minutes). Keys MUST match the
+// phase string each cron actually writes to pipeline_logs (audit 2026-04-29).
 const CRON_INTERVALS: Record<string, number> = {
-  "sync_emails": 30,
-  "analyze": 5,
-  "auto_fix": 30,
-  "orchestrate": 30,
-  "cleanup": 30,
-  "validate": 30,
-  "learn": 240,
-  "health_scores": 360,
-  "briefing": 1440,
-  "reconcile": 1440,
-  "embeddings": 240,
-  "identity_resolution": 120,
+  "emails_synced": 30,         // /api/pipeline/sync-emails (was sync_emails)
+  "account_analysis": 5,       // /api/pipeline/analyze (was analyze)
+  "auto_fix": 30,              // /api/agents/auto-fix
+  "agent_orchestration": 60,   // /api/agents/orchestrate — hourly, was 30 (was orchestrate)
+  "cleanup_agent": 30,         // /api/agents/cleanup (was cleanup)
+  "insight_validation": 30,    // /api/agents/validate (was validate)
+  "agent_learning": 240,       // /api/agents/learn (was learn)
+  "briefing": 1440,            // /api/pipeline/briefing
+  "reconcile": 1440,           // /api/pipeline/reconcile
+  "embeddings": 240,           // /api/pipeline/embeddings
+  "identity_resolution": 120,  // /api/agents/identity-resolution
+  // health_scores removed — not scheduled in vercel.json (deleted with snapshot migration).
 };
 
 interface CronStatus {

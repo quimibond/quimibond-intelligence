@@ -205,6 +205,25 @@ export async function POST(request: NextRequest) {
       return !last || last < recentThreshold;
     }).length;
 
+    // Health-check observability: success log so /api/system/health can detect
+    // a fresh run. Until 2026-04-29 only the error path logged here, so the
+    // health checker showed `orchestrate` as forever-stale.
+    try {
+      const sb = getServiceClient();
+      await sb.from("pipeline_logs").insert({
+        level: "info",
+        phase: "agent_orchestration",
+        message: `Orchestrate: ${targetAgents.length} agents ran, ${totalInsights} insights`,
+        details: {
+          agents_ran: targetAgents.length,
+          insights: totalInsights,
+          archived: totalArchived,
+          duplicates: totalDupes,
+          elapsed_s: Math.round((Date.now() - start) / 1000),
+        },
+      });
+    } catch { /* don't let logging failure mask success */ }
+
     return NextResponse.json({
       success: true,
       agents_ran: targetAgents.length,

@@ -318,6 +318,21 @@ export async function POST(request: NextRequest) {
       console.warn("[reconcile] silver_close_stale_invoice_issues failed:", err);
     }
 
+    // Health-check observability (audit 2026-04-29): log success so
+    // /api/system/health detects a fresh run.
+    try {
+      await supabase.from("pipeline_logs").insert({
+        level: "info",
+        phase: "reconcile",
+        message: `Reconcile: ${closed} actions + ${invoiceIssuesClosed} invoice issues + ${followUpsResolved} follow-ups closed`,
+        details: {
+          actions_closed: closed,
+          invoice_issues_closed: invoiceIssuesClosed,
+          follow_ups_resolved: followUpsResolved,
+        },
+      });
+    } catch { /* don't let logging failure mask success */ }
+
     return NextResponse.json({
       success: true,
       actions_closed: closed,

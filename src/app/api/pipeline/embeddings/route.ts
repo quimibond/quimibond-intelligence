@@ -86,6 +86,17 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Health-check observability (audit 2026-04-29): log success so
+    // /api/system/health detects a fresh run.
+    try {
+      await supabase.from("pipeline_logs").insert({
+        level: "info",
+        phase: "embeddings",
+        message: `Embeddings: ${total} email vectors generated`,
+        details: { embeddings: total },
+      });
+    } catch { /* don't let logging failure mask success */ }
+
     return NextResponse.json({ success: true, embeddings: total });
   } catch (err) {
     console.error("[embeddings] Error:", err);
