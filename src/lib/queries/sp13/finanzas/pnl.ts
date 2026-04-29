@@ -114,14 +114,16 @@ async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
       .eq("balance_sheet_bucket", "income")
       .eq("deprecated", false)
       .gte("period", bounds.fromMonth)
-      .lte("period", toMonth),
+      .lte("period", toMonth)
+      .range(0, 49999),
     sb
       .from("canonical_account_balances")
       .select("balance, period, account_code, account_type")
       .eq("balance_sheet_bucket", "expense")
       .eq("deprecated", false)
       .gte("period", bounds.fromMonth)
-      .lte("period", toMonth),
+      .lte("period", toMonth)
+      .range(0, 49999),
   ]);
 
   const incRows = (incRes.data ?? []) as RawRow[];
@@ -291,7 +293,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v4-cache-bust", range],
+    ["sp13-finanzas-pnl-kpis-v5-row-limit-fix", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -323,6 +325,6 @@ async function _getPnlWaterfallRaw(
 export const getPnlWaterfall = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlWaterfallRaw(range),
-    ["sp13-finanzas-pnl-waterfall-v3-cache-bust", range],
+    ["sp13-finanzas-pnl-waterfall-v4-row-limit-fix", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();

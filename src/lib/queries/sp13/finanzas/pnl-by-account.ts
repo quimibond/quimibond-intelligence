@@ -49,7 +49,8 @@ async function _getPnlByAccountRaw(
     .gte("period", bounds.fromMonth)
     .lte("period", bounds.toMonth.slice(0, 7))
     .in("balance_sheet_bucket", ["expense", "income"])
-    .eq("deprecated", false);
+    .eq("deprecated", false)
+    .range(0, 49999); // override default 1000 row PostgREST limit
 
   if (error) {
     console.error("[getPnlByAccount] query failure", error.message);
