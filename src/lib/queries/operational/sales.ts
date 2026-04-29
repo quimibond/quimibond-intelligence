@@ -2,6 +2,7 @@ import "server-only";
 import { unstable_cache } from "next/cache";
 import { getServiceClient } from "@/lib/supabase-server";
 import { getSelfCompanyIds, pgInList } from "../_shared/_helpers";
+import { paginateAll } from "../_shared/paginate";
 import {
   endOfDay,
   paginationRange,
@@ -275,21 +276,27 @@ async function _getSalesRevenueTrendRaw(
     // Excluir solo canceladas — las nulas son facturas recientes aún no
     // validadas contra SAT (~218 issued y ~$400k YTD al 2026-04-26).
     // Filtrar a 'vigente' subestima el revenue del trend.
-    let q = sb
-      .from("canonical_invoices")
-      .select("invoice_date, amount_total_mxn_resolved")
-      .eq("is_quimibond_relevant", true)
-      .eq("direction", "issued")
-      .or("estado_sat.is.null,estado_sat.neq.cancelado");
-    if (bounds.from) q = q.gte("invoice_date", bounds.from);
-    if (bounds.to) q = q.lt("invoice_date", bounds.to);
-    const { data: rows } = await q;
-
-    const map = new Map<string, number>();
-    for (const r of (rows ?? []) as Array<{
+    // Paginated: revenue trend can span multi-year (>1000 rows).
+    type TrendRow = {
       invoice_date: string | null;
       amount_total_mxn_resolved: number | null;
-    }>) {
+    };
+    const rows = await paginateAll<TrendRow>(({ from, to }) => {
+      let q = sb
+        .from("canonical_invoices")
+        .select("invoice_date, amount_total_mxn_resolved")
+        .eq("is_quimibond_relevant", true)
+        .eq("direction", "issued")
+        .or("estado_sat.is.null,estado_sat.neq.cancelado")
+        .order("invoice_date", { ascending: true })
+        .order("canonical_id", { ascending: true });
+      if (bounds.from) q = q.gte("invoice_date", bounds.from);
+      if (bounds.to) q = q.lt("invoice_date", bounds.to);
+      return q.range(from, to);
+    });
+
+    const map = new Map<string, number>();
+    for (const r of rows) {
       if (!r.invoice_date) continue;
       const d = new Date(r.invoice_date);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;

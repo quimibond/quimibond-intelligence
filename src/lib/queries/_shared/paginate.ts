@@ -30,7 +30,9 @@
  * Hard guard at 100k rows. Bump if you legitimately need more.
  */
 
-type SupabaseQueryResult<T> = Promise<{
+// PromiseLike (not Promise) so callers can return a PostgrestFilterBuilder
+// directly — supabase-js builders are thenable but not native Promises.
+type SupabaseQueryResult<T> = PromiseLike<{
   data: T[] | null;
   error: { message: string } | null;
 }>;

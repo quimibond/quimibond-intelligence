@@ -333,18 +333,18 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
   // Paginated: canonical_invoices over a multi-month lookback regularly
   // exceeds 1000 rows (audit 2026-04-29). Single-shot queries silently
   // truncated and underestimated run-rate inflow/outflow.
-  type CustomerInvRow = {
+  type CustomerInvFetch = {
     receptor_canonical_company_id: number | null;
     amount_total_mxn_resolved: number | null;
     invoice_date: string | null;
   };
-  type SupplierInvRow = {
+  type SupplierInvFetch = {
     emisor_canonical_company_id: number | null;
     amount_total_mxn_resolved: number | null;
     invoice_date: string | null;
   };
   const [customerInvRes, supplierInvRes] = await Promise.all([
-    paginateAll<CustomerInvRow>(({ from, to }) =>
+    paginateAll<CustomerInvFetch>(({ from, to }) =>
       sb
         .from("canonical_invoices")
         .select(
@@ -365,7 +365,7 @@ async function _getCashProjectionRaw(horizonDays: number): Promise<CashProjectio
     // existente + recurrentes. La realidad: la empresa va a recibir
     // facturas NUEVAS de proveedores en el horizonte que aún no están
     // registradas hoy.
-    paginateAll<SupplierInvRow>(({ from, to }) =>
+    paginateAll<SupplierInvFetch>(({ from, to }) =>
       sb
         .from("canonical_invoices")
         .select(

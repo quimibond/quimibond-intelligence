@@ -529,11 +529,12 @@ async function _getWorkingCapitalCycleRaw(): Promise<WorkingCapitalCycle | null>
       .limit(12),
   ]);
 
-  if (openAr.error || openAp.error || revenue12m.error || plLast12.error) {
+  // revenue12m is paginated → paginateAll throws on error (caught by the
+  // outer Promise.all). Only the non-paginated queries can have .error here.
+  if (openAr.error || openAp.error || plLast12.error) {
     console.error("[getWorkingCapitalCycle] partial query failure", {
       openAr: openAr.error?.message,
       openAp: openAp.error?.message,
-      revenue12m: revenue12m.error?.message,
       plLast12: plLast12.error?.message,
     });
     return null;
