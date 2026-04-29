@@ -29,6 +29,10 @@
       "schedule": "45 */4 * * *"
     },
     {
+      "path": "/api/agents/daily-digest",
+      "schedule": "0 14 * * *"
+    },
+    {
       "path": "/api/pipeline/snapshot",
       "schedule": "30 5 * * *"
     },
