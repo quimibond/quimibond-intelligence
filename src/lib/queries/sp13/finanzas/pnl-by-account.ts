@@ -43,17 +43,41 @@ async function _getPnlByAccountRaw(
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
 
-  const { data, error } = await sb
-    .from("canonical_account_balances")
-    .select("account_code, account_name, account_type, balance, balance_sheet_bucket, period")
-    .gte("period", bounds.fromMonth)
-    .lte("period", bounds.toMonth.slice(0, 7))
-    .in("balance_sheet_bucket", ["expense", "income"])
-    .eq("deprecated", false)
-    .range(0, 49999); // override default 1000 row PostgREST limit
-
-  if (error) {
-    console.error("[getPnlByAccount] query failure", error.message);
+  // Paginate: PostgREST in Supabase enforces a hard `db-max-rows=1000` cap
+  // that .range(0, 49999) does NOT bypass. Loop until a page returns fewer
+  // than the page size. y:2025 expense+income alone has ~1,440 rows.
+  type Row = {
+    account_code: string;
+    account_name: string;
+    account_type: string | null;
+    balance: number | null;
+    balance_sheet_bucket: string;
+    period: string;
+  };
+  const PAGE = 1000;
+  const raw: Row[] = [];
+  try {
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await sb
+        .from("canonical_account_balances")
+        .select("account_code, account_name, account_type, balance, balance_sheet_bucket, period")
+        .gte("period", bounds.fromMonth)
+        .lte("period", bounds.toMonth.slice(0, 7))
+        .in("balance_sheet_bucket", ["expense", "income"])
+        .eq("deprecated", false)
+        .order("period", { ascending: true })
+        .order("account_code", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as Row[];
+      raw.push(...rows);
+      if (rows.length < PAGE) break;
+      if (from + PAGE > 100_000) {
+        throw new Error("getPnlByAccount: exceeded 100k rows");
+      }
+    }
+  } catch (err) {
+    console.error("[getPnlByAccount] query failure", err instanceof Error ? err.message : String(err));
     return {
       period: range,
       periodLabel: bounds.label,
@@ -63,16 +87,6 @@ async function _getPnlByAccountRaw(
       rows: [],
     };
   }
-
-  type Row = {
-    account_code: string;
-    account_name: string;
-    account_type: string | null;
-    balance: number | null;
-    balance_sheet_bucket: string;
-    period: string;
-  };
-  const raw = (data ?? []) as Row[];
   const months = new Set(raw.map((r) => r.period));
 
   // Aggregate by account_code (sum balances across periods)

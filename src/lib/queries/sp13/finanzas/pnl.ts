@@ -105,29 +105,42 @@ async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
   const bounds = periodBoundsForRange(range);
   const toMonth = bounds.toMonth.slice(0, 7);
 
-  // Two queries cover everything: all income + all expense rows for the period.
-  // Split by account_code + account_type locally. Cheap (~230 rows/mes × N meses).
-  const [incRes, expRes] = await Promise.all([
-    sb
-      .from("canonical_account_balances")
-      .select("balance, period, account_code, account_type")
-      .eq("balance_sheet_bucket", "income")
-      .eq("deprecated", false)
-      .gte("period", bounds.fromMonth)
-      .lte("period", toMonth)
-      .range(0, 49999),
-    sb
-      .from("canonical_account_balances")
-      .select("balance, period, account_code, account_type")
-      .eq("balance_sheet_bucket", "expense")
-      .eq("deprecated", false)
-      .gte("period", bounds.fromMonth)
-      .lte("period", toMonth)
-      .range(0, 49999),
-  ]);
+  // Paginate: PostgREST in Supabase enforces a hard `db-max-rows=1000` cap
+  // that .range(0, 49999) does NOT bypass (the server clamps regardless of
+  // client-supplied range). For y:2025 expense alone we have 1,263 rows
+  // (12 months × 105 accounts), so a single fetch silently dropped 263 rows
+  // = ~$20M of overhead/dep/gasto-op missing → utilidad neta inflated $20M
+  // (audit 2026-04-29). Loop with stable ORDER BY until a page returns
+  // fewer than the page size.
+  const PAGE = 1000;
+  const fetchAllByBucket = async (bucket: "income" | "expense"): Promise<RawRow[]> => {
+    const all: RawRow[] = [];
+    for (let from = 0; ; from += PAGE) {
+      const { data, error } = await sb
+        .from("canonical_account_balances")
+        .select("balance, period, account_code, account_type")
+        .eq("balance_sheet_bucket", bucket)
+        .eq("deprecated", false)
+        .gte("period", bounds.fromMonth)
+        .lte("period", toMonth)
+        .order("period", { ascending: true })
+        .order("account_code", { ascending: true })
+        .range(from, from + PAGE - 1);
+      if (error) throw error;
+      const rows = (data ?? []) as RawRow[];
+      all.push(...rows);
+      if (rows.length < PAGE) break;
+      if (from + PAGE > 100_000) {
+        throw new Error(`fetchPlAggregates: ${bucket} exceeded 100k rows`);
+      }
+    }
+    return all;
+  };
 
-  const incRows = (incRes.data ?? []) as RawRow[];
-  const expRows = (expRes.data ?? []) as RawRow[];
+  const [incRows, expRows] = await Promise.all([
+    fetchAllByBucket("income"),
+    fetchAllByBucket("expense"),
+  ]);
 
   // Ingresos split por account_code prefix
   let ventasProducto = 0;
@@ -293,7 +306,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v5-row-limit-fix", range],
+    ["sp13-finanzas-pnl-kpis-v6-paginated", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -325,6 +338,6 @@ async function _getPnlWaterfallRaw(
 export const getPnlWaterfall = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlWaterfallRaw(range),
-    ["sp13-finanzas-pnl-waterfall-v4-row-limit-fix", range],
+    ["sp13-finanzas-pnl-waterfall-v5-paginated", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
