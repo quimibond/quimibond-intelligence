@@ -1,4 +1,5 @@
 import { Suspense } from "react";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Bot, Calendar, Database } from "lucide-react";
 
@@ -282,6 +283,49 @@ export default async function InsightDetailPage({
           </CardContent>
         </Card>
       )}
+
+      {/* Daily digest: linkable references to underlying director insights */}
+      {(() => {
+        const ev = insight.evidence as
+          | { referenced_insight_ids?: unknown; referenced_companies?: unknown; total_impact_mxn?: unknown; directors?: unknown }
+          | null;
+        const refIds = Array.isArray(ev?.referenced_insight_ids)
+          ? (ev?.referenced_insight_ids as unknown[]).filter((x): x is number => typeof x === "number")
+          : [];
+        if (refIds.length === 0) return null;
+        const companies = Array.isArray(ev?.referenced_companies)
+          ? (ev?.referenced_companies as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
+          : [];
+        const directors = Array.isArray(ev?.directors)
+          ? (ev?.directors as unknown[]).filter((x): x is string => typeof x === "string" && x.length > 0)
+          : [];
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Insights referenciados</CardTitle>
+            </CardHeader>
+            <CardContent className="pb-4">
+              <p className="mb-2 text-xs text-muted-foreground">
+                {`Sintetizado por ${directors.join(", ") || "los directores"}${
+                  companies.length > 0 ? ` · ${companies.join(", ")}` : ""
+                }`}
+              </p>
+              <ul className="space-y-1.5">
+                {refIds.map((rid) => (
+                  <li key={rid}>
+                    <Link
+                      href={`/inbox/insight/${rid}`}
+                      className="block rounded-md border bg-background px-3 py-2 text-sm hover:bg-accent"
+                    >
+                      Ver insight #{rid} →
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </CardContent>
+          </Card>
+        );
+      })()}
 
       {/* Timeline + Evidence pack — solo si hay empresa */}
       {insight.company_id && (

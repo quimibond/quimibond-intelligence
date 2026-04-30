@@ -241,7 +241,7 @@ export async function POST() {  const supabase = getServiceClient();
       const threeDaysAgo = new Date(Date.now() - 3 * 86400_000).toISOString();
       const { data: staleAssigned } = await supabase
         .from("agent_insights")
-        .select("id, title, assignee_name, assignee_department, severity, company_id, created_at")
+        .select("id, title, assignee_name, assignee_department, severity, company_id, created_at, agent_id")
         .in("state", ["new", "seen"])
         .in("severity", ["critical", "high"])
         .not("assignee_name", "is", null)
@@ -251,9 +251,13 @@ export async function POST() {  const supabase = getServiceClient();
 
       if (staleAssigned?.length) {
         for (const insight of staleAssigned) {
-          // Create an escalation insight for the CEO
-          await supabase.from("agent_insights").insert({
-            agent_id: insight.id, // will be overridden by trigger
+          // Create an escalation insight for the CEO. agent_id reuses the
+          // originating director so the escalation is attributable. Pre-fix
+          // this column was set to insight.id (the original insight id, not
+          // an agent FK), which violated the FK and silently dropped every
+          // escalation insert (0 escalations in 30+ days as of 2026-04-29).
+          const { error: escalateErr } = await supabase.from("agent_insights").insert({
+            agent_id: insight.agent_id,
             insight_type: "recommendation",
             category: "escalation",
             severity: insight.severity,
@@ -263,8 +267,17 @@ export async function POST() {  const supabase = getServiceClient();
             confidence: 0.95,
             company_id: insight.company_id,
             state: "new",
-            evidence: [{ original_insight_id: insight.id, assigned_to: insight.assignee_name, created_at: insight.created_at }],
+            assignee_email: "jose.mizrahi@quimibond.com",
+            assignee_name: "Jose J. Mizrahi",
+            assignee_department: "Direccion",
+            assignee_user_id: 7,
+            evidence: { original_insight_id: insight.id, assigned_to: insight.assignee_name, created_at: insight.created_at },
           });
+
+          if (escalateErr) {
+            console.error("[validate] escalation insert failed:", escalateErr.message);
+            continue;
+          }
 
           // Mark original as "seen" so it doesn't escalate again
           await supabase.from("agent_insights")

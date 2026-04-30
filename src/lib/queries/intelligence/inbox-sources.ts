@@ -60,12 +60,29 @@ const DOMAIN_LABELS: Record<InboxDomain, string> = {
   otros: "Otros",
 };
 
+/** Agent slug → inbox domain (used when invariant_key='agent.<slug>'). */
+const AGENT_SLUG_TO_DOMAIN: Record<string, InboxDomain> = {
+  comercial: "ventas",
+  financiero: "cobranza",
+  operaciones: "operaciones",
+  compras: "operaciones",
+  costos: "operaciones",
+  riesgo: "otros",
+  compliance: "facturacion",
+  equipo: "otros",
+  digest: "otros",
+};
+
 /**
  * Mapea invariant_key → dominio operativo que el CEO reconoce. Se usa
  * como facet en FilterBar y como badge en InboxCard.
  */
 export function resolveDomain(invariantKey: string | null): InboxDomain {
   if (!invariantKey) return "otros";
+  if (invariantKey.startsWith("agent.")) {
+    const slug = invariantKey.slice(6);
+    return AGENT_SLUG_TO_DOMAIN[slug] ?? "otros";
+  }
   if (invariantKey.startsWith("payment.")) return "cobranza";
   if (invariantKey.startsWith("invoice.")) return "facturacion";
   if (invariantKey.startsWith("sale_chain.")) return "ventas";
