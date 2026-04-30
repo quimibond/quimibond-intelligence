@@ -22,6 +22,7 @@ export type TabKey =
   | "operativo"
   | "fiscal"
   | "pagos"
+  | "comunicaciones"
   | "auditoria_sat";
 
 const TAB_ORDER: TabKey[] = [
@@ -31,6 +32,7 @@ const TAB_ORDER: TabKey[] = [
   "operativo",
   "fiscal",
   "pagos",
+  "comunicaciones",
   "auditoria_sat",
 ];
 
@@ -41,6 +43,7 @@ const TAB_LABELS: Record<TabKey, string> = {
   operativo: "Operativo",
   fiscal: "Fiscal",
   pagos: "Pagos",
+  comunicaciones: "Comunicaciones",
   auditoria_sat: "Auditoría SAT",
 };
 

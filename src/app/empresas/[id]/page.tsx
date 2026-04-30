@@ -29,6 +29,7 @@ import { OperativoTab } from "./_components/OperativoTab";
 import { FiscalTab } from "./_components/FiscalTab";
 import { PagosTab } from "./_components/PagosTab";
 import { AuditoriaSatTab } from "./_components/AuditoriaSatTab";
+import { CommsTimeline } from "@/components/comms/CommsTimeline";
 import {
   getCompanyDrift,
   getCompanyDriftRows,
@@ -46,6 +47,7 @@ const detailSchema = z.object({
       "operativo",
       "fiscal",
       "pagos",
+      "comunicaciones",
       "auditoria_sat",
     ])
     .catch("panorama"),
@@ -58,6 +60,7 @@ const BASE_TAB_ORDER: TabKey[] = [
   "operativo",
   "fiscal",
   "pagos",
+  "comunicaciones",
 ];
 
 export async function generateMetadata({
@@ -277,6 +280,13 @@ export default async function EmpresaDetailPage({
         {activeTab === "fiscal" && <FiscalTab companyId={id} />}
         {activeTab === "pagos" && legacyDetail && (
           <PagosTab company={legacyDetail} />
+        )}
+        {activeTab === "comunicaciones" && (
+          <CommsTimeline
+            entityType="company"
+            entityId={id}
+            searchParams={raw}
+          />
         )}
         {activeTab === "auditoria_sat" && driftAggregates && (
           <AuditoriaSatTab aggregates={driftAggregates} rows={driftRows} />
