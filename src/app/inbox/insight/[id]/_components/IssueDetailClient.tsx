@@ -46,6 +46,41 @@ const CTA_MAP: Record<CtaKey, { label: string; api: string }> = {
   resolve: { label: "Resolver", api: "/api/inbox/resolve" },
 };
 
+// Silver invariants emit action_cta values that fall outside CtaKey (e.g.
+// "review_accounting", "review_bom_cost"). They share semantics with `resolve`
+// — the user reviews the issue manually and marks it done — so we route them
+// through /api/inbox/resolve with a label that hints at the expected work.
+const REVIEW_LABELS: Record<string, string> = {
+  review_accounting: "Revisar contabilidad",
+  review_bom_cost: "Revisar costo BOM",
+  review_bom_gap: "Revisar gap BOM",
+  review_manual: "Revisar manualmente",
+  review_amount_diff: "Revisar diferencia",
+  review_timbrado: "Revisar timbrado",
+  review_inventory: "Revisar inventario",
+  review_cfdi: "Revisar CFDI",
+  review_production: "Revisar producción",
+  review_fiscal_map: "Revisar mapping fiscal",
+  refresh_source: "Actualizar fuente",
+  invoice_now: "Facturar ahora",
+};
+
+function resolvePrimaryCta(
+  rawCta: string | null | undefined
+): { ctaKey: CtaKey; primary: { label: string; api: string } } {
+  if (rawCta && rawCta in CTA_MAP) {
+    const k = rawCta as CtaKey;
+    return { ctaKey: k, primary: CTA_MAP[k] };
+  }
+  if (rawCta && rawCta in REVIEW_LABELS) {
+    return {
+      ctaKey: "resolve",
+      primary: { label: REVIEW_LABELS[rawCta], api: "/api/inbox/resolve" },
+    };
+  }
+  return { ctaKey: "resolve", primary: CTA_MAP.resolve };
+}
+
 function formatMxn(n: number | null): string {
   if (n == null) return "—";
   return new Intl.NumberFormat("es-MX", {
@@ -81,8 +116,7 @@ export function IssueDetailClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  const ctaKey: CtaKey = (item.action_cta as CtaKey) || "resolve";
-  const primary = CTA_MAP[ctaKey];
+  const { ctaKey, primary } = resolvePrimaryCta(item.action_cta);
 
   const callApi = (api: string, body: Record<string, unknown>) => {
     startTransition(async () => {
