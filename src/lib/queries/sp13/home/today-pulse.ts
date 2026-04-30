@@ -64,6 +64,7 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
     )
     .eq("direction", "issued")
     .eq("move_type_odoo", "out_invoice")
+    .eq("is_non_operational", false) // exclude sale-leaseback / asset disposal CFDIs
     .gte("invoice_date_resolved", sevenDaysAgoIso)
     .lte("invoice_date_resolved", todayIso);
 
@@ -259,6 +260,6 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
 
 export const getTodayPulse = unstable_cache(
   _getTodayPulseRaw,
-  ["sp13-home-today-pulse-v2-sinIva"],
+  ["sp13-home-today-pulse-v3-nonop-filter"],
   { revalidate: 60, tags: ["dashboard", "home"] },
 );

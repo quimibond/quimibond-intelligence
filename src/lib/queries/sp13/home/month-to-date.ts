@@ -79,6 +79,7 @@ async function _getMonthToDateRaw(): Promise<MonthToDate> {
     )
     .eq("direction", "issued")
     .eq("move_type_odoo", "out_invoice")
+    .eq("is_non_operational", false) // exclude sale-leaseback / asset disposal CFDIs
     .gte("invoice_date_resolved", lastMonthStart)
     .lte("invoice_date_resolved", todayIso);
 
@@ -266,6 +267,6 @@ async function _getMonthToDateRaw(): Promise<MonthToDate> {
 
 export const getMonthToDate = unstable_cache(
   _getMonthToDateRaw,
-  ["sp13-home-month-to-date-v2-sinIva"],
+  ["sp13-home-month-to-date-v3-nonop-filter"],
   { revalidate: 120, tags: ["dashboard", "home"] },
 );
