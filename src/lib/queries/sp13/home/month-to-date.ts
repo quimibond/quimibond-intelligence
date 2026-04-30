@@ -74,7 +74,7 @@ async function _getMonthToDateRaw(): Promise<MonthToDate> {
   const salesQ = sb
     .from("canonical_invoices")
     .select(
-      `invoice_date_resolved, amount_total_mxn_resolved, state_odoo, estado_sat,
+      `invoice_date_resolved, amount_total_mxn_resolved, amount_total_odoo, amount_untaxed_odoo, amount_total_sat, amount_untaxed_sat, state_odoo, estado_sat,
        receptor:canonical_companies!receptor_canonical_company_id(is_internal,is_related_party)`,
     )
     .eq("direction", "issued")
@@ -108,11 +108,30 @@ async function _getMonthToDateRaw(): Promise<MonthToDate> {
   type SaleRow = {
     invoice_date_resolved: string | null;
     amount_total_mxn_resolved: number | null;
+    amount_total_odoo: number | null;
+    amount_untaxed_odoo: number | null;
+    amount_total_sat: number | null;
+    amount_untaxed_sat: number | null;
     state_odoo: string | null;
     estado_sat: string | null;
     receptor: Receptor[] | Receptor | null;
   };
   const salesRows = (salesRes.data ?? []) as unknown as SaleRow[];
+
+  // Derive sin-IVA MXN amount: ratio = untaxed/total (Odoo first, SAT fallback).
+  const sinIvaMxn = (r: SaleRow): number => {
+    const totalMxn = Number(r.amount_total_mxn_resolved) || 0;
+    if (!totalMxn) return 0;
+    const tOdoo = Number(r.amount_total_odoo) || 0;
+    const uOdoo = Number(r.amount_untaxed_odoo) || 0;
+    const tSat = Number(r.amount_total_sat) || 0;
+    const uSat = Number(r.amount_untaxed_sat) || 0;
+    let ratio: number | null = null;
+    if (tOdoo > 0 && uOdoo > 0) ratio = uOdoo / tOdoo;
+    else if (tSat > 0 && uSat > 0) ratio = uSat / tSat;
+    if (ratio === null) return totalMxn;
+    return totalMxn * ratio;
+  };
 
   let salesMtd = 0,
     salesLast = 0,
@@ -129,7 +148,7 @@ async function _getMonthToDateRaw(): Promise<MonthToDate> {
     const isInternal = rec?.is_internal === true;
     const isRelated = rec?.is_related_party === true;
     if (isInternal || isRelated) continue;
-    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    const amt = sinIvaMxn(r);
     if (r.invoice_date_resolved >= monthStart) {
       salesMtd += amt;
       salesMtdN += 1;
@@ -247,6 +266,6 @@ async function _getMonthToDateRaw(): Promise<MonthToDate> {
 
 export const getMonthToDate = unstable_cache(
   _getMonthToDateRaw,
-  ["sp13-home-month-to-date-v1"],
+  ["sp13-home-month-to-date-v2-sinIva"],
   { revalidate: 120, tags: ["dashboard", "home"] },
 );

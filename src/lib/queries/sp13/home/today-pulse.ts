@@ -53,9 +53,15 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
 
   // ─── 1) Sales ─────────────────────────────────────────────────────
   // Pull 7d window so we can compute today/yesterday/last7d in one query.
+  // Sales reported SIN IVA (subtotal) for consistency with P&L 401+402.
+  // canonical_invoices stores amount_total_mxn_resolved (con IVA) but no
+  // amount_untaxed_mxn_resolved; derive ratio from amount_untaxed_odoo /
+  // amount_total_odoo (or SAT fallback) and apply to the MXN-resolved total.
   const salesQ = sb
     .from("canonical_invoices")
-    .select("invoice_date_resolved, amount_total_mxn_resolved, state_odoo, estado_sat")
+    .select(
+      "invoice_date_resolved, amount_total_mxn_resolved, amount_total_odoo, amount_untaxed_odoo, amount_total_sat, amount_untaxed_sat, state_odoo, estado_sat",
+    )
     .eq("direction", "issued")
     .eq("move_type_odoo", "out_invoice")
     .gte("invoice_date_resolved", sevenDaysAgoIso)
@@ -91,6 +97,10 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
   type SaleRow = {
     invoice_date_resolved: string | null;
     amount_total_mxn_resolved: number | null;
+    amount_total_odoo: number | null;
+    amount_untaxed_odoo: number | null;
+    amount_total_sat: number | null;
+    amount_untaxed_sat: number | null;
     state_odoo: string | null;
     estado_sat: string | null;
   };
@@ -98,6 +108,22 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
   const isVigente = (r: SaleRow) =>
     (r.state_odoo === "posted" || r.state_odoo === null) &&
     (r.estado_sat === "vigente" || r.estado_sat === null);
+
+  // Derive sin-IVA MXN amount from MXN-resolved total × (untaxed/total ratio).
+  // Falls back to 1.0 if neither source has untaxed/total > 0 (rare).
+  const sinIvaMxn = (r: SaleRow): number => {
+    const totalMxn = Number(r.amount_total_mxn_resolved) || 0;
+    if (!totalMxn) return 0;
+    const tOdoo = Number(r.amount_total_odoo) || 0;
+    const uOdoo = Number(r.amount_untaxed_odoo) || 0;
+    const tSat = Number(r.amount_total_sat) || 0;
+    const uSat = Number(r.amount_untaxed_sat) || 0;
+    let ratio: number | null = null;
+    if (tOdoo > 0 && uOdoo > 0) ratio = uOdoo / tOdoo;
+    else if (tSat > 0 && uSat > 0) ratio = uSat / tSat;
+    if (ratio === null) return totalMxn;
+    return totalMxn * ratio;
+  };
 
   let salesT = 0,
     salesY = 0,
@@ -107,7 +133,7 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
     sales7n = 0;
   for (const r of salesRows) {
     if (!isVigente(r)) continue;
-    const amt = Number(r.amount_total_mxn_resolved) || 0;
+    const amt = sinIvaMxn(r);
     sales7 += amt;
     sales7n += 1;
     if (r.invoice_date_resolved === todayIso) {
@@ -233,6 +259,6 @@ async function _getTodayPulseRaw(): Promise<TodayPulse> {
 
 export const getTodayPulse = unstable_cache(
   _getTodayPulseRaw,
-  ["sp13-home-today-pulse-v1"],
+  ["sp13-home-today-pulse-v2-sinIva"],
   { revalidate: 60, tags: ["dashboard", "home"] },
 );
