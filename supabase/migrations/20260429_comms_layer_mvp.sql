@@ -336,4 +336,46 @@ $func$;
 GRANT EXECUTE ON FUNCTION public.detect_comms_activity_overdue()
   TO authenticated, service_role;
 
+-- ----------------------------------------------------------------------------
+-- 6. Routing seeds
+-- ----------------------------------------------------------------------------
+INSERT INTO public.invariant_routing
+  (issue_type, invariant_namespace, department_name, match_predicate, priority)
+SELECT * FROM (VALUES
+  ('comms.unanswered_external_thread'::text, 'comms'::text, 'Ventas'::text, '{}'::jsonb, 100),
+  ('comms.activity_overdue'::text,           'comms'::text, 'Ventas'::text, '{}'::jsonb, 100)
+) AS v(issue_type, invariant_namespace, department_name, match_predicate, priority)
+WHERE NOT EXISTS (
+  SELECT 1 FROM public.invariant_routing ir WHERE ir.issue_type = v.issue_type
+);
+
+-- ----------------------------------------------------------------------------
+-- 7. Performance index for auto-resolve scans
+-- ----------------------------------------------------------------------------
+-- The detect functions UPDATE reconciliation_issues with NOT EXISTS subqueries
+-- filtered by (issue_type LIKE 'comms.%' AND resolved_at IS NULL). Without this
+-- index the UPDATE scans 245k+ rows each cron run. Partial index narrows scope.
+CREATE INDEX IF NOT EXISTS idx_recon_issues_open_comms
+  ON public.reconciliation_issues (issue_type)
+  WHERE resolved_at IS NULL AND issue_type LIKE 'comms.%';
+
+-- ----------------------------------------------------------------------------
+-- 8. pg_cron schedule (hourly at HH:25)
+-- ----------------------------------------------------------------------------
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM cron.job WHERE jobname = 'comms_invariants_hourly') THEN
+    PERFORM cron.unschedule('comms_invariants_hourly');
+  END IF;
+END $$;
+
+SELECT cron.schedule(
+  'comms_invariants_hourly',
+  '25 * * * *',
+  $cron$
+    SELECT public.detect_comms_unanswered_external_thread();
+    SELECT public.detect_comms_activity_overdue();
+  $cron$
+);
+
 COMMIT;
