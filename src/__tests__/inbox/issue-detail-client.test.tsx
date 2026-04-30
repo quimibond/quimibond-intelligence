@@ -55,6 +55,26 @@ describe("IssueDetailClient", () => {
     expect(within(mobileBar).getByRole("button", { name: /resolver/i })).toBeInTheDocument();
   });
 
+  // Regression: silver invariants emit action_cta values outside the four
+  // CtaKeys (e.g. "review_accounting", "review_bom_cost"). Previously this
+  // crashed SSR with "Cannot read properties of undefined (reading 'label')"
+  // and rendered the /inbox/error.tsx boundary.
+  it("renders a fallback label when action_cta is an unmapped review_* value", () => {
+    const { container } = render(
+      <IssueDetailClient item={makeItem({ action_cta: "review_accounting" as unknown as IssueDetailItem["action_cta"] })} />,
+    );
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
+    expect(within(mobileBar).getByRole("button", { name: /revisar contabilidad/i })).toBeInTheDocument();
+  });
+
+  it("renders Resolver fallback for completely unknown action_cta strings", () => {
+    const { container } = render(
+      <IssueDetailClient item={makeItem({ action_cta: "totally_unknown_cta" as unknown as IssueDetailItem["action_cta"] })} />,
+    );
+    const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
+    expect(within(mobileBar).getByRole("button", { name: /resolver/i })).toBeInTheDocument();
+  });
+
   it("clicking primary action calls correct API endpoint for operationalize", async () => {
     const { container } = render(<IssueDetailClient item={makeItem()} />);
     const mobileBar = container.querySelector('[data-testid="mobile-action-bar"]') as HTMLElement;
