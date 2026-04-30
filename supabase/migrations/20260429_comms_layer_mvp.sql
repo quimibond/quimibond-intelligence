@@ -275,6 +275,11 @@ BEGIN
       AND ca.date_deadline > CURRENT_DATE - INTERVAL '90 days'
       AND ca.is_overdue = TRUE
       AND ca.canonical_company_id IS NOT NULL
+      AND COALESCE(ca.activity_type, '') NOT IN (
+        'Crear factura de compras',
+        'Exception',
+        'Excepción'
+      )
   )
   INSERT INTO public.reconciliation_issues (
     issue_type, invariant_key, severity, canonical_entity_type, canonical_entity_id,
@@ -325,6 +330,11 @@ BEGIN
         AND ca.date_deadline < CURRENT_DATE
         AND ca.date_deadline > CURRENT_DATE - INTERVAL '90 days'
         AND ca.canonical_company_id IS NOT NULL
+        AND COALESCE(ca.activity_type, '') NOT IN (
+          'Crear factura de compras',
+          'Exception',
+          'Excepción'
+        )
     );
 
   RETURN v_inserted;
