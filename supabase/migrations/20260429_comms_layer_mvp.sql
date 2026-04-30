@@ -121,4 +121,34 @@ $func$;
 GRANT EXECUTE ON FUNCTION public.comms_timeline(text, bigint, text, int, int)
   TO authenticated, service_role;
 
+-- ----------------------------------------------------------------------------
+-- 3. RPC comms_thread_messages (drawer detail)
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.comms_thread_messages(p_thread_id bigint)
+RETURNS TABLE (
+  email_id         bigint,
+  gmail_message_id text,
+  sender           text,
+  recipient        text,
+  email_date       timestamptz,
+  subject          text,
+  snippet          text,
+  body             text,
+  sender_type      text,
+  has_attachments  boolean
+)
+LANGUAGE sql
+SECURITY INVOKER
+SET search_path = public, pg_catalog
+AS $func$
+  SELECT
+    e.id, e.gmail_message_id, e.sender, e.recipient, e.email_date,
+    e.subject, e.snippet, e.body, e.sender_type, e.has_attachments
+  FROM public.emails e
+  WHERE e.thread_id = p_thread_id
+  ORDER BY e.email_date ASC NULLS LAST;
+$func$;
+
+GRANT EXECUTE ON FUNCTION public.comms_thread_messages(bigint) TO authenticated, service_role;
+
 COMMIT;
