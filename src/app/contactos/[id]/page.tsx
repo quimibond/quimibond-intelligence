@@ -18,6 +18,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { getContactDetail } from "@/lib/queries/_shared/contacts";
+import { CommsTimeline } from "@/components/comms/CommsTimeline";
 
 export const dynamic = "force-dynamic";
 
@@ -58,10 +59,13 @@ export async function generateMetadata({
 
 export default async function ContactDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { id } = await params;
+  const raw = await searchParams;
   const contact = await getContactDetail(id);
   if (!contact) notFound();
 
@@ -221,6 +225,17 @@ export default async function ContactDetailPage({
           </CardContent>
         </Card>
       </div>
+
+      {Number.isFinite(Number(id)) && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">Comunicaciones</h2>
+          <CommsTimeline
+            entityType="contact"
+            entityId={Number(id)}
+            searchParams={raw}
+          />
+        </section>
+      )}
     </div>
   );
 }
