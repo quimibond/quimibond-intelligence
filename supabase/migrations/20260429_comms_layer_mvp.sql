@@ -240,4 +240,100 @@ $func$;
 GRANT EXECUTE ON FUNCTION public.detect_comms_unanswered_external_thread()
   TO authenticated, service_role;
 
+-- ----------------------------------------------------------------------------
+-- 5. Detect: activity overdue
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.detect_comms_activity_overdue()
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $func$
+DECLARE
+  v_inserted int := 0;
+BEGIN
+  WITH detected AS (
+    SELECT
+      ca.bronze_id                       AS activity_id,
+      ca.canonical_company_id,
+      ca.assigned_canonical_contact_id,
+      ca.summary,
+      ca.activity_type,
+      ca.date_deadline,
+      ca.assigned_to,
+      ca.res_model,
+      ca.res_id,
+      (CURRENT_DATE - ca.date_deadline)::int AS days_overdue,
+      CASE
+        WHEN (CURRENT_DATE - ca.date_deadline)::int > 14 THEN 'high'
+        WHEN (CURRENT_DATE - ca.date_deadline)::int > 3  THEN 'medium'
+        ELSE 'low'
+      END AS severity
+    FROM public.canonical_activities ca
+    WHERE ca.date_deadline < CURRENT_DATE
+      AND ca.is_overdue = TRUE
+      AND ca.canonical_company_id IS NOT NULL
+  )
+  INSERT INTO public.reconciliation_issues (
+    issue_type, severity, canonical_entity_type, canonical_entity_id,
+    description, metadata, detected_at, assignee_canonical_contact_id
+  )
+  SELECT
+    'comms.activity_overdue',
+    severity,
+    'company',
+    canonical_company_id::text,
+    format('Actividad %s días vencida: %s',
+           days_overdue, COALESCE(summary, activity_type, '(sin descripción)')),
+    jsonb_build_object(
+      'activity_id', activity_id,
+      'activity_type', activity_type,
+      'date_deadline', date_deadline,
+      'assigned_to', assigned_to,
+      'days_overdue', days_overdue,
+      'res_model', res_model,
+      'res_id', res_id
+    ),
+    now(),
+    assigned_canonical_contact_id
+  FROM detected
+  ON CONFLICT (issue_type, canonical_entity_type, canonical_entity_id, (metadata->>'activity_id'))
+  WHERE issue_type = 'comms.activity_overdue'
+  DO UPDATE SET
+    severity    = EXCLUDED.severity,
+    metadata    = EXCLUDED.metadata,
+    description = EXCLUDED.description,
+    detected_at = EXCLUDED.detected_at,
+    assignee_canonical_contact_id = EXCLUDED.assignee_canonical_contact_id,
+    resolved_at = NULL;
+
+  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+  -- Auto-resolve: activity ya no en canonical (cerrada en Odoo, delete_all del push)
+  UPDATE public.reconciliation_issues ri
+  SET resolved_at = now(),
+      resolution_note = 'auto: activity completed or removed'
+  WHERE ri.issue_type = 'comms.activity_overdue'
+    AND ri.resolved_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.canonical_activities ca
+      WHERE ca.bronze_id = (ri.metadata->>'activity_id')::bigint
+        AND ca.is_overdue = TRUE
+        AND ca.date_deadline < CURRENT_DATE
+        AND ca.canonical_company_id IS NOT NULL
+    );
+
+  RETURN v_inserted;
+EXCEPTION WHEN OTHERS THEN
+  -- audit_runs real schema: (run_at, source, invariant_key, severity, details)
+  INSERT INTO public.audit_runs (run_at, source, invariant_key, severity, details)
+  VALUES (now(), 'detect_comms_activity_overdue', 'comms.activity_overdue',
+          'error', jsonb_build_object('error', SQLERRM));
+  RAISE;
+END;
+$func$;
+
+GRANT EXECUTE ON FUNCTION public.detect_comms_activity_overdue()
+  TO authenticated, service_role;
+
 COMMIT;

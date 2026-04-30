@@ -56,3 +56,50 @@ BEGIN
   DELETE FROM threads WHERE id = v_thread_id;
   DELETE FROM companies WHERE id = v_company_id;
 END $$;
+
+-- TEST 2: detect_comms_activity_overdue
+DO $$
+DECLARE
+  v_company_id  bigint := 3;  -- existing canonical_companies.id ("AD 13841")
+  v_activity_id bigint := -999004;  -- synthetic, won't collide with bronze ids
+  v_issue_count int;
+  v_resolved    timestamptz;
+BEGIN
+  -- Seed: synthetic canonical_activity attached to existing company
+  INSERT INTO canonical_activities
+    (bronze_id, canonical_company_id, activity_type, summary, res_model, res_id,
+     date_deadline, assigned_to, is_overdue, synced_from_bronze_at, updated_at)
+  VALUES
+    (v_activity_id, v_company_id, 'call', '__test_overdue_call__', 'res.partner',
+     v_company_id, current_date - interval '5 days', '__test_user__', TRUE, now(), now());
+
+  -- TEST 2A: detect crea issue
+  PERFORM detect_comms_activity_overdue();
+  SELECT count(*) INTO v_issue_count
+    FROM reconciliation_issues
+    WHERE issue_type = 'comms.activity_overdue'
+      AND (metadata->>'activity_id')::bigint = v_activity_id
+      AND resolved_at IS NULL;
+  IF v_issue_count = 1 THEN
+    RAISE NOTICE 'TEST 2A PASSED: activity overdue genera issue';
+  ELSE
+    RAISE EXCEPTION 'TEST 2A FAILED: issue_count=%', v_issue_count;
+  END IF;
+
+  -- TEST 2B: borrar canonical_activity = simula cierre en Odoo (delete_all push)
+  DELETE FROM canonical_activities WHERE bronze_id = v_activity_id;
+  PERFORM detect_comms_activity_overdue();
+  SELECT resolved_at INTO v_resolved
+    FROM reconciliation_issues
+    WHERE issue_type = 'comms.activity_overdue'
+      AND (metadata->>'activity_id')::bigint = v_activity_id;
+  IF v_resolved IS NOT NULL THEN
+    RAISE NOTICE 'TEST 2B PASSED: issue auto-resolved cuando activity desaparece';
+  ELSE
+    RAISE EXCEPTION 'TEST 2B FAILED: no auto-resolved';
+  END IF;
+
+  -- Cleanup
+  DELETE FROM reconciliation_issues
+    WHERE (metadata->>'activity_id')::bigint = v_activity_id;
+END $$;
