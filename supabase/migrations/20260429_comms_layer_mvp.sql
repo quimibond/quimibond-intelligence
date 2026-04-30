@@ -183,10 +183,11 @@ BEGIN
       AND t.company_id IS NOT NULL
   )
   INSERT INTO public.reconciliation_issues (
-    issue_type, severity, canonical_entity_type, canonical_entity_id,
+    issue_type, invariant_key, severity, canonical_entity_type, canonical_entity_id,
     description, metadata, detected_at
   )
   SELECT
+    'comms.unanswered_external_thread',
     'comms.unanswered_external_thread',
     severity,
     'company',
@@ -271,14 +272,16 @@ BEGIN
       END AS severity
     FROM public.canonical_activities ca
     WHERE ca.date_deadline < CURRENT_DATE
+      AND ca.date_deadline > CURRENT_DATE - INTERVAL '90 days'
       AND ca.is_overdue = TRUE
       AND ca.canonical_company_id IS NOT NULL
   )
   INSERT INTO public.reconciliation_issues (
-    issue_type, severity, canonical_entity_type, canonical_entity_id,
+    issue_type, invariant_key, severity, canonical_entity_type, canonical_entity_id,
     description, metadata, detected_at, assignee_canonical_contact_id
   )
   SELECT
+    'comms.activity_overdue',
     'comms.activity_overdue',
     severity,
     'company',
@@ -320,6 +323,7 @@ BEGIN
       WHERE ca.bronze_id = (ri.metadata->>'activity_id')::bigint
         AND ca.is_overdue = TRUE
         AND ca.date_deadline < CURRENT_DATE
+        AND ca.date_deadline > CURRENT_DATE - INTERVAL '90 days'
         AND ca.canonical_company_id IS NOT NULL
     );
 
