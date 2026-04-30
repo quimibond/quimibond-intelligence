@@ -151,4 +151,93 @@ $func$;
 
 GRANT EXECUTE ON FUNCTION public.comms_thread_messages(bigint) TO authenticated, service_role;
 
+-- ----------------------------------------------------------------------------
+-- 4. Detect: unanswered external thread
+-- ----------------------------------------------------------------------------
+CREATE OR REPLACE FUNCTION public.detect_comms_unanswered_external_thread()
+RETURNS int
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public, pg_catalog
+AS $func$
+DECLARE
+  v_inserted int := 0;
+BEGIN
+  WITH detected AS (
+    SELECT
+      t.id AS thread_id,
+      t.company_id,
+      t.subject,
+      t.hours_without_response,
+      t.last_sender,
+      t.last_activity,
+      CASE
+        WHEN t.hours_without_response > 168 THEN 'high'
+        WHEN t.hours_without_response > 72  THEN 'medium'
+        ELSE 'low'
+      END AS severity
+    FROM public.threads t
+    WHERE t.last_sender_type = 'external'
+      AND t.hours_without_response > 48
+      AND t.status IS DISTINCT FROM 'resolved'
+      AND t.company_id IS NOT NULL
+  )
+  INSERT INTO public.reconciliation_issues (
+    issue_type, severity, canonical_entity_type, canonical_entity_id,
+    description, metadata, detected_at
+  )
+  SELECT
+    'comms.unanswered_external_thread',
+    severity,
+    'company',
+    company_id::text,
+    format('Thread sin respuesta hace %sh: %s',
+           round(hours_without_response), COALESCE(subject, '(sin asunto)')),
+    jsonb_build_object(
+      'thread_id', thread_id,
+      'subject', subject,
+      'hours_without_response', hours_without_response,
+      'last_sender', last_sender,
+      'last_activity', last_activity
+    ),
+    now()
+  FROM detected
+  ON CONFLICT (issue_type, canonical_entity_type, canonical_entity_id, (metadata->>'thread_id'))
+  WHERE issue_type = 'comms.unanswered_external_thread'
+  DO UPDATE SET
+    severity    = EXCLUDED.severity,
+    metadata    = EXCLUDED.metadata,
+    description = EXCLUDED.description,
+    detected_at = EXCLUDED.detected_at,
+    resolved_at = NULL;
+
+  GET DIAGNOSTICS v_inserted = ROW_COUNT;
+
+  -- Auto-resolve: threads que ya no califican
+  UPDATE public.reconciliation_issues ri
+  SET resolved_at = now(),
+      resolution_note = 'auto: thread responded or closed'
+  WHERE ri.issue_type = 'comms.unanswered_external_thread'
+    AND ri.resolved_at IS NULL
+    AND NOT EXISTS (
+      SELECT 1 FROM public.threads t
+      WHERE t.id = (ri.metadata->>'thread_id')::bigint
+        AND t.last_sender_type = 'external'
+        AND t.hours_without_response > 48
+        AND t.status IS DISTINCT FROM 'resolved'
+    );
+
+  RETURN v_inserted;
+EXCEPTION WHEN OTHERS THEN
+  -- audit_runs real schema: (run_at, source, invariant_key, severity, details)
+  INSERT INTO public.audit_runs (run_at, source, invariant_key, severity, details)
+  VALUES (now(), 'detect_comms_unanswered_external_thread', 'comms.unanswered_external_thread',
+          'error', jsonb_build_object('error', SQLERRM));
+  RAISE;
+END;
+$func$;
+
+GRANT EXECUTE ON FUNCTION public.detect_comms_unanswered_external_thread()
+  TO authenticated, service_role;
+
 COMMIT;
