@@ -134,26 +134,40 @@ export async function listInbox(
  */
 export async function fetchInboxItem(issue_id: string) {
   const sb = getServiceClient();
-  const { data: ri, error } = await sb
-    .from("reconciliation_issues")
-    .select("*")
-    .eq("issue_id", issue_id)
-    .maybeSingle();
 
-  if (error) throw error;
+  let ri: Awaited<ReturnType<typeof sb.from>> extends never ? never : Record<string, unknown> | null = null;
+  try {
+    const { data, error } = await sb
+      .from("reconciliation_issues")
+      .select("*")
+      .eq("issue_id", issue_id)
+      .maybeSingle();
+    if (error) {
+      console.error("[fetchInboxItem] reconciliation_issues lookup failed:", error.message);
+      return null;
+    }
+    ri = data as Record<string, unknown> | null;
+  } catch (e) {
+    console.error("[fetchInboxItem] reconciliation_issues threw:", e);
+    return null;
+  }
   if (!ri) return null;
 
   // Resolve assignee like gold_ceo_inbox does
   let assignee_name: string | null = null;
   let assignee_email: string | null = null;
   if (typeof ri.assignee_canonical_contact_id === "number") {
-    const { data: cc } = await sb
-      .from("canonical_contacts")
-      .select("display_name, primary_email")
-      .eq("id", ri.assignee_canonical_contact_id)
-      .maybeSingle();
-    assignee_name = cc?.display_name ?? null;
-    assignee_email = cc?.primary_email ?? null;
+    try {
+      const { data: cc } = await sb
+        .from("canonical_contacts")
+        .select("display_name, primary_email")
+        .eq("id", ri.assignee_canonical_contact_id)
+        .maybeSingle();
+      assignee_name = (cc as { display_name?: string | null } | null)?.display_name ?? null;
+      assignee_email = (cc as { primary_email?: string | null } | null)?.primary_email ?? null;
+    } catch (e) {
+      console.error("[fetchInboxItem] assignee lookup threw:", e);
+    }
   }
 
   const row = {
@@ -162,40 +176,42 @@ export async function fetchInboxItem(issue_id: string) {
     assignee_email,
   };
 
-  const entityType = row.canonical_entity_type;
-  const entityId = row.canonical_entity_id;
+  const entityType = row.canonical_entity_type as string | null;
+  const entityId = row.canonical_entity_id as string | null;
 
-  if (!entityType || !entityId) {
-    return {
-      ...row,
-      ai_extracted_facts: [],
-      manual_notes: [],
-    };
+  // Always return ai_extracted_facts/manual_notes as arrays so the detail
+  // page can do `.length` without guards. Any failure (missing entity FK,
+  // RLS, network flake) degrades to empty arrays — never to undefined.
+  let facts: unknown[] = [];
+  let notes: unknown[] = [];
+  if (entityType && entityId) {
+    try {
+      const [factsRes, notesRes] = await Promise.all([
+        sb
+          .from("ai_extracted_facts")
+          .select("*")
+          .eq("canonical_entity_type", entityType)
+          .eq("canonical_entity_id", entityId)
+          .limit(25),
+        sb
+          .from("manual_notes")
+          .select("*")
+          .eq("canonical_entity_type", entityType)
+          .eq("canonical_entity_id", entityId)
+          .order("created_at", { ascending: false })
+          .limit(25),
+      ]);
+      facts = (factsRes.data as unknown[] | null) ?? [];
+      notes = (notesRes.data as unknown[] | null) ?? [];
+    } catch (e) {
+      console.error("[fetchInboxItem] facts/notes lookup threw:", e);
+    }
   }
-
-  const [
-    { data: facts },
-    { data: notes },
-  ] = await Promise.all([
-    sb
-      .from("ai_extracted_facts")
-      .select("*")
-      .eq("canonical_entity_type", entityType)
-      .eq("canonical_entity_id", entityId)
-      .limit(25),
-    sb
-      .from("manual_notes")
-      .select("*")
-      .eq("canonical_entity_type", entityType)
-      .eq("canonical_entity_id", entityId)
-      .order("created_at", { ascending: false })
-      .limit(25),
-  ]);
 
   return {
     ...row,
-    ai_extracted_facts: facts ?? [],
-    manual_notes: notes ?? [],
+    ai_extracted_facts: facts,
+    manual_notes: notes,
   };
 }
 
