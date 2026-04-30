@@ -192,6 +192,23 @@ export async function getCompanyEvidencePack(
     return null;
   }
   if (!data) return null;
+  // The RPC catches its own exceptions and returns {error, company_id} instead
+  // of throwing. Detect that shape so EvidencePackView doesn't try to render
+  // an error object as if it were a real EvidencePack (would crash with
+  // "Cannot read properties of undefined" on missing fields).
+  if (
+    typeof data === "object" &&
+    data !== null &&
+    !Array.isArray(data) &&
+    "error" in (data as Record<string, unknown>) &&
+    !("financials" in (data as Record<string, unknown>))
+  ) {
+    console.error(
+      "[company_evidence_pack] RPC error:",
+      (data as { error?: unknown }).error
+    );
+    return null;
+  }
   return data as EvidencePack;
 }
 
