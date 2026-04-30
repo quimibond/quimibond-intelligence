@@ -123,20 +123,44 @@ export async function listInbox(
 }
 
 /**
- * Fetch a single gold_ceo_inbox row by issue_id (UUID), plus evidence arrays
+ * Fetch a single inbox row by issue_id (UUID), plus evidence arrays
  * from ai_extracted_facts and manual_notes. Evidence is correlated on
  * canonical_entity_type + canonical_entity_id.
+ *
+ * 2026-04-29: queries `reconciliation_issues` directly + joins
+ * canonical_contacts because `gold_ceo_inbox` now dedupes by
+ * invariant_key (top-1 per class) and would 404 for any non-representative
+ * issue_id reached via deep link.
  */
 export async function fetchInboxItem(issue_id: string) {
   const sb = getServiceClient();
-  const { data: row, error } = await sb
-    .from("gold_ceo_inbox")
+  const { data: ri, error } = await sb
+    .from("reconciliation_issues")
     .select("*")
     .eq("issue_id", issue_id)
     .maybeSingle();
 
   if (error) throw error;
-  if (!row) return null;
+  if (!ri) return null;
+
+  // Resolve assignee like gold_ceo_inbox does
+  let assignee_name: string | null = null;
+  let assignee_email: string | null = null;
+  if (typeof ri.assignee_canonical_contact_id === "number") {
+    const { data: cc } = await sb
+      .from("canonical_contacts")
+      .select("display_name, primary_email")
+      .eq("id", ri.assignee_canonical_contact_id)
+      .maybeSingle();
+    assignee_name = cc?.display_name ?? null;
+    assignee_email = cc?.primary_email ?? null;
+  }
+
+  const row = {
+    ...ri,
+    assignee_name,
+    assignee_email,
+  };
 
   const entityType = row.canonical_entity_type;
   const entityId = row.canonical_entity_id;
