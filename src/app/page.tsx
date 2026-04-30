@@ -2,13 +2,14 @@ import { Suspense } from "react";
 import Link from "next/link";
 import {
   AlertTriangle,
+  ArrowDownLeft,
+  ArrowUpRight,
   ChevronRight,
   Factory,
-  Inbox,
-  Target,
   TrendingUp,
   Truck,
   Users,
+  Wallet,
 } from "lucide-react";
 
 import {
@@ -18,8 +19,6 @@ import {
   EmptyState,
   CompanyLink,
   Currency,
-  DateDisplay,
-  SeverityBadge,
   QuestionSection,
   HistorySelector,
   DriftAlert,
@@ -27,22 +26,25 @@ import {
   parseHistoryRange,
   type HistoryRange,
 } from "@/components/patterns";
-import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import {
   getDashboardKpis,
   getTopAtRiskClients,
-  getRevenueTrend,
 } from "@/lib/queries/analytics/dashboard";
 import { getRunwayKpis } from "@/lib/queries/sp13/finanzas/runway";
-import { getInsights, isVisibleToCEO } from "@/lib/queries/intelligence/insights";
 import {
   getActiveTripwires,
   type ConcentrationRow,
   type ConcentrationTripwire,
 } from "@/lib/queries/analytics";
-import { formatCurrencyMXN, formatRelative } from "@/lib/formatters";
+import { getTodayPulse, type PulseMetric } from "@/lib/queries/sp13/home/today-pulse";
+import { getMonthToDate, type MtdMetric } from "@/lib/queries/sp13/home/month-to-date";
+import {
+  getOperationalRevenueTrend,
+  getOperationalRevenueSnapshot,
+} from "@/lib/queries/sp13/home/operational-revenue";
+import { formatCurrencyMXN, formatNumber, formatRelative } from "@/lib/formatters";
 
 import { RevenueTrendChart } from "./_components/revenue-trend-chart";
 
@@ -71,11 +73,10 @@ export default async function CeoDashboardPage({
     <div className="space-y-6 pb-24 md:pb-6">
       <PageHeader
         title={greet()}
-        subtitle="¿Cuánto tengo, qué quema hoy y en qué debo enfocarme?"
+        subtitle="¿Qué pasó hoy y a dónde voy?"
         actions={<HistorySelector paramName="range" defaultRange="ltm" />}
       />
 
-      {/* Banners arriba — runway + tripwires (cada uno se auto-oculta si no aplica) */}
       <Suspense fallback={null}>
         <RunwayAlertBanner />
       </Suspense>
@@ -85,51 +86,48 @@ export default async function CeoDashboardPage({
 
       <SectionNav
         items={[
-          { id: "resumen", label: "Resumen" },
-          { id: "quema-hoy", label: "Qué quema hoy" },
-          { id: "tendencia", label: "Tendencia" },
+          { id: "hoy", label: "Hoy" },
+          { id: "mes", label: "Mes en curso" },
+          { id: "traccion", label: "Tracción" },
           { id: "en-riesgo", label: "En riesgo" },
         ]}
       />
 
       <QuestionSection
-        id="resumen"
-        question="¿Cómo está la salud del negocio?"
-        subtext="6 KPIs core con deep-link a la página dedicada de cada dominio."
+        id="hoy"
+        question="¿Qué pasó hoy?"
+        subtext="Pulso operativo del día. Compara contra ayer."
       >
-        <Suspense fallback={<KpisSkeleton />}>
-          <Kpis />
+        <Suspense fallback={<KpisSkeleton count={4} />}>
+          <TodaySection />
         </Suspense>
       </QuestionSection>
 
       <QuestionSection
-        id="quema-hoy"
-        question="¿Qué quema hoy?"
-        subtext="Top 5 insights críticos / altos visibles para el CEO (filtra cobranza low-impact)."
-        actions={
-          <Link
-            href="/inbox"
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            Ver inbox completo →
-          </Link>
-        }
+        id="mes"
+        question="¿Cómo va el mes?"
+        subtext="MTD vs mismo punto del mes pasado, con proyección lineal."
       >
-        <Suspense fallback={<InsightsSkeleton />}>
-          <UrgentInsights />
+        <Suspense fallback={<KpisSkeleton count={4} />}>
+          <MonthToDateSection />
         </Suspense>
       </QuestionSection>
 
       <QuestionSection
-        id="tendencia"
-        question="¿Cómo viene la facturación?"
-        subtext={`Ingresos mensuales · ${rangeLabel(range)}.`}
+        id="traccion"
+        question="¿Cómo viene la tracción?"
+        subtext={`Ventas operativas (cuentas 401+402) — ${rangeLabel(range)}.`}
       >
         <Suspense
           fallback={<Skeleton className="h-[240px] w-full rounded-md" />}
         >
-          <RevenueChartSection />
+          <OperationalRevenueChartSection months={chartMonthsForRange(range)} />
         </Suspense>
+        <div className="mt-4">
+          <Suspense fallback={<KpisSkeleton count={4} />}>
+            <HealthKpis />
+          </Suspense>
+        </div>
       </QuestionSection>
 
       <QuestionSection
@@ -171,26 +169,33 @@ function rangeLabel(range: HistoryRange): string {
   }
 }
 
+function chartMonthsForRange(range: HistoryRange): number {
+  switch (range) {
+    case "mtd":
+    case "ytd":
+      return 12;
+    case "3y":
+      return 36;
+    case "5y":
+      return 60;
+    case "all":
+      return 120;
+    case "ltm":
+    default:
+      return 12;
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────────────
-// Runway alert banner — usa DriftAlert primitive en lugar de Card custom.
-//
-// Lee getRunwayKpis() canonical (gold_cashflow + gold_pl_statement) en
-// lugar del RPC get_dashboard_kpis().cash.runway_days, que reportaba 0
-// días incluso con net_income positivo y $3.4M en banco — bug del RPC.
-// El helper de /finanzas calcula burn = avg(total_expense últimos 3 meses
-// cerrados) / 30, runwayCashOnly = cash / burn, runwayWithAr =
-// (cash + AR_abierto) / burn. Coherente con /finanzas.
+// Banners
 // ──────────────────────────────────────────────────────────────────────────
 async function RunwayAlertBanner() {
   const r = await getRunwayKpis();
   const days = r.runwayCashOnlyDays;
   if (days == null) return null;
-
-  // Si runway cash-only > 60 días, no mostrar banner.
   if (days > 60) return null;
 
-  const severity: "critical" | "warning" =
-    days <= 7 ? "critical" : "warning";
+  const severity: "critical" | "warning" = days <= 7 ? "critical" : "warning";
   const title =
     days <= 0
       ? "Runway agotado"
@@ -212,151 +217,6 @@ async function RunwayAlertBanner() {
   );
 }
 
-function KpisSkeleton() {
-  return (
-    <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 6 }}>
-      {Array.from({ length: 6 }).map((_, i) => (
-        <Skeleton key={i} className="h-[96px] rounded-xl" />
-      ))}
-    </StatGrid>
-  );
-}
-
-function InsightsSkeleton({ rows = 4 }: { rows?: number }) {
-  return (
-    <div className="space-y-2">
-      {Array.from({ length: rows }).map((_, i) => (
-        <Skeleton key={i} className="h-14 w-full rounded-xl" />
-      ))}
-    </div>
-  );
-}
-
-async function Kpis() {
-  const k = await getDashboardKpis();
-  if (!k) {
-    return (
-      <EmptyState
-        icon={AlertTriangle}
-        title="Sin datos del dashboard"
-        description="get_dashboard_kpis() no devolvió resultados."
-      />
-    );
-  }
-
-  // Comparar mes-en-curso (parcial) vs mes-anterior (cerrado) siempre da
-  // MoM negativo durante los primeros días del mes — engañoso. Proyectar
-  // el mes en curso a tasa diaria para que la comparación tenga sentido,
-  // y etiquetar el subtitle como "(parcial)" para que el CEO sepa.
-  const today = new Date();
-  const dayOfMonth = today.getDate();
-  const daysInMonth = new Date(
-    today.getFullYear(),
-    today.getMonth() + 1,
-    0,
-  ).getDate();
-  const isPartialMonth = dayOfMonth < daysInMonth;
-  const projectedThisMonth = isPartialMonth
-    ? (k.revenue.this_month / dayOfMonth) * daysInMonth
-    : k.revenue.this_month;
-  const momPct =
-    k.revenue.last_month > 0
-      ? ((projectedThisMonth - k.revenue.last_month) / k.revenue.last_month) *
-        100
-      : 0;
-  const partialLabel = isPartialMonth
-    ? ` · parcial (${dayOfMonth}/${daysInMonth}d)`
-    : "";
-
-  return (
-    <div className="space-y-2">
-      <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 6 }}>
-        <KpiCard
-          title="Ingresos del mes"
-          value={k.revenue.this_month}
-          format="currency"
-          compact
-          icon={TrendingUp}
-          trend={{ value: momPct, good: "up" }}
-          subtitle={`YTD ${formatCurrencyMXN(k.revenue.ytd, { compact: true })}${partialLabel}`}
-          tone={momPct >= 0 ? "success" : "warning"}
-          href="/ventas"
-        />
-        <KpiCard
-          title="Cartera vencida"
-          value={k.collections.total_overdue_mxn}
-          format="currency"
-          compact
-          icon={AlertTriangle}
-          subtitle={`${k.collections.overdue_count} facturas · ${formatCurrencyMXN(
-            k.collections.expected_collections_30d,
-            { compact: true }
-          )} esperado 30d`}
-          tone="danger"
-          href="/cobranza"
-        />
-        <KpiCard
-          title="Reorden en riesgo"
-          value={k.predictions.reorders_at_risk_mxn}
-          format="currency"
-          compact
-          icon={Target}
-          subtitle={`${k.predictions.reorders_overdue} vencidos · ${k.predictions.reorders_lost} perdidos`}
-          tone={k.predictions.reorders_overdue > 0 ? "warning" : "default"}
-          href="/ventas"
-        />
-        <KpiCard
-          title="Insights urgentes"
-          value={k.insights.urgent_count}
-          format="number"
-          icon={Inbox}
-          subtitle={
-            k.insights.new_count > 0
-              ? `${k.insights.new_count} nuevos · ${k.insights.acceptance_rate.toFixed(0)}% aceptados`
-              : `${k.insights.acceptance_rate.toFixed(0)}% aceptados`
-          }
-          tone={k.insights.urgent_count > 0 ? "danger" : "default"}
-          href="/inbox"
-        />
-        <KpiCard
-          title="OTD rate"
-          value={k.operations.otd_rate}
-          format="percent"
-          icon={Truck}
-          subtitle={`${k.operations.late_deliveries} tarde · ${k.operations.pending_deliveries} pendientes`}
-          tone={
-            k.operations.otd_rate == null
-              ? "default"
-              : k.operations.otd_rate >= 90
-                ? "success"
-                : k.operations.otd_rate >= 75
-                  ? "warning"
-                  : "danger"
-          }
-          href="/operaciones"
-        />
-        <KpiCard
-          title="Manufactura"
-          value={k.operations.manufacturing_active}
-          format="number"
-          icon={Factory}
-          subtitle="Órdenes en proceso"
-          href="/operaciones"
-        />
-      </StatGrid>
-      <p className="text-[11px] text-muted-foreground">
-        Actualizado {formatRelative(k.generated_at)}
-      </p>
-    </div>
-  );
-}
-
-// ──────────────────────────────────────────────────────────────────────────
-// Concentration tripwires — top customers con caída brusca o sin facturar.
-// El backing view (revenue_concentration) está dropeado en SP1; el helper
-// devuelve [] hasta que SP6 reimplemente con canonical_invoices. El banner
-// se auto-oculta cuando no hay tripwires.
-// ──────────────────────────────────────────────────────────────────────────
 const tripwireLabel: Record<ConcentrationTripwire, string> = {
   TOP5_DECLINE_25PCT: "Top 5 cayó −25% MoM",
   TOP10_DECLINE_40PCT: "Top 10 cayó −40% MoM",
@@ -407,14 +267,209 @@ async function ConcentrationTripwiresBanner() {
   );
 }
 
-async function RevenueChartSection() {
-  const data = await getRevenueTrend(12);
+// ──────────────────────────────────────────────────────────────────────────
+// Skeletons
+// ──────────────────────────────────────────────────────────────────────────
+function KpisSkeleton({ count }: { count: number }) {
+  return (
+    <StatGrid columns={{ mobile: 2, tablet: 2, desktop: 4 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <Skeleton key={i} className="h-[120px] rounded-xl" />
+      ))}
+    </StatGrid>
+  );
+}
+
+function InsightsSkeleton({ rows = 4 }: { rows?: number }) {
+  return (
+    <div className="space-y-2">
+      {Array.from({ length: rows }).map((_, i) => (
+        <Skeleton key={i} className="h-14 w-full rounded-xl" />
+      ))}
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Helpers
+// ──────────────────────────────────────────────────────────────────────────
+function pulseTrend(metric: PulseMetric) {
+  if (metric.deltaPct == null || !isFinite(metric.deltaPct)) return undefined;
+  return {
+    value: metric.deltaPct,
+    good: "up" as const,
+    direction:
+      metric.today > metric.yesterday
+        ? ("up" as const)
+        : metric.today < metric.yesterday
+          ? ("down" as const)
+          : ("flat" as const),
+  };
+}
+
+function mtdTrend(metric: MtdMetric) {
+  if (metric.deltaPct == null || !isFinite(metric.deltaPct)) return undefined;
+  return {
+    value: metric.deltaPct,
+    good: "up" as const,
+    direction:
+      metric.mtd > metric.lastMtd
+        ? ("up" as const)
+        : metric.mtd < metric.lastMtd
+          ? ("down" as const)
+          : ("flat" as const),
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// HOY — pulso operativo del día
+// ──────────────────────────────────────────────────────────────────────────
+async function TodaySection() {
+  const p = await getTodayPulse();
+
+  return (
+    <div className="space-y-2">
+      <StatGrid columns={{ mobile: 2, tablet: 2, desktop: 4 }}>
+        <KpiCard
+          title="Vendí hoy"
+          value={p.sales.today}
+          format="currency"
+          compact
+          icon={TrendingUp}
+          subtitle={
+            p.sales.countToday > 0
+              ? `${p.sales.countToday} factura${p.sales.countToday === 1 ? "" : "s"} · ayer ${formatCurrencyMXN(p.sales.yesterday, { compact: true })}`
+              : `Ayer ${formatCurrencyMXN(p.sales.yesterday, { compact: true })} (${p.sales.countYesterday} fact)`
+          }
+          trend={pulseTrend(p.sales)}
+          tone={p.sales.today > 0 ? "success" : "default"}
+          href="/ventas"
+        />
+        <KpiCard
+          title="Cobré últ. 7d"
+          value={p.collections.last7d}
+          format="currency"
+          compact
+          icon={ArrowDownLeft}
+          subtitle={`${p.collections.countLast7d} pago${p.collections.countLast7d === 1 ? "" : "s"} · ayer ${formatCurrencyMXN(p.collections.yesterday, { compact: true })}`}
+          tone={p.collections.last7d > 0 ? "success" : "default"}
+          href="/cobranza"
+        />
+        <KpiCard
+          title="Pagué últ. 7d"
+          value={p.payments.last7d}
+          format="currency"
+          compact
+          icon={ArrowUpRight}
+          subtitle={`${p.payments.countLast7d} pago${p.payments.countLast7d === 1 ? "" : "s"} · ayer ${formatCurrencyMXN(p.payments.yesterday, { compact: true })}`}
+          tone="default"
+          href="/compras"
+        />
+        <KpiCard
+          title="Fabriqué hoy"
+          value={p.manufacturing.today}
+          format="number"
+          compact
+          icon={Factory}
+          subtitle={
+            p.manufacturing.countToday > 0
+              ? `${p.manufacturing.countToday} OF cerrada${p.manufacturing.countToday === 1 ? "" : "s"} · ayer ${formatNumber(p.manufacturing.yesterday, { compact: true })} u`
+              : `Ayer ${formatNumber(p.manufacturing.yesterday, { compact: true })} u (${p.manufacturing.countYesterday} OFs)`
+          }
+          trend={pulseTrend(p.manufacturing)}
+          tone={p.manufacturing.today > 0 ? "success" : "default"}
+          href="/operaciones"
+        />
+      </StatGrid>
+      <p className="text-[11px] text-muted-foreground">
+        Actualizado {formatRelative(p.generatedAt)} · Ventas y manufactura: tiempo real · Cobranza y pagos: ventana 7d (canonical_payments tiene rezago de 1-3 días por matchers)
+      </p>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// MES EN CURSO
+// ──────────────────────────────────────────────────────────────────────────
+async function MonthToDateSection() {
+  const m = await getMonthToDate();
+  const partialLabel = `parcial (${m.dayOfMonth}/${m.daysInMonth}d)`;
+
+  return (
+    <div className="space-y-2">
+      <StatGrid columns={{ mobile: 2, tablet: 2, desktop: 4 }}>
+        <KpiCard
+          title="Ventas MTD"
+          value={m.sales.mtd}
+          format="currency"
+          compact
+          icon={TrendingUp}
+          subtitle={`${m.sales.countMtd} fact · proyectado ${formatCurrencyMXN(m.sales.projection, { compact: true })} · ${partialLabel}`}
+          trend={mtdTrend(m.sales)}
+          tone={
+            m.sales.deltaPct == null || m.sales.deltaPct >= 0
+              ? "success"
+              : "warning"
+          }
+          href="/ventas"
+        />
+        <KpiCard
+          title="Cobré MTD"
+          value={m.collections.mtd}
+          format="currency"
+          compact
+          icon={ArrowDownLeft}
+          subtitle={`${m.collections.countMtd} pagos · proyectado ${formatCurrencyMXN(m.collections.projection, { compact: true })}`}
+          trend={mtdTrend(m.collections)}
+          tone={
+            m.collections.deltaPct == null || m.collections.deltaPct >= 0
+              ? "success"
+              : "warning"
+          }
+          href="/cobranza"
+        />
+        <KpiCard
+          title="Pagué MTD"
+          value={m.payments.mtd}
+          format="currency"
+          compact
+          icon={ArrowUpRight}
+          subtitle={`${m.payments.countMtd} pagos · proyectado ${formatCurrencyMXN(m.payments.projection, { compact: true })}`}
+          trend={mtdTrend(m.payments)}
+          tone="default"
+          href="/compras"
+        />
+        <KpiCard
+          title="Fabriqué MTD"
+          value={m.manufacturing.mtd}
+          format="number"
+          compact
+          icon={Factory}
+          subtitle={`${m.manufacturing.countMtd} OFs · proyectado ${formatNumber(m.manufacturing.projection, { compact: true })} u`}
+          trend={mtdTrend(m.manufacturing)}
+          tone={
+            m.manufacturing.deltaPct == null || m.manufacturing.deltaPct >= 0
+              ? "success"
+              : "warning"
+          }
+          href="/operaciones"
+        />
+      </StatGrid>
+    </div>
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// TRACCIÓN — chart de ventas operativas + 4 KPIs de salud
+// ──────────────────────────────────────────────────────────────────────────
+async function OperationalRevenueChartSection({ months }: { months: number }) {
+  const data = await getOperationalRevenueTrend(months);
   if (!data || data.length === 0) {
     return (
       <EmptyState
         icon={TrendingUp}
-        title="Sin datos de ingresos"
-        description="No hay periodos válidos en gold_revenue_monthly."
+        title="Sin datos de ingresos operativos"
+        description="No hay periodos en canonical_account_balances con cuentas 401/402."
         compact
       />
     );
@@ -422,77 +477,93 @@ async function RevenueChartSection() {
   return <RevenueTrendChart data={data} />;
 }
 
-async function UrgentInsights() {
-  const insights = await getInsights({ state: "new", limit: 20 });
-  const urgent = insights
-    .filter(isVisibleToCEO) // hide low-impact cobranza — audit 2026-04-15
-    .filter((i) => i.severity === "critical" || i.severity === "high")
-    .slice(0, 5);
+async function HealthKpis() {
+  const [k, runway, snap] = await Promise.all([
+    getDashboardKpis(),
+    getRunwayKpis(),
+    getOperationalRevenueSnapshot(),
+  ]);
 
-  if (urgent.length === 0) {
+  if (!k) {
     return (
       <EmptyState
-        icon={Inbox}
-        title="Sin insights urgentes"
-        description="No hay insights críticos ni de alta severidad pendientes."
-        compact
+        icon={AlertTriangle}
+        title="Sin datos del dashboard"
+        description="get_dashboard_kpis() no devolvió resultados."
       />
     );
   }
 
+  const ytdLabel = `YTD ${formatCurrencyMXN(snap.ytd, { compact: true })}`;
+
   return (
-    <div className="flex flex-col gap-2">
-      {urgent.map((i) => (
-        <Link key={i.id} href={`/inbox/insight/${i.id}`} className="block">
-          <Card className="gap-1 py-3 transition-colors active:bg-accent/50">
-            <div className="flex items-start justify-between gap-2 px-4">
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex items-center gap-2">
-                  <SeverityBadge level={i.severity ?? "medium"} pulse />
-                  {i.category && (
-                    <span className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                      {i.category}
-                    </span>
-                  )}
-                </div>
-                <div className="truncate text-sm font-semibold">
-                  {i.title ?? "—"}
-                </div>
-                {i.description && (
-                  <p className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
-                    {i.description}
-                  </p>
-                )}
-                <div className="mt-1 flex items-center gap-2 text-[11px] text-muted-foreground">
-                  {i.company_name && (
-                    <span className="truncate">{i.company_name}</span>
-                  )}
-                  {i.assignee_name && (
-                    <>
-                      {i.company_name && <span>·</span>}
-                      <span className="truncate">{i.assignee_name}</span>
-                    </>
-                  )}
-                  {i.created_at && (
-                    <>
-                      <span>·</span>
-                      <DateDisplay date={i.created_at} relative />
-                    </>
-                  )}
-                </div>
-              </div>
-              <ChevronRight
-                className="mt-1 h-4 w-4 shrink-0 text-muted-foreground"
-                aria-hidden
-              />
-            </div>
-          </Card>
-        </Link>
-      ))}
-    </div>
+    <StatGrid columns={{ mobile: 2, tablet: 2, desktop: 4 }}>
+      <KpiCard
+        title="Cash + Runway"
+        value={runway.cashMxn}
+        format="currency"
+        compact
+        icon={Wallet}
+        subtitle={
+          runway.runwayCashOnlyDays == null
+            ? "Sin datos de burn"
+            : `${runway.runwayCashOnlyDays}d cash-only · ${runway.runwayWithArDays ?? "—"}d con AR`
+        }
+        tone={
+          runway.runwayCashOnlyDays == null
+            ? "default"
+            : runway.runwayCashOnlyDays <= 7
+              ? "danger"
+              : runway.runwayCashOnlyDays <= 60
+                ? "warning"
+                : "success"
+        }
+        href="/finanzas"
+      />
+      <KpiCard
+        title="Cartera vencida"
+        value={k.collections.total_overdue_mxn}
+        format="currency"
+        compact
+        icon={AlertTriangle}
+        subtitle={`${k.collections.overdue_count} fact · ${formatCurrencyMXN(k.collections.expected_collections_30d, { compact: true })} esperado 30d`}
+        tone="danger"
+        href="/cobranza"
+      />
+      <KpiCard
+        title="OTD rate"
+        value={k.operations.otd_rate}
+        format="percent"
+        icon={Truck}
+        subtitle={`${k.operations.late_deliveries} tarde · ${k.operations.pending_deliveries} pendientes`}
+        tone={
+          k.operations.otd_rate == null
+            ? "default"
+            : k.operations.otd_rate >= 90
+              ? "success"
+              : k.operations.otd_rate >= 75
+                ? "warning"
+                : "danger"
+        }
+        href="/operaciones"
+      />
+      <KpiCard
+        title="Ventas operativas"
+        value={snap.thisMonth}
+        format="currency"
+        compact
+        icon={TrendingUp}
+        subtitle={`Mes pasado ${formatCurrencyMXN(snap.lastMonth, { compact: true })} · ${ytdLabel}`}
+        tone="default"
+        href="/ventas"
+      />
+    </StatGrid>
   );
 }
 
+// ──────────────────────────────────────────────────────────────────────────
+// At-risk clients panel — gold_company_360
+// ──────────────────────────────────────────────────────────────────────────
 async function AtRiskClientsPanel() {
   const [k, clients] = await Promise.all([
     getDashboardKpis(),
