@@ -132,10 +132,17 @@ export async function listInbox(
  * invariant_key (top-1 per class) and would 404 for any non-representative
  * issue_id reached via deep link.
  */
-export async function fetchInboxItem(issue_id: string) {
+type AiFact = Database["public"]["Tables"]["ai_extracted_facts"]["Row"];
+type ManualNote = Database["public"]["Tables"]["manual_notes"]["Row"];
+type InboxItemReturn = InboxRow & {
+  ai_extracted_facts: AiFact[];
+  manual_notes: ManualNote[];
+};
+
+export async function fetchInboxItem(issue_id: string): Promise<InboxItemReturn | null> {
   const sb = getServiceClient();
 
-  let ri: Awaited<ReturnType<typeof sb.from>> extends never ? never : Record<string, unknown> | null = null;
+  let ri: Record<string, unknown> | null = null;
   try {
     const { data, error } = await sb
       .from("reconciliation_issues")
@@ -146,7 +153,7 @@ export async function fetchInboxItem(issue_id: string) {
       console.error("[fetchInboxItem] reconciliation_issues lookup failed:", error.message);
       return null;
     }
-    ri = data as Record<string, unknown> | null;
+    ri = (data ?? null) as Record<string, unknown> | null;
   } catch (e) {
     console.error("[fetchInboxItem] reconciliation_issues threw:", e);
     return null;
@@ -176,14 +183,14 @@ export async function fetchInboxItem(issue_id: string) {
     assignee_email,
   };
 
-  const entityType = row.canonical_entity_type as string | null;
-  const entityId = row.canonical_entity_id as string | null;
+  const entityType = (ri.canonical_entity_type ?? null) as string | null;
+  const entityId = (ri.canonical_entity_id ?? null) as string | null;
 
   // Always return ai_extracted_facts/manual_notes as arrays so the detail
   // page can do `.length` without guards. Any failure (missing entity FK,
   // RLS, network flake) degrades to empty arrays — never to undefined.
-  let facts: unknown[] = [];
-  let notes: unknown[] = [];
+  let facts: AiFact[] = [];
+  let notes: ManualNote[] = [];
   if (entityType && entityId) {
     try {
       const [factsRes, notesRes] = await Promise.all([
@@ -201,8 +208,8 @@ export async function fetchInboxItem(issue_id: string) {
           .order("created_at", { ascending: false })
           .limit(25),
       ]);
-      facts = (factsRes.data as unknown[] | null) ?? [];
-      notes = (notesRes.data as unknown[] | null) ?? [];
+      facts = (factsRes.data as AiFact[] | null) ?? [];
+      notes = (notesRes.data as ManualNote[] | null) ?? [];
     } catch (e) {
       console.error("[fetchInboxItem] facts/notes lookup threw:", e);
     }
@@ -212,7 +219,7 @@ export async function fetchInboxItem(issue_id: string) {
     ...row,
     ai_extracted_facts: facts,
     manual_notes: notes,
-  };
+  } as InboxItemReturn;
 }
 
 export interface InboxKpis {
