@@ -672,5 +672,19 @@ Cuando este MVP esté en main, los siguientes incrementos lógicos son:
 - **SP14.2 — Outbound.** Compose UI, send vía Resend/Gmail API, audit log, scheduling, templates.
 - **SP14.3 — AI features.** Draft suggestions con `emails.embedding`. Auto-categorize. Extract actionables → `action_items`.
 - **SP14.4 — Dashboard CEO global.** Página top-level `/comunicaciones` con métricas agregadas, slow_responder por vendedor, stale_relationship por empresa con saldo abierto.
+- **SP14.5 — Operations linkage (comms ↔ operación).** Decisión 2026-04-29 sesión brainstorm: ligar emails/threads a entidades operativas (no sólo CFDIs).
+  - **Scope:**
+    - Tabla `email_operation_refs (email_id, operation_type, ref_text, resolved_id, confidence, source)`.
+    - Función `extract_operation_refs(text) jsonb` con regex multi-tipo: facturas (CFDI vía `email_cfdi_links` existente + SAT folio), sale orders (`SO/\d{4}/\d+` o convención local), purchase orders (`P\d{5,}`), deliveries (`TL/OUT/\d+`, `TL/IN/\d+`), productos (`default_code` patterns).
+    - Backfill one-time + trigger on `emails` INSERT.
+    - Lookup contra `canonical_sale_orders.name`, `canonical_purchase_orders.name`, `canonical_deliveries.name`, `canonical_invoices`, `canonical_products.internal_ref`.
+    - Layer adicional: cruzar con `ai_extracted_facts` y `entity_relationships` ya existentes (investigar qué extrae hoy antes de duplicar).
+    - **AI/embedding extension:** para menciones soft ("factura del lunes", "el pedido de paño negro"), pipeline LLM con `emails.embedding` y Claude API. Diferido a SP14.5.2 si el regex layer no llega a >70% recall.
+  - **Frontend:**
+    - Badges `📄 INV/2026/0001 · 🛒 SO/2026/0123 · 🚚 TL/OUT/12781` en `<CommsThreadCard>` cuando hay refs resueltos.
+    - RPC reverso `comms_for_operation(operation_type, operation_id)`.
+    - Widgets `<CommsRelatedToOperation>` en `/ventas/[id]`, `/compras/[id]`, `/cobranza` invoice detail, `/empresas/[id]/financiero`.
+    - Manual link UI sólo si recall combinado (regex + AI) cae bajo 80%.
+  - **Out of scope para SP14.5:** linkage a forecasts (reorder/payment predictions, cashflow projection) — requiere modelo distinto (ligar a producto/categoría, no a documento). Posible SP14.6.
 
 Cada uno merece spec propio.
