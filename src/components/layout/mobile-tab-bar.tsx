@@ -58,7 +58,10 @@ const primaryTabs: TabDef[] = [
 const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
   {
     label: "Atajos",
-    tabs: [{ href: "/briefings", label: "Briefings", icon: FileText }],
+    tabs: [
+      { href: "/reporte", label: "Reportes mes", icon: FileText },
+      { href: "/briefings", label: "Briefings", icon: FileText },
+    ],
   },
   {
     label: "Clientes",
