@@ -842,6 +842,35 @@ que para YTD parcial (e.g. `to=2026-04-25`) excluía abril. Fix:
 `period <= to_char((p_date_to - 1 day)::date, 'YYYY-MM')`. Ver
 migration `20260424_cogs_monthly_cache_boundary_fix.sql`.
 
+### Subcuentas 501.01: split en 3 buckets (2026-05-04 audit)
+
+La cuenta contable 501.01 tiene **3 subcuentas distintas**, no una sola.
+Tratarlas como bucket único (como hacíamos antes) mezclaba 3 conceptos
+diferentes en el "residual CAPA":
+
+| Subcuenta | Naturaleza | Tratamiento limpio |
+|---|---|---|
+| **501.01.01 Cost of sales** | CAPA inflada por Odoo (overhead duplicado) | **SWAP** con costo primo BOM |
+| **501.01.02 COSTO PRIMO** | Costo legítimo de producción (cierre contable) | NO se quita — vive en contable Y limpio |
+| **501.01.08 DIFERENCIAS POR CONTEO** | Shrinkage físico (faltantes, scrap, errores conteo) | NO se quita — pérdida real visible |
+
+**El residual CAPA real** = `501.01.01 − costoPrimo BOM` (no toda 501.01).
+Esto es lo que `getPnlKpis` reporta vía `cogs501_01_01Mxn`.
+
+`PnlComparisonTable` muestra cada subcuenta como línea separada cuando
+no es cero. Si shrinkage (501.01.08) > $200k, se anota como atípico
+(abril 2026 fue $379k — investigar inventario).
+
+**Trend 501.01.08 (Quimibond 2026):**
+- Ene: −$11k (ajuste pequeño)
+- Feb: +$4k
+- Mar: +$62k
+- Abr: **+$379k** (35× el promedio histórico)
+
+Crecimiento exponencial = señal operativa de inventario que necesita
+atención: faltantes físicos, scrap no documentado, o errores de captura
+en conteos.
+
 ### Productos importados ("I") y notas de crédito (2026-05-04)
 
 Migration `20260504_pnl_limpio_imports_and_refunds_fix.sql` corrige dos

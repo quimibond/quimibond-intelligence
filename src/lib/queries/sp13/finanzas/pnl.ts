@@ -47,7 +47,11 @@ export interface PnlKpis {
   // Costo de ingresos (Odoo: "Total Menos costo de ingresos") — NO incluye dep
   costoVentas: number;
   // COGS breakdown por cuenta
-  cogs501_01Mxn: number; // Cost of sales (debería ser solo MP)
+  cogs501_01Mxn: number; // Total 501.01 (suma de las 3 subcuentas)
+  // 501.01 split en 3 subcuentas (audit 2026-05-04):
+  cogs501_01_01Mxn: number; // 501.01.01 Cost of sales — la CAPA inflada por Odoo
+  cogs501_01_02Mxn: number; // 501.01.02 COSTO PRIMO — costo de producción legítimo
+  cogs501_01_08Mxn: number; // 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico
   mod501_06Mxn: number; // Mano de obra directa
   compras502Mxn: number; // Compras importación
   overhead504_01Mxn: number; // Overhead fábrica (504.01-07, sin dep)
@@ -93,6 +97,9 @@ type Aggregates = {
   otrosIngresosNeto: number;
   // expense breakdown
   cogs501_01: number;
+  cogs501_01_01: number; // 501.01.01 — CAPA inflada
+  cogs501_01_02: number; // 501.01.02 — COSTO PRIMO legítimo
+  cogs501_01_08: number; // 501.01.08 — DIFERENCIAS POR CONTEO (shrinkage)
   mod501_06: number;
   compras502: number;
   overhead504_01: number;
@@ -155,6 +162,9 @@ async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
 
   // Expenses split por prefix + account_type individual
   let cogs501_01 = 0;
+  let cogs501_01_01 = 0; // CAPA inflada (Cost of sales)
+  let cogs501_01_02 = 0; // COSTO PRIMO legítimo
+  let cogs501_01_08 = 0; // DIFERENCIAS POR CONTEO (shrinkage)
   let mod501_06 = 0;
   let compras502 = 0;
   let overhead504_01 = 0;
@@ -166,8 +176,14 @@ async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
     const bal = Number(r.balance) || 0;
     const code = r.account_code ?? "";
     const type = r.account_type ?? "";
-    if (code.startsWith("501.01")) cogs501_01 += bal;
-    else if (code.startsWith("501.06")) mod501_06 += bal;
+    if (code.startsWith("501.01")) {
+      cogs501_01 += bal;
+      // Split en las 3 subcuentas conocidas (audit 2026-05-04)
+      if (code.startsWith("501.01.01")) cogs501_01_01 += bal;
+      else if (code.startsWith("501.01.02")) cogs501_01_02 += bal;
+      else if (code.startsWith("501.01.08")) cogs501_01_08 += bal;
+      // 501.01.x desconocidas caen en cogs501_01 total pero no en sub-buckets
+    } else if (code.startsWith("501.06")) mod501_06 += bal;
     else if (code.startsWith("502")) compras502 += bal;
     else if (code.startsWith("504")) {
       if (type === "expense_depreciation") depFabrica504 += bal;
@@ -200,6 +216,9 @@ async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
     ventasProducto,
     otrosIngresosNeto,
     cogs501_01,
+    cogs501_01_01,
+    cogs501_01_02,
+    cogs501_01_08,
     mod501_06,
     compras502,
     overhead504_01,
@@ -293,6 +312,9 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     ingresosSat: round2(ingresosSat),
     costoVentas: round2(t.costoVentas),
     cogs501_01Mxn: round2(agg.cogs501_01),
+    cogs501_01_01Mxn: round2(agg.cogs501_01_01),
+    cogs501_01_02Mxn: round2(agg.cogs501_01_02),
+    cogs501_01_08Mxn: round2(agg.cogs501_01_08),
     mod501_06Mxn: round2(agg.mod501_06),
     compras502Mxn: round2(agg.compras502),
     overhead504_01Mxn: round2(agg.overhead504_01),
@@ -316,7 +338,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v7-paginated-sat", range],
+    ["sp13-finanzas-pnl-kpis-v8-501-01-split", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

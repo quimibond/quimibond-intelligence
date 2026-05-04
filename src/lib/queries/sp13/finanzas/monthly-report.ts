@@ -21,13 +21,16 @@ import { getPnlNormalized, type PnlNormalizedSummary } from "./pnl-normalized";
 
 export interface PnlMonthSnapshot {
   ventas4xx: number;
-  cogs501_01: number;
+  cogs501_01: number;             // total 501.01.x
+  cogs501_01_01: number;          // CAPA inflada
+  cogs501_01_02: number;          // costo primo contable legítimo
+  cogs501_01_08: number;          // shrinkage físico
   cogsRecursivoMp: number;
   mod501_06: number;
   compras502: number;
   overhead504_01: number;
   costoVentasContable: number;     // 501 + 502 + 504.01
-  costoVentasLimpio: number;       // BOM + 501.06 + 502 + 504.01
+  costoVentasLimpio: number;       // BOM + 501.01.02 + 501.01.08 + 501.06 + 502 + 504.01
   gastosOp6xx: number;
   ebitContable: number;
   ebitLimpio: number;
@@ -35,7 +38,8 @@ export interface PnlMonthSnapshot {
   depreciacion: number;             // 504.08-23 + 613
   utilidadContable: number;
   utilidadLimpia: number;
-  capaResidual: number;             // = cogs501_01 - cogsRecursivoMp
+  capaResidual: number;             // = cogs501_01_01 - cogsRecursivoMp (solo CAPA real)
+  shrinkage: number;                // = cogs501_01_08 (DIFERENCIAS POR CONTEO)
 }
 
 export interface RevenueDriver {
@@ -102,6 +106,11 @@ function buildPnlSnapshot(
 ): PnlMonthSnapshot {
   const ventas = kpis.ingresosPl;
   const cogs501_01 = kpis.cogs501_01Mxn;
+  const cogs501_01_01 = kpis.cogs501_01_01Mxn;
+  const cogs501_01_02 = kpis.cogs501_01_02Mxn;
+  const cogs501_01_08 = kpis.cogs501_01_08Mxn;
+  const otras501_01 =
+    cogs501_01 - cogs501_01_01 - cogs501_01_02 - cogs501_01_08;
   const cogsBom = cogs.cogsRecursiveMpMxn;
   const mod = kpis.mod501_06Mxn;
   const compras = kpis.compras502Mxn;
@@ -110,8 +119,11 @@ function buildPnlSnapshot(
   const otros = kpis.otrosIngresosNetoMxn;
   const dep = kpis.depreciacionTotalMxn;
 
+  // Limpio = swap SOLO 501.01.01 (CAPA) por BOM. 501.01.02, 501.01.08
+  // y otras subcuentas son costos legítimos que viven en ambos.
   const costoContable = cogs501_01 + mod + compras + overhead;
-  const costoLimpio = cogsBom + mod + compras + overhead;
+  const costoLimpio =
+    cogsBom + cogs501_01_02 + cogs501_01_08 + otras501_01 + mod + compras + overhead;
   const ebitContable = ventas - costoContable - gastosOp;
   const ebitLimpio = ventas - costoLimpio - gastosOp;
   const utilContable = ebitContable + otros - dep;
@@ -120,6 +132,9 @@ function buildPnlSnapshot(
   return {
     ventas4xx: ventas,
     cogs501_01,
+    cogs501_01_01,
+    cogs501_01_02,
+    cogs501_01_08,
     cogsRecursivoMp: cogsBom,
     mod501_06: mod,
     compras502: compras,
@@ -133,7 +148,8 @@ function buildPnlSnapshot(
     depreciacion: dep,
     utilidadContable: utilContable,
     utilidadLimpia: utilLimpio,
-    capaResidual: cogs501_01 - cogsBom,
+    capaResidual: cogs501_01_01 - cogsBom,
+    shrinkage: cogs501_01_08,
   };
 }
 
@@ -308,6 +324,6 @@ async function _getMonthlyReportRaw(period: string): Promise<MonthlyReport> {
 export const getMonthlyReport = (period: string) =>
   unstable_cache(
     () => _getMonthlyReportRaw(period),
-    ["sp13-finanzas-monthly-report-v1", period],
+    ["sp13-finanzas-monthly-report-v2-501-01-split", period],
     { revalidate: 600, tags: ["finanzas"] }
   )();

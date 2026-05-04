@@ -214,28 +214,28 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
             />
             <KpiCard
               title="CAPA pendiente del mes"
-              value={kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn}
+              value={kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn}
               format="currency"
               compact
               icon={Flame}
               source="pl"
               tone={
-                Math.abs(kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn) < 100000
+                Math.abs(kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn) < 100000
                   ? "success"
-                  : kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn > 0
+                  : kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn > 0
                     ? "warning"
                     : "info"
               }
               subtitle={
-                kpis.cogs501_01Mxn - cogs.cogsRecursiveMpMxn > 0
-                  ? `501.01 tiene ${formatCurrencyMXN(kpis.cogs501_01Mxn, { compact: true })} vs MP real ${formatCurrencyMXN(cogs.cogsRecursiveMpMxn, { compact: true })} · te falta CAPA`
-                  : `501.01 ${formatCurrencyMXN(kpis.cogs501_01Mxn, { compact: true })} < MP real · CAPA en exceso`
+                kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn > 0
+                  ? `501.01.01 tiene ${formatCurrencyMXN(kpis.cogs501_01_01Mxn, { compact: true })} vs MP real ${formatCurrencyMXN(cogs.cogsRecursiveMpMxn, { compact: true })} · te falta CAPA`
+                  : `501.01.01 ${formatCurrencyMXN(kpis.cogs501_01_01Mxn, { compact: true })} < MP real · CAPA en exceso`
               }
               definition={{
-                title: "CAPA de valoración pendiente",
+                title: "CAPA de valoración pendiente (501.01.01 vs BOM)",
                 description:
-                  "Diferencia entre el saldo actual de 501.01 (post-CAPA aplicada) y el costo primo real de la BOM recursiva. Positivo = overhead aún pegado a 501.01 que deberías remover con CAPA. Negativo = te pasaste. Cero = CAPA perfecta.",
-                formula: "501.01_actual − cogs_recursivo_mp",
+                  "Diferencia entre el saldo actual de 501.01.01 Cost of sales (post-CAPA aplicada) y el costo primo real de la BOM recursiva. Solo compara la subcuenta CAPA-inflada — 501.01.02 y 501.01.08 son legítimos y se reportan aparte. Positivo = overhead aún pegado a 501.01.01 que deberías remover con CAPA.",
+                formula: "501.01.01_actual − cogs_recursivo_mp",
                 table:
                   "canonical_account_balances + get_cogs_recursive_mp",
               }}
@@ -269,6 +269,9 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               <PnlComparisonTable
                 ventas={kpis.ingresosPl}
                 cogs501_01Actual={kpis.cogs501_01Mxn}
+                cogs501_01_01={kpis.cogs501_01_01Mxn}
+                cogs501_01_02={kpis.cogs501_01_02Mxn}
+                cogs501_01_08={kpis.cogs501_01_08Mxn}
                 costoPrimo={cogs.cogsRecursiveMpMxn}
                 mod={kpis.mod501_06Mxn}
                 compras={kpis.compras502Mxn}
@@ -711,6 +714,9 @@ export function BreakEvenCard({
 export function PnlComparisonTable({
   ventas,
   cogs501_01Actual,
+  cogs501_01_01,
+  cogs501_01_02,
+  cogs501_01_08,
   costoPrimo,
   mod,
   compras,
@@ -723,6 +729,15 @@ export function PnlComparisonTable({
 }: {
   ventas: number;
   cogs501_01Actual: number;
+  /** 501.01.01 Cost of sales — la CAPA inflada por Odoo. Es la única
+   *  subcuenta que se SWAP-ea con el costo primo BOM. */
+  cogs501_01_01: number;
+  /** 501.01.02 COSTO PRIMO contable — costo legítimo registrado por
+   *  contabilidad. NO se quita en el limpio; existe en ambos. */
+  cogs501_01_02: number;
+  /** 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico. NO se quita
+   *  en el limpio; es una pérdida real (faltantes, scrap). */
+  cogs501_01_08: number;
   costoPrimo: number;
   mod: number;
   compras: number;
@@ -741,19 +756,30 @@ export function PnlComparisonTable({
   //   Ventas − Costo de ingresos = Ganancia bruta
   //   − Gasto de operación = EBIT
   //   + Otros − Depreciación = Utilidad neta
-  // La depreciación (fábrica + CORPO) viaja como línea separada después
-  // de "Otros ingresos" — Odoo la pone en "Total Menos gastos de otro
-  // tipo". El residual_501.01 es independiente de dónde se ponga la
-  // depreciación: solo depende del swap 501.01 ↔ costoPrimo BOM.
+  //
+  // 501.01 split en 3 sub-buckets (audit 2026-05-04):
+  //   501.01.01 Cost of sales        ← la CAPA inflada por Odoo (SWAP con BOM)
+  //   501.01.02 COSTO PRIMO contable ← costo legítimo, vive en ambos
+  //   501.01.08 DIFERENCIAS CONTEO   ← shrinkage físico, vive en ambos
+  //
+  // El swap limpio reemplaza SOLO 501.01.01 por costoPrimo BOM.
+  // 501.01.02 y 501.01.08 son costos reales que aparecen en contable Y limpio.
+  // Esto da un residual CAPA preciso: 501.01.01 − costoPrimo (no toda 501.01).
+  // Cualquier 501.01.x desconocida queda como diff (capturada en cogs501_01Actual
+  // pero no en sub-buckets) y se reporta como "501.01 otras subcuentas".
+  const otras501_01 =
+    cogs501_01Actual - cogs501_01_01 - cogs501_01_02 - cogs501_01_08;
   const costoVentasContable = cogs501_01Actual + mod + compras + overhead;
-  const costoVentasLimpio = costoPrimo + mod + compras + overhead;
+  const costoVentasLimpio =
+    costoPrimo + cogs501_01_02 + cogs501_01_08 + otras501_01 + mod + compras + overhead;
   const utilBrutaContable = ventas - costoVentasContable;
   const utilBrutaLimpio = ventas - costoVentasLimpio;
   const ebitContable = utilBrutaContable - gastosOp;
   const ebitLimpio = utilBrutaLimpio - gastosOp;
   const depTotal = depFabrica + depCorpo;
   const netaLimpio = ebitLimpio + otros - depTotal;
-  const residual501_01 = cogs501_01Actual - costoPrimo;
+  // Residual CAPA real = solo 501.01.01 − costoPrimo (no toda 501.01)
+  const residual501_01 = cogs501_01_01 - costoPrimo;
   const deltaNeta = netaLimpio - netaContable;
 
   type Row = {
@@ -771,8 +797,8 @@ export function PnlComparisonTable({
     { label: "Ventas de producto (4xx)", contable: ventas, limpio: ventas, isTotal: true },
     { label: "Costo de ingresos:", contable: null, limpio: null, isHeader: true },
     {
-      label: "501.01 contable (con CAPA inflada de Odoo)",
-      contable: cogs501_01Actual,
+      label: "501.01.01 Cost of sales (CAPA inflada de Odoo)",
+      contable: cogs501_01_01,
       limpio: null,
       isDetail: true,
     },
@@ -782,6 +808,39 @@ export function PnlComparisonTable({
       limpio: costoPrimo,
       isDetail: true,
     },
+    ...(cogs501_01_02 !== 0
+      ? [
+          {
+            label: "501.01.02 COSTO PRIMO contable (cierre contable)",
+            contable: cogs501_01_02,
+            limpio: cogs501_01_02,
+            isDetail: true,
+          },
+        ]
+      : []),
+    ...(cogs501_01_08 !== 0
+      ? [
+          {
+            label: "501.01.08 Diferencias por conteo (shrinkage físico)",
+            contable: cogs501_01_08,
+            limpio: cogs501_01_08,
+            isDetail: true,
+            note: cogs501_01_08 > 200000
+              ? "⚠ shrinkage atípico — investigar inventario"
+              : undefined,
+          },
+        ]
+      : []),
+    ...(Math.abs(otras501_01) > 100
+      ? [
+          {
+            label: "501.01.x otras subcuentas",
+            contable: otras501_01,
+            limpio: otras501_01,
+            isDetail: true,
+          },
+        ]
+      : []),
     {
       label: "Mano de obra directa (501.06)",
       contable: mod, limpio: mod, isDetail: true,

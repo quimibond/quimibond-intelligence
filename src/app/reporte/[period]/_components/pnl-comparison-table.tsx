@@ -34,6 +34,24 @@ export function PnlComparisonTable({ report }: { report: MonthlyReport }) {
       curr: -c.overhead504_01,
       prev: -p.overhead504_01,
     },
+    ...(c.cogs501_01_02 !== 0 || p.cogs501_01_02 !== 0
+      ? [
+          {
+            label: "− 501.01.02 COSTO PRIMO contable",
+            curr: -c.cogs501_01_02,
+            prev: -p.cogs501_01_02,
+          },
+        ]
+      : []),
+    ...(c.shrinkage !== 0 || p.shrinkage !== 0
+      ? [
+          {
+            label: "− 501.01.08 Pérdida por inventario (shrinkage)",
+            curr: -c.shrinkage,
+            prev: -p.shrinkage,
+          },
+        ]
+      : []),
     {
       label: "= Ganancia bruta limpia",
       curr: c.ventas4xx - c.costoVentasLimpio,
@@ -115,12 +133,20 @@ export function PnlComparisonTable({ report }: { report: MonthlyReport }) {
           })}
         </tbody>
       </table>
-      <div className="bg-amber-50 border-t border-amber-200 px-3 py-2 text-xs text-amber-900">
-        <strong>Residual CAPA inflado en 501.01 contable:</strong>{" "}
-        {formatCurrencyMXN(dResidual, { compact: true })} — diferencia
-        entre lo que dice Odoo (501.01 = {formatCurrencyMXN(c.cogs501_01, { compact: true })})
-        y el costo MP real recursivo ({formatCurrencyMXN(c.cogsRecursivoMp, { compact: true })}).
-        El P&L limpio refleja la realidad.
+      <div className="bg-amber-50 border-t border-amber-200 px-3 py-2 text-xs text-amber-900 space-y-1">
+        <div>
+          <strong>Residual CAPA inflado en 501.01.01:</strong>{" "}
+          {formatCurrencyMXN(dResidual, { compact: true })} — diferencia entre
+          501.01.01 contable ({formatCurrencyMXN(c.cogs501_01_01, { compact: true })})
+          y el costo MP real recursivo ({formatCurrencyMXN(c.cogsRecursivoMp, { compact: true })}).
+        </div>
+        {c.shrinkage > 200000 ? (
+          <div>
+            <strong>⚠ Shrinkage atípico (501.01.08):</strong>{" "}
+            {formatCurrencyMXN(c.shrinkage, { compact: true })} de pérdida por
+            diferencias de conteo físico. Investigar inventario.
+          </div>
+        ) : null}
       </div>
     </div>
   );
