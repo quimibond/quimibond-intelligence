@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Suspense } from "react";
 import { ExternalLink, ShieldCheck, TriangleAlert } from "lucide-react";
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -15,6 +16,7 @@ import { Currency } from "@/components/patterns/currency";
 import { DateDisplay } from "@/components/patterns/date-display";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
+import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 import { cn } from "@/lib/utils";
 import type {
   CompanyDriftAggregates,
@@ -418,6 +420,15 @@ export function AuditoriaSatTab({ aggregates, rows }: Props) {
 
   return (
     <div className="space-y-4">
+      <Suspense fallback={null}>
+        <OdooPendingBanner actionKey="operationalize-cfdi-backlog" inline />
+      </Suspense>
+      <Suspense fallback={null}>
+        <OdooPendingBanner actionKey="capture-ap-invoices-from-sat" inline />
+      </Suspense>
+      <Suspense fallback={null}>
+        <OdooPendingBanner actionKey="sync-sat-cancellations-to-odoo" inline />
+      </Suspense>
       <KpiStrip aggregates={aggregates} />
       <CategoryFlagBadges aggregates={aggregates} />
       {arTotal > 0 && (
