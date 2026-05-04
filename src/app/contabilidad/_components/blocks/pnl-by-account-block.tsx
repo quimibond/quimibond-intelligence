@@ -1,4 +1,5 @@
-import { FileX, Inbox } from "lucide-react";
+import Link from "next/link";
+import { ArrowUpRight, FileX, Inbox } from "lucide-react";
 import {
   QuestionSection,
   Currency,
@@ -15,18 +16,22 @@ import {
 } from "@/components/ui/table";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import { getPnlByAccount } from "@/lib/queries/sp13/finanzas";
+import { periodBoundsForRange } from "@/lib/queries/sp13/finanzas";
 import type { HistoryRange } from "@/components/patterns/history-range";
 
 export async function PnlByAccountBlock({ range }: { range: HistoryRange }) {
   const data = await getPnlByAccount(range, 20);
   const incomeRows = data.rows.filter((r) => r.bucket === "income");
   const expenseRows = data.rows.filter((r) => r.bucket === "expense");
+  const bounds = periodBoundsForRange(range);
+  const fromMonth = bounds.fromMonth;
+  const toMonth = bounds.toMonth.slice(0, 7);
 
   return (
     <QuestionSection
       id="pnl-by-account"
       question="¿En qué cuentas se me va el dinero?"
-      subtext={`Top 20 cuentas con movimiento · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"})`}
+      subtext={`Top 20 cuentas con movimiento · ${data.periodLabel} (${data.monthsCovered} mes${data.monthsCovered === 1 ? "" : "es"}) · Click una fila para ver proveedores`}
       collapsible
       defaultOpen={false}
     >
@@ -43,12 +48,16 @@ export async function PnlByAccountBlock({ range }: { range: HistoryRange }) {
             rows={incomeRows}
             total={data.totalIncomeMxn}
             tone="success"
+            fromMonth={fromMonth}
+            toMonth={toMonth}
           />
           <PnlAccountTable
             title="Top gastos / costos"
             rows={expenseRows}
             total={data.totalExpenseMxn}
             tone="warning"
+            fromMonth={fromMonth}
+            toMonth={toMonth}
           />
         </div>
       )}
@@ -61,6 +70,8 @@ function PnlAccountTable({
   rows,
   total,
   tone,
+  fromMonth,
+  toMonth,
 }: {
   title: string;
   rows: Array<{
@@ -71,6 +82,8 @@ function PnlAccountTable({
   }>;
   total: number;
   tone: "success" | "warning";
+  fromMonth: string;
+  toMonth: string;
 }) {
   return (
     <Card>
@@ -102,12 +115,26 @@ function PnlAccountTable({
               {rows.map((r) => {
                 const pct = total > 0 ? (r.balanceMxn / total) * 100 : 0;
                 return (
-                  <TableRow key={r.accountCode}>
+                  <TableRow
+                    key={r.accountCode}
+                    className="cursor-pointer hover:bg-muted/40 transition"
+                  >
                     <TableCell>
-                      <div className="font-mono text-[11px] text-muted-foreground">
-                        {r.accountCode}
-                      </div>
-                      <div className="text-sm">{r.accountName}</div>
+                      <Link
+                        href={`/contabilidad/cuenta/${r.accountCode}?from=${fromMonth}&to=${toMonth}`}
+                        className="block group"
+                      >
+                        <div className="font-mono text-[11px] text-muted-foreground flex items-center gap-1">
+                          {r.accountCode}
+                          <ArrowUpRight
+                            size={10}
+                            className="opacity-0 group-hover:opacity-100 transition"
+                          />
+                        </div>
+                        <div className="text-sm group-hover:underline">
+                          {r.accountName}
+                        </div>
+                      </Link>
                     </TableCell>
                     <TableCell className="text-right tabular-nums">
                       <Currency amount={r.balanceMxn} />
