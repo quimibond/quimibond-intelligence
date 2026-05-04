@@ -40,6 +40,17 @@ export interface AccountInvoiceLine {
   netMxn: number;
 }
 
+export interface AccountSourceJournal {
+  journalName: string;
+  lineCount: number;
+  debitMxn: number;
+  creditMxn: number;
+  netMxn: number;
+  topContraAccounts: string;     // ej. "115.04.01 ($5535k), 115.03.01 ($1078k)"
+  pctOfNet: number;              // % del net total de la cuenta
+  diagnostic: string | null;     // explicación si hay patrón conocido
+}
+
 export interface AccountTrendPoint {
   period: string;
   balanceMxn: number;
@@ -55,8 +66,66 @@ export interface AccountExpenseDetail {
   trend12m: AccountTrendPoint[]; // últimos 12 meses incluyendo el actual
   avgRecent3mMxn: number;      // promedio últimos 3 meses cerrados (excluye actual)
   changeVsAvgPct: number | null;
+  sourceJournals: AccountSourceJournal[];
   vendors: AccountVendorBreakdown[];
   recentLines: AccountInvoiceLine[];
+}
+
+/**
+ * Diagnóstico de patrones de uso de cuenta. Detecta cuando una cuenta
+ * está recibiendo cosas que NO matchean su nombre/intención típica.
+ */
+function diagnoseSourceJournal(
+  accountCode: string,
+  journalName: string
+): string | null {
+  // 501.01.01 con journal "Facturas de cliente" = Auto-COGS de Odoo (CAPA inflada)
+  if (accountCode.startsWith("501.01.01")) {
+    if (
+      journalName === "Facturas de cliente" ||
+      journalName === "Facturas de cliente de Mostrador" ||
+      journalName === "Nota de Crédito"
+    ) {
+      return "Auto-COGS de Odoo: standard cost del producto vendido. Aquí cae la inflación CAPA porque incluye overhead embebido.";
+    }
+    if (journalName === "CAPA DE VALORACIÓN") {
+      return "Asiento manual de capa para limpiar el overhead duplicado.";
+    }
+    if (journalName === "Facturas de proveedores") {
+      return "Compra directa cargada a esta cuenta (raro en 501.01.01).";
+    }
+  }
+  if (accountCode.startsWith("501.01.02")) {
+    if (journalName === "Valoración del inventario") {
+      return "Ajustes automáticos de Odoo (revaluación / cierre).";
+    }
+  }
+  if (accountCode.startsWith("501.01.08")) {
+    if (journalName === "Valoración del inventario") {
+      return "Ajustes de cantidad por conteos físicos (faltantes/sobrantes).";
+    }
+  }
+  // 504.x con Facturas de proveedores = OK (overhead de fábrica via factura)
+  if (accountCode.startsWith("504.01") && journalName === "Facturas de proveedores") {
+    return "Gasto de proveedor — drilldown a proveedores abajo.";
+  }
+  if (
+    accountCode.startsWith("504") &&
+    /depreci/i.test(journalName)
+  ) {
+    return "Asiento mensual de depreciación.";
+  }
+  if (
+    accountCode.startsWith("501.06") &&
+    /nomina/i.test(journalName)
+  ) {
+    return "Nómina de mano de obra directa.";
+  }
+  // 6xx general
+  if (accountCode.startsWith("6") && journalName === "Facturas de proveedores") {
+    return "Gasto admin/ventas vía factura.";
+  }
+  return null;
 }
 
 function priorPeriod(period: string, n: number): string {
@@ -134,8 +203,8 @@ async function _getAccountExpenseDetailRaw(
       ? ((totalMxn - avgRecent3m) / Math.abs(avgRecent3m)) * 100
       : null;
 
-  // 2. Vendor breakdown (RPC)
-  const [vendorsRes, linesRes] = await Promise.all([
+  // 2. Vendor breakdown + source journals (RPC)
+  const [vendorsRes, linesRes, sourceRes] = await Promise.all([
     sb.rpc("get_account_vendor_breakdown", {
       p_account_code: accountCode,
       p_from_period: fromPeriod,
@@ -146,6 +215,11 @@ async function _getAccountExpenseDetailRaw(
       p_from_period: fromPeriod,
       p_to_period: toPeriod,
       p_limit: 100,
+    }),
+    sb.rpc("get_account_source_breakdown", {
+      p_account_code: accountCode,
+      p_from_period: fromPeriod,
+      p_to_period: toPeriod,
     }),
   ]);
 
@@ -201,6 +275,36 @@ async function _getAccountExpenseDetailRaw(
     netMxn: Number(l.net_mxn) || 0,
   }));
 
+  type SourceRpc = {
+    journal_name: string;
+    line_count: number | string;
+    debit_mxn: number | string;
+    credit_mxn: number | string;
+    net_mxn: number | string;
+    top_contra_accounts: string | null;
+  };
+  const sourceRows = (sourceRes.data ?? []) as SourceRpc[];
+  const totalNetForPct = sourceRows.reduce(
+    (s, r) => s + Math.abs(Number(r.net_mxn) || 0),
+    0
+  );
+  const sourceJournals: AccountSourceJournal[] = sourceRows.map((r) => {
+    const net = Number(r.net_mxn) || 0;
+    return {
+      journalName: r.journal_name,
+      lineCount: Number(r.line_count) || 0,
+      debitMxn: Number(r.debit_mxn) || 0,
+      creditMxn: Number(r.credit_mxn) || 0,
+      netMxn: net,
+      topContraAccounts: r.top_contra_accounts ?? "",
+      pctOfNet:
+        totalNetForPct > 0
+          ? Math.round((Math.abs(net) / totalNetForPct) * 1000) / 10
+          : 0,
+      diagnostic: diagnoseSourceJournal(accountCode, r.journal_name),
+    };
+  });
+
   return {
     accountCode,
     accountName,
@@ -212,6 +316,7 @@ async function _getAccountExpenseDetailRaw(
     avgRecent3mMxn: Math.round(avgRecent3m * 100) / 100,
     changeVsAvgPct:
       changeVsAvgPct == null ? null : Math.round(changeVsAvgPct * 10) / 10,
+    sourceJournals,
     vendors,
     recentLines,
   };
@@ -224,6 +329,6 @@ export const getAccountExpenseDetail = (
 ) =>
   unstable_cache(
     () => _getAccountExpenseDetailRaw(accountCode, fromPeriod, toPeriod),
-    ["sp13-account-expense-detail-v1", accountCode, fromPeriod, toPeriod],
+    ["sp13-account-expense-detail-v2-source", accountCode, fromPeriod, toPeriod],
     { revalidate: 600, tags: ["finanzas"] }
   )();

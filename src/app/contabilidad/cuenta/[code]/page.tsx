@@ -7,6 +7,7 @@ import { getAccountNarrative } from "@/lib/queries/sp13/finanzas/account-expense
 import { AccountHeader } from "./_components/account-header";
 import { AccountNarrativeBlock } from "./_components/account-narrative-block";
 import { AccountTrend } from "./_components/account-trend";
+import { SourceJournalBreakdown } from "./_components/source-journal-breakdown";
 import { VendorBreakdownTable } from "./_components/vendor-breakdown-table";
 import { InvoiceLinesTable } from "./_components/invoice-lines-table";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -53,6 +54,19 @@ export default async function AccountDetailPage({
       <Suspense fallback={<Skeleton className="h-32 w-full" />}>
         <NarrativeBlock detail={detail} />
       </Suspense>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-3">
+          ¿De dónde viene este saldo?
+        </h2>
+        <p className="text-sm text-muted-foreground mb-3">
+          Asientos agrupados por journal de Odoo y cuentas contraparte. Si una
+          fila tiene 100% del total y NO coincide con la naturaleza esperada
+          de la cuenta, hay una mis-clasificación contable que vale la pena
+          revisar con la contadora.
+        </p>
+        <SourceJournalBreakdown sources={detail.sourceJournals} />
+      </section>
 
       <section>
         <h2 className="text-lg font-semibold mb-3">
