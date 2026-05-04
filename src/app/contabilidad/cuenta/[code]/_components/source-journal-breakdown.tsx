@@ -66,8 +66,8 @@ export function SourceJournalBreakdown({
       </div>
 
       <div className="rounded bg-muted/20 border-l-4 border-blue-400 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
-        <strong className="text-foreground">Cómo leer esto:</strong> "Source
-        journal" es el journal de Odoo que generó el asiento. "Top contrapartes"
+        <strong className="text-foreground">Cómo leer esto:</strong> &ldquo;Source
+        journal&rdquo; es el journal de Odoo que generó el asiento. &ldquo;Top contrapartes&rdquo;
         muestra contra qué cuentas se balanceó el monto (típicamente 115.x
         inventarios para cuentas COGS, o 201/205.x cuentas por pagar para
         gastos via factura). Si el diagnóstico aparece en cursiva, es una

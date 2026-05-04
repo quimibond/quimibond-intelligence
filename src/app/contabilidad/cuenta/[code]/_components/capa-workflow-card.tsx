@@ -1,4 +1,4 @@
-import { Calculator, ClipboardCopy, AlertTriangle } from "lucide-react";
+import { Calculator, AlertTriangle } from "lucide-react";
 import { formatCurrencyMXN } from "@/lib/formatters";
 import type {
   CapaHistory,
@@ -124,11 +124,11 @@ Líneas:
           </pre>
           <p className="text-xs text-amber-900">
             <AlertTriangle size={11} className="inline mb-0.5 mr-1" />
-            Si la cuenta <strong>504.01.0099 "Overhead absorbido CAPA"</strong>
+            Si la cuenta <strong>504.01.0099 &ldquo;Overhead absorbido CAPA&rdquo;</strong>
             no existe, créala primero (tipo: expense_direct_cost, padre:
             504.01). Alternativa que ya usas: <strong>Dr 115.04.01 Productos
             terminados</strong> en lugar de 504.01.0099 (regresa overhead al
-            inventario — válido pero crea inventario "fantasma").
+            inventario — válido pero crea inventario &ldquo;fantasma&rdquo;).
           </p>
         </div>
       ) : isOverCorrected ? (
