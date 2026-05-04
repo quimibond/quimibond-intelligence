@@ -93,7 +93,14 @@ const topGroups: NavGroup[] = [
         // fusionaron como secciones dentro de /compras.
         children: [{ href: "/compras/costos-bom", label: "Costos BOM" }],
       },
-      { href: "/operaciones", label: "Operaciones", icon: Factory },
+      {
+        href: "/operaciones",
+        label: "Operaciones",
+        icon: Factory,
+        children: [
+          { href: "/inventario/conciliacion", label: "Conciliación inventario" },
+        ],
+      },
       { href: "/equipo", label: "Equipo", icon: Users },
       { href: "/finanzas", label: "Finanzas", icon: Banknote },
       { href: "/contabilidad", label: "Contabilidad", icon: FileText },

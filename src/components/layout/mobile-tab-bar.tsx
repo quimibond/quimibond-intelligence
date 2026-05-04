@@ -84,6 +84,7 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
       { href: "/compras", label: "Compras", icon: ShoppingBag },
       { href: "/productos", label: "Productos", icon: Package },
       { href: "/operaciones", label: "Operaciones", icon: Factory },
+      { href: "/inventario/conciliacion", label: "Conc. inventario", icon: Package },
     ],
   },
   {
