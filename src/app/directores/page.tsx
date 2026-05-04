@@ -151,7 +151,7 @@ function AgentCard({ agent: a }: { agent: AgentEffectivenessRow }) {
           : "critical";
 
   return (
-    <Link href={`/agents/${a.slug}`} className="block">
+    <Link href={`/directores/${a.slug}`} className="block">
       <Card className="gap-2 py-4 transition-colors active:bg-accent/50">
         <div className="flex items-start justify-between gap-2 px-4">
           <div className="flex items-start gap-2 min-w-0 flex-1">

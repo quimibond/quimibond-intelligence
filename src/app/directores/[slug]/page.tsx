@@ -297,7 +297,7 @@ async function AgentInsightsList({ agentId }: { agentId: number }) {
   // Antes: `getInsights({limit:30})` + `.filter(i.agent_id===agentId)` →
   // perdía 81-96% de insights porque limit se aplica ANTES del filter.
   // Ahora pasamos `agentId` a la query y desactivamos el filtro legacy
-  // para que la ficha de `/agents/data_quality` también renderice.
+  // para que la ficha de `/directores/data_quality` también renderice.
   const filtered = (await getInsights({
     state: ["new", "seen", "acted_on", "dismissed"],
     limit: 30,

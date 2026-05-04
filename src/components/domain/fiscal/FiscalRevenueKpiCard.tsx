@@ -7,7 +7,7 @@ import { Card, CardContent } from "@/components/ui/card";
 /**
  * Fiscal Revenue KPI card for /finanzas dashboard.
  * Shows: revenue 12m, prev 12m, YoY%.
- * Links to /system?tab=historico-fiscal on click.
+ * Links to /sistema?tab=historico-fiscal on click.
  * Server component.
  */
 export async function FiscalRevenueKpiCard() {
@@ -22,7 +22,7 @@ export async function FiscalRevenueKpiCard() {
         : "text-rose-600 dark:text-rose-400";
 
   return (
-    <Link href="/system?tab=historico-fiscal" className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
+    <Link href="/sistema?tab=historico-fiscal" className="block focus:outline-none focus-visible:ring-2 focus-visible:ring-ring rounded-xl">
       <Card className="cursor-pointer transition-shadow hover:shadow-md active:scale-[0.99]">
         <CardContent className="p-4">
           <div className="flex items-start justify-between gap-2">
