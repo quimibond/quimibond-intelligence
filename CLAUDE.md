@@ -684,6 +684,7 @@ Pattern C master data management layer:
 | `/chat` | Chat RAG con Claude |
 | `/knowledge` | Browser del Knowledge Graph |
 | `/system` | Ciclos, pipeline, Odoo sync, token usage |
+| `/sistema/odoo-pendientes` | Registro central de fixes pendientes en Odoo (con problema, fix concreto, workaround actual, impacto estimado, dueño). Cada acción tiene `action_key` slug; banners inline en páginas relevantes referencian ese key. |
 | `/reporte` | Index de reportes mensuales (selector de mes) |
 | `/reporte/[YYYY-MM]` | Reporte mensual de cierre con CFO sintetizado por Claude (Opus 4.7), drivers MoM, one-offs detectados, recomendaciones priorizadas. Imprimible / exportable a PDF |
 
@@ -841,6 +842,33 @@ Las funciones silver usaban `period < to_char(p_date_to, 'YYYY-MM')`,
 que para YTD parcial (e.g. `to=2026-04-25`) excluía abril. Fix:
 `period <= to_char((p_date_to - 1 day)::date, 'YYYY-MM')`. Ver
 migration `20260424_cogs_monthly_cache_boundary_fix.sql`.
+
+### Pending actions Odoo (2026-05-04)
+
+Cuando el sistema descubre un problema cuya causa raíz está en la
+configuración de Odoo (no se puede arreglar 100% en silver), se registra
+en `odoo_pending_actions` con:
+
+- `action_key` (slug estable para vincular desde código)
+- `area`, `severity`, `title`
+- `problem_description` (qué pasa hoy)
+- `fix_in_odoo` (pasos concretos)
+- `workaround_in_silver` (qué hace el sistema mientras tanto)
+- `estimated_impact_mxn` por mes
+- `evidence_url` (donde el CEO ve la evidencia)
+- `status` (open/in_progress/resolved/wont_fix), `assignee`
+
+**Componente**: `<OdooPendingBanner actionKey="..." />` muestra el banner
+inline con ribbon de severidad + link al detalle. Si la acción está
+resuelta o no existe, no renderiza nada (safe).
+
+**Página central**: `/sistema/odoo-pendientes` con todas las acciones
+agrupadas por status, severidad pillada, fix step-by-step expandido.
+
+**Pattern**: cuando descubras un problema Odoo en una nueva auditoría,
+INSERT en `odoo_pending_actions` (idempotente por action_key UNIQUE)
+y agrega `<OdooPendingBanner actionKey="tu-slug" />` en la página
+donde es relevante.
 
 ### Subcuentas 501.01: split en 3 buckets (2026-05-04 audit)
 

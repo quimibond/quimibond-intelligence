@@ -10,7 +10,17 @@ import { AccountTrend } from "./_components/account-trend";
 import { SourceJournalBreakdown } from "./_components/source-journal-breakdown";
 import { VendorBreakdownTable } from "./_components/vendor-breakdown-table";
 import { InvoiceLinesTable } from "./_components/invoice-lines-table";
+import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 import { Skeleton } from "@/components/ui/skeleton";
+
+// Mapping cuenta → action_key — permite mostrar pending action automático
+// cuando la cuenta tiene un fix Odoo pendiente identificado.
+const ACCOUNT_TO_PENDING_KEY: Record<string, string> = {
+  "501.01.01": "reclassify-501-01-01-as-mp",
+  "501.01.02": "reclassify-501-01-02-as-scrap",
+  "504.01.0035": "capitalize-import-landed-cost",
+  "504.01.0008": "separate-corp-vs-factory-overhead",
+};
 
 const ACCOUNT_RE = /^[\d.]+$/;
 const PERIOD_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -39,6 +49,7 @@ export default async function AccountDetailPage({
   const toPeriod = toRaw && PERIOD_RE.test(toRaw) ? toRaw : fromPeriod;
 
   const detail = await getAccountExpenseDetail(code, fromPeriod, toPeriod);
+  const pendingActionKey = ACCOUNT_TO_PENDING_KEY[code];
 
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
@@ -50,6 +61,12 @@ export default async function AccountDetailPage({
       </Link>
 
       <AccountHeader detail={detail} />
+
+      {pendingActionKey ? (
+        <Suspense fallback={null}>
+          <OdooPendingBanner actionKey={pendingActionKey} />
+        </Suspense>
+      ) : null}
 
       <Suspense fallback={<Skeleton className="h-32 w-full" />}>
         <NarrativeBlock detail={detail} />

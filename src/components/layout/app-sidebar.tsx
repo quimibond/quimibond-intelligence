@@ -131,7 +131,14 @@ const topGroups: NavGroup[] = [
     items: [
       { href: "/directores", label: "Directores", icon: Bot },
       { href: "/datos", label: "Datos", icon: Database },
-      { href: "/sistema", label: "Sistema", icon: Settings },
+      {
+        href: "/sistema",
+        label: "Sistema",
+        icon: Settings,
+        children: [
+          { href: "/sistema/odoo-pendientes", label: "Pendientes Odoo" },
+        ],
+      },
       { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },

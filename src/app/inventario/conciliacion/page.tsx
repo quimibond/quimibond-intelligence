@@ -7,6 +7,7 @@ import { ShrinkageTrend } from "./_components/shrinkage-trend";
 import { ShrinkageTopSkus } from "./_components/shrinkage-top-skus";
 import { ShrinkageRecent } from "./_components/shrinkage-recent";
 import { TopInventoryByValue } from "./_components/top-inventory-by-value";
+import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 import { Skeleton } from "@/components/ui/skeleton";
 
 export const revalidate = 600;
@@ -62,6 +63,12 @@ export default async function ConciliacionPage({
           DIFERENCIAS POR CONTEO.
         </p>
       </header>
+
+      <div className="space-y-3">
+        <Suspense fallback={null}>
+          <OdooPendingBanner actionKey="fix-45-skus-without-avg-cost" inline />
+        </Suspense>
+      </div>
 
       <Suspense fallback={<Skeleton className="h-32 w-full" />}>
         <ReconciliationBlock period={period} />

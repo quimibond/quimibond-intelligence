@@ -98,6 +98,7 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
     label: "Admin",
     tabs: [
       { href: "/sistema", label: "Sistema", icon: Settings },
+      { href: "/sistema/odoo-pendientes", label: "Pendientes Odoo", icon: Settings },
       { href: "/profile", label: "Perfil", icon: UserCircle },
     ],
   },

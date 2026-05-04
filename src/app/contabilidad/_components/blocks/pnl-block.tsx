@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import { FileX, Flame, Globe2, Receipt, Scale, TrendingDown, TrendingUp } from "lucide-react";
+import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 import {
   Accordion,
   AccordionContent,
@@ -282,6 +284,20 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 otros={kpis.otrosIngresosNetoMxn}
                 netaContable={kpis.utilidadNeta}
               />
+              <div className="px-4 py-3 border-t bg-muted/10 space-y-2">
+                <Suspense fallback={null}>
+                  <OdooPendingBanner
+                    actionKey="reclassify-501-01-01-as-mp"
+                    inline
+                  />
+                </Suspense>
+                <Suspense fallback={null}>
+                  <OdooPendingBanner
+                    actionKey="reclassify-501-01-02-as-scrap"
+                    inline
+                  />
+                </Suspense>
+              </div>
             </CardContent>
           </Card>
 
