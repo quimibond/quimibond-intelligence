@@ -684,6 +684,8 @@ Pattern C master data management layer:
 | `/chat` | Chat RAG con Claude |
 | `/knowledge` | Browser del Knowledge Graph |
 | `/system` | Ciclos, pipeline, Odoo sync, token usage |
+| `/reporte` | Index de reportes mensuales (selector de mes) |
+| `/reporte/[YYYY-MM]` | Reporte mensual de cierre con CFO sintetizado por Claude (Opus 4.7), drivers MoM, one-offs detectados, recomendaciones priorizadas. Imprimible / exportable a PDF |
 
 ### API Routes
 

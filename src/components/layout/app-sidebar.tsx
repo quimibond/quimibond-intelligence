@@ -97,6 +97,7 @@ const topGroups: NavGroup[] = [
       { href: "/equipo", label: "Equipo", icon: Users },
       { href: "/finanzas", label: "Finanzas", icon: Banknote },
       { href: "/contabilidad", label: "Contabilidad", icon: FileText },
+      { href: "/reporte", label: "Reportes mensuales", icon: FileText },
     ],
   },
   {
