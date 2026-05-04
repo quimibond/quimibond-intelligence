@@ -48,8 +48,9 @@ import { formatCurrencyMXN, formatNumber, formatRelative } from "@/lib/formatter
 
 import { RevenueTrendChart } from "./_components/revenue-trend-chart";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// searchParams (?range=) ya fuerza render dinámico; revalidate=60 deja a las
+// queries cacheadas con unstable_cache servir desde caché entre requests.
+export const revalidate = 60;
 export const metadata = { title: "CEO Dashboard" };
 
 function greet() {

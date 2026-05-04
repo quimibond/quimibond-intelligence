@@ -11,8 +11,7 @@ import { adaptInboxRow } from "@/lib/queries/intelligence/inbox-adapter";
 import { InboxFilterBar } from "./_components/InboxFilterBar";
 import { InboxListClient } from "./_components/InboxListClient";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 30; // 30s ISR — listInbox cachea internamente; searchParams hacen el render dinámico
 export const metadata = { title: "Inbox" };
 
 const searchSchema = z.object({

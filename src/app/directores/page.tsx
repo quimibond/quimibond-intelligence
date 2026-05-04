@@ -28,8 +28,7 @@ import {
   type AgentEffectivenessRow,
 } from "@/lib/queries/_shared/system";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60; // 60s ISR — agent_effectiveness se actualiza con cada run (cron horario)
 export const metadata = { title: "Directores" };
 
 export default function AgentsPage() {

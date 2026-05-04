@@ -29,8 +29,7 @@ import {
   type AtRiskOverview,
 } from "@/lib/queries/sp13/empresas";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60; // 60s ISR — datos provienen de gold_company_360 con refresh upstream cada hora
 export const metadata = {
   title: "Empresas en riesgo",
 };

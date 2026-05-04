@@ -27,8 +27,7 @@ import { SingleSourceSection } from "./_components/SingleSourceSection";
 import { PriceAnomaliesSection } from "./_components/PriceAnomaliesSection";
 import { PurchaseOrdersListSection } from "./_components/PurchaseOrdersListSection";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+export const revalidate = 60; // 60s ISR — searchParams hacen el render dinámico; queries cachean por su lado
 export const metadata = { title: "Compras" };
 
 const PO_STATE_VALUES = [

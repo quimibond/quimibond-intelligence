@@ -19,8 +19,8 @@ import { TopLtvSection } from "./_components/TopLtvSection";
 import { DriftingSection } from "./_components/DriftingSection";
 import { CompaniesListSection } from "./_components/CompaniesListSection";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+// searchParams fuerzan render dinámico; revalidate=60 permite caché de fetches via unstable_cache.
+export const revalidate = 60;
 export const metadata = { title: "Empresas" };
 
 const searchSchema = z.object({
