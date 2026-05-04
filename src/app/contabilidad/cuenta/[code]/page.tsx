@@ -11,6 +11,8 @@ import { SourceJournalBreakdown } from "./_components/source-journal-breakdown";
 import { VendorBreakdownTable } from "./_components/vendor-breakdown-table";
 import { InvoiceLinesTable } from "./_components/invoice-lines-table";
 import { OdooPendingBanner } from "@/components/odoo-pending-banner";
+import { CapaWorkflowCard } from "./_components/capa-workflow-card";
+import { getCapaWorkflowHistory } from "@/lib/queries/sp13/finanzas/capa-workflow";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // Mapping cuenta → action_key — permite mostrar pending action automático
@@ -51,6 +53,14 @@ export default async function AccountDetailPage({
   const detail = await getAccountExpenseDetail(code, fromPeriod, toPeriod);
   const pendingActionKey = ACCOUNT_TO_PENDING_KEY[code];
 
+  // Solo para 501.01.01: traer workflow CAPA + history
+  const capaHistory =
+    code === "501.01.01"
+      ? await getCapaWorkflowHistory(toPeriod, 12)
+      : null;
+  const capaCurrentMonth =
+    capaHistory?.months.find((m) => m.period === toPeriod) ?? null;
+
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
       <Link
@@ -66,6 +76,18 @@ export default async function AccountDetailPage({
         <Suspense fallback={null}>
           <OdooPendingBanner actionKey={pendingActionKey} />
         </Suspense>
+      ) : null}
+
+      {code === "501.01.01" && capaCurrentMonth && capaHistory ? (
+        <>
+          <Suspense fallback={null}>
+            <OdooPendingBanner actionKey="monthly-capa-workflow" />
+          </Suspense>
+          <CapaWorkflowCard
+            currentMonth={capaCurrentMonth}
+            history={capaHistory}
+          />
+        </>
       ) : null}
 
       <Suspense fallback={<Skeleton className="h-32 w-full" />}>
