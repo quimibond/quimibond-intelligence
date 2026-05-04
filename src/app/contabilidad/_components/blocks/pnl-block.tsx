@@ -215,7 +215,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               }}
             />
             <KpiCard
-              title="CAPA pendiente del mes"
+              title="Δ AVCO vs BOM-MP"
               value={kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn}
               format="currency"
               compact
@@ -230,13 +230,13 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               }
               subtitle={
                 kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn > 0
-                  ? `501.01.01 tiene ${formatCurrencyMXN(kpis.cogs501_01_01Mxn, { compact: true })} vs MP real ${formatCurrencyMXN(cogs.cogsRecursiveMpMxn, { compact: true })} · te falta CAPA`
-                  : `501.01.01 ${formatCurrencyMXN(kpis.cogs501_01_01Mxn, { compact: true })} < MP real · CAPA en exceso`
+                  ? `AVCO ${formatCurrencyMXN(kpis.cogs501_01_01Mxn, { compact: true })} > BOM ${formatCurrencyMXN(cogs.cogsRecursiveMpMxn, { compact: true })} · contaminación histórica`
+                  : `AVCO ${formatCurrencyMXN(kpis.cogs501_01_01Mxn, { compact: true })} < BOM-MP · costo MP arriba`
               }
               definition={{
-                title: "CAPA de valoración pendiente (501.01.01 vs BOM)",
+                title: "Diferencia AVCO al despacho vs BOM-MP",
                 description:
-                  "Diferencia entre el saldo actual de 501.01.01 Cost of sales (post-CAPA aplicada) y el costo primo real de la BOM recursiva. Solo compara la subcuenta CAPA-inflada — 501.01.02 y 501.01.08 son legítimos y se reportan aparte. Positivo = overhead aún pegado a 501.01.01 que deberías remover con CAPA.",
+                  "Diferencia entre 501.01.01 Cost of sales (AVCO al despacho) y el costo primo recursivo de la BOM (sólo MP). Refleja: (a) contaminación AVCO histórica del PT (MOD+gastos absorbidos pre-1-abril vía RSI56 archivado), y (b) drift entre canonical.avg_cost y costo MP real al producir. NO es un bug — es la diferencia natural entre el régimen AVCO histórico y la estructura de BOMs nueva (sólo MP).",
                 formula: "501.01.01_actual − cogs_recursivo_mp",
                 table:
                   "canonical_account_balances + get_cogs_recursive_mp",
@@ -257,14 +257,15 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base">
-                P&L contable vs limpio · comparación
+                P&L contable vs régimen actual · comparación
               </CardTitle>
               <p className="text-xs text-muted-foreground">
-                Una tabla, dos modelos. El contable usa 501.01 con CAPA
-                inflada (Odoo). El limpio reemplaza 501.01 por el costo
-                primo real (BOM recursiva hasta materia prima). Los demás
-                costos quedan idénticos en ambos. La columna Δ muestra
-                exactamente dónde se concentra la duplicación contable.
+                Una tabla, dos modelos. El contable usa 501.01.01 con AVCO
+                al despacho (incluye contaminación histórica de cuando las
+                BOMs traían MOD+gastos via RSI56). El régimen actual
+                reemplaza 501.01.01 por el costo primo BOM-recursivo
+                (sólo MP). MOD y overhead siguen aparte por departamento.
+                La columna Δ muestra la diferencia entre ambos modelos.
               </p>
             </CardHeader>
             <CardContent className="px-0 pb-0">
@@ -287,13 +288,13 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               <div className="px-4 py-3 border-t bg-muted/10 space-y-2">
                 <Suspense fallback={null}>
                   <OdooPendingBanner
-                    actionKey="reclassify-501-01-01-as-mp"
+                    actionKey="pnl-limpio-rewrite-avco-regimen"
                     inline
                   />
                 </Suspense>
                 <Suspense fallback={null}>
                   <OdooPendingBanner
-                    actionKey="reclassify-501-01-02-as-scrap"
+                    actionKey="revaluar-inventario-pt-contaminacion-avco"
                     inline
                   />
                 </Suspense>
@@ -745,14 +746,14 @@ export function PnlComparisonTable({
 }: {
   ventas: number;
   cogs501_01Actual: number;
-  /** 501.01.01 Cost of sales — la CAPA inflada por Odoo. Es la única
-   *  subcuenta que se SWAP-ea con el costo primo BOM. */
+  /** 501.01.01 Cost of sales — AVCO al despacho. Reemplazado por BOM-MP
+   *  en el régimen actual (la diferencia es contaminación AVCO histórica). */
   cogs501_01_01: number;
-  /** 501.01.02 COSTO PRIMO contable — costo legítimo registrado por
-   *  contabilidad. NO se quita en el limpio; existe en ambos. */
+  /** 501.01.02 COSTO PRIMO contable — cuenta de cierre histórica (CAPA mensual
+   *  vía RSI56, archivado 1-abr-2026). NO se quita en el régimen actual. */
   cogs501_01_02: number;
   /** 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico. NO se quita
-   *  en el limpio; es una pérdida real (faltantes, scrap). */
+   *  en el régimen actual; es una pérdida real (faltantes, scrap). */
   cogs501_01_08: number;
   costoPrimo: number;
   mod: number;
@@ -773,16 +774,16 @@ export function PnlComparisonTable({
   //   − Gasto de operación = EBIT
   //   + Otros − Depreciación = Utilidad neta
   //
-  // 501.01 split en 3 sub-buckets (audit 2026-05-04):
-  //   501.01.01 Cost of sales        ← la CAPA inflada por Odoo (SWAP con BOM)
-  //   501.01.02 COSTO PRIMO contable ← costo legítimo, vive en ambos
+  // 501.01 split en 3 sub-buckets (audit 2026-05-04, post-AVCO):
+  //   501.01.01 Cost of sales        ← AVCO al despacho (reemplazado por BOM-MP)
+  //   501.01.02 COSTO PRIMO contable ← cuenta de cierre, RSI56 archivado
   //   501.01.08 DIFERENCIAS CONTEO   ← shrinkage físico, vive en ambos
   //
-  // El swap limpio reemplaza SOLO 501.01.01 por costoPrimo BOM.
+  // El régimen actual reemplaza SOLO 501.01.01 por costoPrimo BOM.
   // 501.01.02 y 501.01.08 son costos reales que aparecen en contable Y limpio.
-  // Esto da un residual CAPA preciso: 501.01.01 − costoPrimo (no toda 501.01).
-  // Cualquier 501.01.x desconocida queda como diff (capturada en cogs501_01Actual
-  // pero no en sub-buckets) y se reporta como "501.01 otras subcuentas".
+  // El residual 501.01.01 − costoPrimo refleja contaminación AVCO histórica
+  // (PT producido pre-1-abril cargaba MOD+gastos via RSI56 en su avg_cost) y
+  // drift entre canonical.avg_cost y costo MP real.
   const otras501_01 =
     cogs501_01Actual - cogs501_01_01 - cogs501_01_02 - cogs501_01_08;
   const costoVentasContable = cogs501_01Actual + mod + compras + overhead;
@@ -794,7 +795,7 @@ export function PnlComparisonTable({
   const ebitLimpio = utilBrutaLimpio - gastosOp;
   const depTotal = depFabrica + depCorpo;
   const netaLimpio = ebitLimpio + otros - depTotal;
-  // Residual CAPA real = solo 501.01.01 − costoPrimo (no toda 501.01)
+  // Residual = 501.01.01 AVCO − costoPrimo BOM (contaminación histórica + drift)
   const residual501_01 = cogs501_01_01 - costoPrimo;
   const deltaNeta = netaLimpio - netaContable;
 
@@ -813,7 +814,7 @@ export function PnlComparisonTable({
     { label: "Ventas de producto (4xx)", contable: ventas, limpio: ventas, isTotal: true },
     { label: "Costo de ingresos:", contable: null, limpio: null, isHeader: true },
     {
-      label: "501.01.01 Cost of sales (CAPA inflada de Odoo)",
+      label: "501.01.01 Cost of sales (AVCO al despacho)",
       contable: cogs501_01_01,
       limpio: null,
       isDetail: true,
@@ -1005,9 +1006,11 @@ export function PnlComparisonTable({
                   ? " ✓ Cuadra al peso."
                   : " ⚠ Drift detectado, revisar."}
                 {" "}
-                501.01 contable {fmt(cogs501_01Actual)} − costo primo BOM {fmt(costoPrimo)} ={" "}
-                {fmt(residual501_01)} de CAPA{" "}
-                {residual501_01 > 0 ? "pendiente que falta remover" : "removida en exceso"}.
+                501.01.01 AVCO {fmt(cogs501_01_01)} − costo primo BOM {fmt(costoPrimo)} ={" "}
+                {fmt(residual501_01)}{" "}
+                {residual501_01 > 0
+                  ? "(contaminación AVCO histórica + drift de costo MP)"
+                  : "(BOM > AVCO; canonical.avg_cost por encima del costo real)"}.
               </p>
             </TableCell>
           </TableRow>

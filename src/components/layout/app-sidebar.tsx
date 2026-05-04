@@ -109,6 +109,7 @@ const topGroups: NavGroup[] = [
         icon: FileText,
         children: [
           { href: "/contabilidad/movimientos", label: "Movimientos cross-account" },
+          { href: "/contabilidad/centros-de-costo", label: "Centros de costo" },
         ],
       },
       { href: "/reporte", label: "Reportes mensuales", icon: FileText },

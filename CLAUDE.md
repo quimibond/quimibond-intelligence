@@ -711,72 +711,83 @@ Pattern C master data management layer:
 
 ---
 
-## /finanzas — P&L limpio (costo primo real vía BOM recursiva)
+## /finanzas — P&L limpio (régimen AVCO + variable costing implícito)
 
 Quimibond-específico. La sección P&L de `/finanzas` muestra **dos vistas**:
-P&L contable (lo que dice Odoo) y P&L limpio (lo que realmente costó
-producir). Existen porque hay un problema sistémico de **doble conteo
-de costos** en la contabilidad.
+P&L contable (lo que dice Odoo, AVCO al despacho) y P&L limpio (régimen
+actual con MP separada de MOD+overhead).
 
-### El problema: CAPA + 501.01.01
+### Régimen contable real (confirmado con CEO 2026-05-04)
 
-Odoo, al usar valoración estándar de inventario, genera asientos
-automáticos de "Capa de Valoración" (CAPA) que **duplican el costo**
-en `501.01.01 COSTO DE VENTAS`. El asiento típico es:
+- **Valuación de inventario: AVCO** (Average Cost), NO Standard.
+- **Workcenters: solo TEJIDO CIRCULAR** (40 máquinas, $74.57/hr) configurado,
+  go-live MAYO 2026. Acabado, Tintorería, Entretelas, Inspección/Empaque
+  NO tienen workcenter → MOD+OH NO se absorbe al PT al producirse.
+- **Resultado: variable costing implícito.** El PT en almacén carga solo
+  MP via AVCO; MOD+OH viven en gastos del período (501.06 + 504.01).
+- **Pre-1-abril-2026: BOMs incluían MOD+gastos como componentes** vía
+  productos token RSI56. Esto absorbía MOD+OH al PT al producirse y se
+  ajustaba mensualmente con CAPA. **Esos productos fueron archivados el
+  1-abr-2026** → ya no se hace ajuste mensual.
+- **501.01.01 ya NO está "inflado por CAPA"** — es el COGS real AVCO al
+  despacho. Si hay gap vs BOM-recursivo, es por contaminación AVCO
+  histórica del PT (pre-abril) o régimen actual sin absorción.
 
-```
-Dr 501.01.01 (COGS)         X
-Cr 115.xx    (Inventario)   X
-```
+Ver pending action `pnl-limpio-rewrite-avco-regimen` y
+`revaluar-inventario-pt-contaminacion-avco` (~$6.34M de PT contaminado).
 
-Esto pretende reconocer el costo cuando se vende. El problema: 501.01.01
-ya recibe el costo a través de la valoración de las salidas de stock,
-así que el CAPA lo duplica. Resultado: **501.01.01 contable está inflado
-sistemáticamente**. La utilidad reportada es menor a la real.
+### El "P&L limpio" como reformulación, no como fix
 
-Causa raíz: configuración de régimen contable en Odoo que se hizo en
-abr-2024. No se ha corregido en Odoo aún (manual del CEO).
+Antes (premisa incorrecta): "swap 501.01.01 por BOM-recursivo para
+quitar CAPA duplicada". **Esa premisa quedó obsoleta** — el swap ya no
+"limpia" un bug; **reformula** el COGS a "qué costaría con la estructura
+de BOMs nueva (sólo MP) sin contaminación AVCO histórica".
 
-### La solución: P&L limpio con costo primo recursivo
+Para cada producto vendido en el período:
+1. Tomar la BOM activa (recursiva — bajamos todos los niveles).
+2. Para hojas (MP comprada): `qty × avg_cost_mxn` de canonical_products.
+3. Para importados (sufijo " I"): short-circuit a `avg_cost_mxn` directo
+   (ya incluye flete/aduana/agente vía AVCO de compras).
+4. Multiplicar por la cantidad vendida (out_invoice − out_refund).
 
-Reemplazamos `501.01.01` por el **costo real de la materia prima** que
-se usó en lo que vendimos. Para cada producto vendido en el período:
+El **costo primo BOM** es solo MP. MOD y overhead se reportan APARTE
+por departamento usando los 3 RPCs nuevos:
 
-1. Tomar la BOM activa (recursiva — bajamos todos los niveles hasta
-   llegar a leaves de tipo `product` con stock_qty/avg_cost reales).
-2. Sumar `qty × avg_cost` de cada leaf MP.
-3. Multiplicar por la cantidad vendida.
+- `get_nomina_by_cost_center(p_period)` — parsea NOMINAS journal `ref`
+  para asignar 501.06 a TEJIDO/ACABADO/TINTORERIA/etc.
+- `get_overhead_by_cost_center(p_period)` — prorratea 504.01 según
+  `overhead_account_assignment` (luz→TEJIDO, gas→ACABADO, agua→TINT,
+  agujados→TEJIDO) y `rent_lot_assignment` (4 lotes).
+- `get_production_by_cost_center(p_period)` — qty producida por proceso
+  para calcular burden rate por unidad.
 
-Eso es el **costo primo real** de las ventas del período. Ya no incluye
-overhead, MOD, ni depreciación — solo MP que efectivamente se transformó
-en producto vendido.
-
-Los demás costos de producción quedan cada uno en su cuenta:
-
-| Cuenta | Concepto | Va a |
-|---|---|---|
-| `501.01.01` | COGS contable (CON CAPA inflada) | NO se usa en limpio |
-| `501.06.*` | Mano de obra directa | Línea aparte en limpio |
-| `502.*` | Compras de importación | Línea aparte |
-| `504.01.*` (excl. 0008) | Overhead fábrica (renta, energía, servicios, mtto) | Línea aparte |
-| `504.08-23` | Depreciación fábrica (maquinaria) | Línea aparte |
-| `6xx + 613` | Gastos operativos (admin, ventas, dep corporativa) | Línea aparte |
-| `7xx` | Otros ingresos / gastos (FX, intereses, venta activo) | Después de EBIT |
+| Cuenta | Concepto | P&L contable | P&L limpio |
+|---|---|---|---|
+| `501.01.01` | COGS AVCO al despacho | Como está | **Reemplazado por** BOM-recursivo MP |
+| `501.01.02` | COSTO PRIMO (cierre, ya inactivo post-abril) | Como está | Como está |
+| `501.01.08` | DIFERENCIAS POR CONTEO (shrinkage físico) | Como está | Como está |
+| `501.06.*` | MOD por departamento | Línea aparte | Línea aparte (con split por depto) |
+| `502.*` | Compras de importación | Línea aparte | Línea aparte |
+| `504.01.*` (excl. 0008) | Overhead fábrica | Línea aparte | Línea aparte (con split por depto) |
+| `504.08-23` | Depreciación fábrica | Línea aparte | Línea aparte |
+| `6xx + 613` | Gastos operativos (admin, ventas) | Línea aparte | Línea aparte |
+| `7xx` | Otros ingresos / gastos | Después de EBIT | Después de EBIT |
 
 ### Estructura del P&L (contable + limpio, alineada a Odoo)
 
-Ambas vistas (contable y limpio) usan la misma estructura del Estado de
-Resultados que muestra Odoo, para que cualquier subtotal cuadre al peso
-con el reporte oficial. La diferencia entre ambas es **solo** que el
-limpio reemplaza `501.01.01` por el costo primo real (BOM recursiva).
+Ambas vistas usan la misma estructura del Estado de Resultados de Odoo,
+para que cualquier subtotal cuadre con el reporte oficial. Solo difieren
+en la fila de 501.01.01:
 
 ```
 Ventas de producto (4xx)
 − Costo de ingresos:
-    501.01 contable (CAPA inflada)  /  Costo primo BOM    ← swap
-  + Mano de obra directa (501.06)
+    501.01.01 AVCO  /  Costo primo BOM-recursivo   ← reformulación
+  + 501.01.02 COSTO PRIMO (residual cierre)
+  + 501.01.08 DIFERENCIAS POR CONTEO
+  + Mano de obra directa (501.06)         [splittable por depto]
   + Compras de importación (502)
-  + Overhead fábrica (504.01)
+  + Overhead fábrica (504.01)              [splittable por depto]
 = Ganancia bruta
 − Gasto de operación (6xx, sin dep CORPO)
 = Ingreso de operación (EBIT)
@@ -787,23 +798,25 @@ Ventas de producto (4xx)
 
 El **margen contributivo material** (= ventas − costo primo BOM) sigue
 existiendo como KPI dedicado en la fila 2 de `/contabilidad`, pero no
-como subtotal dentro de la tabla — la tabla mantiene la estructura
-contable estándar para facilitar la conciliación con Odoo.
+como subtotal dentro de la tabla.
 
-### Validación: residual 501.01
+### Validación: residual 501.01.01 vs BOM
 
-El P&L limpio muestra siempre la fila **`Δ vs P&L contable`** que prueba
-que cuadra. La fórmula:
+El P&L limpio muestra la fila **`Δ vs P&L contable`** que prueba que
+cuadra. La fórmula:
 
 ```
-residual_501.01 = cogs501_01_actual − costoPrimo_BOM
-neta_limpia − neta_contable == residual_501.01   (debería ser exacto)
+residual_501.01.01 = cogs501_01_01_actual − costoPrimo_BOM
+neta_limpia − neta_contable == residual_501.01.01   (exacto)
 ```
 
-- `residual > 0`: falta CAPA pendiente (501.01 no se ha "limpiado" lo
-  suficiente — más costos en 501.01 de los que justifica la BOM).
-- `residual < 0`: te pasaste removiendo CAPA (raro).
-- `residual ≈ 0`: la BOM y la contabilidad están alineadas.
+Interpretación correcta (ya NO "CAPA inflada"):
+- `residual > 0`: AVCO al despacho > BOM puro. Causa: contaminación AVCO
+  histórica del PT (MOD+gastos absorbidos pre-abril) + costo MP real
+  diferente al avg_cost canonical (precios MP cambiaron).
+- `residual < 0`: AVCO < BOM. Raro; puede pasar si el PT viejo se vendió
+  a costo histórico bajo y MP nueva está cara.
+- `residual ≈ 0`: BOM y AVCO alineados — régimen estable.
 
 ### Otras secciones del P&L
 
@@ -873,17 +886,17 @@ donde es relevante.
 ### Subcuentas 501.01: split en 3 buckets (2026-05-04 audit)
 
 La cuenta contable 501.01 tiene **3 subcuentas distintas**, no una sola.
-Tratarlas como bucket único (como hacíamos antes) mezclaba 3 conceptos
-diferentes en el "residual CAPA":
+Tratarlas como bucket único mezclaba 3 conceptos diferentes:
 
 | Subcuenta | Naturaleza | Tratamiento limpio |
 |---|---|---|
-| **501.01.01 Cost of sales** | CAPA inflada por Odoo (overhead duplicado) | **SWAP** con costo primo BOM |
-| **501.01.02 COSTO PRIMO** | Costo legítimo de producción (cierre contable) | NO se quita — vive en contable Y limpio |
+| **501.01.01 Cost of sales** | COGS AVCO al despacho (incluye contaminación AVCO histórica pre-abril) | **Reemplazado por** costo primo BOM-recursivo |
+| **501.01.02 COSTO PRIMO** | Cuenta de cierre histórica para CAPA mensual (RSI56 archivado 1-abr-2026 → ya casi vacía) | NO se quita — vive en contable Y limpio |
 | **501.01.08 DIFERENCIAS POR CONTEO** | Shrinkage físico (faltantes, scrap, errores conteo) | NO se quita — pérdida real visible |
 
-**El residual CAPA real** = `501.01.01 − costoPrimo BOM` (no toda 501.01).
-Esto es lo que `getPnlKpis` reporta vía `cogs501_01_01Mxn`.
+**El residual MP real** = `501.01.01 − costoPrimo BOM`. Es lo que
+`getPnlKpis` reporta vía `cogs501_01_01Mxn`. Refleja contaminación AVCO
+histórica + diferencias de costo MP real vs canonical.avg_cost.
 
 `PnlComparisonTable` muestra cada subcuenta como línea separada cuando
 no es cero. Si shrinkage (501.01.08) > $200k, se anota como atípico
@@ -950,16 +963,77 @@ o revenue se cuentan 2x.
 
 ### IMPORTANTE para futuras sesiones
 
-- **No "arreglar" el P&L contable**: el problema raíz vive en la
-  configuración de Odoo. Manejarlo desde el frontend con el limpio
-  es la decisión consciente del CEO mientras no se corrige en Odoo.
-- **No mezclar 501.01.01 con MP de la BOM**: son conceptos distintos.
-  501.01.01 contable = lo que dice Odoo. costoPrimo BOM = lo que
-  realmente costó la MP. La diferencia es justamente el bug.
-- **El residual debe cuadrar al peso**: si `Δ vs contable ≠ residual_501.01`,
+- **NO es un "bug de CAPA duplicada"**: la premisa antigua (Standard
+  valuation con CAPA inflando 501.01.01) era incorrecta. Quimibond usa
+  AVCO. El P&L limpio es una **reformulación**, no un fix — muestra qué
+  pasaría con la estructura de BOMs nueva (post-1-abril, solo MP) si no
+  hubiera contaminación AVCO histórica del PT.
+- **No mezclar 501.01.01 AVCO con BOM-MP**: son conceptos distintos.
+  501.01.01 = AVCO al despacho (incluye MOD+OH absorbido pre-abril del
+  PT viejo). costoPrimo BOM = qué costaría con BOMs actuales (sólo MP).
+  La diferencia es contaminación + drift de precios MP, no un bug.
+- **MOD y overhead se reportan APARTE por departamento**: usar los 3
+  RPCs (`get_nomina_by_cost_center`, `get_overhead_by_cost_center`,
+  `get_production_by_cost_center`) y las 3 tablas (`cost_center_config`,
+  `overhead_account_assignment`, `rent_lot_assignment`).
+- **El residual debe cuadrar al peso**: si `Δ vs contable ≠ residual_501.01.01`,
   hay un bug en cómo se sumaron las cuentas. Investigar antes de seguir.
 - **Period filter unificado**: solo usar `?period=` (no `pl_period`,
   removido). HistorySelector global controla todo el P&L.
+- **Workcenters mayo 2026**: Tejido Circular fue go-live el primer
+  proceso. Acabado/Tintorería/Entretelas/Empaque siguen pendientes.
+  Cuando se configuren, MOD+OH se absorberá al PT al producirse y el
+  régimen pasará de variable costing implícito a absorbing costing.
+
+---
+
+## /contabilidad/centros-de-costo — MOD + Overhead por departamento
+
+Implementado 2026-05-04 para descomponer 501.06 (MOD) y 504.01 (overhead
+fábrica) por proceso productivo. Permite calcular burden rate
+(MXN por unidad producida) para cuando se configuren los workcenters
+faltantes en Odoo.
+
+### Tablas (silver, manual seed)
+
+| Tabla | Filas | Qué define |
+|---|---|---|
+| `cost_center_config` | 12 | Catálogo de centros: TEJIDO, ACABADO, TINTORERIA, ENTRETELAS, INSP_EMPAQUE, MANTENIMIENTO, ALMACEN, CALIDAD, LIMPIEZA, ADMIN, DISENO, RH_COMPRAS. Cada uno con `nature` (fabril_directo / fabril_indirecto / admin), `output_uom`, `has_workcenter`, `workcenter_go_live_date`, `nomina_ref_pattern` (regex para parser de NOMINAS journal ref) |
+| `overhead_account_assignment` | 5 | Mapping cuenta_504.01.* → cost_center con allocation_pct. Direct: luz→TEJIDO, gas→ACABADO, agua→TINTORERIA, agujados→TEJIDO. Otras cuentas no mapeadas se prorratean por participación de fabril_directos |
+| `rent_lot_assignment` | 5 | 4 lotes según breakdown del CEO: Lote 9 planta tint+acabado $356,934 (50/50), Lote 10 entretelas $352,062 (100% ENTRETELAS), Lote 9,10 oficinas Tejido $284,269 (100% TEJIDO admin), Lote 10 oficinas RH+Compras $219,509 (100% RH_COMPRAS) |
+
+### RPCs
+
+- **`get_nomina_by_cost_center(p_period date)`** — agrupa cuentas 501.06.*
+  por centro usando regex sobre `journal.ref` de NOMINAS (ej. "NOMINA TEJIDO
+  Q1 ABRIL 2026" → TEJIDO). Si el ref no matchea ningún pattern, queda en
+  bucket `SIN_CLASIFICAR`.
+- **`get_overhead_by_cost_center(p_period date)`** — combina 3 fuentes:
+  1. Asignaciones directas via `overhead_account_assignment`.
+  2. Renta via `rent_lot_assignment`.
+  3. Cuentas 504.01.* no mapeadas: prorrateadas por `production_qty` de
+     centros fabril_directos (TEJIDO+ACABADO+TINTORERIA+ENTRETELAS).
+- **`get_production_by_cost_center(p_period date)`** — qty producida por
+  proceso según mrp_production + categoría de producto (TEJIDO_CIRCULAR
+  produce kg crudos, ACABADO produce mt acabados, etc.).
+
+### Burden rate (resultado abril 2026)
+
+| Centro | Nómina | Overhead | Producción | Burden /unit |
+|---|---|---|---|---|
+| TEJIDO | $358k | $621k | 67k kg | $14.47/kg |
+| ACABADO | $265k | $1.59M | 1.5M mt | $1.22/mt |
+| TINTORERIA | $247k | ~$300k | 99k kg | $5.55/kg |
+| ENTRETELAS | $209k | ~$400k | 297k mt | $2.05/mt |
+| INSP_EMPAQUE | $266k | ~$50k | (mixto) | n/a sin allocator |
+
+(Anomalía abril: ACABADO overhead $1.59M es alto porque renta $677k de
+abril es 39% menor a marzo — ver pending action `investigate-renta-abril-baja`.)
+
+### Migration
+
+`supabase/migrations/20260504_cost_centers_overhead.sql` — schema +
+seed + RPCs. Idempotente con ON CONFLICT en seeds.
 
 ---
 
