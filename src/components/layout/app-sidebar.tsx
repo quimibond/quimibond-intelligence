@@ -103,7 +103,14 @@ const topGroups: NavGroup[] = [
       },
       { href: "/equipo", label: "Equipo", icon: Users },
       { href: "/finanzas", label: "Finanzas", icon: Banknote },
-      { href: "/contabilidad", label: "Contabilidad", icon: FileText },
+      {
+        href: "/contabilidad",
+        label: "Contabilidad",
+        icon: FileText,
+        children: [
+          { href: "/contabilidad/movimientos", label: "Movimientos cross-account" },
+        ],
+      },
       { href: "/reporte", label: "Reportes mensuales", icon: FileText },
     ],
   },

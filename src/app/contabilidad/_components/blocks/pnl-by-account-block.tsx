@@ -35,6 +35,15 @@ export async function PnlByAccountBlock({ range }: { range: HistoryRange }) {
       collapsible
       defaultOpen={false}
     >
+      <div className="mb-3">
+        <Link
+          href={`/contabilidad/movimientos?period=${toMonth}`}
+          className="inline-flex items-center gap-1.5 text-xs text-foreground bg-muted/50 hover:bg-muted rounded-full px-3 py-1.5 transition"
+        >
+          🔍 Ver análisis cross-account: ¿qué cuentas se movieron fuera de
+          lo normal este mes? <ArrowUpRight size={11} />
+        </Link>
+      </div>
       {data.rows.length === 0 ? (
         <EmptyState
           icon={FileX}
