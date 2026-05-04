@@ -840,6 +840,48 @@ que para YTD parcial (e.g. `to=2026-04-25`) excluía abril. Fix:
 `period <= to_char((p_date_to - 1 day)::date, 'YYYY-MM')`. Ver
 migration `20260424_cogs_monthly_cache_boundary_fix.sql`.
 
+### Productos importados ("I") y notas de crédito (2026-05-04)
+
+Migration `20260504_pnl_limpio_imports_and_refunds_fix.sql` corrige dos
+asimetrías del COGS BOM-recursivo:
+
+1. **Importados — sufijo " I":** 119 SKUs marcados como import (terminan
+   en " I" en `internal_ref`). 89 de ellos tienen BOM activa, pero la
+   BOM sólo refleja el costo del proveedor extranjero + un componente
+   token "GASTOS IND DE IMPORTACIÓN". Flete/aduana/agente sólo viven
+   en `avg_cost_mxn` (Odoo moving-average de las compras). Por eso el
+   BOM-recursivo subestimaba ~13% el costo (ej. WM4032NG152 I:
+   BOM=$4.55 vs avg_cost=$7.51).
+   **Fix:** `get_bom_raw_material_cost_per_unit` hace short-circuit y
+   retorna `avg_cost_mxn` directo cuando `internal_ref ~ ' ?I$'`.
+
+2. **Notas de crédito (out_refund):** revenue 4xx ya viene neto (las
+   NCs ajustan el saldo contable), pero el COGS recursivo sólo sumaba
+   `out_invoice` y nunca restaba devoluciones. Asimetría → COGS
+   sobreestimado por el costo de mercancía devuelta.
+   **Fix:** `get_cogs_recursive_mp` ahora UNIONa `out_refund` con qty
+   negativa, dedupado por (move, product, qty_abs, kind) para no
+   mezclar facturas y NCs del mismo producto.
+
+**Lepezo sale-leaseback:** la "venta" de la rama ICOMATEX a Leasing
+Lepezo en marzo 2026 ($11.35M factura INV/2026/03/0173) fue un
+**leaseback financiero**, no una venta real. Trazas en libros:
+- 252.01.0004 PRESTAMOS BANCARIOS LEPEZO: +$12M en mar (pasivo LP)
+- 252.01.0001 PRESTAMOS BANCA MIFEL: −$1.97M en mar (refinanció Mifel)
+- 704.23.0003 UTILIDAD VENTA ACTIVO: −$574k (gain contable one-off)
+- 704.23.0001 OTROS INGRESOS: −$1.50M en mar (vs ~$0 normal)
+- **701.11.0001 ARRENDAMIENTO FINANCIERO: $1.08M/mes recurrente** (era
+  $525k pre-leaseback; subió a $1.08M en mar y se mantiene en abr)
+- La rama sigue operativa en Quimibond; el "ingreso" fue financiamiento
+  con la rama como garantía.
+
+`get_pnl_normalization_adjustments` ya detecta los one-offs de marzo:
+- `venta_activo_fijo` ($574k impacto)
+- `otros_ingresos_extraordinarios` ($1.50M, threshold >$500k)
+
+Marzo normalizado: 1,29M reportado − 2,07M one-offs = **−0,78M
+(comparable apples-to-apples con abril −0,98M)**.
+
 ### IEPS triplet (productos con tabaco/alcohol — N/A para textil pero
 documentado por completitud):
 Algunas líneas en odoo_invoice_lines vienen como triplet

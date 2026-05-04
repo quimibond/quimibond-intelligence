@@ -121,7 +121,7 @@ async function _getCogsPerProductRaw(
 export const getCogsPerProduct = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsPerProductRaw(range),
-    ["sp13-finanzas-cogs-per-product", range],
+    ["sp13-finanzas-cogs-per-product-v2-imports-refunds", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
