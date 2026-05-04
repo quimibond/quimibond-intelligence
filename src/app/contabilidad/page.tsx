@@ -11,6 +11,7 @@ import { parseHistoryRange } from "@/components/patterns/history-range";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { cn } from "@/lib/utils";
+import { LatestReportBanner } from "@/components/latest-report-banner";
 
 import {
   PnlBlock,
@@ -122,6 +123,10 @@ export default async function ContabilidadPage({
         subtitle={TAB_DEFS.find((t) => t.id === tab)?.subtitle ?? ""}
         actions={<HistorySelector paramName="period" defaultRange="mtd" />}
       />
+
+      <Suspense fallback={null}>
+        <LatestReportBanner />
+      </Suspense>
 
       <ContabilidadTabsNav activeTab={tab} sp={sp} />
 

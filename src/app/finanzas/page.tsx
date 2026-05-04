@@ -13,6 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 import { parseProjectionHorizon } from "@/lib/queries/sp13/finanzas";
 import { cn } from "@/lib/utils";
+import { LatestReportBanner } from "@/components/latest-report-banner";
 
 import {
   CustomerCreditScoresBlock,
@@ -137,6 +138,10 @@ export default async function FinanzasPage({
         subtitle={TAB_DEFS.find((t) => t.id === tab)?.subtitle ?? ""}
         actions={<HistorySelector paramName="period" defaultRange="mtd" />}
       />
+
+      <Suspense fallback={null}>
+        <LatestReportBanner />
+      </Suspense>
 
       <FinanzasTabsNav activeTab={tab} sp={sp} />
 
