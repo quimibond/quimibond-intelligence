@@ -202,6 +202,43 @@ distinta (acciones 2 y 3 arriba).
 
 ---
 
+## Layer 2 INTENTADO Y ROLLBACK (2026-05-05)
+
+Después del fix v1, intenté un fix v2 más agresivo: usar `mv_mo_actual_material_cost`
+(el AVCO REAL de MP consumido en MOs) en vez del BOM-recursivo teórico cuando
+el producto tuviera MO reciente. Hipótesis: capturaría sustituciones reales,
+mermas, y resolvería multi-BOM picking.
+
+**Resultado**: BOM-MP creció ~50% en agregado. Residual se volvió SIEMPRE
+negativo en 2026 (de ±$1.8M a −$3M consistente).
+
+| Mes | BOM-MP v1 (final) | BOM-MP v2 (con MO) | Residual v1 | Residual v2 |
+|---|---|---|---|---|
+| Ene | $3.21M | $5.45M | −$1.06M | −$3.29M |
+| Feb | $4.69M | $7.76M | +$177k | −$2.90M |
+| Mar | $4.93M | $7.87M | −$815k | −$3.75M |
+| Abr | $4.20M | $6.56M | +$1.85M | −$513k |
+
+**Causa del fail**: `actual_material_cost_total` suma `value` de stock_moves
+de consumo de MP en una MO. `value` es el AVCO al momento del consumo. Si
+consumes un sub-ensamble (e.g., "TEJIDO CRUDO" para producir "TEJIDO ACABADO"),
+el `value` es el AVCO del TEJIDO CRUDO — el cual ya incluye su propia
+contaminación AVCO histórica vía RSI56 pre-abril.
+
+Entonces v2 capturaba la contaminación de **2 niveles** (sub-ensambles + RSI56),
+inflando el costo. La premisa del "P&L limpio" es mostrar **MP pura sin
+absorción de MOD/OH** — el BOM recursivo teórico hace eso, MO actual cost no.
+
+**Rollback aplicado**: `get_bom_raw_material_cost_per_unit` volvió a la versión
+v1 (imports → BOM recursivo con leaves usando product_real_avg_cost). Tabla
+`product_actual_mo_cost` dropeada como obsoleta.
+
+**Lección**: para reformular como "MP pura", hay que insistir en explotar
+hasta hojas raíz (productos comprados externos). El short-circuit por MO real
+captura la contaminación que justamente queremos evitar.
+
+---
+
 ## Archivos modificados
 
 - `supabase/migrations/20260505_product_real_avg_cost_from_stock_moves.sql`
