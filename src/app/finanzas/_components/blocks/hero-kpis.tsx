@@ -17,7 +17,7 @@ export async function DriftBanner({ range }: { range: HistoryRange }) {
       severity={drift.severity}
       title={drift.title}
       description={drift.description}
-      action={{ label: "Ver detalle", href: "/sistema?tab=reconciliacion" }}
+      action={{ label: "Ver detalle", href: "/sistema?tab=reconciliation" }}
     />
   );
 }

@@ -94,9 +94,17 @@ export default async function SystemPage({
 }) {
   const sp = await searchParams;
 
-  // Support ?tab=historico-fiscal or ?tab=contabilidad-electronica to deep-link into syntage sub-tab
+  // Support ?tab=<syntage-inner-tab> to deep-link into Syntage sub-tab
+  // (auto-switches outer tab to "syntage").
   const tabParam = Array.isArray(sp.tab) ? sp.tab[0] : sp.tab;
-  const syntageTabs = ["historico-fiscal", "contabilidad-electronica", "webhook-events", "files"];
+  const syntageTabs = [
+    "health",
+    "reconciliation",
+    "historico-fiscal",
+    "contabilidad-electronica",
+    "webhook-events",
+    "files",
+  ];
   const outerTab =
     tabParam && syntageTabs.includes(tabParam) ? "syntage" : (tabParam ?? "sync");
   const innerSyntageTab =
