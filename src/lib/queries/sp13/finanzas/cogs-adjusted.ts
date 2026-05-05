@@ -87,7 +87,13 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
 
   // Paginated: odoo_invoice_lines out_invoice y:2025 has 9k+ rows (audit
   // 2026-04-29) and would silently truncate at the PostgREST 1000-row cap.
-  const [cogsAcctRes, capaRes, recursiveRes, bomFlatLinesRes, invoiceRevRes] =
+  //
+  // BOM-MP recursivo: leemos del pre-cache `cogs_monthly_cache`. La RPC
+  // `get_cogs_recursive_mp` directa toma >8s para rangos amplios y excede
+  // el statement_timeout de PostgREST → falla silenciosa con cogs=0
+  // (bug detectado 2026-05-05 en logs). El cache se refresca por cron
+  // (`refresh_cogs_monthly_cache`).
+  const [cogsAcctRes, capaRes, cacheRes, bomFlatLinesRes, invoiceRevRes] =
     await Promise.all([
       // 1a. COGS contable actual (501.01 post-adjustment ya aplicado)
       sb
@@ -106,12 +112,13 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
         .eq("journal_name", "CAPA DE VALORACIÓN")
         .gte("date", bounds.from)
         .lt("date", bounds.to),
-      // 2. COGS recursivo MP + revenue 4xx canonical (ambos vienen del RPC
-      //    ahora que get_cogs_recursive_mp usa get_product_sales_revenue).
-      sb.rpc("get_cogs_recursive_mp", {
-        p_date_from: bounds.from,
-        p_date_to: bounds.to,
-      }),
+      // 2. BOM-MP recursivo desde cogs_monthly_cache (sumamos todos los
+      //    meses dentro del rango). Mucho más rápido que el RPC.
+      sb
+        .from("cogs_monthly_cache")
+        .select("period, revenue_product_mxn, cogs_recursive_mp_mxn, lines_total, lines_with_cost")
+        .gte("period", bounds.fromMonth)
+        .lte("period", bounds.toMonth.slice(0, 7)),
       // 3. Flat BOM reference — paginated (>1000 rows for typical year).
       paginateAll<{ odoo_product_id: number | null; quantity: number | null }>(
         ({ from, to }) =>
@@ -139,6 +146,15 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
       ).then((data) => ({ data, error: null })),
     ]);
 
+  // Loud error logging: el bug histórico era que recursiveRes fallaba
+  // silenciosamente con timeout y la tabla mostraba BOM=$0 sin warning.
+  if (cacheRes.error) {
+    console.error(
+      "[getCogsComparison] cogs_monthly_cache read failed:",
+      cacheRes.error.message
+    );
+  }
+
   type AcctRow = { balance: number | null; period: string };
   const cogsContable = ((cogsAcctRes.data ?? []) as AcctRow[]).reduce(
     (s, r) => s + (Number(r.balance) || 0),
@@ -158,27 +174,45 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   );
   const cogsContableRaw = cogsContable + cogsCapaValoracion;
 
-  type RecRow = {
-    lines_total: number | string;
-    lines_with_cost: number | string;
-    revenue_mxn: number | string;
-    cogs_recursive_mp: number | string;
+  type CacheRow = {
+    period: string;
+    revenue_product_mxn: number | string | null;
+    cogs_recursive_mp_mxn: number | string | null;
+    lines_total: number | string | null;
+    lines_with_cost: number | string | null;
   };
-  const rec = (
-    Array.isArray(recursiveRes.data)
-      ? (recursiveRes.data[0] as RecRow | undefined)
-      : (recursiveRes.data as RecRow | undefined)
-  ) ?? {
-    lines_total: 0,
-    lines_with_cost: 0,
-    revenue_mxn: 0,
-    cogs_recursive_mp: 0,
-  };
-  const linesTotal = Number(rec.lines_total) || 0;
-  const linesWithCost = Number(rec.lines_with_cost) || 0;
-  // RPC ya devuelve revenue 4xx (cuenta de producto).
-  const revenue = Number(rec.revenue_mxn) || 0;
-  const cogsRecursive = Number(rec.cogs_recursive_mp) || 0;
+  const cacheRows = (cacheRes.data ?? []) as CacheRow[];
+  const linesTotal = cacheRows.reduce(
+    (s, r) => s + (Number(r.lines_total) || 0),
+    0
+  );
+  const linesWithCost = cacheRows.reduce(
+    (s, r) => s + (Number(r.lines_with_cost) || 0),
+    0
+  );
+  const revenue = cacheRows.reduce(
+    (s, r) => s + (Number(r.revenue_product_mxn) || 0),
+    0
+  );
+  const cogsRecursive = cacheRows.reduce(
+    (s, r) => s + (Number(r.cogs_recursive_mp_mxn) || 0),
+    0
+  );
+
+  // Si el cache está vacío para meses con balances, alertar — significa
+  // que `refresh_cogs_monthly_cache` no corrió o tiene gap.
+  if (cacheRows.length === 0 && monthsCovered > 0) {
+    console.error(
+      "[getCogsComparison] cogs_monthly_cache vacío para",
+      bounds.fromMonth, "→", bounds.toMonth.slice(0, 7),
+      "— refresca la tabla via /api/pipeline/refresh-cogs-monthly o el cron"
+    );
+  } else if (cacheRows.length < monthsCovered) {
+    console.warn(
+      "[getCogsComparison] cogs_monthly_cache incompleto:",
+      cacheRows.length, "meses cacheados vs", monthsCovered, "meses con balances"
+    );
+  }
 
   // Invoice-basis revenue (incluye venta de activos fijos). Se calcula
   // sumando todas las líneas — la triplete IEPS (lista+, descuento-, neta+)
@@ -286,7 +320,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
 export const getCogsComparison = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison-v3-imports-refunds", range],
+    ["sp13-finanzas-cogs-comparison-v4-cache-no-rpc", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -296,6 +330,6 @@ export { _getCogsComparisonRaw as _getCogsComparisonForTests };
 export const getCogsComparisonCached = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison-v3-imports-refunds", range],
+    ["sp13-finanzas-cogs-comparison-v4-cache-no-rpc", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
