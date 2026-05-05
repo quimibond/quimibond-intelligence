@@ -799,10 +799,16 @@ export function PnlComparisonTable({
   const residual501_01 = cogs501_01_01 - costoPrimo;
   const deltaNeta = netaLimpio - netaContable;
 
+  type RowKind = "expense" | "income";
   type Row = {
     label: string;
     contable: number | null;
     limpio: number | null;
+    /**
+     * "expense": Δ negativo (limpio < contable) = costo bajó = MEJORA utilidad → verde
+     * "income":  Δ positivo (limpio > contable) = ingreso/utilidad subió → verde
+     */
+    kind: RowKind;
     isSubtotal?: boolean;
     isTotal?: boolean;
     isHeader?: boolean;
@@ -811,19 +817,17 @@ export function PnlComparisonTable({
   };
 
   const rows: Row[] = [
-    { label: "Ventas de producto (4xx)", contable: ventas, limpio: ventas, isTotal: true },
-    { label: "Costo de ingresos:", contable: null, limpio: null, isHeader: true },
+    { label: "Ventas de producto (4xx)", contable: ventas, limpio: ventas, kind: "income", isTotal: true },
+    { label: "Costo de ingresos:", contable: null, limpio: null, kind: "expense", isHeader: true },
     {
-      label: "501.01.01 Cost of sales (AVCO al despacho)",
+      // Swap unificado en una sola fila para mostrar la reformulación clara:
+      // contable usa AVCO al despacho (501.01.01); limpio usa BOM-MP recursivo.
+      label: "Costo MP — 501.01.01 AVCO ↔ BOM-MP recursivo",
       contable: cogs501_01_01,
-      limpio: null,
-      isDetail: true,
-    },
-    {
-      label: "Costo primo BOM (MP real, recursivo)",
-      contable: null,
       limpio: costoPrimo,
+      kind: "expense",
       isDetail: true,
+      note: "régimen contable: AVCO al despacho · régimen actual: BOM-MP (sólo materia prima)",
     },
     ...(cogs501_01_02 !== 0
       ? [
@@ -831,6 +835,7 @@ export function PnlComparisonTable({
             label: "501.01.02 COSTO PRIMO contable (cierre contable)",
             contable: cogs501_01_02,
             limpio: cogs501_01_02,
+            kind: "expense" as const,
             isDetail: true,
           },
         ]
@@ -841,6 +846,7 @@ export function PnlComparisonTable({
             label: "501.01.08 Diferencias por conteo (shrinkage físico)",
             contable: cogs501_01_08,
             limpio: cogs501_01_08,
+            kind: "expense" as const,
             isDetail: true,
             note: cogs501_01_08 > 200000
               ? "⚠ shrinkage atípico — investigar inventario"
@@ -854,98 +860,89 @@ export function PnlComparisonTable({
             label: "501.01.x otras subcuentas",
             contable: otras501_01,
             limpio: otras501_01,
+            kind: "expense" as const,
             isDetail: true,
           },
         ]
       : []),
     {
       label: "Mano de obra directa (501.06)",
-      contable: mod, limpio: mod, isDetail: true,
+      contable: mod, limpio: mod, kind: "expense", isDetail: true,
     },
     {
       label: "Compras de importación (502)",
-      contable: compras, limpio: compras, isDetail: true,
+      contable: compras, limpio: compras, kind: "expense", isDetail: true,
     },
     {
       label: "Overhead fábrica (504.01 renta/energía/mtto)",
-      contable: overhead, limpio: overhead, isDetail: true,
+      contable: overhead, limpio: overhead, kind: "expense", isDetail: true,
     },
     {
       label: "Total costo de ingresos",
-      contable: costoVentasContable, limpio: costoVentasLimpio, isSubtotal: true,
+      contable: costoVentasContable, limpio: costoVentasLimpio, kind: "expense", isSubtotal: true,
     },
     {
       label: "= Ganancia bruta",
-      contable: utilBrutaContable, limpio: utilBrutaLimpio, isSubtotal: true,
+      contable: utilBrutaContable, limpio: utilBrutaLimpio, kind: "income", isSubtotal: true,
       note: `${pct(utilBrutaLimpio, ventas)} sobre ventas (limpio)`,
     },
     {
       label: "− Gasto de operación (6xx)",
-      contable: gastosOp, limpio: gastosOp, isDetail: true,
+      contable: gastosOp, limpio: gastosOp, kind: "expense", isDetail: true,
     },
     {
       label: "= Ingreso de operación (EBIT)",
-      contable: ebitContable, limpio: ebitLimpio, isSubtotal: true,
+      contable: ebitContable, limpio: ebitLimpio, kind: "income", isSubtotal: true,
       note: `${pct(ebitLimpio, ventas)} sobre ventas (limpio)`,
     },
     {
       label: "+ Otros ingresos (7xx: FX, intereses, venta activo)",
-      contable: otros, limpio: otros, isDetail: true,
+      contable: otros, limpio: otros, kind: "income", isDetail: true,
     },
-    { label: "Menos gastos de otro tipo:", contable: null, limpio: null, isHeader: true },
+    { label: "Menos gastos de otro tipo:", contable: null, limpio: null, kind: "expense", isHeader: true },
     {
       label: "Depreciación fábrica (504.08-23)",
-      contable: depFabrica, limpio: depFabrica, isDetail: true,
+      contable: depFabrica, limpio: depFabrica, kind: "expense", isDetail: true,
     },
     {
       label: "Depreciación CORPO (613)",
-      contable: depCorpo, limpio: depCorpo, isDetail: true,
+      contable: depCorpo, limpio: depCorpo, kind: "expense", isDetail: true,
     },
     {
       label: "Total depreciación",
-      contable: depTotal, limpio: depTotal, isSubtotal: true,
+      contable: depTotal, limpio: depTotal, kind: "expense", isSubtotal: true,
     },
     {
       label: "= UTILIDAD NETA",
-      contable: netaContable, limpio: netaLimpio, isTotal: true,
+      contable: netaContable, limpio: netaLimpio, kind: "income", isTotal: true,
     },
   ];
 
-  const renderAmt = (n: number | null, dim: boolean = false) => {
+  const renderAmt = (n: number | null) => {
     if (n === null) return <span className="text-muted-foreground/40">—</span>;
-    return (
-      <span className={dim ? "text-muted-foreground" : ""}>{fmt(n)}</span>
-    );
+    return <span>{fmt(n)}</span>;
   };
 
-  const renderDelta = (contable: number | null, limpio: number | null) => {
+  const renderDelta = (
+    contable: number | null,
+    limpio: number | null,
+    kind: RowKind
+  ) => {
     if (contable === null || limpio === null) {
-      if (contable !== null && limpio === null) {
-        return (
-          <span className="font-medium tabular-nums text-destructive">
-            −{fmt(contable)}
-          </span>
-        );
-      }
-      // "Costo primo BOM" sólo en limpio: Δ = +limpio (aparece en limpio)
-      if (limpio !== null && contable === null) {
-        return (
-          <span className="font-medium tabular-nums text-success">
-            +{fmt(limpio)}
-          </span>
-        );
-      }
       return <span className="text-muted-foreground/40">—</span>;
     }
     const d = limpio - contable;
     if (Math.abs(d) < 1) {
       return <span className="text-muted-foreground/40">—</span>;
     }
+    // Para "expense": Δ < 0 (costo bajó) = mejor para utilidad → verde
+    // Para "income":  Δ > 0 (ingreso/utilidad subió) → verde
+    const goodForProfit = kind === "expense" ? d < 0 : d > 0;
     return (
       <span
         className={cn(
           "font-medium tabular-nums",
-          d > 0 ? "text-success" : "text-destructive"
+          goodForProfit ? "text-success" : "text-destructive"
         )}
       >
         {d > 0 ? "+" : ""}
@@ -984,13 +981,13 @@ export function PnlComparisonTable({
                 )}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {r.isHeader ? null : renderAmt(r.contable, r.isDetail && r.contable !== null && r.contable < 0 ? false : false)}
+                {r.isHeader ? null : renderAmt(r.contable)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
                 {r.isHeader ? null : renderAmt(r.limpio)}
               </TableCell>
               <TableCell className="text-right tabular-nums">
-                {r.isHeader ? null : renderDelta(r.contable, r.limpio)}
+                {r.isHeader ? null : renderDelta(r.contable, r.limpio, r.kind)}
               </TableCell>
             </TableRow>
           ))}
@@ -998,19 +995,22 @@ export function PnlComparisonTable({
             <TableCell colSpan={4}>
               <p className="text-[11px] leading-snug text-muted-foreground">
                 <span className="font-medium text-foreground">
-                  Δ utilidad neta = {fmt(deltaNeta)}
+                  Δ utilidad neta = {deltaNeta >= 0 ? "+" : ""}{fmt(deltaNeta)}
                 </span>
                 {" — "}
-                debería == residual 501.01 ({fmt(residual501_01)}).
+                invariante: debe igualar el residual 501.01.01 (
+                {residual501_01 >= 0 ? "+" : ""}{fmt(residual501_01)}).
                 {Math.abs(deltaNeta - residual501_01) < 10
                   ? " ✓ Cuadra al peso."
                   : " ⚠ Drift detectado, revisar."}
                 {" "}
-                501.01.01 AVCO {fmt(cogs501_01_01)} − costo primo BOM {fmt(costoPrimo)} ={" "}
-                {fmt(residual501_01)}{" "}
+                Cálculo: 501.01.01 AVCO {fmt(cogs501_01_01)} − BOM-MP {fmt(costoPrimo)} ={" "}
+                {residual501_01 >= 0 ? "+" : ""}{fmt(residual501_01)}{" "}
                 {residual501_01 > 0
-                  ? "(contaminación AVCO histórica + drift de costo MP)"
-                  : "(BOM > AVCO; canonical.avg_cost por encima del costo real)"}.
+                  ? "(contaminación AVCO histórica del PT pre-1-abril + drift canonical.avg_cost vs MP real)"
+                  : residual501_01 < 0
+                    ? "(BOM > AVCO: canonical.avg_cost está por encima del costo real al despachar)"
+                    : "(régimen estable, AVCO ≈ BOM)"}.
               </p>
             </TableCell>
           </TableRow>
