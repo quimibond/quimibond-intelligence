@@ -55,7 +55,7 @@ export default async function AccountDetailPage({
   return (
     <main className="mx-auto max-w-6xl px-6 py-8 space-y-8">
       <Link
-        href="/contabilidad?tab=estado#pnl-by-account"
+        href="/contabilidad?tab=detalle#pnl-by-account"
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft size={14} /> Volver a Gastos por cuenta

@@ -87,7 +87,7 @@ export function PnlComparisonTable({ report }: { report: MonthlyReport }) {
     },
   ];
 
-  const dResidual = c.capaResidual;
+  const dResidual = c.residualVsBomMp;
 
   return (
     <div className="rounded border overflow-hidden text-sm">
@@ -135,10 +135,12 @@ export function PnlComparisonTable({ report }: { report: MonthlyReport }) {
       </table>
       <div className="bg-amber-50 border-t border-amber-200 px-3 py-2 text-xs text-amber-900 space-y-1">
         <div>
-          <strong>Residual CAPA inflado en 501.01.01:</strong>{" "}
+          <strong>Residual AVCO vs BOM-MP en 501.01.01:</strong>{" "}
           {formatCurrencyMXN(dResidual, { compact: true })} — diferencia entre
-          501.01.01 contable ({formatCurrencyMXN(c.cogs501_01_01, { compact: true })})
-          y el costo MP real recursivo ({formatCurrencyMXN(c.cogsRecursivoMp, { compact: true })}).
+          501.01.01 AVCO al despacho ({formatCurrencyMXN(c.cogs501_01_01, { compact: true })})
+          y el costo MP recursivo BOM ({formatCurrencyMXN(c.cogsRecursivoMp, { compact: true })}).
+          Refleja contaminación AVCO histórica del PT (MOD+gastos absorbidos
+          pre-1-abril vía RSI56) más drift de canonical.avg_cost vs MP real.
         </div>
         {c.shrinkage > 200000 ? (
           <div>

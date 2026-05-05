@@ -79,17 +79,17 @@ function diagnoseSourceJournal(
   accountCode: string,
   journalName: string
 ): string | null {
-  // 501.01.01 con journal "Facturas de cliente" = Auto-COGS de Odoo (CAPA inflada)
+  // 501.01.01: Auto-COGS Odoo bajo régimen AVCO al despacho
   if (accountCode.startsWith("501.01.01")) {
     if (
       journalName === "Facturas de cliente" ||
       journalName === "Facturas de cliente de Mostrador" ||
       journalName === "Nota de Crédito"
     ) {
-      return "Auto-COGS de Odoo: standard cost del producto vendido. Aquí cae la inflación CAPA porque incluye overhead embebido.";
+      return "Auto-COGS Odoo bajo AVCO: costo promedio ponderado al despacho. Incluye contaminación AVCO histórica del PT (MOD+gastos absorbidos pre-1-abril vía RSI56, archivado).";
     }
     if (journalName === "CAPA DE VALORACIÓN") {
-      return "Asiento manual de capa para limpiar el overhead duplicado.";
+      return "Asiento manual histórico para alinear inventario contra BOM/realidad. Pre-abril era ajuste mensual; post-abril casi no se usa.";
     }
     if (journalName === "Facturas de proveedores") {
       return "Compra directa cargada a esta cuenta (raro en 501.01.01).";
@@ -329,6 +329,6 @@ export const getAccountExpenseDetail = (
 ) =>
   unstable_cache(
     () => _getAccountExpenseDetailRaw(accountCode, fromPeriod, toPeriod),
-    ["sp13-account-expense-detail-v2-source", accountCode, fromPeriod, toPeriod],
+    ["sp13-account-expense-detail-v3-avco-diagnostic", accountCode, fromPeriod, toPeriod],
     { revalidate: 600, tags: ["finanzas"] }
   )();

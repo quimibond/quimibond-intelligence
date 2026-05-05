@@ -22,9 +22,9 @@ import { getPnlNormalized, type PnlNormalizedSummary } from "./pnl-normalized";
 export interface PnlMonthSnapshot {
   ventas4xx: number;
   cogs501_01: number;             // total 501.01.x
-  cogs501_01_01: number;          // CAPA inflada
-  cogs501_01_02: number;          // costo primo contable legítimo
-  cogs501_01_08: number;          // shrinkage físico
+  cogs501_01_01: number;          // 501.01.01 — AVCO al despacho (incluye contaminación AVCO histórica)
+  cogs501_01_02: number;          // 501.01.02 — COSTO PRIMO contable (cierre histórico, RSI56 archivado)
+  cogs501_01_08: number;          // 501.01.08 — DIFERENCIAS POR CONTEO (shrinkage físico)
   cogsRecursivoMp: number;
   mod501_06: number;
   compras502: number;
@@ -38,7 +38,12 @@ export interface PnlMonthSnapshot {
   depreciacion: number;             // 504.08-23 + 613
   utilidadContable: number;
   utilidadLimpia: number;
-  capaResidual: number;             // = cogs501_01_01 - cogsRecursivoMp (solo CAPA real)
+  /**
+   * Residual = 501.01.01 AVCO − BOM-MP recursivo. Refleja contaminación AVCO
+   * histórica del PT (MOD+gastos absorbidos pre-1-abril vía RSI56) + drift
+   * canonical.avg_cost vs MP real al despacho. NO es double counting.
+   */
+  residualVsBomMp: number;
   shrinkage: number;                // = cogs501_01_08 (DIFERENCIAS POR CONTEO)
 }
 
@@ -119,8 +124,11 @@ function buildPnlSnapshot(
   const otros = kpis.otrosIngresosNetoMxn;
   const dep = kpis.depreciacionTotalMxn;
 
-  // Limpio = swap SOLO 501.01.01 (CAPA) por BOM. 501.01.02, 501.01.08
-  // y otras subcuentas son costos legítimos que viven en ambos.
+  // Régimen actual = reformulación: reemplazo SOLO 501.01.01 (AVCO al
+  // despacho) por BOM-MP recursivo. 501.01.02, 501.01.08 y otras subcuentas
+  // son costos reales que viven en ambos. La diferencia entre los dos
+  // modelos es contaminación AVCO histórica + drift de canonical.avg_cost,
+  // NO un bug ni double counting.
   const costoContable = cogs501_01 + mod + compras + overhead;
   const costoLimpio =
     cogsBom + cogs501_01_02 + cogs501_01_08 + otras501_01 + mod + compras + overhead;
@@ -148,7 +156,7 @@ function buildPnlSnapshot(
     depreciacion: dep,
     utilidadContable: utilContable,
     utilidadLimpia: utilLimpio,
-    capaResidual: cogs501_01_01 - cogsBom,
+    residualVsBomMp: cogs501_01_01 - cogsBom,
     shrinkage: cogs501_01_08,
   };
 }
@@ -324,6 +332,6 @@ async function _getMonthlyReportRaw(period: string): Promise<MonthlyReport> {
 export const getMonthlyReport = (period: string) =>
   unstable_cache(
     () => _getMonthlyReportRaw(period),
-    ["sp13-finanzas-monthly-report-v2-501-01-split", period],
+    ["sp13-finanzas-monthly-report-v3-avco-rename", period],
     { revalidate: 600, tags: ["finanzas"] }
   )();

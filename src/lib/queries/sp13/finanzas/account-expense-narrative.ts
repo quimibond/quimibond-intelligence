@@ -131,7 +131,7 @@ export const getAccountNarrative = (detail: AccountExpenseDetail) =>
   unstable_cache(
     () => _getAccountNarrativeRaw(detail),
     [
-      "sp13-account-expense-narrative-v1",
+      "sp13-account-expense-narrative-v2-avco",
       detail.accountCode,
       detail.fromPeriod,
       detail.toPeriod,

@@ -5,26 +5,29 @@ import type { HistoryRange } from "@/components/patterns/history-range";
 import { periodBoundsForRange } from "./_period";
 
 /**
- * F-COGS monthly — serie mensual de ventas vs COGS contable/raw/recursivo.
+ * F-COGS monthly — serie mensual de ventas vs COGS contable AVCO vs BOM-MP.
  *
  * RPC `get_cogs_comparison_monthly(from, to)` devuelve un renglón por mes:
  *   - revenue_product_mxn  = ventas de producto (cuenta 4xx)
  *   - revenue_invoices_mxn = total facturado en odoo_invoice_lines (incluye
  *                            venta de activos como la máquina de marzo 2026)
- *   - cogs_contable        = 501.xx actual (post ajuste capa)
- *   - cogs_capa            = asientos de "CAPA DE VALORACIÓN" del mes
- *   - cogs_raw             = contable + capa (pre ajuste)
+ *   - cogs_contable        = 501.xx AVCO al despacho (post asientos CAPA)
+ *   - cogs_capa            = asientos del journal "CAPA DE VALORACIÓN" del mes
+ *                            (pre-1-abril-2026 era ajuste mensual vía RSI56;
+ *                            post-abril casi no aparece)
+ *   - cogs_raw             = contable + capa (reconstruye saldo pre-ajuste)
  *   - cogs_recursive_mp    = explosión BOM hasta hojas × avg_cost_mxn
- *   - overhead             = raw - recursive (lo que el ajuste manual
- *                            debería haber removido del 501.01)
+ *   - overhead             = raw - recursive (bajo régimen actual = variable
+ *                            costing implícito, refleja contaminación AVCO
+ *                            histórica del PT pre-abril + drift de avg_cost)
  *   - margin_{contable,raw,recursive}_pct — siempre contra 4xx
  *   - bom_coverage_pct     = % de líneas de venta con costo recursivo > 0
  *
  * Para surface de anomalías se calcula `status`:
- *   - "ok": margen contable, raw y recursivo razonables
- *   - "warn": margen raw negativo (pre-ajuste) o cobertura BOM < 95%
- *   - "alert": margen contable negativo (post-ajuste, requiere investigar
- *              asiento year-end o venta de activo mezclada)
+ *   - "ok": márgenes contable, raw y recursivo razonables
+ *   - "warn": margen raw negativo o cobertura BOM < 95%
+ *   - "alert": margen contable negativo (investigar asiento year-end,
+ *              venta de activo mezclada, o shrinkage atípico)
  */
 export interface CogsMonthlyPoint {
   period: string; // YYYY-MM

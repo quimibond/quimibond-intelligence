@@ -6,49 +6,54 @@ import { periodBoundsForRange } from "./_period";
 import { paginateAll } from "@/lib/queries/_shared/paginate";
 
 /**
- * F-COGS — Costo de ventas: contable vs recursive BOM (solo materia prima).
+ * F-COGS — Costo de ventas: AVCO contable vs BOM-MP recursivo.
+ *
+ * Régimen real (confirmado 2026-05-04): Quimibond valúa con AVCO. Workcenters
+ * sólo en Tejido Circular (go-live mayo 2026); el resto de los procesos
+ * NO absorbe MOD+OH al PT al producirse (variable costing implícito).
+ * Pre-1-abril-2026 las BOMs incluían MOD+gastos vía RSI56 (archivado).
  *
  * Tres lecturas lado a lado:
  *
- *  1. COGS CONTABLE (canonical_account_balances, account_type =
- *     'expense_direct_cost'). Es lo que aparece en el P&L. Incluye mano
- *     de obra directa, energía, depreciación — NO es puro material.
+ *  1. COGS CONTABLE — `canonical_account_balances`, `account_type =
+ *     'expense_direct_cost'`. Es 501.01.x: AVCO al despacho. Hereda
+ *     contaminación AVCO histórica del PT producido pre-abril.
  *
- *  2. COGS AJUSTADO RECURSIVO — Σ(qty facturada × costo_MP_recursivo)
+ *  2. COGS BOM-MP RECURSIVO — Σ(qty facturada × costo_MP_recursivo)
  *     Para cada producto vendido, explota su BOM recursivamente hasta
- *     llegar a hojas (productos sin BOM = MP comprada) y suma el costo
- *     de compra de cada hoja. RPC: `get_cogs_recursive_mp(from, to)`
- *     usa el SQL function `get_bom_raw_material_cost_per_unit` que
- *     resuelve UNA BOM primaria por producto (evita doble conteo
- *     cuando hay múltiples BOMs activas).
- *
- *     Cost source para hojas: canonical_products.avg_cost_mxn
- *     (Odoo moving-average de compras para MP).
+ *     llegar a hojas (MP comprada) y suma qty × avg_cost_mxn por hoja.
+ *     RPC: `get_cogs_recursive_mp(from, to)` usando
+ *     `get_bom_raw_material_cost_per_unit` (UNA BOM primaria por
+ *     producto → evita doble conteo cuando hay múltiples BOMs activas).
+ *     Cost source para hojas: `canonical_products.avg_cost_mxn` (Odoo
+ *     moving-average de compras MP).
  *
  *  3. COGS BOM FLAT (legacy) — `mv_bom_standard_cost.standard_cost_per_unit`
- *     usa el standard_price del componente directo (incluye overhead
- *     cuando el componente es sub-ensamble). Inflado ~68% vs real.
- *     Se muestra para referencia pero el cálculo accionable es el
- *     recursivo.
+ *     usa el standard_price del componente directo. Útil sólo como
+ *     referencia histórica.
  *
- * Overhead implícito = contable - recursivo. Positivo = el contable
- * incluye overhead que debería sacarse con asientos de capa (como hizo
- * el user en marzo). Negativo = el recursivo está inflando algún
- * avg_cost_mxn de MP.
+ * "Overhead" en este contexto = contable − recursivo. Bajo el régimen
+ * actual (variable costing implícito) NO es double counting: refleja
+ * (a) contaminación AVCO histórica del PT producido pre-abril (MOD+gastos
+ * absorbidos vía RSI56), y (b) drift entre canonical.avg_cost y MP real.
+ * El campo `cogsCapaValoracionMxn` reconstruye el "raw" sumando los
+ * asientos del journal CAPA DE VALORACIÓN, que pre-abril eran ajuste
+ * mensual; post-abril casi no se usan.
  */
 export interface CogsComparison {
   period: HistoryRange;
   periodLabel: string;
   monthsCovered: number;
 
-  // 1. COGS contable AS-IS (lo que aparece en el P&L después de cualquier
-  //    ajuste manual que ya hayan hecho en el diario "CAPA DE VALORACIÓN")
+  // 1. COGS contable AS-IS — 501.01.x AVCO al despacho, post cualquier
+  //    asiento del diario "CAPA DE VALORACIÓN" del período.
   cogsContableMxn: number;
 
-  // 2. COGS contable RAW = contable + capa de valoración
-  //    Es decir, lo que estaría en 501.01 sin el ajuste del user.
-  //    Útil para meses no ajustados aún.
-  cogsCapaValoracionMxn: number; // monto que el user removió (positivo)
+  // 2. COGS contable RAW = contable + asientos CAPA DE VALORACIÓN del mes.
+  //    Reconstruye el saldo de 501.01.x ANTES de los ajustes del journal
+  //    CAPA DE VALORACIÓN (pre-abril era ajuste mensual; post-abril casi
+  //    no se usa porque RSI56 fue archivado).
+  cogsCapaValoracionMxn: number; // monto removido vía CAPA DE VALORACIÓN (positivo)
   cogsContableRawMxn: number; // contable + capa
 
   // 3. COGS recursivo MP (desde explosión BOM hasta hojas)
@@ -92,8 +97,9 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
         .eq("deprecated", false)
         .gte("period", bounds.fromMonth)
         .lte("period", bounds.toMonth.slice(0, 7)),
-      // 1b. "CAPA DE VALORACIÓN" — asientos del user removiendo overhead
-      //     de 501.01 en el período. SUMAR estos al contable → raw
+      // 1b. "CAPA DE VALORACIÓN" — asientos manuales que ajustaron 501.01
+      //     en el período (pre-abril era mensual, post-abril casi no se usa).
+      //     Se suman al contable para reconstruir el "raw" pre-ajuste.
       sb
         .from("odoo_account_entries_stock")
         .select("amount_total, date")
@@ -142,9 +148,9 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
     ((cogsAcctRes.data ?? []) as AcctRow[]).map((r) => r.period)
   ).size;
 
-  // CAPA DE VALORACIÓN: el user hace un credit a 501.01 para sacar el
-  // overhead. Los entries son siempre credit positivo, sumamos para
-  // reconstruir el contable raw antes del ajuste.
+  // CAPA DE VALORACIÓN: asientos manuales históricos para alinear 501.01
+  // contra realidad (pre-abril era ajuste mensual). Sumamos los amount_total
+  // para reconstruir el "raw" antes del ajuste.
   type CapaRow = { amount_total: number | null };
   const cogsCapaValoracion = ((capaRes.data ?? []) as CapaRow[]).reduce(
     (s, r) => s + (Number(r.amount_total) || 0),

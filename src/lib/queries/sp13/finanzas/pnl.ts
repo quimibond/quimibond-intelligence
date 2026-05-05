@@ -15,7 +15,8 @@ import { paginateAll } from "@/lib/queries/_shared/paginate";
  * mismo prefijo (504.01 vs 504.08-23).
  *
  * Breakdown por cuenta:
- *   501.01    Cost of sales (debería ser solo MP; residuo vs BOM = CAPA pendiente)
+ *   501.01    Cost of sales (AVCO al despacho; residuo vs BOM = contaminación
+ *             AVCO histórica + drift de canonical.avg_cost vs MP real)
  *   501.06    Mano de obra directa
  *   502       Compras importación
  *   504.01    Overhead fábrica (renta, energía, servicios)
@@ -49,8 +50,8 @@ export interface PnlKpis {
   // COGS breakdown por cuenta
   cogs501_01Mxn: number; // Total 501.01 (suma de las 3 subcuentas)
   // 501.01 split en 3 subcuentas (audit 2026-05-04):
-  cogs501_01_01Mxn: number; // 501.01.01 Cost of sales — la CAPA inflada por Odoo
-  cogs501_01_02Mxn: number; // 501.01.02 COSTO PRIMO — costo de producción legítimo
+  cogs501_01_01Mxn: number; // 501.01.01 — AVCO al despacho (incluye contaminación AVCO histórica del PT pre-abril)
+  cogs501_01_02Mxn: number; // 501.01.02 COSTO PRIMO — cuenta de cierre histórica (RSI56 archivado)
   cogs501_01_08Mxn: number; // 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico
   mod501_06Mxn: number; // Mano de obra directa
   compras502Mxn: number; // Compras importación
@@ -97,8 +98,8 @@ type Aggregates = {
   otrosIngresosNeto: number;
   // expense breakdown
   cogs501_01: number;
-  cogs501_01_01: number; // 501.01.01 — CAPA inflada
-  cogs501_01_02: number; // 501.01.02 — COSTO PRIMO legítimo
+  cogs501_01_01: number; // 501.01.01 — AVCO al despacho (incluye contaminación AVCO histórica)
+  cogs501_01_02: number; // 501.01.02 — COSTO PRIMO contable (cierre histórico, RSI56 archivado)
   cogs501_01_08: number; // 501.01.08 — DIFERENCIAS POR CONTEO (shrinkage)
   mod501_06: number;
   compras502: number;
@@ -162,7 +163,7 @@ async function fetchPlAggregates(range: HistoryRange): Promise<Aggregates> {
 
   // Expenses split por prefix + account_type individual
   let cogs501_01 = 0;
-  let cogs501_01_01 = 0; // CAPA inflada (Cost of sales)
+  let cogs501_01_01 = 0; // AVCO al despacho (Cost of sales, incluye contaminación AVCO histórica)
   let cogs501_01_02 = 0; // COSTO PRIMO legítimo
   let cogs501_01_08 = 0; // DIFERENCIAS POR CONTEO (shrinkage)
   let mod501_06 = 0;

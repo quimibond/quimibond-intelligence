@@ -129,7 +129,10 @@ function buildUserPrompt(r: MonthlyReport): string {
   lines.push(`Utilidad NORMALIZADA   ${fmt(r.utilidadNormalizada).padEnd(15)} (quita one-offs detectados)`);
   lines.push("```");
   lines.push("");
-  lines.push(`Residual CAPA inflada en 501.01: ${fmt(c.capaResidual)} MXN`);
+  lines.push(
+    `Residual AVCO vs BOM-MP en 501.01.01: ${fmt(c.residualVsBomMp)} MXN ` +
+      `(contaminación AVCO histórica del PT pre-1-abril + drift canonical.avg_cost vs MP real, NO double counting de overhead).`
+  );
   lines.push("");
 
   if (r.oneOffs.length > 0) {
@@ -220,6 +223,6 @@ async function _getReportNarrativeRaw(
 export const getReportNarrative = (report: MonthlyReport) =>
   unstable_cache(
     () => _getReportNarrativeRaw(report),
-    ["sp13-finanzas-monthly-report-narrative-v1", report.period],
+    ["sp13-finanzas-monthly-report-narrative-v2-avco", report.period],
     { revalidate: 3600, tags: ["finanzas"] }
   )();

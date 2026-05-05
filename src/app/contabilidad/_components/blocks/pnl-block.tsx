@@ -147,7 +147,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               definition={{
                 title: "COGS contable (cuenta 501.xx)",
                 description:
-                  "Costo de ventas contable actual. Ya refleja el ajuste manual del diario CAPA DE VALORACIÓN si se aplicó. El raw = contable + capa.",
+                  "Costo de ventas contable AVCO al despacho. Si hay asientos en el diario CAPA DE VALORACIÓN del período (era el ajuste mensual pre-1-abril-2026 vía RSI56; post-abril casi no se usa), se restan al raw para llegar al contable actual.",
                 formula: "SUM(balance) WHERE account_type='expense_direct_cost'",
                 table: "canonical_account_balances",
               }}
@@ -749,8 +749,8 @@ export function PnlComparisonTable({
   /** 501.01.01 Cost of sales — AVCO al despacho. Reemplazado por BOM-MP
    *  en el régimen actual (la diferencia es contaminación AVCO histórica). */
   cogs501_01_01: number;
-  /** 501.01.02 COSTO PRIMO contable — cuenta de cierre histórica (CAPA mensual
-   *  vía RSI56, archivado 1-abr-2026). NO se quita en el régimen actual. */
+  /** 501.01.02 COSTO PRIMO — cuenta de cierre histórica del ciclo MP
+   *  (RSI56 archivado 1-abr-2026 → cuenta inactiva). NO se quita en el régimen actual. */
   cogs501_01_02: number;
   /** 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico. NO se quita
    *  en el régimen actual; es una pérdida real (faltantes, scrap). */
