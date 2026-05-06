@@ -82,14 +82,26 @@ async function _getCashConversionCycleRaw(): Promise<CashConversionCycleSnapshot
   const today = new Date();
   const todayIso = today.toISOString().slice(0, 10);
 
-  // Pull canonical_account_balances 24m para tener historia rolling 12.
-  // Necesitamos: receivable, asset_current (incluye inventory),
-  // liability_payable, income (4xx), expense_direct_cost.
-  const lookback24m = (() => {
-    const d = new Date(today.getFullYear(), today.getMonth() - 24, 1);
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-  })();
-
+  // canonical_account_balances.balance es DELTA mensual (movimiento del mes),
+  // NO saldo final. Validado 2026-05-06: SUM(balance) AR ALL TIME = $25.05M
+  // que coincide con AR open actual ($25.10M).
+  //
+  // Bug pre-2026-05-06:
+  //  (1) `.range()` sin ORDER BY — PostgREST no garantiza orden estable entre
+  //      páginas → rows duplicados/saltados → AR/Inv/AP basura.
+  //  (2) Filtraba balances >= lookback24m y acumulaba desde 0 — ignoraba
+  //      saldo de apertura $25M de AR (toda la historia pre-2024).
+  //  (3) Hardcoded prefixes (105/110/111/112/113 para AR; 201/205 para AP)
+  //      en vez de usar account_type que está estable en silver.
+  //
+  // Fix v2:
+  //  (1) ORDER BY explícito al paginar.
+  //  (2) Pull TODOS los meses (104 meses ≈ 2011-2026, ~10k rows). El
+  //      cumulativo arranca desde el origen, no desde 24m. Solo se reportan
+  //      los últimos 13 meses pero los running totals reflejan saldo real.
+  //  (3) Filtros por account_type: asset_receivable (AR), liability_payable
+  //      (AP), y account_code LIKE '115%' para inventory (no hay
+  //      account_type específico para inventory en silver).
   type AbRow = {
     period: string;
     account_code: string;
@@ -106,24 +118,28 @@ async function _getCashConversionCycleRaw(): Promise<CashConversionCycleSnapshot
       .from("canonical_account_balances")
       .select("period, account_code, balance, balance_sheet_bucket, account_type")
       .eq("deprecated", false)
-      .gte("period", lookback24m)
       .or(
-        "balance_sheet_bucket.eq.asset,balance_sheet_bucket.eq.liability,balance_sheet_bucket.eq.income,balance_sheet_bucket.eq.expense"
+        "account_type.eq.asset_receivable,account_type.eq.liability_payable,balance_sheet_bucket.eq.income,balance_sheet_bucket.eq.expense,account_code.like.115%"
       )
+      .order("period", { ascending: true })
+      .order("account_code", { ascending: true })
       .range(offset, offset + PAGE - 1);
-    if (error) break;
+    if (error) {
+      console.error("[getCashConversionCycle] balances pagination failed:", error.message);
+      break;
+    }
     const rows = (data ?? []) as AbRow[];
     allRows.push(...rows);
     if (rows.length < PAGE) break;
     offset += PAGE;
-    if (offset > 30_000) break; // safety
+    if (offset > 50_000) break; // safety; ~12k rows expected for 14y history
   }
 
   // Aggregations per period
   type PeriodAgg = {
     revenue4xx: number; // monthly
     cogsDirect: number; // monthly (501+502+504 expense_direct_cost)
-    arDelta: number; // monthly delta
+    arDelta: number;    // monthly delta
     inventoryDelta: number;
     apDelta: number;
   };
@@ -144,47 +160,29 @@ async function _getCashConversionCycleRaw(): Promise<CashConversionCycleSnapshot
     if (r.balance_sheet_bucket === "income" && code.startsWith("4")) {
       acc.revenue4xx -= bal; // income credit-normal → negate for display positive
     }
-    if (r.balance_sheet_bucket === "expense") {
-      if (
-        code.startsWith("501") ||
-        code.startsWith("502") ||
-        code.startsWith("504")
-      ) {
-        acc.cogsDirect += bal;
-      }
+    if (r.account_type === "expense_direct_cost") {
+      // 501 + 502 + 504 según taxonomía silver
+      acc.cogsDirect += bal;
     }
-    // Detect AR/inventory/AP by account code prefix (matches get_cash_reconciliation buckets)
-    // AR: usually 105.* or 110-114
-    if (code.startsWith("105") || code.startsWith("11")) {
-      // 11x is asset_current or asset_receivable
-      // Use bucket heuristic via account_type if available
-      // Simpler: hardcode known prefixes
-      if (
-        code.startsWith("105.05") ||
-        code.startsWith("105.06") ||
-        code.startsWith("110") ||
-        code.startsWith("111") ||
-        code.startsWith("112") ||
-        code.startsWith("113")
-      ) {
-        // receivables / clients
-        acc.arDelta += bal;
-      } else if (code.startsWith("115")) {
-        acc.inventoryDelta += bal;
-      }
+    if (r.account_type === "asset_receivable") {
+      // AR (asset, debit-normal). En convención mexicana puede aparecer como
+      // negativo cuando net del mes fue cobranza > facturación; el cumulativo
+      // converge al saldo real (~$25M).
+      acc.arDelta += bal;
+    } else if (code.startsWith("115")) {
+      // Inventory: cuentas 115.x (no hay account_type específico). Convención
+      // Quimibond: signo positivo = aumento de inventario.
+      acc.inventoryDelta += bal;
     }
-    if (
-      code.startsWith("201") ||
-      code.startsWith("205")
-    ) {
-      // payables / acreedores
-      // negate because liabilities are credit-normal
+    if (r.account_type === "liability_payable") {
+      // AP (liability, credit-normal). Negate para display debit-positive.
       acc.apDelta += -bal;
     }
     byPeriod.set(r.period, acc);
   }
 
-  // Cumulative running totals to get end-of-month balances
+  // Cumulative running totals → saldo real a fin de mes (desde origin de la
+  // contabilidad, no desde 24m atrás)
   const periods = [...byPeriod.keys()].sort();
   let arRunning = 0;
   let invRunning = 0;
@@ -233,8 +231,12 @@ async function _getCashConversionCycleRaw(): Promise<CashConversionCycleSnapshot
       .or("estado_sat.is.null,estado_sat.neq.cancelado")
       .gte("invoice_date", purch12mStart)
       .gt("amount_total_mxn_resolved", 0)
+      .order("invoice_date", { ascending: true })
       .range(offset, offset + PAGE - 1);
-    if (error) break;
+    if (error) {
+      console.error("[getCashConversionCycle] purchases pagination failed:", error.message);
+      break;
+    }
     const rows = (data ?? []) as InvRow[];
     purchases.push(...rows);
     if (rows.length < PAGE) break;
@@ -329,6 +331,6 @@ async function _getCashConversionCycleRaw(): Promise<CashConversionCycleSnapshot
 
 export const getCashConversionCycle = unstable_cache(
   _getCashConversionCycleRaw,
-  ["sp13-finanzas-ccc-v1"],
+  ["sp13-finanzas-ccc-v2-cumulative-from-origin"],
   { revalidate: 3600, tags: ["finanzas"] }
 );

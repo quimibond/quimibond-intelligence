@@ -95,23 +95,36 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
   // (`refresh_cogs_monthly_cache`).
   const [cogsAcctRes, capaRes, cacheRes, bomFlatLinesRes, invoiceRevRes] =
     await Promise.all([
-      // 1a. COGS contable actual (501.01 post-adjustment ya aplicado)
-      sb
-        .from("canonical_account_balances")
-        .select("balance, period")
-        .eq("account_type", "expense_direct_cost")
-        .eq("deprecated", false)
-        .gte("period", bounds.fromMonth)
-        .lte("period", bounds.toMonth.slice(0, 7)),
+      // 1a. COGS contable actual (501.01 post-adjustment ya aplicado).
+      //     Paginado: range='5y' o 'all' tiene 2k+ rows en expense_direct_cost
+      //     y PostgREST corta a 1000 → bug 2026-05-06: 53% de COGS desaparecía
+      //     silenciosamente para rangos largos.
+      paginateAll<{ balance: number | null; period: string }>(({ from, to }) =>
+        sb
+          .from("canonical_account_balances")
+          .select("balance, period")
+          .eq("account_type", "expense_direct_cost")
+          .eq("deprecated", false)
+          .gte("period", bounds.fromMonth)
+          .lte("period", bounds.toMonth.slice(0, 7))
+          .order("period", { ascending: true })
+          .order("account_code", { ascending: true })
+          .range(from, to)
+      ).then((data) => ({ data, error: null })),
       // 1b. "CAPA DE VALORACIÓN" — asientos manuales que ajustaron 501.01
       //     en el período (pre-abril era mensual, post-abril casi no se usa).
       //     Se suman al contable para reconstruir el "raw" pre-ajuste.
-      sb
-        .from("odoo_account_entries_stock")
-        .select("amount_total, date")
-        .eq("journal_name", "CAPA DE VALORACIÓN")
-        .gte("date", bounds.from)
-        .lt("date", bounds.to),
+      //     Paginado por seguridad para rangos largos.
+      paginateAll<{ amount_total: number | null; date: string }>(({ from, to }) =>
+        sb
+          .from("odoo_account_entries_stock")
+          .select("amount_total, date")
+          .eq("journal_name", "CAPA DE VALORACIÓN")
+          .gte("date", bounds.from)
+          .lt("date", bounds.to)
+          .order("date", { ascending: true })
+          .range(from, to)
+      ).then((data) => ({ data, error: null })),
       // 2. BOM-MP recursivo desde cogs_monthly_cache (sumamos todos los
       //    meses dentro del rango). Mucho más rápido que el RPC.
       sb
@@ -320,7 +333,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
 export const getCogsComparison = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison-v4-cache-no-rpc", range],
+    ["sp13-finanzas-cogs-comparison-v5-paginated", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -330,6 +343,6 @@ export { _getCogsComparisonRaw as _getCogsComparisonForTests };
 export const getCogsComparisonCached = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison-v4-cache-no-rpc", range],
+    ["sp13-finanzas-cogs-comparison-v5-paginated", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
