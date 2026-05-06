@@ -1,6 +1,7 @@
 import { Suspense } from "react";
 import { FileX, Flame, Globe2, Receipt, Scale, TrendingDown, TrendingUp } from "lucide-react";
 import { OdooPendingBanner } from "@/components/odoo-pending-banner";
+import { PnlAdjustmentEntryCard } from "./pnl-adjustment-entry-card";
 import {
   Accordion,
   AccordionContent,
@@ -306,6 +307,56 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               </div>
             </CardContent>
           </Card>
+
+          {(() => {
+            // Computar Δ utilidad neta y residual para el asiento de ajuste.
+            // Misma fórmula que PnlComparisonTable (mantiene invariante:
+            // Δ neta = residual 501.01.01 = AVCO − BOM-MP).
+            const otras501_01 =
+              kpis.cogs501_01Mxn -
+              kpis.cogs501_01_01Mxn -
+              kpis.cogs501_01_02Mxn -
+              kpis.cogs501_01_08Mxn;
+            const costoVentasContable =
+              kpis.cogs501_01Mxn +
+              kpis.mod501_06Mxn +
+              kpis.compras502Mxn +
+              kpis.overhead504_01Mxn;
+            const costoVentasLimpio =
+              cogs.cogsRecursiveMpMxn +
+              kpis.cogs501_01_02Mxn +
+              kpis.cogs501_01_08Mxn +
+              otras501_01 +
+              kpis.mod501_06Mxn +
+              kpis.compras502Mxn +
+              kpis.overhead504_01Mxn;
+            const utilBrutaLimpio = cogs.revenueMxn - costoVentasLimpio;
+            const utilBrutaContable = cogs.revenueMxn - costoVentasContable;
+            const ebitLimpio = utilBrutaLimpio - kpis.gastosOp6xxMxn;
+            const ebitContable = utilBrutaContable - kpis.gastosOp6xxMxn;
+            const depTotal = kpis.depFabrica504Mxn + kpis.depCorpoMxn;
+            const netaLimpio =
+              ebitLimpio + kpis.otrosIngresosNetoMxn - depTotal;
+            const netaContable =
+              ebitContable + kpis.otrosIngresosNetoMxn - depTotal;
+            const residual = kpis.cogs501_01_01Mxn - cogs.cogsRecursiveMpMxn;
+            // monthEndIso = último día del mes terminal del rango.
+            // Para mtd usa el día actual; para rangos cerrados, el último
+            // día del último mes incluido.
+            const today = new Date();
+            const monthEndIso = today.toISOString().slice(0, 10);
+            return (
+              <PnlAdjustmentEntryCard
+                residual={residual}
+                netaContable={netaContable}
+                netaLimpio={netaLimpio}
+                cogs501_01_01={kpis.cogs501_01_01Mxn}
+                costoPrimo={cogs.cogsRecursiveMpMxn}
+                periodLabel={cogs.periodLabel}
+                monthEndIso={monthEndIso}
+              />
+            );
+          })()}
 
           <PnlNormalizedCard
             reportedNeta={normalized.reportedNetIncomeMxn}
