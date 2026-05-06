@@ -39,11 +39,16 @@ import { cn } from "@/lib/utils";
 
 /* ── F3 P&L — contable vs ajustado a materia prima ───────────────────── */
 export async function PnlBlock({ range }: { range: HistoryRange }) {
-  const [kpis, cogs, monthly, perProduct, normalized] = await Promise.all([
+  // getCogsPerProduct queda fuera del Promise.all porque su RPC
+  // (get_cogs_per_product) tarda 6-8s sin cache para rangos amplios (YTD/LTM).
+  // Se carga lazy dentro de su accordion con Suspense para que la página
+  // principal renderice rápido (medido 2026-05-06: pre-fix YTD=8s+ con timeout
+  // intermitente; post-fix la página resuelve en <1s con la sección de
+  // producto cargando con skeleton).
+  const [kpis, cogs, monthly, normalized] = await Promise.all([
     getPnlKpis(range),
     getCogsComparison(range),
     getCogsMonthly(range),
-    getCogsPerProduct(range),
     getPnlNormalized(range),
   ]);
 
@@ -345,18 +350,17 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
             <AccordionItem value="per-product">
               <AccordionTrigger className="px-4">
                 <span className="flex items-center gap-2 text-sm font-medium">
-                  Desglose por producto · {perProduct.rows.length} SKUs
-                  {Object.values(perProduct.flagCounts).some((n) => n > 0) && (
-                    <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning">
-                      {Object.entries(perProduct.flagCounts)
-                        .map(([f, n]) => `${n} ${f}`)
-                        .join(" · ")}
-                    </Badge>
-                  )}
+                  Desglose por producto
                 </span>
               </AccordionTrigger>
               <AccordionContent className="px-4 pb-4">
-                <CogsPerProductTable rows={perProduct.rows} />
+                <Suspense fallback={
+                  <p className="text-sm text-muted-foreground py-4">
+                    Cargando desglose por producto…
+                  </p>
+                }>
+                  <CogsPerProductLazy range={range} />
+                </Suspense>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -1295,6 +1299,26 @@ export function CogsPerProductTable({ rows }: { rows: CogsPerProductRow[] }) {
           </div>
         ))}
       </div>
+    </>
+  );
+}
+
+/* Wrapper async para lazy-load de getCogsPerProduct via Suspense ──────── */
+async function CogsPerProductLazy({ range }: { range: HistoryRange }) {
+  const perProduct = await getCogsPerProduct(range);
+  return (
+    <>
+      {Object.values(perProduct.flagCounts).some((n) => n > 0) && (
+        <div className="mb-3">
+          <Badge variant="outline" className="border-warning/40 bg-warning/10 text-warning">
+            {perProduct.rows.length} SKUs ·{" "}
+            {Object.entries(perProduct.flagCounts)
+              .map(([f, n]) => `${n} ${f}`)
+              .join(" · ")}
+          </Badge>
+        </div>
+      )}
+      <CogsPerProductTable rows={perProduct.rows} />
     </>
   );
 }
