@@ -104,18 +104,23 @@ export function PnlAdjustmentEntryCard({
     },
   };
 
+  // Total a postear contra equity (305.01.01)
+  const totalParaEquity =
+    Math.abs(residual) + (hasDup ? dupInventoryAmount : 0) + (hasShrinkRef ? shrinkRefaccionesAmount : 0);
+
   const asientoLines: string[] = [
-    `Journal:    CAPA DE VALORACIÓN  (o "Ajustes contables")`,
+    `Journal:    Ajustes contables (manual)`,
     `Fecha:      ${monthEndIso}`,
-    `Concepto:   Ajustes 501.01 (período ${periodLabel})`,
+    `Concepto:   Ajustes 501.01.x (período ${periodLabel})`,
+    `            Reverso de duplicación gastos detectada en audit`,
     ``,
     `═══ ASIENTO 1: Ajuste 501.01.01 → BOM-MP recursivo ═══`,
     isPositive
       ? `  Cr  501.01.01  Cost of sales                          ${fmtFull(absResidual)}`
       : `  Dr  501.01.01  Cost of sales                          ${fmtFull(absResidual)}`,
     isPositive
-      ? `  Dr  __________  [tu cuenta contraparte]                ${fmtFull(absResidual)}`
-      : `  Cr  __________  [tu cuenta contraparte]                ${fmtFull(absResidual)}`,
+      ? `  Dr  305.01.01  Resultado de ejercicios anteriores     ${fmtFull(absResidual)}`
+      : `  Cr  305.01.01  Resultado de ejercicios anteriores     ${fmtFull(absResidual)}`,
     ``,
     `Contexto del período:`,
     `  Saldo bruto 501.01.01 pre-CAPA:  ${fmtFull(saldoBrutoPreCapa)}`,
@@ -132,8 +137,7 @@ export function PnlAdjustmentEntryCard({
       ``,
       `═══ ASIENTO 3: Reverso refacciones en 501.01.08 ═══`,
       `  ${sign}  501.01.08  DIFERENCIAS POR CONTEO              ${fmtFull(abs)}`,
-      `  ${opp}  __________  [cuenta puente / nueva cuenta de    ${fmtFull(abs)}`,
-      `                       inventario operativo dedicada]`,
+      `  ${opp}  305.01.01  Resultado de ejercicios anteriores   ${fmtFull(abs)}`,
       ``,
       `Contexto:`,
       `  Ajustes manuales de inventario (Cantidad de producto`,
@@ -150,8 +154,7 @@ export function PnlAdjustmentEntryCard({
       ``,
       `═══ ASIENTO 2: Reverso duplicación inventario→501.01.02 ═══`,
       `  Cr  501.01.02  COSTO PRIMO                            ${fmtFull(dupInventoryAmount)}`,
-      `  Dr  __________  [cuenta puente / nueva cuenta de       ${fmtFull(dupInventoryAmount)}`,
-      `                   inventario operativo dedicada]`,
+      `  Dr  305.01.01  Resultado de ejercicios anteriores     ${fmtFull(dupInventoryAmount)}`,
       ``,
       `Desglose por origen del movimiento:`,
       ...dupBreakdown.map(
@@ -160,11 +163,15 @@ export function PnlAdjustmentEntryCard({
       ),
       ``,
       `Contexto:`,
-      `  Toda entrada Dr 501.01.02 / Cr 115.* duplica el costo`,
-      `  bajo régimen actual: el P&L limpio usa BOM-MP recursivo`,
-      `  que ya incluye estas MPs/refacciones/empaque vía AVCO`,
-      `  de compras. Post-1-abril (RSI56 archivado), 501.01.02`,
-      `  debería estar prácticamente vacía.`,
+      `  Las refacciones / empaque YA SE CONTABILIZAN AL COMPRAR`,
+      `  (Dr 504.01.0005/0007/0042 / Cr 201 Proveedores). Cuando`,
+      `  Odoo además las carga al inventario y al consumirse pega`,
+      `  Dr 501.01.02 / Cr 115.02 → triple punto de impacto y`,
+      `  duplicación de gasto.`,
+      `  Mover a otra cuenta de gasto (504.01.x) NO resuelve la`,
+      `  duplicación — solo cambia de fila el doble conteo. Por`,
+      `  eso la contrapartida es 305.01.01 (equity / corrección`,
+      `  de errores períodos anteriores).`,
       `  Pending action:`,
       `  refacciones-tvar-doble-conteo-501-01-02`
     );
@@ -348,8 +355,9 @@ export function PnlAdjustmentEntryCard({
                 {fmtFull(dupInventoryAmount)}
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground">
-                Cr 501.01.02 (reduce duplicado) / Dr cuenta de inventario
-                operativo dedicada (o cuenta puente provisional)
+                Cr 501.01.02 (reduce duplicado) / Dr{" "}
+                <strong>305.01.01 Resultado de ejercicios anteriores</strong>{" "}
+                (NO mover a 504.01.x — ya se gastó al comprar)
               </div>
             </div>
             {dupBreakdown.length > 0 && (
@@ -415,8 +423,8 @@ export function PnlAdjustmentEntryCard({
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground">
                 {shrinkRefaccionesAmount >= 0
-                  ? "Cr 501.01.08 / Dr cuenta puente (faltante neto)"
-                  : "Dr 501.01.08 / Cr cuenta puente (sobrante neto, reverso)"}
+                  ? "Cr 501.01.08 / Dr 305.01.01 Resultado ej. anteriores (faltante neto)"
+                  : "Dr 501.01.08 / Cr 305.01.01 Resultado ej. anteriores (sobrante neto)"}
               </div>
             </div>
           </div>
@@ -504,11 +512,22 @@ export function PnlAdjustmentEntryCard({
         </div>
 
         <p className="text-[11px] text-muted-foreground leading-snug">
-          <strong>Cuenta contraparte:</strong> la decide el contador.
-          Opciones comunes:{" "}
-          <code>504.01.0099 Overhead absorbido</code> (cuenta de cierre);{" "}
-          <code>115.04.01 Inventario PT</code> (revaluación PT);{" "}
-          <code>701.99 Otros ingresos extraordinarios</code> (one-off).
+          <strong>Cuenta contraparte recomendada:</strong>{" "}
+          <code className="bg-muted px-1 rounded">
+            305.01.01 Resultado de ejercicios anteriores
+          </code>
+          . El ajuste reconoce que las refacciones / empaque / encogimientos
+          se contabilizaron al comprar (504.01.0005 / 0007 / 0042) y luego
+          otra vez al consumir (501.01.02) — duplicación de períodos pasados.
+          Asiento contable: <code>Dr 305.01.01 / Cr 501.01.x</code>. NO toca
+          P&L 2026 directamente; reconoce que la utilidad histórica estaba
+          subestimada.
+          <br />
+          <strong>Alternativa:</strong> si tu contador prefiere reflejarlo en
+          P&L del año, usar <code>704.99 OTROS INGRESOS EXTRAORDINARIOS</code>
+          {" "}como contrapartida. Lo que <strong>NO funciona</strong>: pasar
+          el monto a otra cuenta de gasto (504.01.0005, etc.) — solo movería
+          la duplicación de fila, sin reducir el doble conteo.
         </p>
       </CardContent>
     </Card>
