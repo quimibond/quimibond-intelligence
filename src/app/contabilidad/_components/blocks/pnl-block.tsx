@@ -282,6 +282,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 cogs501_01_02={kpis.cogs501_01_02Mxn}
                 cogs501_01_02Clean={kpis.cogs501_01_02CleanMxn}
                 cogs501_01_08={kpis.cogs501_01_08Mxn}
+                cogs501_01_08Clean={kpis.cogs501_01_08CleanMxn}
                 costoPrimo={cogs.cogsRecursiveMpMxn}
                 mod={kpis.mod501_06Mxn}
                 compras={kpis.compras502Mxn}
@@ -335,7 +336,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
             const costoVentasLimpio =
               cogs.cogsRecursiveMpMxn +
               kpis.cogs501_01_02CleanMxn +
-              kpis.cogs501_01_08Mxn +
+              kpis.cogs501_01_08CleanMxn +
               otras501_01 +
               kpis.mod501_06Mxn +
               kpis.compras502Mxn +
@@ -365,6 +366,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 capaPosteada={cogs.cogsCapaValoracionMxn}
                 dupInventoryAmount={kpis.cogs501_01_02DupInventoryMxn}
                 dupBreakdown={kpis.cogs501_01_02DupBreakdown}
+                shrinkRefaccionesAmount={kpis.cogs501_01_08RefaccionesMxn}
                 periodLabel={cogs.periodLabel}
                 monthEndIso={monthEndIso}
               />
@@ -803,6 +805,7 @@ export function PnlComparisonTable({
   cogs501_01_02,
   cogs501_01_02Clean,
   cogs501_01_08,
+  cogs501_01_08Clean,
   costoPrimo,
   mod,
   compras,
@@ -824,9 +827,12 @@ export function PnlComparisonTable({
   /** 501.01.02 sin duplicación (inventario→501.01.02 excluido). En el
    *  P&L limpio post-1-abril 2026 esto debería ser ~$0 (RSI56 archivado). */
   cogs501_01_02Clean: number;
-  /** 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico. NO se quita
-   *  en el régimen actual; es una pérdida real (faltantes, scrap). */
+  /** 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico contable
+   *  (incluye refacciones duplicadas detectadas en conteo). */
   cogs501_01_08: number;
+  /** 501.01.08 SIN refacciones duplicadas (shrinkage real legítimo
+   *  textil/MP/PT). Audit 2026-05-07. */
+  cogs501_01_08Clean: number;
   costoPrimo: number;
   mod: number;
   compras: number;
@@ -859,9 +865,10 @@ export function PnlComparisonTable({
   const otras501_01 =
     cogs501_01Actual - cogs501_01_01 - cogs501_01_02 - cogs501_01_08;
   const costoVentasContable = cogs501_01Actual + mod + compras + overhead;
-  // P&L limpio: usa 501.01.02 SIN duplicación (excluye TVAR + ENC + SP + REQP + otros)
+  // P&L limpio: 501.01.02 SIN duplicación inventario (TVAR/ENC/SP/REQP)
+  // y 501.01.08 SIN refacciones duplicadas (shrinkage textil real solo)
   const costoVentasLimpio =
-    costoPrimo + cogs501_01_02Clean + cogs501_01_08 + otras501_01 + mod + compras + overhead;
+    costoPrimo + cogs501_01_02Clean + cogs501_01_08Clean + otras501_01 + mod + compras + overhead;
   const utilBrutaContable = ventas - costoVentasContable;
   const utilBrutaLimpio = ventas - costoVentasLimpio;
   const ebitContable = utilBrutaContable - gastosOp;
@@ -923,12 +930,15 @@ export function PnlComparisonTable({
           {
             label: "501.01.08 Diferencias por conteo (shrinkage físico)",
             contable: cogs501_01_08,
-            limpio: cogs501_01_08,
+            limpio: cogs501_01_08Clean,
             kind: "expense" as const,
             isDetail: true,
-            note: cogs501_01_08 > 200000
-              ? "⚠ shrinkage atípico — investigar inventario"
-              : undefined,
+            note:
+              cogs501_01_08 - cogs501_01_08Clean > 100
+                ? `contable incluye refacciones duplicadas ($${Math.round(cogs501_01_08 - cogs501_01_08Clean).toLocaleString()}) · limpio = shrinkage textil real`
+                : cogs501_01_08 > 200000
+                  ? "⚠ shrinkage atípico — investigar inventario"
+                  : undefined,
           },
         ]
       : []),

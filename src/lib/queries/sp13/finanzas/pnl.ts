@@ -55,7 +55,9 @@ export interface PnlKpis {
   cogs501_01_02DupInventoryMxn: number; // duplicación inventario→501.01.02 (TVAR + ENC + SP + REQP + otros) — audit 2026-05-07
   cogs501_01_02CleanMxn: number; // 501.01.02 sin duplicación (post-audit ~0 esperado, RSI56 archivado)
   cogs501_01_02DupBreakdown: Array<{ prefix: string; label: string; amount: number; nLines: number }>;
-  cogs501_01_08Mxn: number; // 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico
+  cogs501_01_08Mxn: number; // 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico (incluye refacciones duplicadas)
+  cogs501_01_08RefaccionesMxn: number; // refacciones duplicadas en shrinkage (audit 2026-05-07)
+  cogs501_01_08CleanMxn: number; // shrinkage textil/MP real (sin refacciones duplicadas)
   mod501_06Mxn: number; // Mano de obra directa
   compras502Mxn: number; // Compras importación
   overhead504_01Mxn: number; // Overhead fábrica (504.01-07, sin dep)
@@ -316,11 +318,35 @@ async function fetchDupInventory501_01_02(range: HistoryRange): Promise<{
   return { total, breakdown };
 }
 
+async function fetchRefaccionesDup501_01_08(range: HistoryRange): Promise<number> {
+  // Subset de 501.01.08 que son refacciones duplicadas (mismo bug que TVAR
+  // pero detectado vía conteo físico en lugar de consumo). Audit 2026-05-07:
+  // $235k YTD, casi todo ($254k) en abril cuando hubo conteo físico de
+  // refacciones que detectó faltantes. El resto del 501.01.08 (~$200k YTD)
+  // es shrinkage textil/MP real legítimo.
+  const sb = getServiceClient();
+  const bounds = periodBoundsForRange(range);
+  const { data, error } = await sb.rpc("get_refacciones_dup_501_01_08", {
+    p_from: bounds.from,
+    p_to: bounds.to,
+  });
+  if (error) {
+    console.error("[getPnlKpis] Refacciones 501.01.08 fetch failure", error.message);
+    return 0;
+  }
+  type Row = { refacciones_amount_mxn: number | string | null };
+  return ((data as Row[] | null) ?? []).reduce(
+    (s, r) => s + (Number(r.refacciones_amount_mxn) || 0),
+    0
+  );
+}
+
 async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
   const sb = getServiceClient();
-  const [agg, dupInventory] = await Promise.all([
+  const [agg, dupInventory, refaccionesShrink] = await Promise.all([
     fetchPlAggregates(range),
     fetchDupInventory501_01_02(range),
+    fetchRefaccionesDup501_01_08(range),
   ]);
   const t = deriveTotals(agg);
 
@@ -387,6 +413,8 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
       amount: round2(b.amount),
     })),
     cogs501_01_08Mxn: round2(agg.cogs501_01_08),
+    cogs501_01_08RefaccionesMxn: round2(refaccionesShrink),
+    cogs501_01_08CleanMxn: round2(agg.cogs501_01_08 - refaccionesShrink),
     mod501_06Mxn: round2(agg.mod501_06),
     compras502Mxn: round2(agg.compras502),
     overhead504_01Mxn: round2(agg.overhead504_01),
@@ -410,7 +438,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v10-dup-inventory", range],
+    ["sp13-finanzas-pnl-kpis-v11-shrink-refacciones", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

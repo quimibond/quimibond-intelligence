@@ -42,6 +42,7 @@ export function PnlAdjustmentEntryCard({
   capaPosteada,
   dupInventoryAmount,
   dupBreakdown,
+  shrinkRefaccionesAmount,
   periodLabel,
   monthEndIso,
 }: {
@@ -53,18 +54,20 @@ export function PnlAdjustmentEntryCard({
   capaPosteada: number; // SUM(amount_total) journal CAPA DE VALORACIÓN período
   dupInventoryAmount: number; // duplicación inventario→501.01.02 total (TVAR+ENC+SP+REQP+otros)
   dupBreakdown: DupBreakdownItem[]; // desglose por prefijo
+  shrinkRefaccionesAmount: number; // refacciones duplicadas en 501.01.08 (shrinkage)
   periodLabel: string;
   monthEndIso: string;
 }) {
   const [copied, setCopied] = useState(false);
   const fmtFull = (n: number) => formatCurrencyMXN(n);
   const deltaNeta = netaLimpio - netaContable;
-  // Δ utilidad neta = residual 501.01.01 + reverso duplicación 501.01.02
-  const expectedDelta = residual + dupInventoryAmount;
+  // Δ utilidad neta = residual 501.01.01 + reverso 501.01.02 dup + reverso 501.01.08 refacciones
+  const expectedDelta = residual + dupInventoryAmount + shrinkRefaccionesAmount;
   const invariantOk = Math.abs(deltaNeta - expectedDelta) < 10;
   const isPositive = residual >= 0;
   const absResidual = Math.abs(residual);
   const hasDup = dupInventoryAmount > 100;
+  const hasShrinkRef = Math.abs(shrinkRefaccionesAmount) > 100;
   // Saldo bruto pre-CAPA (informacional). canonical_account_balances ya
   // refleja el neto post-CAPA, así que el bruto = post + capa_posteada.
   const saldoBrutoPreCapa = cogs501_01_01 + capaPosteada;
@@ -121,6 +124,27 @@ export function PnlAdjustmentEntryCard({
     `  − Costo primo BOM-MP recursivo:  ${fmtFull(costoPrimo)}`,
     `  = Ajuste pendiente neto:         ${fmtFull(residual)}  ← NO duplica CAPA`,
   ];
+  if (hasShrinkRef) {
+    const sign = shrinkRefaccionesAmount >= 0 ? "Cr" : "Dr";
+    const opp = shrinkRefaccionesAmount >= 0 ? "Dr" : "Cr";
+    const abs = Math.abs(shrinkRefaccionesAmount);
+    asientoLines.push(
+      ``,
+      `═══ ASIENTO 3: Reverso refacciones en 501.01.08 ═══`,
+      `  ${sign}  501.01.08  DIFERENCIAS POR CONTEO              ${fmtFull(abs)}`,
+      `  ${opp}  __________  [cuenta puente / nueva cuenta de    ${fmtFull(abs)}`,
+      `                       inventario operativo dedicada]`,
+      ``,
+      `Contexto:`,
+      `  Ajustes manuales de inventario (Cantidad de producto`,
+      `  actualizada) sobre productos refacción/operativos en`,
+      `  501.01.08. Mismo bug que TVAR: las refacciones ya se`,
+      `  contabilizaron al comprar como gasto, así que pegar`,
+      `  el faltante a P&L es triple conteo.`,
+      `  El shrinkage textil/MP real (~$200k YTD) sí se mantiene`,
+      `  en el P&L como pérdida legítima.`
+    );
+  }
   if (hasDup) {
     asientoLines.push(
       ``,
@@ -151,8 +175,8 @@ export function PnlAdjustmentEntryCard({
     `  Antes (contable Odoo):     ${fmtFull(netaContable)}`,
     `  Después de los ajustes:    ${fmtFull(netaLimpio)}`,
     `  Δ:                          ${deltaNeta >= 0 ? "+" : ""}${fmtFull(deltaNeta)}`,
-    hasDup
-      ? `      └─ ${fmtFull(residual)} (501.01.01) + ${fmtFull(dupInventoryAmount)} (501.01.02 dup)`
+    hasDup || hasShrinkRef
+      ? `      └─ ${fmtFull(residual)} (501.01.01)${hasDup ? ` + ${fmtFull(dupInventoryAmount)} (501.01.02 dup)` : ""}${hasShrinkRef ? ` + ${fmtFull(shrinkRefaccionesAmount)} (501.01.08 refacciones)` : ""}`
       : ``
   );
   const asiento = asientoLines.join("\n");
@@ -356,6 +380,48 @@ export function PnlAdjustmentEntryCard({
           </div>
         )}
 
+        {/* Refacciones duplicadas en 501.01.08 (shrinkage manual) */}
+        {hasShrinkRef && (
+          <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-3">
+            <div className="flex items-start gap-2 mb-2">
+              <AlertTriangle className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
+              <div className="flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <strong className="text-destructive text-sm">
+                    Refacciones duplicadas en 501.01.08 (shrinkage manual)
+                  </strong>
+                  <Badge
+                    variant="outline"
+                    className="border-destructive/40 bg-destructive/10 text-destructive text-[10px]"
+                  >
+                    Asiento adicional
+                  </Badge>
+                </div>
+                <p className="mt-1 text-[11px] text-muted-foreground">
+                  Ajustes manuales (&quot;Cantidad de producto actualizada&quot;)
+                  sobre productos refacción/operativos. Mismo bug que TVAR:
+                  ya se gastaron al comprar, así que pegar el faltante al
+                  P&L es triple conteo. El shrinkage textil/MP real
+                  (~$200k YTD) sí queda como pérdida legítima en el P&L.
+                </p>
+              </div>
+            </div>
+            <div className="rounded-md bg-card border px-3 py-2 mt-2">
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                Reverso 501.01.08 refacciones del período
+              </div>
+              <div className="mt-1 text-xl font-bold tabular-nums text-destructive">
+                {fmtFull(shrinkRefaccionesAmount)}
+              </div>
+              <div className="mt-1 text-[11px] text-muted-foreground">
+                {shrinkRefaccionesAmount >= 0
+                  ? "Cr 501.01.08 / Dr cuenta puente (faltante neto)"
+                  : "Dr 501.01.08 / Cr cuenta puente (sobrante neto, reverso)"}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Aviso si over-corrected */}
         {status === "over_corrected" && (
           <div className="rounded-md border border-warning/40 bg-warning/5 p-3 text-[12px]">
@@ -427,8 +493,10 @@ export function PnlAdjustmentEntryCard({
           <strong>Invariante:</strong> Δ utilidad neta ({fmtFull(deltaNeta)}){" "}
           debe igualar residual 501.01.01 ({fmtFull(residual)})
           {hasDup &&
-            ` + reverso 501.01.02 dup (${fmtFull(dupInventoryAmount)})`}{" "}
-          ={" "}
+            ` + reverso 501.01.02 dup (${fmtFull(dupInventoryAmount)})`}
+          {hasShrinkRef &&
+            ` + reverso 501.01.08 refacciones (${fmtFull(shrinkRefaccionesAmount)})`}
+          {" "}={" "}
           {fmtFull(expectedDelta)}.
           {invariantOk
             ? " ✓ Cuadra al peso."
