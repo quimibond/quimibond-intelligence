@@ -352,6 +352,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 netaLimpio={netaLimpio}
                 cogs501_01_01={kpis.cogs501_01_01Mxn}
                 costoPrimo={cogs.cogsRecursiveMpMxn}
+                capaPosteada={cogs.cogsCapaValoracionMxn}
                 periodLabel={cogs.periodLabel}
                 monthEndIso={monthEndIso}
               />
