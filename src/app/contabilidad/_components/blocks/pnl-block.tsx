@@ -280,6 +280,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 cogs501_01Actual={kpis.cogs501_01Mxn}
                 cogs501_01_01={kpis.cogs501_01_01Mxn}
                 cogs501_01_02={kpis.cogs501_01_02Mxn}
+                cogs501_01_02Clean={kpis.cogs501_01_02CleanMxn}
                 cogs501_01_08={kpis.cogs501_01_08Mxn}
                 costoPrimo={cogs.cogsRecursiveMpMxn}
                 mod={kpis.mod501_06Mxn}
@@ -328,8 +329,9 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               kpis.mod501_06Mxn +
               kpis.compras502Mxn +
               kpis.overhead504_01Mxn;
-            // P&L limpio excluye TVAR/ENT-REF de 501.01.02 (refacciones
-            // duplicadas — pending action refacciones-tvar-doble-conteo-501-01-02)
+            // P&L limpio excluye TODA la duplicación inventario→501.01.02
+            // (TVAR + TL/ENC + SP/ + TL/REQP/ + otros). Audit 2026-05-07.
+            // Pending action: refacciones-tvar-doble-conteo-501-01-02
             const costoVentasLimpio =
               cogs.cogsRecursiveMpMxn +
               kpis.cogs501_01_02CleanMxn +
@@ -361,7 +363,8 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 cogs501_01_01={kpis.cogs501_01_01Mxn}
                 costoPrimo={cogs.cogsRecursiveMpMxn}
                 capaPosteada={cogs.cogsCapaValoracionMxn}
-                tvarRefacciones={kpis.cogs501_01_02TvarMxn}
+                dupInventoryAmount={kpis.cogs501_01_02DupInventoryMxn}
+                dupBreakdown={kpis.cogs501_01_02DupBreakdown}
                 periodLabel={cogs.periodLabel}
                 monthEndIso={monthEndIso}
               />
@@ -798,6 +801,7 @@ export function PnlComparisonTable({
   cogs501_01Actual,
   cogs501_01_01,
   cogs501_01_02,
+  cogs501_01_02Clean,
   cogs501_01_08,
   costoPrimo,
   mod,
@@ -814,9 +818,12 @@ export function PnlComparisonTable({
   /** 501.01.01 Cost of sales — AVCO al despacho. Reemplazado por BOM-MP
    *  en el régimen actual (la diferencia es contaminación AVCO histórica). */
   cogs501_01_01: number;
-  /** 501.01.02 COSTO PRIMO — cuenta de cierre histórica del ciclo MP
-   *  (RSI56 archivado 1-abr-2026 → cuenta inactiva). NO se quita en el régimen actual. */
+  /** 501.01.02 COSTO PRIMO contable (incluye duplicación inventario→costo:
+   *  TVAR + ENC + SP + REQP + otros). Audit 2026-05-07. */
   cogs501_01_02: number;
+  /** 501.01.02 sin duplicación (inventario→501.01.02 excluido). En el
+   *  P&L limpio post-1-abril 2026 esto debería ser ~$0 (RSI56 archivado). */
+  cogs501_01_02Clean: number;
   /** 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico. NO se quita
    *  en el régimen actual; es una pérdida real (faltantes, scrap). */
   cogs501_01_08: number;
@@ -852,8 +859,9 @@ export function PnlComparisonTable({
   const otras501_01 =
     cogs501_01Actual - cogs501_01_01 - cogs501_01_02 - cogs501_01_08;
   const costoVentasContable = cogs501_01Actual + mod + compras + overhead;
+  // P&L limpio: usa 501.01.02 SIN duplicación (excluye TVAR + ENC + SP + REQP + otros)
   const costoVentasLimpio =
-    costoPrimo + cogs501_01_02 + cogs501_01_08 + otras501_01 + mod + compras + overhead;
+    costoPrimo + cogs501_01_02Clean + cogs501_01_08 + otras501_01 + mod + compras + overhead;
   const utilBrutaContable = ventas - costoVentasContable;
   const utilBrutaLimpio = ventas - costoVentasLimpio;
   const ebitContable = utilBrutaContable - gastosOp;
@@ -897,11 +905,16 @@ export function PnlComparisonTable({
     ...(cogs501_01_02 !== 0
       ? [
           {
-            label: "501.01.02 COSTO PRIMO contable (cierre contable)",
+            label:
+              "501.01.02 COSTO PRIMO (limpio excluye duplicación inventario)",
             contable: cogs501_01_02,
-            limpio: cogs501_01_02,
+            limpio: cogs501_01_02Clean,
             kind: "expense" as const,
             isDetail: true,
+            note:
+              cogs501_01_02 - cogs501_01_02Clean > 100
+                ? `contable incluye TVAR/ENC/SP/REQP duplicados ($${Math.round(cogs501_01_02 - cogs501_01_02Clean).toLocaleString()})`
+                : undefined,
           },
         ]
       : []),

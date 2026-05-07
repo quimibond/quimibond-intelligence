@@ -52,8 +52,9 @@ export interface PnlKpis {
   // 501.01 split en 3 subcuentas (audit 2026-05-04):
   cogs501_01_01Mxn: number; // 501.01.01 — AVCO al despacho (incluye contaminación AVCO histórica del PT pre-abril)
   cogs501_01_02Mxn: number; // 501.01.02 COSTO PRIMO — cuenta de cierre histórica (RSI56 archivado)
-  cogs501_01_02TvarMxn: number; // refacciones TVAR/ENT-REF duplicadas (audit 2026-05-07)
-  cogs501_01_02CleanMxn: number; // 501.01.02 sin TVAR (= legítimo cierre)
+  cogs501_01_02DupInventoryMxn: number; // duplicación inventario→501.01.02 (TVAR + ENC + SP + REQP + otros) — audit 2026-05-07
+  cogs501_01_02CleanMxn: number; // 501.01.02 sin duplicación (post-audit ~0 esperado, RSI56 archivado)
+  cogs501_01_02DupBreakdown: Array<{ prefix: string; label: string; amount: number; nLines: number }>;
   cogs501_01_08Mxn: number; // 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico
   mod501_06Mxn: number; // Mano de obra directa
   compras502Mxn: number; // Compras importación
@@ -256,34 +257,70 @@ function deriveTotals(agg: Aggregates) {
   };
 }
 
-async function fetchTvarAmount501_01_02(range: HistoryRange): Promise<number> {
-  // Refacciones TVAR/ENT-REF duplicadas en 501.01.02. Se contabilizan al
-  // comprar (gasto/inventario) y otra vez al consumirse (Dr 501.01.02 /
-  // Cr 115.02.*). Audit 2026-05-07: $2.86M YTD. Se restan del 501.01.02
-  // legítimo en el P&L limpio. Pending action:
+type DupRow = {
+  period: string | null;
+  prefix: string | null;
+  prefix_label: string | null;
+  amount_mxn: number | string | null;
+  n_lines: number | null;
+};
+
+async function fetchDupInventory501_01_02(range: HistoryRange): Promise<{
+  total: number;
+  breakdown: PnlKpis["cogs501_01_02DupBreakdown"];
+}> {
+  // Duplicación inventario→501.01.02. Audit 2026-05-07: 4 patrones
+  // (TVAR refacciones + TL/ENC encogimientos + SP/ empaque +
+  // TL/REQP/ requisición producción) cubren 100% del 501.01.02 YTD
+  // ($4.15M). Todos siguen Dr 501.01.02 / Cr 115.* y son duplicación
+  // bajo régimen actual (P&L limpio usa BOM-MP recursivo que ya incluye
+  // estas via AVCO de compras). Pending action:
   // refacciones-tvar-doble-conteo-501-01-02
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
-  const { data, error } = await sb.rpc("get_tvar_amount_501_01_02", {
+  const { data, error } = await sb.rpc("get_inventory_to_cost_dup_501_01_02", {
     p_from: bounds.from,
     p_to: bounds.to,
   });
   if (error) {
-    console.error("[getPnlKpis] TVAR fetch failure", error.message);
-    return 0;
+    console.error("[getPnlKpis] DupInventory fetch failure", error.message);
+    return { total: 0, breakdown: [] };
   }
-  type TvarRow = { tvar_amount_mxn: number | string | null };
-  return ((data as TvarRow[] | null) ?? []).reduce(
-    (s, r) => s + (Number(r.tvar_amount_mxn) || 0),
-    0
+  const rows = (data as DupRow[] | null) ?? [];
+  // Agregar por prefix (a través de todos los meses del rango)
+  const byPrefix = new Map<
+    string,
+    { prefix: string; label: string; amount: number; nLines: number }
+  >();
+  let total = 0;
+  for (const r of rows) {
+    const amount = Number(r.amount_mxn) || 0;
+    total += amount;
+    const key = r.prefix ?? "OTROS";
+    const existing = byPrefix.get(key);
+    if (existing) {
+      existing.amount += amount;
+      existing.nLines += Number(r.n_lines) || 0;
+    } else {
+      byPrefix.set(key, {
+        prefix: key,
+        label: r.prefix_label ?? key,
+        amount,
+        nLines: Number(r.n_lines) || 0,
+      });
+    }
+  }
+  const breakdown = Array.from(byPrefix.values()).sort(
+    (a, b) => b.amount - a.amount
   );
+  return { total, breakdown };
 }
 
 async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
   const sb = getServiceClient();
-  const [agg, tvarAmount] = await Promise.all([
+  const [agg, dupInventory] = await Promise.all([
     fetchPlAggregates(range),
-    fetchTvarAmount501_01_02(range),
+    fetchDupInventory501_01_02(range),
   ]);
   const t = deriveTotals(agg);
 
@@ -343,8 +380,12 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     cogs501_01Mxn: round2(agg.cogs501_01),
     cogs501_01_01Mxn: round2(agg.cogs501_01_01),
     cogs501_01_02Mxn: round2(agg.cogs501_01_02),
-    cogs501_01_02TvarMxn: round2(tvarAmount),
-    cogs501_01_02CleanMxn: round2(agg.cogs501_01_02 - tvarAmount),
+    cogs501_01_02DupInventoryMxn: round2(dupInventory.total),
+    cogs501_01_02CleanMxn: round2(agg.cogs501_01_02 - dupInventory.total),
+    cogs501_01_02DupBreakdown: dupInventory.breakdown.map((b) => ({
+      ...b,
+      amount: round2(b.amount),
+    })),
     cogs501_01_08Mxn: round2(agg.cogs501_01_08),
     mod501_06Mxn: round2(agg.mod501_06),
     compras502Mxn: round2(agg.compras502),
@@ -369,7 +410,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v9-tvar-split", range],
+    ["sp13-finanzas-pnl-kpis-v10-dup-inventory", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

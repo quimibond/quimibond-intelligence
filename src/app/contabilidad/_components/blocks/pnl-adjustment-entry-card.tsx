@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import React, { useState } from "react";
 import { Copy, Check, Receipt, AlertTriangle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -26,6 +26,13 @@ import { cn } from "@/lib/utils";
  * Validación: invariante "Δ utilidad neta = residual 501.01.01" debe
  * cuadrar al peso. Si no, el cálculo upstream tiene un bug.
  */
+export interface DupBreakdownItem {
+  prefix: string;
+  label: string;
+  amount: number;
+  nLines: number;
+}
+
 export function PnlAdjustmentEntryCard({
   residual,
   netaContable,
@@ -33,7 +40,8 @@ export function PnlAdjustmentEntryCard({
   cogs501_01_01,
   costoPrimo,
   capaPosteada,
-  tvarRefacciones,
+  dupInventoryAmount,
+  dupBreakdown,
   periodLabel,
   monthEndIso,
 }: {
@@ -43,19 +51,20 @@ export function PnlAdjustmentEntryCard({
   cogs501_01_01: number; // saldo 501.01.01 post-CAPA (lo que ve Odoo)
   costoPrimo: number; // BOM-MP recursivo
   capaPosteada: number; // SUM(amount_total) journal CAPA DE VALORACIÓN período
-  tvarRefacciones: number; // refacciones TVAR/ENT-REF en 501.01.02 (duplicado, pending action)
+  dupInventoryAmount: number; // duplicación inventario→501.01.02 total (TVAR+ENC+SP+REQP+otros)
+  dupBreakdown: DupBreakdownItem[]; // desglose por prefijo
   periodLabel: string;
   monthEndIso: string;
 }) {
   const [copied, setCopied] = useState(false);
   const fmtFull = (n: number) => formatCurrencyMXN(n);
   const deltaNeta = netaLimpio - netaContable;
-  // Δ utilidad neta = residual 501.01.01 + reverso TVAR (ambos suben utilidad)
-  const expectedDelta = residual + tvarRefacciones;
+  // Δ utilidad neta = residual 501.01.01 + reverso duplicación 501.01.02
+  const expectedDelta = residual + dupInventoryAmount;
   const invariantOk = Math.abs(deltaNeta - expectedDelta) < 10;
   const isPositive = residual >= 0;
   const absResidual = Math.abs(residual);
-  const hasTvar = tvarRefacciones > 100;
+  const hasDup = dupInventoryAmount > 100;
   // Saldo bruto pre-CAPA (informacional). canonical_account_balances ya
   // refleja el neto post-CAPA, así que el bruto = post + capa_posteada.
   const saldoBrutoPreCapa = cogs501_01_01 + capaPosteada;
@@ -112,18 +121,27 @@ export function PnlAdjustmentEntryCard({
     `  − Costo primo BOM-MP recursivo:  ${fmtFull(costoPrimo)}`,
     `  = Ajuste pendiente neto:         ${fmtFull(residual)}  ← NO duplica CAPA`,
   ];
-  if (hasTvar) {
+  if (hasDup) {
     asientoLines.push(
       ``,
-      `═══ ASIENTO 2: Reverso TVAR refacciones (duplicación) ═══`,
-      `  Cr  501.01.02  COSTO PRIMO                            ${fmtFull(tvarRefacciones)}`,
-      `  Dr  __________  [cuenta puente / nueva 115.05         ${fmtFull(tvarRefacciones)}`,
-      `                   inventario refacciones operativas]`,
+      `═══ ASIENTO 2: Reverso duplicación inventario→501.01.02 ═══`,
+      `  Cr  501.01.02  COSTO PRIMO                            ${fmtFull(dupInventoryAmount)}`,
+      `  Dr  __________  [cuenta puente / nueva cuenta de       ${fmtFull(dupInventoryAmount)}`,
+      `                   inventario operativo dedicada]`,
+      ``,
+      `Desglose por origen del movimiento:`,
+      ...dupBreakdown.map(
+        (b) =>
+          `  ${(b.label + ":").padEnd(46)}${fmtFull(b.amount)}  (${b.nLines} líneas)`
+      ),
       ``,
       `Contexto:`,
-      `  Refacciones TVAR/ENT-REF que entraron a 501.01.02`,
-      `  al consumirse, ya estaban contabilizadas al comprar`,
-      `  → DUPLICADO. Pending action:`,
+      `  Toda entrada Dr 501.01.02 / Cr 115.* duplica el costo`,
+      `  bajo régimen actual: el P&L limpio usa BOM-MP recursivo`,
+      `  que ya incluye estas MPs/refacciones/empaque vía AVCO`,
+      `  de compras. Post-1-abril (RSI56 archivado), 501.01.02`,
+      `  debería estar prácticamente vacía.`,
+      `  Pending action:`,
       `  refacciones-tvar-doble-conteo-501-01-02`
     );
   }
@@ -133,8 +151,8 @@ export function PnlAdjustmentEntryCard({
     `  Antes (contable Odoo):     ${fmtFull(netaContable)}`,
     `  Después de los ajustes:    ${fmtFull(netaLimpio)}`,
     `  Δ:                          ${deltaNeta >= 0 ? "+" : ""}${fmtFull(deltaNeta)}`,
-    hasTvar
-      ? `      └─ ${fmtFull(residual)} (501.01.01) + ${fmtFull(tvarRefacciones)} (TVAR)`
+    hasDup
+      ? `      └─ ${fmtFull(residual)} (501.01.01) + ${fmtFull(dupInventoryAmount)} (501.01.02 dup)`
       : ``
   );
   const asiento = asientoLines.join("\n");
@@ -268,15 +286,15 @@ export function PnlAdjustmentEntryCard({
           </div>
         </div>
 
-        {/* TVAR refacciones — ajuste independiente de 501.01.02 */}
-        {hasTvar && (
+        {/* Duplicación inventario→501.01.02 (TVAR + ENC + SP + REQP + otros) */}
+        {hasDup && (
           <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-3">
             <div className="flex items-start gap-2 mb-2">
               <AlertTriangle className="h-4 w-4 shrink-0 text-destructive mt-0.5" />
               <div className="flex-1">
                 <div className="flex items-center justify-between gap-2">
                   <strong className="text-destructive text-sm">
-                    Refacciones TVAR duplicadas en 501.01.02
+                    Duplicación inventario → 501.01.02
                   </strong>
                   <Badge
                     variant="outline"
@@ -286,9 +304,12 @@ export function PnlAdjustmentEntryCard({
                   </Badge>
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Refacciones (agujas, bombas, válvulas, EPP, etc.) que entran a
-                  501.01.02 al consumirse pero ya estaban contabilizadas al
-                  comprar — DOBLE CONTEO. Pending action en Odoo:{" "}
+                  Movimientos Dr 501.01.02 / Cr 115.* (refacciones, empaque,
+                  encogimientos, requisiciones) que ya se contabilizaron al
+                  comprar. Bajo el régimen actual (P&L limpio = BOM-MP
+                  recursivo) son DOBLE CONTEO. Post-1-abril 2026 (RSI56
+                  archivado), 501.01.02 debería estar prácticamente vacía.
+                  Pending action:{" "}
                   <code className="text-[10px]">
                     refacciones-tvar-doble-conteo-501-01-02
                   </code>
@@ -297,16 +318,41 @@ export function PnlAdjustmentEntryCard({
             </div>
             <div className="rounded-md bg-card border px-3 py-2 mt-2">
               <div className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                Reverso TVAR a postear
+                Reverso a postear (todos los patrones del período)
               </div>
               <div className="mt-1 text-xl font-bold tabular-nums text-destructive">
-                {fmtFull(tvarRefacciones)}
+                {fmtFull(dupInventoryAmount)}
               </div>
               <div className="mt-1 text-[11px] text-muted-foreground">
-                Cr 501.01.02 (reduce duplicado) / Dr nueva 115.05 inventario
-                refacciones operativas (o cuenta puente provisional)
+                Cr 501.01.02 (reduce duplicado) / Dr cuenta de inventario
+                operativo dedicada (o cuenta puente provisional)
               </div>
             </div>
+            {dupBreakdown.length > 0 && (
+              <div className="mt-2 rounded-md bg-card border px-3 py-2">
+                <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Desglose por origen
+                </div>
+                <div className="grid grid-cols-[1fr_auto_auto] gap-x-3 gap-y-1 text-[11px] tabular-nums">
+                  {dupBreakdown.map((b) => (
+                    <React.Fragment key={b.prefix}>
+                      <span className="text-muted-foreground">
+                        <code className="text-[10px] mr-1.5 px-1 rounded bg-muted">
+                          {b.prefix}
+                        </code>
+                        {b.label}
+                      </span>
+                      <span className="text-right text-muted-foreground">
+                        {b.nLines} líneas
+                      </span>
+                      <span className="text-right font-medium">
+                        {fmtFull(b.amount)}
+                      </span>
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -380,7 +426,9 @@ export function PnlAdjustmentEntryCard({
         >
           <strong>Invariante:</strong> Δ utilidad neta ({fmtFull(deltaNeta)}){" "}
           debe igualar residual 501.01.01 ({fmtFull(residual)})
-          {hasTvar && ` + reverso TVAR (${fmtFull(tvarRefacciones)})`} ={" "}
+          {hasDup &&
+            ` + reverso 501.01.02 dup (${fmtFull(dupInventoryAmount)})`}{" "}
+          ={" "}
           {fmtFull(expectedDelta)}.
           {invariantOk
             ? " ✓ Cuadra al peso."
