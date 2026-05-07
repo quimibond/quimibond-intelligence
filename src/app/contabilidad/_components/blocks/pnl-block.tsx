@@ -304,6 +304,12 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                     inline
                   />
                 </Suspense>
+                <Suspense fallback={null}>
+                  <OdooPendingBanner
+                    actionKey="refacciones-tvar-doble-conteo-501-01-02"
+                    inline
+                  />
+                </Suspense>
               </div>
             </CardContent>
           </Card>
@@ -322,9 +328,11 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
               kpis.mod501_06Mxn +
               kpis.compras502Mxn +
               kpis.overhead504_01Mxn;
+            // P&L limpio excluye TVAR/ENT-REF de 501.01.02 (refacciones
+            // duplicadas — pending action refacciones-tvar-doble-conteo-501-01-02)
             const costoVentasLimpio =
               cogs.cogsRecursiveMpMxn +
-              kpis.cogs501_01_02Mxn +
+              kpis.cogs501_01_02CleanMxn +
               kpis.cogs501_01_08Mxn +
               otras501_01 +
               kpis.mod501_06Mxn +
@@ -353,6 +361,7 @@ export async function PnlBlock({ range }: { range: HistoryRange }) {
                 cogs501_01_01={kpis.cogs501_01_01Mxn}
                 costoPrimo={cogs.cogsRecursiveMpMxn}
                 capaPosteada={cogs.cogsCapaValoracionMxn}
+                tvarRefacciones={kpis.cogs501_01_02TvarMxn}
                 periodLabel={cogs.periodLabel}
                 monthEndIso={monthEndIso}
               />

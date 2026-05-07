@@ -52,6 +52,8 @@ export interface PnlKpis {
   // 501.01 split en 3 subcuentas (audit 2026-05-04):
   cogs501_01_01Mxn: number; // 501.01.01 — AVCO al despacho (incluye contaminación AVCO histórica del PT pre-abril)
   cogs501_01_02Mxn: number; // 501.01.02 COSTO PRIMO — cuenta de cierre histórica (RSI56 archivado)
+  cogs501_01_02TvarMxn: number; // refacciones TVAR/ENT-REF duplicadas (audit 2026-05-07)
+  cogs501_01_02CleanMxn: number; // 501.01.02 sin TVAR (= legítimo cierre)
   cogs501_01_08Mxn: number; // 501.01.08 DIFERENCIAS POR CONTEO — shrinkage físico
   mod501_06Mxn: number; // Mano de obra directa
   compras502Mxn: number; // Compras importación
@@ -254,9 +256,35 @@ function deriveTotals(agg: Aggregates) {
   };
 }
 
+async function fetchTvarAmount501_01_02(range: HistoryRange): Promise<number> {
+  // Refacciones TVAR/ENT-REF duplicadas en 501.01.02. Se contabilizan al
+  // comprar (gasto/inventario) y otra vez al consumirse (Dr 501.01.02 /
+  // Cr 115.02.*). Audit 2026-05-07: $2.86M YTD. Se restan del 501.01.02
+  // legítimo en el P&L limpio. Pending action:
+  // refacciones-tvar-doble-conteo-501-01-02
+  const sb = getServiceClient();
+  const bounds = periodBoundsForRange(range);
+  const { data, error } = await sb.rpc("get_tvar_amount_501_01_02", {
+    p_from: bounds.from,
+    p_to: bounds.to,
+  });
+  if (error) {
+    console.error("[getPnlKpis] TVAR fetch failure", error.message);
+    return 0;
+  }
+  type TvarRow = { tvar_amount_mxn: number | string | null };
+  return ((data as TvarRow[] | null) ?? []).reduce(
+    (s, r) => s + (Number(r.tvar_amount_mxn) || 0),
+    0
+  );
+}
+
 async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
   const sb = getServiceClient();
-  const agg = await fetchPlAggregates(range);
+  const [agg, tvarAmount] = await Promise.all([
+    fetchPlAggregates(range),
+    fetchTvarAmount501_01_02(range),
+  ]);
   const t = deriveTotals(agg);
 
   // SAT revenue for the same window (emitidas dentro del rango). Paginated:
@@ -315,6 +343,8 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
     cogs501_01Mxn: round2(agg.cogs501_01),
     cogs501_01_01Mxn: round2(agg.cogs501_01_01),
     cogs501_01_02Mxn: round2(agg.cogs501_01_02),
+    cogs501_01_02TvarMxn: round2(tvarAmount),
+    cogs501_01_02CleanMxn: round2(agg.cogs501_01_02 - tvarAmount),
     cogs501_01_08Mxn: round2(agg.cogs501_01_08),
     mod501_06Mxn: round2(agg.mod501_06),
     compras502Mxn: round2(agg.compras502),
@@ -339,7 +369,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v8-501-01-split", range],
+    ["sp13-finanzas-pnl-kpis-v9-tvar-split", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
