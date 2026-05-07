@@ -178,13 +178,35 @@ export function PnlAdjustmentEntryCard({
   }
   asientoLines.push(
     ``,
+    `═══ ASIENTO 4: Deflate balance 115.02 (refacciones/empaque fantasma) ═══`,
+    `  Cr  115.02     INVENTARIO REFACCIONES/EMPAQUE              780,444.00`,
+    `  Dr  305.01.01  Resultado de ejercicios anteriores          780,444.00`,
+    ``,
+    `Contexto:`,
+    `  Validado vía Odoo 19 product.total_value AVCO oficial`,
+    `  (script Python 2026-05-07): 57 productos físicos en almacén`,
+    `  pertenecen a categorías "Inspeccion-Empaque-*" y`,
+    `  "Generales-Consumibles-Refacciones-*". Su valor en 115.02`,
+    `  es ficticio porque la compra ya fue gasto en 504.01.x.`,
+    ``,
+    `Desglose ($780,444):`,
+    `  $357,412  Inspeccion-Empaque-Tubo-pza`,
+    `  $234,196  Inspeccion-Empaque-Bolsa-kg`,
+    `  $113,312  Generales-Consumibles-Refacciones-pza`,
+    `  $ 49,158  Inspeccion-Empaque-Etiquetas-millar`,
+    `  $ 16,409  Inspeccion-Empaque-Ribond-millar`,
+    `  $  9,856  Otros (metro, galón, paquete, servicio)`,
+    ``,
     `═══ EFECTO TOTAL EN UTILIDAD NETA ═══`,
     `  Antes (contable Odoo):     ${fmtFull(netaContable)}`,
     `  Después de los ajustes:    ${fmtFull(netaLimpio)}`,
     `  Δ:                          ${deltaNeta >= 0 ? "+" : ""}${fmtFull(deltaNeta)}`,
     hasDup || hasShrinkRef
       ? `      └─ ${fmtFull(residual)} (501.01.01)${hasDup ? ` + ${fmtFull(dupInventoryAmount)} (501.01.02 dup)` : ""}${hasShrinkRef ? ` + ${fmtFull(shrinkRefaccionesAmount)} (501.01.08 refacciones)` : ""}`
-      : ``
+      : ``,
+    ``,
+    `(El deflate de 115.02 va al BS, no al P&L del año, así que NO`,
+    ` cambia la utilidad neta — solo corrige el activo inflado.)`
   );
   const asiento = asientoLines.join("\n");
 
