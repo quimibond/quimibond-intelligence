@@ -119,8 +119,8 @@ export function PnlAdjustmentEntryCard({
       ? `  Cr  501.01.01  Cost of sales                          ${fmtFull(absResidual)}`
       : `  Dr  501.01.01  Cost of sales                          ${fmtFull(absResidual)}`,
     isPositive
-      ? `  Dr  305.01.01  Resultado de ejercicios anteriores     ${fmtFull(absResidual)}`
-      : `  Cr  305.01.01  Resultado de ejercicios anteriores     ${fmtFull(absResidual)}`,
+      ? `  Dr  115.02     INVENTARIO REFACCIONES (revaluar)     ${fmtFull(absResidual)}`
+      : `  Cr  115.02     INVENTARIO REFACCIONES (revaluar)     ${fmtFull(absResidual)}`,
     ``,
     `Contexto del período:`,
     `  Saldo bruto 501.01.01 pre-CAPA:  ${fmtFull(saldoBrutoPreCapa)}`,
@@ -137,7 +137,7 @@ export function PnlAdjustmentEntryCard({
       ``,
       `═══ ASIENTO 3: Reverso refacciones en 501.01.08 ═══`,
       `  ${sign}  501.01.08  DIFERENCIAS POR CONTEO              ${fmtFull(abs)}`,
-      `  ${opp}  305.01.01  Resultado de ejercicios anteriores   ${fmtFull(abs)}`,
+      `  ${opp}  115.02     INVENTARIO REFACCIONES (revaluar)   ${fmtFull(abs)}`,
       ``,
       `Contexto:`,
       `  Ajustes manuales de inventario (Cantidad de producto`,
@@ -154,7 +154,7 @@ export function PnlAdjustmentEntryCard({
       ``,
       `═══ ASIENTO 2: Reverso duplicación inventario→501.01.02 ═══`,
       `  Cr  501.01.02  COSTO PRIMO                            ${fmtFull(dupInventoryAmount)}`,
-      `  Dr  305.01.01  Resultado de ejercicios anteriores     ${fmtFull(dupInventoryAmount)}`,
+      `  Dr  115.02     INVENTARIO REFACCIONES (revaluar)     ${fmtFull(dupInventoryAmount)}`,
       ``,
       `Desglose por origen del movimiento:`,
       ...dupBreakdown.map(
@@ -180,7 +180,7 @@ export function PnlAdjustmentEntryCard({
     ``,
     `═══ ASIENTO 4: Deflate balance 115.02 (refacciones/empaque fantasma) ═══`,
     `  Cr  115.02     INVENTARIO REFACCIONES/EMPAQUE              780,444.00`,
-    `  Dr  305.01.01  Resultado de ejercicios anteriores          780,444.00`,
+    `  Dr  115.02     INVENTARIO REFACCIONES (revaluar)          780,444.00`,
     ``,
     `Contexto:`,
     `  Validado vía Odoo 19 product.total_value AVCO oficial`,
@@ -357,12 +357,13 @@ export function PnlAdjustmentEntryCard({
                   </Badge>
                 </div>
                 <p className="mt-1 text-[11px] text-muted-foreground">
-                  Movimientos Dr 501.01.02 / Cr 115.* (refacciones, empaque,
-                  encogimientos, requisiciones) que ya se contabilizaron al
-                  comprar. Bajo el régimen actual (P&L limpio = BOM-MP
-                  recursivo) son DOBLE CONTEO. Post-1-abril 2026 (RSI56
-                  archivado), 501.01.02 debería estar prácticamente vacía.
-                  Pending action:{" "}
+                  Refacciones (TVAR/ENT-REF) cuya factura va directo a
+                  504.01.0005/0007/0042 al comprar (gasto operativo) Y
+                  además crean entrada al inventario que sale a 501.01.02
+                  al consumirse — DOBLE CONTEO. Empaque (SP/) y
+                  encogimientos (TL/ENC) NO se ajustan: su flujo es normal
+                  (la compra entra al inventario y sale al costo una sola
+                  vez). Pending action:{" "}
                   <code className="text-[10px]">
                     refacciones-tvar-doble-conteo-501-01-02
                   </code>
@@ -534,22 +535,18 @@ export function PnlAdjustmentEntryCard({
         </div>
 
         <p className="text-[11px] text-muted-foreground leading-snug">
-          <strong>Cuenta contraparte recomendada:</strong>{" "}
-          <code className="bg-muted px-1 rounded">
-            305.01.01 Resultado de ejercicios anteriores
-          </code>
-          . El ajuste reconoce que las refacciones / empaque / encogimientos
-          se contabilizaron al comprar (504.01.0005 / 0007 / 0042) y luego
-          otra vez al consumir (501.01.02) — duplicación de períodos pasados.
-          Asiento contable: <code>Dr 305.01.01 / Cr 501.01.x</code>. NO toca
-          P&L 2026 directamente; reconoce que la utilidad histórica estaba
-          subestimada.
+          <strong>Cuenta contraparte (decisión CEO 2026-05-08):</strong>{" "}
+          <code className="bg-muted px-1 rounded">115.x INVENTARIO</code>.
+          El ajuste revierte el costo duplicado y restaura el valor al
+          inventario donde físicamente está la refacción (la factura ya
+          las gastó en 504.01.0005/0007/0042 al comprar; el TVAR contable
+          las consumió otra vez en 501.01.02). Asiento:{" "}
+          <code>Cr 501.01.02 / Dr 115.x</code>.
           <br />
-          <strong>Alternativa:</strong> si tu contador prefiere reflejarlo en
-          P&L del año, usar <code>704.99 OTROS INGRESOS EXTRAORDINARIOS</code>
-          {" "}como contrapartida. Lo que <strong>NO funciona</strong>: pasar
-          el monto a otra cuenta de gasto (504.01.0005, etc.) — solo movería
-          la duplicación de fila, sin reducir el doble conteo.
+          <strong>Solo aplica a refacciones (TVAR).</strong> Empaque (SP/),
+          encogimientos (TL/ENC) y requisición (TL/REQP) son flujo NORMAL
+          de inventario (la compra entra a 115.x, sale a 501.01.02 al
+          consumir — una sola vez al P&L) y se quedan sin ajustar.
         </p>
       </CardContent>
     </Card>
