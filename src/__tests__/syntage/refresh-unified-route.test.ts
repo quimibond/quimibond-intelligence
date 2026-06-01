@@ -28,36 +28,12 @@ beforeEach(() => {
   vi.clearAllMocks();
 });
 
+// SP5 Task 29: invoices_unified retired — endpoint always returns 410 Gone.
 describe("POST /api/syntage/refresh-unified", () => {
-  it("returns 401 when auth missing", async () => {
+  it("returns 410 Gone (endpoint retired in SP5 Task 29)", async () => {
     const res = await POST(makeReq());
-    expect(res.status).toBe(401);
-  });
-
-  it("returns 200 with refresh results when auth valid", async () => {
-    const mockRpc = vi.fn()
-      .mockResolvedValueOnce({ data: { invoices_unified_rows: 100, issues_opened: 5, issues_resolved: 2, duration_ms: 1234 }, error: null })
-      .mockResolvedValueOnce({ data: { payments_unified_rows: 30, issues_opened: 1, issues_resolved: 0, duration_ms: 500 },  error: null });
-    vi.mocked(getServiceClient).mockReturnValue({ rpc: mockRpc } as never);
-
-    const res = await POST(makeReq({ authorization: "Bearer test-secret" }));
-    expect(res.status).toBe(200);
+    expect(res.status).toBe(410);
     const body = await res.json();
-    expect(body.ok).toBe(true);
-    expect(body.invoices).toMatchObject({ invoices_unified_rows: 100, issues_opened: 5 });
-    expect(body.payments).toMatchObject({ payments_unified_rows: 30 });
-    expect(mockRpc).toHaveBeenCalledWith("refresh_invoices_unified");
-    expect(mockRpc).toHaveBeenCalledWith("refresh_payments_unified");
-  });
-
-  it("returns 500 when RPC fails", async () => {
-    const mockRpc = vi.fn().mockResolvedValue({ data: null, error: { message: "boom" } });
-    vi.mocked(getServiceClient).mockReturnValue({ rpc: mockRpc } as never);
-
-    const res = await POST(makeReq({ authorization: "Bearer test-secret" }));
-    expect(res.status).toBe(500);
-    const body = await res.json();
-    expect(body.ok).toBe(false);
-    expect(body.error).toContain("boom");
+    expect(body.error).toContain("retired");
   });
 });
