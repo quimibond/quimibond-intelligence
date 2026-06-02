@@ -149,7 +149,7 @@ async function _getCogsMonthlyRaw(range: HistoryRange): Promise<CogsMonthlyTrend
 export const getCogsMonthly = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsMonthlyRaw(range),
-    ["sp13-finanzas-cogs-monthly-v2-imports-refunds", range],
+    ["sp13-finanzas-cogs-monthly-v3-byproduct-zero", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

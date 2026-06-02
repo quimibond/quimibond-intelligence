@@ -17,7 +17,12 @@ import { periodBoundsForRange } from "./_period";
  *  - cogs_recursive_unit_mxn: explosión BOM recursiva hasta materia prima
  *    por producto (una BOM primaria por SKU, con avg_cost_mxn de hojas).
  *  - flags[]: quality flags para auditoría ('sin_bom', 'costo_cero',
- *    'costo_mayor_a_venta', 'margen_negativo', 'sin_costo_promedio').
+ *    'costo_mayor_a_venta', 'margen_negativo', 'sin_costo_promedio',
+ *    'subproducto_costo_cero').
+ *
+ * Subproductos (SALDO*/DESPERDICIO*): costo MP $0 deliberado — su MP ya
+ * está en la BOM del producto principal (migration 20260602). Sin esto se
+ * duplicaba ~$4.5M/año de MP y generaba márgenes falsos de -1,500%.
  *
  * Nota: el revenue aquí es el facturado de la línea (base invoice). Para
  * el total consolidado del período usamos canonical_account_balances cuenta
@@ -121,7 +126,7 @@ async function _getCogsPerProductRaw(
 export const getCogsPerProduct = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsPerProductRaw(range),
-    ["sp13-finanzas-cogs-per-product-v2-imports-refunds", range],
+    ["sp13-finanzas-cogs-per-product-v3-byproduct-zero", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 

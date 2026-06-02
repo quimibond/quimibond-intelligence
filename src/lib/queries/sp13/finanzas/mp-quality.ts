@@ -311,6 +311,6 @@ export const getTopProductsWithComposition = (
 ) =>
   unstable_cache(
     () => _getTopProductsWithCompositionRaw(range, limit),
-    ["sp13-finanzas-top-products-composition", range, String(limit)],
+    ["sp13-finanzas-top-products-composition-v2-byproduct-zero", range, String(limit)],
     { revalidate: 300, tags: ["finanzas"] }
   )();

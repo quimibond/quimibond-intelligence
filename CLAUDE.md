@@ -954,6 +954,34 @@ Lepezo en marzo 2026 ($11.35M factura INV/2026/03/0173) fue un
 Marzo normalizado: 1,29M reportado − 2,07M one-offs = **−0,78M
 (comparable apples-to-apples con abril −0,98M)**.
 
+### Subproductos (SALDO/DESPERDICIO) = costo MP $0 (2026-06-02)
+
+Migration `20260602_byproduct_saldo_zero_cost.sql` elimina el doble conteo
+de MP en subproductos:
+
+- **Problema**: los productos `SALDO*` nacen como subproducto de las mismas
+  MOs que el producto principal (verificado en canonical_stock_moves:
+  produccion_pt con valor asignado). Su MP ya está en la receta BOM del
+  producto principal. El modelo BOM-recursivo les cobraba además su
+  `avg_cost_mxn` (fallback de leaf sin BOM) → la misma MP contada 2 veces.
+  Doble conteo 2025: **$4.50M** (7.6% del costo MP). Generaba márgenes
+  falsos de −1,537%.
+- **Regla**: la MP se cobra UNA sola vez (en la BOM del producto principal).
+  Subproductos y desperdicios → costo MP $0. Su venta es recuperación pura
+  de margen.
+- **Mecánica**: `canonical_products.is_byproduct` (backfill por patrón
+  `^(SALDO|DESPERDICIO)`) + short-circuit en
+  `get_bom_raw_material_cost_per_unit` (también en hojas del árbol BOM).
+  Cache source `byproduct_zero`. Flag `subproducto_costo_cero` en
+  `get_cogs_per_product`.
+- **El contable NO cambia**: el cost-share de Odoo a subproductos es
+  correcto en AVCO (reduce el costo del producto principal). La asimetría
+  contable-vs-BOM queda visible en la fila "Δ vs P&L contable".
+- **Costo MP 2025 corregido**: $59.15M → **$54.65M** (margen contributivo
+  MP ~67.5% → ~70%).
+- Si Quimibond crea subproductos con otro naming, marcar
+  `is_byproduct = true` manualmente en canonical_products.
+
 ### IEPS triplet (productos con tabaco/alcohol — N/A para textil pero
 documentado por completitud):
 Algunas líneas en odoo_invoice_lines vienen como triplet
