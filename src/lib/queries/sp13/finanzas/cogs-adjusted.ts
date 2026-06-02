@@ -333,7 +333,7 @@ async function _getCogsComparisonRaw(range: HistoryRange): Promise<CogsCompariso
 export const getCogsComparison = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison-v5-paginated", range],
+    ["sp13-finanzas-cogs-comparison-v6-byproduct-zero", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
@@ -343,6 +343,6 @@ export { _getCogsComparisonRaw as _getCogsComparisonForTests };
 export const getCogsComparisonCached = (range: HistoryRange) =>
   unstable_cache(
     () => _getCogsComparisonRaw(range),
-    ["sp13-finanzas-cogs-comparison-v5-paginated", range],
+    ["sp13-finanzas-cogs-comparison-v6-byproduct-zero", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
