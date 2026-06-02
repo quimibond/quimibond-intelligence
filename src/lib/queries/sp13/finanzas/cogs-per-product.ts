@@ -20,7 +20,7 @@ import { periodBoundsForRange } from "./_period";
  *    'costo_mayor_a_venta', 'margen_negativo', 'sin_costo_promedio',
  *    'subproducto_costo_cero').
  *
- * Subproductos (SALDO*/DESPERDICIO*): costo MP $0 deliberado — su MP ya
+ * Subproductos (SALDO, DESPERDICIO): costo MP $0 deliberado — su MP ya
  * está en la BOM del producto principal (migration 20260602). Sin esto se
  * duplicaba ~$4.5M/año de MP y generaba márgenes falsos de -1,500%.
  *
