@@ -1058,6 +1058,25 @@ faltantes en Odoo.
 (Anomalía abril: ACABADO overhead $1.59M es alto porque renta $677k de
 abril es 39% menor a marzo — ver pending action `investigate-renta-abril-baja`.)
 
+### La rama (OP-ACA) — costo por metro (2026-06-02)
+
+Card `RamaBurdenCard` en `/contabilidad/centros-de-costo`, RPC
+`get_rama_burden_monthly(p_months_back)`. Por mes:
+
+- **Gas $/metro** = gasto gas (504.01.0003, fallback compras GASLP) ÷
+  metros terminados en órdenes `TL/OP-ACA` (state=done). **Alerta >$0.75/mt**.
+- **Gastos de fabricación $/metro** = (MOD 501.06 + OH fábrica 504.01,
+  **sin costo primo MP**) ÷ metros OP-ACA. Columna extra con depreciación
+  fábrica (504.08-23).
+
+Hallazgos iniciales (Ene-May 2026): gas $0.61–$1.00/mt (prom $0.73),
+fabricación $4.62–$7.51/mt (prom $6.26). El precio del litro de gas es
+estable (~$8.70-$9.15); la variación del $/mt viene de la eficiencia —
+la rama tiene costo fijo de calentamiento, así que <750k mt/mes dispara
+el costo unitario. OP-ACA existe en Odoo desde enero 2026 (no hay 2025).
+Query: `src/lib/queries/sp13/finanzas/rama-burden.ts`, migration
+`20260602b_rama_burden_monthly.sql`.
+
 ### Migration
 
 `supabase/migrations/20260504_cost_centers_overhead.sql` — schema +

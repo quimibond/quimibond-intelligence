@@ -10,8 +10,10 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 
 import { getCostCentersSnapshot } from "@/lib/queries/sp13/finanzas/cost-centers";
+import { getRamaBurden } from "@/lib/queries/sp13/finanzas/rama-burden";
 import { CostCentersTable } from "./_components/cost-centers-table";
 import { CostCentersIntro } from "./_components/cost-centers-intro";
+import { RamaBurdenCard } from "./_components/rama-burden-card";
 
 export const dynamic = "force-dynamic";
 export const metadata = { title: "Centros de costo — Quimibond" };
@@ -51,6 +53,10 @@ export default async function CentrosDeCostoPage({
       <Suspense fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}>
         <CostCentersBlock range={range} />
       </Suspense>
+
+      <Suspense fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}>
+        <RamaBurdenBlock />
+      </Suspense>
     </PageLayout>
   );
 }
@@ -62,4 +68,9 @@ async function CostCentersBlock({
 }) {
   const snapshot = await getCostCentersSnapshot(range);
   return <CostCentersTable snapshot={snapshot} />;
+}
+
+async function RamaBurdenBlock() {
+  const summary = await getRamaBurden(12);
+  return <RamaBurdenCard summary={summary} />;
 }
