@@ -99,34 +99,28 @@ async function renderPage(search: Record<string, string> = {}) {
 }
 
 describe("/ (CEO dashboard)", () => {
-  it("renders the SP13 question-framed subtitle", async () => {
+  it("renders the question-framed subtitle", async () => {
     await renderPage();
     expect(
-      screen.getByText(/¿Cuánto tengo, qué quema hoy y en qué debo enfocarme\?/),
+      screen.getByText(/¿Qué pasó hoy y a dónde voy\?/),
     ).toBeInTheDocument();
   });
 
-  it("invokes the four core queries on default render", async () => {
+  it("invokes the core queries on default render", async () => {
     getDashboardKpisMock.mockClear();
     getTopAtRiskClientsMock.mockClear();
-    getRevenueTrendMock.mockClear();
-    getInsightsMock.mockClear();
     getActiveTripwiresMock.mockClear();
     await renderPage();
     expect(getDashboardKpisMock).toHaveBeenCalled();
-    expect(getInsightsMock).toHaveBeenCalled();
-    expect(getRevenueTrendMock).toHaveBeenCalled();
     expect(getTopAtRiskClientsMock).toHaveBeenCalled();
     expect(getActiveTripwiresMock).toHaveBeenCalled();
   });
 
-  it("renders the four question-first section headings", async () => {
+  it("renders the question-first section headings", async () => {
     await renderPage();
-    expect(
-      screen.getByText(/¿Cómo está la salud del negocio\?/),
-    ).toBeInTheDocument();
-    expect(screen.getByText(/¿Qué quema hoy\?/)).toBeInTheDocument();
-    expect(screen.getByText(/¿Cómo viene la facturación\?/)).toBeInTheDocument();
+    expect(screen.getByText(/¿Qué pasó hoy\?/)).toBeInTheDocument();
+    expect(screen.getByText(/¿Cómo va el mes\?/)).toBeInTheDocument();
+    expect(screen.getByText(/¿Cómo viene la tracción\?/)).toBeInTheDocument();
     expect(
       screen.getByText(/¿Quién está en riesgo de irse\?/),
     ).toBeInTheDocument();

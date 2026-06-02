@@ -16,8 +16,7 @@ class StubIntersectionObserver implements IntersectionObserver {
   unobserve(_target: Element): void {}
 }
 if (typeof globalThis.IntersectionObserver === "undefined") {
-  // @ts-expect-error — jsdom polyfill for SP13 components
-  globalThis.IntersectionObserver = StubIntersectionObserver;
+  globalThis.IntersectionObserver = StubIntersectionObserver as unknown as typeof IntersectionObserver;
 }
 
 // jsdom doesn't implement Element.scrollIntoView; SectionNav calls it on

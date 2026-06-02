@@ -25,6 +25,7 @@ function makeClient(rows: Row[]) {
     eq: (col: string, val: unknown) => typeof builder;
     gte: (col: string, val: unknown) => typeof builder;
     lte: (col: string, val: unknown) => typeof builder;
+    or: (filter: string) => typeof builder;
     in: (col: string, vals: unknown[]) => typeof builder;
     is: (col: string, val: unknown) => typeof builder;
     not: (col: string, op: string, val: unknown) => typeof builder;
@@ -36,6 +37,7 @@ function makeClient(rows: Row[]) {
     eq: () => builder,
     gte: () => builder,
     lte: () => builder,
+    or: () => builder,
     in: () => builder,
     is: () => builder,
     not: () => builder,
@@ -80,11 +82,11 @@ describe("isComputableRevenue", () => {
 });
 
 describe("getUnifiedRevenueAggregates", () => {
-  it("calls invoices_unified table and returns aggregate shape", async () => {
+  it("reads canonical_invoices and returns aggregate shape", async () => {
     const rows = [
-      { match_status: "match_uuid", odoo_amount_total: 100, uuid_sat: "A" },
-      { match_status: "match_composite", odoo_amount_total: 200, uuid_sat: "B" },
-      { match_status: "odoo_only", odoo_amount_total: 300, uuid_sat: null },
+      { amount_total_mxn_resolved: 100, sat_uuid: "A", has_sat_record: true },
+      { amount_total_mxn_resolved: 200, sat_uuid: "B", has_sat_record: true },
+      { amount_total_mxn_resolved: 300, sat_uuid: null, has_sat_record: false },
     ];
     vi.mocked(getServiceClient).mockReturnValue(makeClient(rows) as never);
 

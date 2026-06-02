@@ -1531,7 +1531,7 @@ async function getDomainData(sb: any, domain: string, agentId?: number, director
         // silver natural pero depende de contact_type IN ('internal_*').
         // Mantengo lectura directa por compactez del prompt y porque un
         // canonical_users propio sería redundante.
-        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20),
+        sb.from("odoo_users").select("name, email, department, pending_activities_count, overdue_activities_count").order("overdue_activities_count", { ascending: false }).limit(20), // SP5-EXCEPTION: Bronze team dashboard — no canonical_users in SP4 scope
         sb.from("threads").select("subject, last_sender, hours_without_response, account, company_id").eq("last_sender_type", "external").gt("hours_without_response", 48).in("status", ["needs_response", "stalled"]).order("hours_without_response", { ascending: false }).limit(15),
         // SP5: replaced odoo_sale_orders with canonical_sale_orders
         sb.from("canonical_sale_orders").select("salesperson_name, canonical_company_id, amount_total_mxn").eq("state", "sale").order("amount_total_mxn", { ascending: false }).limit(50), // SP5: replaced odoo_sale_orders

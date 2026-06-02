@@ -56,6 +56,8 @@ describe('getOverdueInvoicesPage bucket="90+"', () => {
     await getOverdueInvoicesPage({
       page: 1,
       size: 50,
+      sortDir: "desc",
+      facets: {},
       bucket: ["90+"],
     });
 
@@ -69,6 +71,8 @@ describe('getOverdueInvoicesPage bucket="90+"', () => {
     await getOverdueInvoicesPage({
       page: 1,
       size: 50,
+      sortDir: "desc",
+      facets: {},
       bucket: ["91-120"],
     });
     const orPayload = captured.orParts.flat().find((s) => s.includes("due_date_odoo"));

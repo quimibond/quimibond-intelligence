@@ -37,9 +37,9 @@ describe("IssueDetailClient", () => {
     (global.fetch as ReturnType<typeof vi.fn>).mockClear();
   });
 
-  it("renders issue header with severity badge and description", () => {
+  it("renders issue header with severity badge and priority score", () => {
     render(<IssueDetailClient item={makeItem()} />);
-    expect(screen.getByText(/factura sin uuid/i)).toBeInTheDocument();
+    expect(screen.getByText(/Prioridad 87/i)).toBeInTheDocument();
     expect(screen.getAllByRole("status")[0]).toHaveAttribute("data-color", "critical");
   });
 

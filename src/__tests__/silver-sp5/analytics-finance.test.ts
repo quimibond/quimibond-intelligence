@@ -6,9 +6,12 @@ const KEY = process.env.SUPABASE_SERVICE_KEY;
 const describeIntegration = URL && KEY ? describe : describe.skip;
 
 describeIntegration("analytics/finance.ts — canonical/gold reads", () => {
-  let getCashPosition: () => Promise<unknown[]>;
-  let getPlHistory: (opts?: { from?: string; to?: string }) => Promise<unknown[]>;
-  let getWorkingCapital: () => Promise<unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let getCashPosition: () => Promise<any[]>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let getPlHistory: (months?: number, opts?: { from?: string; to?: string }) => Promise<any[]>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let getWorkingCapital: () => Promise<any>;
   let getArZombies: () => Promise<{ count: number; totalMxn: number }>;
 
   beforeAll(async () => {

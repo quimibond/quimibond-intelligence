@@ -438,7 +438,7 @@ async function _getPnlKpisRaw(range: HistoryRange): Promise<PnlKpis> {
 export const getPnlKpis = (range: HistoryRange) =>
   unstable_cache(
     () => _getPnlKpisRaw(range),
-    ["sp13-finanzas-pnl-kpis-v12-only-refacciones", range],
+    ["sp13-finanzas-pnl-kpis-v13-enc-sp-tvar", range],
     { revalidate: 600, tags: ["finanzas"] }
   )();
 
