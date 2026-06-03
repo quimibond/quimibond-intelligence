@@ -4,6 +4,7 @@ import {
   PageLayout,
   PageHeader,
   HistorySelector,
+  PrintButton,
 } from "@/components/patterns";
 import { parseHistoryRange } from "@/components/patterns/history-range";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -33,7 +34,12 @@ export default async function CentrosDeCostoPage({
       <PageHeader
         title="Centros de costo"
         subtitle="MOD + overhead por departamento productivo"
-        actions={<HistorySelector paramName="period" defaultRange="mtd" />}
+        actions={
+          <div className="flex items-center gap-2">
+            <HistorySelector paramName="period" defaultRange="mtd" />
+            <PrintButton />
+          </div>
+        }
       />
 
       <CostCentersIntro />

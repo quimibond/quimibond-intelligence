@@ -1,9 +1,54 @@
 import { formatCurrencyMXN, formatNumber, formatPercent } from "@/lib/formatters";
+import { DataCsvButton, PrintButton } from "@/components/patterns";
 import type {
   CostReconSnapshot,
   CostReconRow,
 } from "@/lib/queries/sp13/finanzas/cost-reconstruction";
 import { cn } from "@/lib/utils";
+
+const CSV_COLUMNS = [
+  { key: "ref", label: "Referencia" },
+  { key: "nombre", label: "Producto" },
+  { key: "uom", label: "UoM" },
+  { key: "qty", label: "Cantidad vendida" },
+  { key: "ventas", label: "Ventas MXN" },
+  { key: "primo_unit", label: "Costo primo MP unit (último costo)" },
+  { key: "fab_unit", label: "Factor fabricación unit" },
+  { key: "op_unit", label: "Factor operación unit" },
+  { key: "total_unit", label: "Costo total unit" },
+  { key: "primo_total", label: "Costo primo MP total" },
+  { key: "fab_total", label: "Fabricación total" },
+  { key: "op_total", label: "Operación total" },
+  { key: "costo_total", label: "Costo total" },
+  { key: "pct_mp", label: "% MP" },
+  { key: "pct_fab", label: "% Fabricación" },
+  { key: "pct_op", label: "% Operación" },
+  { key: "margen", label: "Margen absorbido %" },
+  { key: "fuente", label: "Fuente costo MP" },
+];
+
+function toCsvRows(rows: CostReconRow[]): Record<string, unknown>[] {
+  return rows.map((r) => ({
+    ref: r.productRef ?? "",
+    nombre: r.productName ?? "",
+    uom: r.uom ?? "",
+    qty: r.qtySold,
+    ventas: r.revenueMxn,
+    primo_unit: r.costoPrimoUnitMxn,
+    fab_unit: r.factorFabUnitMxn,
+    op_unit: r.factorOpUnitMxn,
+    total_unit: r.costoTotalUnitMxn,
+    primo_total: r.costoPrimoTotalMxn,
+    fab_total: r.gastosFabTotalMxn,
+    op_total: r.gastosOpTotalMxn,
+    costo_total: r.costoTotalMxn,
+    pct_mp: r.pctMp ?? "",
+    pct_fab: r.pctFab ?? "",
+    pct_op: r.pctOp ?? "",
+    margen: r.marginFullPct ?? "",
+    fuente: r.mpSource,
+  }));
+}
 
 // Costos unitarios necesitan centavos (formatCurrencyMXN redondea a pesos).
 const perUnit = new Intl.NumberFormat("es-MX", {
@@ -49,7 +94,18 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
   );
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-8" data-table-export-root>
+      {/* === Toolbar de export === */}
+      <div className="flex items-center justify-end gap-2 print:hidden">
+        <DataCsvButton
+          rows={toCsvRows(rows)}
+          columns={CSV_COLUMNS}
+          filename={`costo-reconstruido-${period}`}
+          label="Exportar CSV (todos)"
+        />
+        <PrintButton />
+      </div>
+
       {/* === Factores del período === */}
       <section className="space-y-3">
         <div>

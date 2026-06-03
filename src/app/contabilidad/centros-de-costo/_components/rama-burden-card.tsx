@@ -1,9 +1,27 @@
 import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
+import { DataCsvButton } from "@/components/patterns";
 import {
   GAS_PER_METER_ALERT_THRESHOLD,
   type RamaBurdenSummary,
 } from "@/lib/queries/sp13/finanzas/rama-burden";
 import { cn } from "@/lib/utils";
+
+const RAMA_CSV_COLUMNS = [
+  { key: "mes", label: "Mes" },
+  { key: "metros", label: "Metros OP-ACA" },
+  { key: "gas_gasto", label: "Gas MXN" },
+  { key: "gas_litros", label: "Gas litros" },
+  { key: "precio_litro", label: "Precio por litro" },
+  { key: "gas_metro", label: "Gas por metro" },
+  { key: "litros_metro", label: "Litros por metro" },
+  { key: "mod", label: "MOD 501.06" },
+  { key: "oh", label: "OH fábrica 504.01" },
+  { key: "dep", label: "Depreciación fábrica" },
+  { key: "gastos_fab", label: "Gastos fabricación" },
+  { key: "fab_metro", label: "Fabricación por metro" },
+  { key: "fab_dep_metro", label: "Fabricación+dep por metro" },
+  { key: "parcial", label: "Parcial" },
+];
 
 // Valores por metro / por litro necesitan centavos (formatCurrencyMXN
 // global redondea a pesos enteros).
@@ -37,19 +55,43 @@ export function RamaBurdenCard({ summary }: { summary: RamaBurdenSummary }) {
     return null;
   }
 
+  const csvRows = months.map((m) => ({
+    mes: m.mes,
+    metros: m.metrosOpAca,
+    gas_gasto: m.gasGastoMxn,
+    gas_litros: m.gasLitros,
+    precio_litro: m.gasPrecioLitro ?? "",
+    gas_metro: m.gasPorMetro ?? "",
+    litros_metro: m.litrosPorMetro ?? "",
+    mod: m.modMxn,
+    oh: m.overheadMxn,
+    dep: m.depreciacionMxn,
+    gastos_fab: m.gastosFabricacionMxn,
+    fab_metro: m.fabricacionPorMetro ?? "",
+    fab_dep_metro: m.fabricacionConDepPorMetro ?? "",
+    parcial: m.isPartial ? "sí" : "",
+  }));
+
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">
-          La rama (OP-ACA) — costo por metro producido
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Gas (504.01.0003) y gastos de fabricación (MOD 501.06 + overhead
-          fábrica 504.01, <strong>sin costo primo MP</strong>) divididos entre
-          los metros terminados en órdenes TL/OP-ACA. Alerta de gas cuando
-          supera ${GAS_PER_METER_ALERT_THRESHOLD.toFixed(2)}/mt — señal de
-          baja eficiencia (la rama tiene costo fijo de calentamiento).
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">
+            La rama (OP-ACA) — costo por metro producido
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Gas (504.01.0003) y gastos de fabricación (MOD 501.06 + overhead
+            fábrica 504.01, <strong>sin costo primo MP</strong>) divididos entre
+            los metros terminados en órdenes TL/OP-ACA. Alerta de gas cuando
+            supera ${GAS_PER_METER_ALERT_THRESHOLD.toFixed(2)}/mt — señal de
+            baja eficiencia (la rama tiene costo fijo de calentamiento).
+          </p>
+        </div>
+        <DataCsvButton
+          rows={csvRows}
+          columns={RAMA_CSV_COLUMNS}
+          filename="rama-op-aca"
+        />
       </div>
 
       {/* KPIs promedio (meses completos) */}

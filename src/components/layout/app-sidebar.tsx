@@ -337,6 +337,8 @@ export function AppSidebar() {
         "fixed inset-y-0 left-0 z-50 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 ease-in-out",
         // Mobile: hidden (bottom tab bar replaces sidebar)
         "hidden md:flex",
+        // Print: hide chrome
+        "print:hidden",
         // Desktop: always visible, width depends on collapsed state
         collapsed ? "md:w-16" : "md:w-64"
       )}

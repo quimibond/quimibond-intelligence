@@ -28,6 +28,7 @@ export { DataViewToggle } from "./data-view-toggle";
 export { TableDensityToggle } from "./table-density-toggle";
 export { TableViewOptions, type ViewColumn } from "./table-view-options";
 export { TableExportButton } from "./table-export-button";
+export { DataCsvButton, PrintButton } from "./report-export";
 export { makeSortHref } from "./table-sort-href";
 export { CompanyLink } from "./company-link";
 export { Currency } from "./currency";
