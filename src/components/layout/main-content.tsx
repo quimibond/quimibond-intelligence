@@ -19,7 +19,9 @@ export function MainContent({ children }: { children: React.ReactNode }) {
       id="main-content"
       className={cn(
         "transition-[padding-left] duration-200",
-        collapsed ? "md:pl-16" : "md:pl-64"
+        collapsed ? "md:pl-16" : "md:pl-64",
+        // Print: drop sidebar offset so content uses full page width
+        "print:!pl-0"
       )}
     >
       {/* PullToRefresh is a mobile-only affordance (desktop is a no-op wrapper) */}

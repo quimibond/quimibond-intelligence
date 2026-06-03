@@ -1,9 +1,42 @@
 import { formatCurrencyMXN, formatNumber } from "@/lib/formatters";
+import { DataCsvButton } from "@/components/patterns";
 import type {
   CostCentersSnapshot,
   CostCenterRow,
 } from "@/lib/queries/sp13/finanzas/cost-centers";
 import { cn } from "@/lib/utils";
+
+const CC_CSV_COLUMNS = [
+  { key: "centro", label: "Centro" },
+  { key: "codigo", label: "Código" },
+  { key: "naturaleza", label: "Naturaleza" },
+  { key: "nomina", label: "Nómina 501.06" },
+  { key: "renta", label: "Renta" },
+  { key: "servicios", label: "Servicios" },
+  { key: "otro_oh", label: "Otro OH" },
+  { key: "total_oh", label: "Total OH" },
+  { key: "total", label: "Total mes" },
+  { key: "produccion", label: "Producción" },
+  { key: "uom", label: "UoM" },
+  { key: "burden", label: "Burden por unidad" },
+];
+
+function ccCsvRows(rows: CostCenterRow[]): Record<string, unknown>[] {
+  return rows.map((r) => ({
+    centro: r.costCenterName,
+    codigo: r.costCenterCode,
+    naturaleza: r.nature,
+    nomina: r.nominaMxn,
+    renta: r.rentMxn,
+    servicios: r.utilitiesMxn,
+    otro_oh: r.otherOverheadMxn,
+    total_oh: r.totalOverheadMxn,
+    total: r.totalCostMxn,
+    produccion: r.qtyProduced,
+    uom: r.outputUom ?? "",
+    burden: r.burdenRatePerUnit ?? "",
+  }));
+}
 
 const NATURE_LABEL: Record<CostCenterRow["nature"], string> = {
   fabril_directo: "Fabril directo",
@@ -39,16 +72,23 @@ export function CostCentersTable({
 
   return (
     <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold">
-          Desglose por centro — {rangeLabel} ({period})
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Nómina via 501.06.* (parser regex sobre journal ref de NOMINAS).
-          Overhead via 504.01.* (asignación directa luz→TEJIDO, gas→ACABADO,
-          agua→TINTORERIA, agujados→TEJIDO; renta por lote; resto prorrateado
-          por producción de fabril_directo).
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">
+            Desglose por centro — {rangeLabel} ({period})
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Nómina via 501.06.* (parser regex sobre journal ref de NOMINAS).
+            Overhead via 504.01.* (asignación directa luz→TEJIDO, gas→ACABADO,
+            agua→TINTORERIA, agujados→TEJIDO; renta por lote; resto prorrateado
+            por producción de fabril_directo).
+          </p>
+        </div>
+        <DataCsvButton
+          rows={ccCsvRows(rows)}
+          columns={CC_CSV_COLUMNS}
+          filename={`centros-de-costo-${period}`}
+        />
       </div>
 
       <div className="overflow-x-auto rounded-md border">
