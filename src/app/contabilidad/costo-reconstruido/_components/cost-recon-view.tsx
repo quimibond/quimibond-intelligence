@@ -20,9 +20,9 @@ const CSV_COLUMNS = [
   { key: "fab_total", label: "Fabricación total" },
   { key: "op_total", label: "Operación total" },
   { key: "costo_total", label: "Costo total" },
-  { key: "pct_mp", label: "% MP" },
-  { key: "pct_fab", label: "% Fabricación" },
-  { key: "pct_op", label: "% Operación" },
+  { key: "pct_mp_ventas", label: "% MP / ventas" },
+  { key: "pct_fab_ventas", label: "% Fabricación / ventas" },
+  { key: "pct_op_ventas", label: "% Operación / ventas" },
   { key: "margen", label: "Margen absorbido %" },
   { key: "fuente", label: "Fuente costo MP" },
 ];
@@ -42,9 +42,9 @@ function toCsvRows(rows: CostReconRow[]): Record<string, unknown>[] {
     fab_total: r.gastosFabTotalMxn,
     op_total: r.gastosOpTotalMxn,
     costo_total: r.costoTotalMxn,
-    pct_mp: r.pctMp ?? "",
-    pct_fab: r.pctFab ?? "",
-    pct_op: r.pctOp ?? "",
+    pct_mp_ventas: r.pctMpVsRevenue != null ? Math.round(r.pctMpVsRevenue * 10) / 10 : "",
+    pct_fab_ventas: r.pctFabVsRevenue != null ? Math.round(r.pctFabVsRevenue * 10) / 10 : "",
+    pct_op_ventas: r.pctOpVsRevenue != null ? Math.round(r.pctOpVsRevenue * 10) / 10 : "",
     margen: r.marginFullPct ?? "",
     fuente: r.mpSource,
   }));
@@ -143,37 +143,41 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         </div>
       </section>
 
-      {/* === Totales del costeo reconstruido === */}
+      {/* === Estructura vs ventas (lo que se va de cada peso vendido) === */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">
-          Estructura de costo absorbido — total del mes
+          Estructura sobre ventas — total del mes
         </h2>
+        <p className="text-sm text-muted-foreground">
+          De cada peso vendido, cuánto se va en materia prima, fabricación y
+          operación. Las tres capas + el margen suman 100% de las ventas.
+        </p>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-5">
           <Kpi
-            label="Materia prima"
-            value={formatCurrencyMXN(totals.mpTotalMxn)}
-            sub={totals.pctMp != null ? `${formatPercent(totals.pctMp)} del costo` : ""}
+            label="Materia prima / ventas"
+            value={totals.pctMpVsRevenue != null ? formatPercent(totals.pctMpVsRevenue) : "—"}
+            sub={formatCurrencyMXN(totals.mpTotalMxn, { compact: true })}
           />
           <Kpi
-            label="Fabricación"
-            value={formatCurrencyMXN(totals.fabTotalMxn)}
-            sub={totals.pctFab != null ? `${formatPercent(totals.pctFab)} del costo` : ""}
-          />
-          <Kpi
-            label="Operación"
-            value={formatCurrencyMXN(totals.opTotalMxn)}
-            sub={totals.pctOp != null ? `${formatPercent(totals.pctOp)} del costo` : ""}
-          />
-          <Kpi
-            label="Costo total"
-            value={formatCurrencyMXN(totals.costoTotalMxn)}
-            sub={`${totals.productos} productos`}
+            label="Fabricación / ventas"
+            value={totals.pctFabVsRevenue != null ? formatPercent(totals.pctFabVsRevenue) : "—"}
+            sub={formatCurrencyMXN(totals.fabTotalMxn, { compact: true })}
             highlight
+          />
+          <Kpi
+            label="Operación / ventas"
+            value={totals.pctOpVsRevenue != null ? formatPercent(totals.pctOpVsRevenue) : "—"}
+            sub={formatCurrencyMXN(totals.opTotalMxn, { compact: true })}
           />
           <Kpi
             label="Margen absorbido"
             value={totals.marginPct != null ? formatPercent(totals.marginPct) : "—"}
-            sub={`Ventas ${formatCurrencyMXN(totals.revenueMxn, { compact: true })}`}
+            sub={`Costo ${formatCurrencyMXN(totals.costoTotalMxn, { compact: true })}`}
+          />
+          <Kpi
+            label="Ventas"
+            value={formatCurrencyMXN(totals.revenueMxn, { compact: true })}
+            sub={`${totals.productos} productos`}
           />
         </div>
       </section>
@@ -251,9 +255,10 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         </h2>
         <p className="text-sm text-muted-foreground">
           Costo primo con <strong>último costo de compra</strong> + factor
-          fabricación + factor operación. El % muestra cuánto del costo total
-          es MP vs gastos absorbidos. Margen = vs precio de venta a costo
-          absorbido completo.
+          fabricación + factor operación. Los % son <strong>sobre las ventas
+          del producto</strong>: cuánto de cada peso vendido se va en MP,
+          fabricación y operación. <strong>Fab/ventas &gt; 100%</strong>{" "}
+          significa que fabricar el producto cuesta más que su precio de venta.
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -265,8 +270,9 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                 <th className="px-3 py-2 text-right">+Fab</th>
                 <th className="px-3 py-2 text-right">+Op</th>
                 <th className="px-3 py-2 text-right font-semibold">Costo total</th>
-                <th className="px-3 py-2 text-right border-l">% MP</th>
-                <th className="px-3 py-2 text-right">% Gastos</th>
+                <th className="px-3 py-2 text-right border-l">% MP/ventas</th>
+                <th className="px-3 py-2 text-right bg-amber-50">% Fab/ventas</th>
+                <th className="px-3 py-2 text-right">% Op/ventas</th>
                 <th className="px-3 py-2 text-right border-l">Margen</th>
               </tr>
             </thead>
@@ -284,6 +290,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   </td>
                   <td className="px-3 py-2 border-l" colSpan={4} />
                   <td className="px-3 py-2 text-right tabular-nums" />
+                  <td className="px-3 py-2 text-right tabular-nums" />
                   <td className="px-3 py-2 text-right tabular-nums border-l" />
                   <td className="px-3 py-2 text-right tabular-nums" />
                 </tr>
@@ -298,12 +305,13 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   {formatCurrencyMXN(totals.costoTotalMxn, { compact: true })}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums border-l">
-                  {totals.pctMp != null ? formatPercent(totals.pctMp) : "—"}
+                  {totals.pctMpVsRevenue != null ? formatPercent(totals.pctMpVsRevenue) : "—"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums bg-amber-50">
+                  {totals.pctFabVsRevenue != null ? formatPercent(totals.pctFabVsRevenue) : "—"}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
-                  {totals.pctFab != null && totals.pctOp != null
-                    ? formatPercent(totals.pctFab + totals.pctOp)
-                    : "—"}
+                  {totals.pctOpVsRevenue != null ? formatPercent(totals.pctOpVsRevenue) : "—"}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums border-l">
                   {totals.marginPct != null
@@ -317,9 +325,10 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         <p className="text-xs text-muted-foreground">
           <strong>Lectura clave:</strong> los productos con costo primo bajo
           (jerseys ligeros) cargan el mismo factor por metro que los premium,
-          así que su % de gastos sube a 60%+ y el margen a costo absorbido puede
-          ser negativo aunque su margen de MP se vea alto. Eso indica precios de
-          venta que no cubren el costo fijo de producir cada metro.
+          así que su <strong>Fab/ventas</strong> sube a 50-60%+ y el margen a
+          costo absorbido se vuelve negativo aunque su margen de MP se vea alto.
+          Eso indica precios de venta que no cubren el costo fijo de producir
+          cada metro.
         </p>
       </section>
     </div>
@@ -327,8 +336,11 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
 }
 
 function ProductRow({ r }: { r: CostReconRow }) {
-  const pctGastos =
-    r.pctFab != null && r.pctOp != null ? r.pctFab + r.pctOp : null;
+  // Fab/ventas alto = la fabricación se come gran parte del precio de venta.
+  const fabHot =
+    r.pctFabVsRevenue != null && r.pctFabVsRevenue >= 50;
+  const fabCritical =
+    r.pctFabVsRevenue != null && r.pctFabVsRevenue >= 100;
   return (
     <tr className="border-t hover:bg-muted/20">
       <td className="px-3 py-2 font-medium">
@@ -355,10 +367,19 @@ function ProductRow({ r }: { r: CostReconRow }) {
         {fUnit(r.costoTotalUnitMxn)}
       </td>
       <td className="px-3 py-2 text-right tabular-nums border-l">
-        {r.pctMp != null ? formatPercent(r.pctMp) : "—"}
+        {r.pctMpVsRevenue != null ? formatPercent(r.pctMpVsRevenue) : "—"}
+      </td>
+      <td
+        className={cn(
+          "px-3 py-2 text-right tabular-nums bg-amber-50 font-medium",
+          fabHot && "text-amber-700",
+          fabCritical && "text-red-600 font-semibold",
+        )}
+      >
+        {r.pctFabVsRevenue != null ? formatPercent(r.pctFabVsRevenue) : "—"}
       </td>
       <td className="px-3 py-2 text-right tabular-nums">
-        {pctGastos != null ? formatPercent(pctGastos) : "—"}
+        {r.pctOpVsRevenue != null ? formatPercent(r.pctOpVsRevenue) : "—"}
       </td>
       <td
         className={cn(

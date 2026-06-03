@@ -37,6 +37,10 @@ export interface CostReconRow {
   pctMp: number | null;
   pctFab: number | null;
   pctOp: number | null;
+  /** Cada capa como % de las VENTAS del producto (lo que pidió el CEO). */
+  pctMpVsRevenue: number | null;
+  pctFabVsRevenue: number | null;
+  pctOpVsRevenue: number | null;
   marginFullPct: number | null;
   mpSource: string;
 }
@@ -51,6 +55,10 @@ export interface CostReconTotals {
   pctMp: number | null;
   pctFab: number | null;
   pctOp: number | null;
+  /** Cada capa como % de las VENTAS totales. */
+  pctMpVsRevenue: number | null;
+  pctFabVsRevenue: number | null;
+  pctOpVsRevenue: number | null;
   marginPct: number | null;
 }
 
@@ -98,53 +106,129 @@ async function _getCostReconSnapshotRaw(
 ): Promise<CostReconSnapshot> {
   const sb = getServiceClient();
   const bounds = periodBoundsForRange(range);
-  const period = bounds.toMonth;
 
-  const [reconRes, factorsRes, metersRes] = await Promise.all([
-    sb.rpc("get_full_cost_reconstruction", { p_period: period }),
+  const [factorsRes, metersRes] = await Promise.all([
     sb.rpc("get_cost_factors_monthly", { p_months_back: 36 }),
     sb.rpc("get_meters_produced_vs_sold", { p_months_back: 12 }),
   ]);
 
-  const rows: CostReconRow[] = (
-    (reconRes.data ?? []) as Record<string, unknown>[]
-  ).map((r) => ({
-    productId: n(r.odoo_product_id),
-    productRef: (r.product_ref as string) ?? null,
-    productName: (r.product_name as string) ?? null,
-    uom: (r.uom as string) ?? null,
-    qtySold: n(r.qty_sold),
-    revenueMxn: n(r.revenue_mxn),
-    costoPrimoUnitMxn: n(r.costo_primo_unit_mxn),
-    factorFabUnitMxn: n(r.factor_fab_unit_mxn),
-    factorOpUnitMxn: n(r.factor_op_unit_mxn),
-    costoTotalUnitMxn: n(r.costo_total_unit_mxn),
-    costoPrimoTotalMxn: n(r.costo_primo_total_mxn),
-    gastosFabTotalMxn: n(r.gastos_fab_total_mxn),
-    gastosOpTotalMxn: n(r.gastos_op_total_mxn),
-    costoTotalMxn: n(r.costo_total_mxn),
-    pctMp: nOrNull(r.pct_mp),
-    pctFab: nOrNull(r.pct_fab),
-    pctOp: nOrNull(r.pct_op),
-    marginFullPct: nOrNull(r.margin_full_pct),
-    mpSource: (r.mp_source as string) ?? "—",
-  }));
+  const factorRows = (factorsRes.data ?? []) as Record<string, unknown>[];
+
+  // Meses dentro del rango que tienen producción de referencia (factor válido).
+  // El factor $/metro es mensual; para YTD/multi-mes reconstruimos cada mes con
+  // SU propio factor y sumamos (lo más preciso). Solo entran meses con metros
+  // (OP-ACA/OP-V10 existen desde ene-2026), evitando diluir con meses sin datos.
+  let monthsToUse = factorRows
+    .filter(
+      (f) =>
+        (f.mes as string) >= bounds.fromMonth &&
+        (f.mes as string) <= bounds.toMonth &&
+        nOrNull(f.factor_fab_x_metro) != null,
+    )
+    .map((f) => f.mes as string)
+    .sort();
+  // Cap defensivo para rangos largos (ltm/3y/5y/all).
+  if (monthsToUse.length > 24) monthsToUse = monthsToUse.slice(-24);
+  // Fallback: si el rango no cae en ningún mes productivo, usa el último mes.
+  if (monthsToUse.length === 0) monthsToUse = [bounds.toMonth];
+
+  const isRange = monthsToUse.length > 1;
+  const period = isRange
+    ? `${monthsToUse[0]}…${monthsToUse[monthsToUse.length - 1]}`
+    : monthsToUse[0];
+
+  // Reconstrucción por mes (cada uno con su factor) → agregamos por producto.
+  const reconResults = await Promise.all(
+    monthsToUse.map((m) =>
+      sb.rpc("get_full_cost_reconstruction", { p_period: m }),
+    ),
+  );
+
+  const acc = new Map<number, CostReconRow>();
+  for (const res of reconResults) {
+    for (const r of (res.data ?? []) as Record<string, unknown>[]) {
+      const id = n(r.odoo_product_id);
+      const existing = acc.get(id);
+      if (existing) {
+        existing.qtySold += n(r.qty_sold);
+        existing.revenueMxn += n(r.revenue_mxn);
+        existing.costoPrimoTotalMxn += n(r.costo_primo_total_mxn);
+        existing.gastosFabTotalMxn += n(r.gastos_fab_total_mxn);
+        existing.gastosOpTotalMxn += n(r.gastos_op_total_mxn);
+        existing.costoTotalMxn += n(r.costo_total_mxn);
+      } else {
+        acc.set(id, {
+          productId: id,
+          productRef: (r.product_ref as string) ?? null,
+          productName: (r.product_name as string) ?? null,
+          uom: (r.uom as string) ?? null,
+          qtySold: n(r.qty_sold),
+          revenueMxn: n(r.revenue_mxn),
+          costoPrimoUnitMxn: 0,
+          factorFabUnitMxn: 0,
+          factorOpUnitMxn: 0,
+          costoTotalUnitMxn: 0,
+          costoPrimoTotalMxn: n(r.costo_primo_total_mxn),
+          gastosFabTotalMxn: n(r.gastos_fab_total_mxn),
+          gastosOpTotalMxn: n(r.gastos_op_total_mxn),
+          costoTotalMxn: n(r.costo_total_mxn),
+          pctMp: null,
+          pctFab: null,
+          pctOp: null,
+          pctMpVsRevenue: null,
+          pctFabVsRevenue: null,
+          pctOpVsRevenue: null,
+          marginFullPct: null,
+          mpSource: (r.mp_source as string) ?? "—",
+        });
+      }
+    }
+  }
+
+  // Recalcula unitarios (promedio ponderado del rango) y porcentajes.
+  const rows: CostReconRow[] = Array.from(acc.values()).map((r) => {
+    if (r.qtySold > 0) {
+      r.costoPrimoUnitMxn = r.costoPrimoTotalMxn / r.qtySold;
+      r.factorFabUnitMxn = r.gastosFabTotalMxn / r.qtySold;
+      r.factorOpUnitMxn = r.gastosOpTotalMxn / r.qtySold;
+      r.costoTotalUnitMxn =
+        r.costoPrimoUnitMxn + r.factorFabUnitMxn + r.factorOpUnitMxn;
+    }
+    if (r.costoTotalMxn > 0) {
+      r.pctMp = (r.costoPrimoTotalMxn / r.costoTotalMxn) * 100;
+      r.pctFab = (r.gastosFabTotalMxn / r.costoTotalMxn) * 100;
+      r.pctOp = (r.gastosOpTotalMxn / r.costoTotalMxn) * 100;
+    }
+    if (r.revenueMxn > 0) {
+      r.pctMpVsRevenue = (r.costoPrimoTotalMxn / r.revenueMxn) * 100;
+      r.pctFabVsRevenue = (r.gastosFabTotalMxn / r.revenueMxn) * 100;
+      r.pctOpVsRevenue = (r.gastosOpTotalMxn / r.revenueMxn) * 100;
+      r.marginFullPct =
+        ((r.revenueMxn - r.costoTotalMxn) / r.revenueMxn) * 100;
+    }
+    return r;
+  });
 
   rows.sort((a, b) => b.costoTotalMxn - a.costoTotalMxn);
 
-  // Factores del período seleccionado
-  const factorRows = (factorsRes.data ?? []) as Record<string, unknown>[];
-  const fRow = factorRows.find((f) => f.mes === period);
-  const factors: CostFactors | null = fRow
-    ? {
-        metrosReferencia: n(fRow.metros_referencia),
-        gastosFabMxn: n(fRow.gastos_fabricacion_mxn),
-        gastosOpMxn: n(fRow.gastos_operacion_mxn),
-        factorFabXMetro: nOrNull(fRow.factor_fab_x_metro),
-        factorOpXMetro: nOrNull(fRow.factor_op_x_metro),
-        factorTotalXMetro: nOrNull(fRow.factor_total_x_metro),
-      }
-    : null;
+  // Factores agregados del rango (blended = Σ gastos / Σ metros).
+  const inRange = factorRows.filter((f) =>
+    monthsToUse.includes(f.mes as string),
+  );
+  const sumMetros = inRange.reduce((s, f) => s + n(f.metros_referencia), 0);
+  const sumFab = inRange.reduce((s, f) => s + n(f.gastos_fabricacion_mxn), 0);
+  const sumOp = inRange.reduce((s, f) => s + n(f.gastos_operacion_mxn), 0);
+  const factors: CostFactors | null =
+    inRange.length > 0
+      ? {
+          metrosReferencia: sumMetros,
+          gastosFabMxn: sumFab,
+          gastosOpMxn: sumOp,
+          factorFabXMetro: sumMetros > 0 ? sumFab / sumMetros : null,
+          factorOpXMetro: sumMetros > 0 ? sumOp / sumMetros : null,
+          factorTotalXMetro: sumMetros > 0 ? (sumFab + sumOp) / sumMetros : null,
+        }
+      : null;
 
   // Totales
   const totals = rows.reduce<CostReconTotals>(
@@ -167,6 +251,9 @@ async function _getCostReconSnapshotRaw(
       pctMp: null,
       pctFab: null,
       pctOp: null,
+      pctMpVsRevenue: null,
+      pctFabVsRevenue: null,
+      pctOpVsRevenue: null,
       marginPct: null,
     },
   );
@@ -176,6 +263,9 @@ async function _getCostReconSnapshotRaw(
     totals.pctOp = (totals.opTotalMxn / totals.costoTotalMxn) * 100;
   }
   if (totals.revenueMxn > 0) {
+    totals.pctMpVsRevenue = (totals.mpTotalMxn / totals.revenueMxn) * 100;
+    totals.pctFabVsRevenue = (totals.fabTotalMxn / totals.revenueMxn) * 100;
+    totals.pctOpVsRevenue = (totals.opTotalMxn / totals.revenueMxn) * 100;
     totals.marginPct =
       ((totals.revenueMxn - totals.costoTotalMxn) / totals.revenueMxn) * 100;
   }
@@ -207,6 +297,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v1", String(range)],
+    ["sp13-cost-reconstruction-v2-revenue-pct-ytd", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
