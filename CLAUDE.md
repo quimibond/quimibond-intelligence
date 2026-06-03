@@ -1077,6 +1077,35 @@ el costo unitario. OP-ACA existe en Odoo desde enero 2026 (no hay 2025).
 Query: `src/lib/queries/sp13/finanzas/rama-burden.ts`, migration
 `20260602b_rama_burden_monthly.sql`.
 
+### Costo reconstruido por producto (absorption "por fuera", 2026-06-03)
+
+Página `/contabilidad/costo-reconstruido`. Reconstruye el costo total por
+producto fuera de la contabilidad, con 3 capas:
+
+1. **Costo primo MP con ÚLTIMO costo de compra** (no avg). RPC
+   `get_bom_mp_cost_lastcost` + helper `get_leaf_last_cost_mxn`: explosión
+   BOM recursiva donde cada hoja usa `subtotal_mxn/qty` de la última compra
+   (ya en MXN), fallback a avg_cost. Subproductos→$0, importados→última compra.
+2. **Factor $/metro** (`get_cost_factors_monthly`, por mes): gastos ÷ metros
+   de referencia producidos (**OP-ACA + OP-V10**). Dos factores:
+   - Fabricación = MOD (501.06) + OH fábrica (504.01) + depreciación (504.08-23)
+   - Operación = 6xx completo (incluye CORPO)
+3. **Costo reconstruido** = primo + factor_fab + factor_op, con % de cada
+   capa (`get_full_cost_reconstruction(p_period)`).
+
+`get_meters_produced_vs_sold` compara metros fabricados (referencia) vs
+vendidos (uom='m', dedup DISTINCT ON). Ratio v/p <1 = construyes inventario.
+
+**Hallazgo (abril 2026):** factor total ~$9.14/mt. Jerseys ligeros (WJ042,
+A55BL86) tienen costo primo bajo pero cargan el mismo overhead/metro → % de
+gastos 60%+ y margen a costo absorbido NEGATIVO, aunque su margen de MP se
+vea alto. Señal de precios que no cubren el costo fijo por metro. Total
+abril: MP 43%, fabricación 41%, operación 16%, margen absorbido 15%.
+
+**Supuesto:** factor por metro se suma por unidad (1 unidad ≈ 1 metro);
+para productos en kg es aproximación (visible vía uom). Migration
+`20260603_full_cost_reconstruction.sql`, query `cost-reconstruction.ts`.
+
 ### Migration
 
 `supabase/migrations/20260504_cost_centers_overhead.sql` — schema +
