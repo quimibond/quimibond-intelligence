@@ -27,6 +27,9 @@ export interface CostReconRow {
   qtySold: number;
   revenueMxn: number;
   costoPrimoUnitMxn: number;
+  /** MP a costo PROMEDIO (avg_cost) — comparativo vs último costo. */
+  costoPrimoAvgUnitMxn: number;
+  costoPrimoAvgTotalMxn: number;
   factorFabUnitMxn: number;
   factorOpUnitMxn: number;
   costoTotalUnitMxn: number;
@@ -48,6 +51,7 @@ export interface CostReconRow {
 export interface CostReconTotals {
   productos: number;
   mpTotalMxn: number;
+  mpAvgTotalMxn: number;
   fabTotalMxn: number;
   opTotalMxn: number;
   costoTotalMxn: number;
@@ -186,6 +190,7 @@ async function _getCostReconSnapshotRaw(
         existing.qtySold += n(r.qty_sold);
         existing.revenueMxn += n(r.revenue_mxn);
         existing.costoPrimoTotalMxn += n(r.costo_primo_total_mxn);
+        existing.costoPrimoAvgTotalMxn += n(r.costo_primo_avg_total_mxn);
         existing.gastosFabTotalMxn += n(r.gastos_fab_total_mxn);
         existing.gastosOpTotalMxn += n(r.gastos_op_total_mxn);
         existing.costoTotalMxn += n(r.costo_total_mxn);
@@ -198,6 +203,8 @@ async function _getCostReconSnapshotRaw(
           qtySold: n(r.qty_sold),
           revenueMxn: n(r.revenue_mxn),
           costoPrimoUnitMxn: 0,
+          costoPrimoAvgUnitMxn: 0,
+          costoPrimoAvgTotalMxn: n(r.costo_primo_avg_total_mxn),
           factorFabUnitMxn: 0,
           factorOpUnitMxn: 0,
           costoTotalUnitMxn: 0,
@@ -225,6 +232,7 @@ async function _getCostReconSnapshotRaw(
   const allRows: CostReconRow[] = Array.from(acc.values()).map((r) => {
     if (r.qtySold > 0) {
       r.costoPrimoUnitMxn = r.costoPrimoTotalMxn / r.qtySold;
+      r.costoPrimoAvgUnitMxn = r.costoPrimoAvgTotalMxn / r.qtySold;
       r.factorFabUnitMxn = r.gastosFabTotalMxn / r.qtySold;
       r.factorOpUnitMxn = r.gastosOpTotalMxn / r.qtySold;
       r.costoTotalUnitMxn =
@@ -285,6 +293,7 @@ async function _getCostReconSnapshotRaw(
   const totals = rows.reduce<CostReconTotals>(
     (acc, r) => {
       acc.mpTotalMxn += r.costoPrimoTotalMxn;
+      acc.mpAvgTotalMxn += r.costoPrimoAvgTotalMxn;
       acc.fabTotalMxn += r.gastosFabTotalMxn;
       acc.opTotalMxn += r.gastosOpTotalMxn;
       acc.costoTotalMxn += r.costoTotalMxn;
@@ -295,6 +304,7 @@ async function _getCostReconSnapshotRaw(
     {
       productos: 0,
       mpTotalMxn: 0,
+      mpAvgTotalMxn: 0,
       fabTotalMxn: 0,
       opTotalMxn: 0,
       costoTotalMxn: 0,
@@ -399,6 +409,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v6-kg-conversion", String(range)],
+    ["sp13-cost-reconstruction-v7-mp-avg", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

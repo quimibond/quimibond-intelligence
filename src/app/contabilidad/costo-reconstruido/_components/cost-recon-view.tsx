@@ -13,10 +13,12 @@ const CSV_COLUMNS = [
   { key: "qty", label: "Cantidad vendida" },
   { key: "ventas", label: "Ventas MXN" },
   { key: "primo_unit", label: "Costo primo MP unit (último costo)" },
+  { key: "primo_avg_unit", label: "Costo primo MP unit (promedio)" },
   { key: "fab_unit", label: "Factor fabricación unit" },
   { key: "op_unit", label: "Factor operación unit" },
   { key: "total_unit", label: "Costo total unit" },
-  { key: "primo_total", label: "Costo primo MP total" },
+  { key: "primo_total", label: "Costo primo MP total (último)" },
+  { key: "primo_avg_total", label: "Costo primo MP total (promedio)" },
   { key: "fab_total", label: "Fabricación total" },
   { key: "op_total", label: "Operación total" },
   { key: "costo_total", label: "Costo total" },
@@ -35,10 +37,12 @@ function toCsvRows(rows: CostReconRow[]): Record<string, unknown>[] {
     qty: r.qtySold,
     ventas: r.revenueMxn,
     primo_unit: r.costoPrimoUnitMxn,
+    primo_avg_unit: r.costoPrimoAvgUnitMxn,
     fab_unit: r.factorFabUnitMxn,
     op_unit: r.factorOpUnitMxn,
     total_unit: r.costoTotalUnitMxn,
     primo_total: r.costoPrimoTotalMxn,
+    primo_avg_total: r.costoPrimoAvgTotalMxn,
     fab_total: r.gastosFabTotalMxn,
     op_total: r.gastosOpTotalMxn,
     costo_total: r.costoTotalMxn,
@@ -297,7 +301,8 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
               <tr>
                 <th className="px-3 py-2 text-left">Producto</th>
                 <th className="px-3 py-2 text-right">Vendido</th>
-                <th className="px-3 py-2 text-right border-l">Primo MP</th>
+                <th className="px-3 py-2 text-right border-l">MP últ.</th>
+                <th className="px-3 py-2 text-right text-muted-foreground">MP prom.</th>
                 <th className="px-3 py-2 text-right">+Fab</th>
                 <th className="px-3 py-2 text-right">+Op</th>
                 <th className="px-3 py-2 text-right font-semibold">Costo total</th>
@@ -327,7 +332,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatNumber(rest.qty)}
                   </td>
-                  <td className="px-3 py-2 border-l" colSpan={4} />
+                  <td className="px-3 py-2 border-l" colSpan={5} />
                   <td className="px-3 py-2 text-right tabular-nums" />
                   <td className="px-3 py-2 text-right tabular-nums" />
                   <td className="px-3 py-2 text-right tabular-nums border-l" />
@@ -337,7 +342,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
             </tbody>
             <tfoot className="bg-muted/30 font-semibold">
               <tr className="border-t-2">
-                <td className="px-3 py-2" colSpan={5}>
+                <td className="px-3 py-2" colSpan={6}>
                   Total ({totals.productos} productos)
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">
@@ -368,6 +373,15 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           costo absorbido se vuelve negativo aunque su margen de MP se vea alto.
           Eso indica precios de venta que no cubren el costo fijo de producir
           cada metro.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          <strong>MP últ. vs prom.:</strong> la columna usa el{" "}
+          <strong>último costo de compra</strong> (lo que costaría reponer hoy);
+          &ldquo;MP prom.&rdquo; es el costo promedio (avg). En total la MP a
+          último costo es{" "}
+          {formatCurrencyMXN(totals.mpTotalMxn, { compact: true })} vs{" "}
+          {formatCurrencyMXN(totals.mpAvgTotalMxn, { compact: true })} a
+          promedio — la diferencia es el drift de precios de materia prima.
         </p>
       </section>
 
@@ -484,6 +498,9 @@ function ProductRow({ r, className }: { r: CostReconRow; className?: string }) {
       </td>
       <td className="px-3 py-2 text-right tabular-nums border-l">
         {fUnit(r.costoPrimoUnitMxn)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+        {fUnit(r.costoPrimoAvgUnitMxn)}
       </td>
       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
         {fUnit(r.factorFabUnitMxn)}
