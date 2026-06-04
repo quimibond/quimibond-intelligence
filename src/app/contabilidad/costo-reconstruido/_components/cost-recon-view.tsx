@@ -128,29 +128,31 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         <ol className="text-sm text-muted-foreground list-decimal pl-5 space-y-1">
           <li>
             <strong>Factor de fabricación</strong> = gastos de fabricación del
-            mes ÷ metros <strong>inspeccionados</strong> (lo producido; toda la
-            tela se mide ahí).
+            mes ÷ <strong>kilos inspeccionados</strong> (lo producido). Repartir
+            por peso es más justo: una tela pesada consume más recursos que una
+            ligera por metro.
           </li>
           <li>
             <strong>Factor de operación</strong> = gastos de operación del mes ÷
-            metros <strong>vendidos</strong> (los gastos de venta pertenecen a lo
-            que se vendió, no a lo que se produjo).
+            <strong>kilos vendidos</strong> (los gastos de venta pertenecen a lo
+            que se vendió).
           </li>
           <li>
-            <strong>Costo del producto</strong> = materia prima (último costo de
-            compra) + factor fabricación + factor operación. Se compara contra el
-            precio de venta → margen y % por capa.
+            <strong>Costo del producto</strong> = materia prima (último costo) +
+            su peso × factor fabricación + su peso × factor operación. Los
+            <strong> importados (&ldquo; I&rdquo;)</strong> no cargan fabricación
+            (solo se inspeccionan y reempacan).
           </li>
         </ol>
       </section>
 
-      {/* === 1) Gasto por metro (fab ÷ inspeccionado, op ÷ vendido) === */}
+      {/* === 1) Gasto por kilo (fab ÷ kg inspeccionados, op ÷ kg vendidos) === */}
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">1. Gasto por metro, por mes</h2>
+        <h2 className="text-lg font-semibold">1. Gasto por kilo, por mes</h2>
         <p className="text-sm text-muted-foreground">
-          Fabricación se reparte entre lo <strong>inspeccionado</strong>;
-          operación entre lo <strong>vendido</strong>. El costo por producto usa
-          estos factores.
+          Fabricación se reparte entre los <strong>kg inspeccionados</strong>
+          (sin importados); operación entre los <strong>kg vendidos</strong>. El
+          peso de cada producto sale de CVU real o gramaje×ancho.
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -158,12 +160,12 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
               <tr>
                 <th className="px-3 py-2 text-left">Mes</th>
                 <th className="px-3 py-2 text-right">Gasto fabricación</th>
-                <th className="px-3 py-2 text-right">m inspeccionados</th>
-                <th className="px-3 py-2 text-right bg-emerald-50">Factor fab ($/m)</th>
+                <th className="px-3 py-2 text-right">kg inspeccionados</th>
+                <th className="px-3 py-2 text-right bg-emerald-50">Factor fab ($/kg)</th>
                 <th className="px-3 py-2 text-right border-l">Gasto operación</th>
-                <th className="px-3 py-2 text-right">m vendidos</th>
-                <th className="px-3 py-2 text-right bg-emerald-50">Factor op ($/m)</th>
-                <th className="px-3 py-2 text-right border-l font-semibold">Factor total ($/m)</th>
+                <th className="px-3 py-2 text-right">kg vendidos</th>
+                <th className="px-3 py-2 text-right bg-emerald-50">Factor op ($/kg)</th>
+                <th className="px-3 py-2 text-right border-l font-semibold">Factor total ($/kg)</th>
               </tr>
             </thead>
             <tbody>
@@ -174,7 +176,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                     {formatCurrencyMXN(m.gastosFabMxn, { compact: true })}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {formatNumber(m.inspeccionado)}
+                    {formatNumber(m.kgInspeccion)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
                     {fUnit(m.factorFab)}
@@ -183,7 +185,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                     {formatCurrencyMXN(m.gastosOpMxn, { compact: true })}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {formatNumber(m.vendidoEquiv)}
+                    {formatNumber(m.kgVendidos)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
                     {fUnit(m.factorOp)}
@@ -197,10 +199,10 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           </table>
         </div>
         <p className="text-xs text-muted-foreground">
-          <strong>Fabricación ÷ inspeccionado</strong> (producido): lo no vendido
-          queda en inventario. <strong>Operación ÷ vendido</strong>: el gasto de
-          venta se reparte solo sobre lo que se vendió. &ldquo;m vendidos&rdquo;
-          incluye los kg convertidos a metros-equivalentes.
+          <strong>Por peso</strong>: una tela de 140 g/m² absorbe ~3× el gasto de
+          una de 45 g/m² por metro, que es lo real. El peso por unidad viene de
+          tus conversiones <strong>CVU</strong> (reales) o de gramaje×ancho del
+          código; los que no tienen peso quedan en la sección final solo con MP.
         </p>
       </section>
 
@@ -249,14 +251,11 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           3. Costo reconstruido por producto (top {TOP})
         </h2>
         <p className="text-sm text-muted-foreground">
-          Costo primo con <strong>último costo de compra</strong> + factor
-          fabricación + factor operación. Los % son <strong>sobre las ventas
-          del producto</strong>: cuánto de cada peso vendido se va en MP,
-          fabricación y operación. <strong>Fab/ventas &gt; 100%</strong>{" "}
-          significa que fabricar el producto cuesta más que su precio de venta.
-          La tela vendida en <strong>kg</strong> se convierte a metros (CVU real
-          o gramaje×ancho) para cobrarle el mismo factor — por eso su factor por
-          unidad es mayor (1 kg ≈ 10-16 m).
+          Costo primo con <strong>último costo de compra</strong> + fabricación
+          y operación <strong>según el peso</strong> del producto (su kg ×
+          factor $/kg). Los % son <strong>sobre las ventas</strong>. Importados
+          (&ldquo; I&rdquo;) no cargan fabricación. <strong>Fab/ventas &gt; 100%</strong>{" "}
+          = fabricar cuesta más que el precio de venta.
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
