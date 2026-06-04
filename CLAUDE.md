@@ -1163,6 +1163,17 @@ se rellena con esta prioridad (overridable con `source='manual'`):
    bom_weight porque la receta sobre-estima en algunos (WC090…=1.48, irreal
    para 90 g/m²; gramaje da 0.153). Migration `20260604l_product_kg_bom_weight.sql`.
 
+**Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
+cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
+operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
+resina + BOM stub → sin fuente), así que conv=0 y quedaban sin op. Fix:
+heredan el peso de su **gemelo nacional** (mismo ref sin ' I', p.ej.
+'WP4032BL152 I' → 'WP4032BL152'); el gemelo debe ser tela en metros (uom='m')
+y SUSTITUYE cualquier odoo_weight propio (igual de poco confiable: WP4032BL152
+I traía 0.54, ~5× vs gemelo 0.106). Así entran al denominador de op (kg
+vendidos) y reciben su parte; fab sigue en 0 por el guard `is_import` (' I$').
+source='import_twin'. Migration `20260604m_import_twin_weight.sql`.
+
 **[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
 (lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
 (metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`
