@@ -13,10 +13,12 @@ const CSV_COLUMNS = [
   { key: "qty", label: "Cantidad vendida" },
   { key: "ventas", label: "Ventas MXN" },
   { key: "primo_unit", label: "Costo primo MP unit (último costo)" },
+  { key: "primo_avg_unit", label: "Costo primo MP unit (promedio)" },
   { key: "fab_unit", label: "Factor fabricación unit" },
   { key: "op_unit", label: "Factor operación unit" },
   { key: "total_unit", label: "Costo total unit" },
-  { key: "primo_total", label: "Costo primo MP total" },
+  { key: "primo_total", label: "Costo primo MP total (último)" },
+  { key: "primo_avg_total", label: "Costo primo MP total (promedio)" },
   { key: "fab_total", label: "Fabricación total" },
   { key: "op_total", label: "Operación total" },
   { key: "costo_total", label: "Costo total" },
@@ -35,10 +37,12 @@ function toCsvRows(rows: CostReconRow[]): Record<string, unknown>[] {
     qty: r.qtySold,
     ventas: r.revenueMxn,
     primo_unit: r.costoPrimoUnitMxn,
+    primo_avg_unit: r.costoPrimoAvgUnitMxn,
     fab_unit: r.factorFabUnitMxn,
     op_unit: r.factorOpUnitMxn,
     total_unit: r.costoTotalUnitMxn,
     primo_total: r.costoPrimoTotalMxn,
+    primo_avg_total: r.costoPrimoAvgTotalMxn,
     fab_total: r.gastosFabTotalMxn,
     op_total: r.gastosOpTotalMxn,
     costo_total: r.costoTotalMxn,
@@ -123,106 +127,69 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         </p>
         <ol className="text-sm text-muted-foreground list-decimal pl-5 space-y-1">
           <li>
-            <strong>Gasto por metro</strong> = (gastos de fabricación + gastos de
-            operación del mes) ÷ metros producidos. El metro oficial es el{" "}
-            <strong>inspeccionado</strong> (toda la tela se mide ahí).
+            <strong>Factor de fabricación</strong> = gastos de fabricación del
+            mes ÷ metros <strong>inspeccionados</strong> (lo producido; toda la
+            tela se mide ahí).
           </li>
           <li>
-            <strong>Costo del producto</strong> = su materia prima (a último
-            costo de compra) + ese gasto por metro.
+            <strong>Factor de operación</strong> = gastos de operación del mes ÷
+            metros <strong>vendidos</strong> (los gastos de venta pertenecen a lo
+            que se vendió, no a lo que se produjo).
           </li>
           <li>
-            Comparamos contra el <strong>precio de venta</strong> → cuánto de cada
-            peso vendido se va en MP, fabricación y operación, y qué margen queda.
+            <strong>Costo del producto</strong> = materia prima (último costo de
+            compra) + factor fabricación + factor operación. Se compara contra el
+            precio de venta → margen y % por capa.
           </li>
         </ol>
       </section>
 
-      {/* === 1) Los tres metros === */}
+      {/* === 1) Gasto por metro (fab ÷ inspeccionado, op ÷ vendido) === */}
       <section className="space-y-3">
-        <h2 className="text-lg font-semibold">1. Los tres metros del mes</h2>
+        <h2 className="text-lg font-semibold">1. Gasto por metro, por mes</h2>
         <p className="text-sm text-muted-foreground">
-          La misma tela se puede contar en tres momentos. Vendes menos de lo que
-          inspeccionas/fabricas porque construyes inventario.
+          Fabricación se reparte entre lo <strong>inspeccionado</strong>;
+          operación entre lo <strong>vendido</strong>. El costo por producto usa
+          estos factores.
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
               <tr>
                 <th className="px-3 py-2 text-left">Mes</th>
-                <th className="px-3 py-2 text-right">Fabricado (acabado)</th>
-                <th className="px-3 py-2 text-right bg-emerald-50">Inspeccionado (oficial)</th>
-                <th className="px-3 py-2 text-right">Vendido</th>
-                <th className="px-3 py-2 text-right">Vendido ÷ inspeccionado</th>
-              </tr>
-            </thead>
-            <tbody>
-              {monthlyComparison.map((m) => {
-                const ratio =
-                  m.inspeccionado > 0 ? m.vendido / m.inspeccionado : null;
-                return (
-                  <tr key={m.mes} className="border-t hover:bg-muted/20">
-                    <td className="px-3 py-2">{mesLabel(m.mes)}</td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {formatNumber(m.fabricado)} m
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
-                      {formatNumber(m.inspeccionado)} m
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {formatNumber(m.vendido)} m
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                      {ratio != null ? ratio.toFixed(2) : "—"}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          <strong>Fabricado</strong> = salió de acabado (OP-ACA + OP-V10).{" "}
-          <strong>Inspeccionado</strong> = pasó por inspección final (TL/INSP) —
-          el oficial. <strong>Vendido</strong> = facturado (uom = m).
-        </p>
-      </section>
-
-      {/* === 2) Gasto por metro según qué midas === */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">
-          2. Gasto por metro — según qué metro uses de denominador
-        </h2>
-        <p className="text-sm text-muted-foreground">
-          Mismo pozo de gastos (fabricación + operación) ÷ cada uno de los tres
-          metros. Usamos la columna <strong>inspeccionado</strong> para costear.
-        </p>
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left">Mes</th>
-                <th className="px-3 py-2 text-right">Gastos totales</th>
-                <th className="px-3 py-2 text-right border-l">÷ Fabricado</th>
-                <th className="px-3 py-2 text-right bg-emerald-50">÷ Inspeccionado (oficial)</th>
-                <th className="px-3 py-2 text-right">÷ Vendido</th>
+                <th className="px-3 py-2 text-right">Gasto fabricación</th>
+                <th className="px-3 py-2 text-right">m inspeccionados</th>
+                <th className="px-3 py-2 text-right bg-emerald-50">Factor fab ($/m)</th>
+                <th className="px-3 py-2 text-right border-l">Gasto operación</th>
+                <th className="px-3 py-2 text-right">m vendidos</th>
+                <th className="px-3 py-2 text-right bg-emerald-50">Factor op ($/m)</th>
+                <th className="px-3 py-2 text-right border-l font-semibold">Factor total ($/m)</th>
               </tr>
             </thead>
             <tbody>
               {monthlyComparison.map((m) => (
                 <tr key={m.mes} className="border-t hover:bg-muted/20">
                   <td className="px-3 py-2">{mesLabel(m.mes)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {formatCurrencyMXN(m.gastosTotales, { compact: true })}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums border-l text-muted-foreground">
-                    {fUnit(m.factorVsFabricado)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-semibold">
-                    {fUnit(m.factorVsInspeccionado)}
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {formatCurrencyMXN(m.gastosFabMxn, { compact: true })}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {fUnit(m.factorVsVendido)}
+                    {formatNumber(m.inspeccionado)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
+                    {fUnit(m.factorFab)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums border-l text-muted-foreground">
+                    {formatCurrencyMXN(m.gastosOpMxn, { compact: true })}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {formatNumber(m.vendidoEquiv)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
+                    {fUnit(m.factorOp)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums border-l font-semibold">
+                    {fUnit(m.factorTotal)}
                   </td>
                 </tr>
               ))}
@@ -230,17 +197,17 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           </table>
         </div>
         <p className="text-xs text-muted-foreground">
-          El &ldquo;÷ vendido&rdquo; sale más caro porque vendes menos metros que
-          los que produces (el gasto fijo se reparte entre menos metros). El
-          oficial es <strong>÷ inspeccionado</strong>: costo real por metro de
-          tela buena.
+          <strong>Fabricación ÷ inspeccionado</strong> (producido): lo no vendido
+          queda en inventario. <strong>Operación ÷ vendido</strong>: el gasto de
+          venta se reparte solo sobre lo que se vendió. &ldquo;m vendidos&rdquo;
+          incluye los kg convertidos a metros-equivalentes.
         </p>
       </section>
 
-      {/* === 3) Estructura sobre ventas (total del período) === */}
+      {/* === 2) Estructura sobre ventas (total del período) === */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">
-          3. Estructura sobre ventas — {rangeLabel} ({period})
+          2. Estructura sobre ventas — {rangeLabel} ({period})
         </h2>
         <p className="text-sm text-muted-foreground">
           De cada peso vendido, cuánto se va en materia prima, fabricación y
@@ -279,7 +246,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
       {/* === Reconstrucción por producto === */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">
-          4. Costo reconstruido por producto (top {TOP})
+          3. Costo reconstruido por producto (top {TOP})
         </h2>
         <p className="text-sm text-muted-foreground">
           Costo primo con <strong>último costo de compra</strong> + factor
@@ -297,7 +264,8 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
               <tr>
                 <th className="px-3 py-2 text-left">Producto</th>
                 <th className="px-3 py-2 text-right">Vendido</th>
-                <th className="px-3 py-2 text-right border-l">Primo MP</th>
+                <th className="px-3 py-2 text-right border-l">MP últ.</th>
+                <th className="px-3 py-2 text-right text-muted-foreground">MP prom.</th>
                 <th className="px-3 py-2 text-right">+Fab</th>
                 <th className="px-3 py-2 text-right">+Op</th>
                 <th className="px-3 py-2 text-right font-semibold">Costo total</th>
@@ -327,7 +295,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatNumber(rest.qty)}
                   </td>
-                  <td className="px-3 py-2 border-l" colSpan={4} />
+                  <td className="px-3 py-2 border-l" colSpan={5} />
                   <td className="px-3 py-2 text-right tabular-nums" />
                   <td className="px-3 py-2 text-right tabular-nums" />
                   <td className="px-3 py-2 text-right tabular-nums border-l" />
@@ -337,7 +305,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
             </tbody>
             <tfoot className="bg-muted/30 font-semibold">
               <tr className="border-t-2">
-                <td className="px-3 py-2" colSpan={5}>
+                <td className="px-3 py-2" colSpan={6}>
                   Total ({totals.productos} productos)
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">
@@ -369,13 +337,22 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           Eso indica precios de venta que no cubren el costo fijo de producir
           cada metro.
         </p>
+        <p className="text-xs text-muted-foreground">
+          <strong>MP últ. vs prom.:</strong> la columna usa el{" "}
+          <strong>último costo de compra</strong> (lo que costaría reponer hoy);
+          &ldquo;MP prom.&rdquo; es el costo promedio (avg). En total la MP a
+          último costo es{" "}
+          {formatCurrencyMXN(totals.mpTotalMxn, { compact: true })} vs{" "}
+          {formatCurrencyMXN(totals.mpAvgTotalMxn, { compact: true })} a
+          promedio — la diferencia es el drift de precios de materia prima.
+        </p>
       </section>
 
       {/* === Productos vendidos en kg (fuera del factor por metro) === */}
       {nonMeterRows.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">
-            5. Productos sin factor — solo materia prima
+            4. Productos sin factor — solo materia prima
           </h2>
           <p className="text-sm text-muted-foreground">
             Estos {nonMeterTotals.productos} productos no tienen conversión a
@@ -484,6 +461,9 @@ function ProductRow({ r, className }: { r: CostReconRow; className?: string }) {
       </td>
       <td className="px-3 py-2 text-right tabular-nums border-l">
         {fUnit(r.costoPrimoUnitMxn)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+        {fUnit(r.costoPrimoAvgUnitMxn)}
       </td>
       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
         {fUnit(r.factorFabUnitMxn)}
