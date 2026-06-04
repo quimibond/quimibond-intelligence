@@ -152,53 +152,9 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           />
         </div>
 
-        {/* Comparación de denominadores: acabado vs inspección */}
-        <div className="rounded-md border overflow-hidden">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left">Denominador</th>
-                <th className="px-3 py-2 text-right">Metros</th>
-                <th className="px-3 py-2 text-right">Factor fab</th>
-                <th className="px-3 py-2 text-right">Factor op</th>
-                <th className="px-3 py-2 text-right">Factor total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-t bg-emerald-50/40">
-                <td className="px-3 py-2 font-medium">
-                  Inspección (TL/INSP)
-                  <span className="ml-2 rounded border border-emerald-300 bg-emerald-50 px-1 py-0.5 text-[10px] uppercase text-emerald-700">
-                    oficial
-                  </span>
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {factors ? formatNumber(factors.metrosInspeccion) : "—"}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorFabInsp)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpInsp)}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalInsp)}</td>
-              </tr>
-              <tr className="border-t text-muted-foreground">
-                <td className="px-3 py-2 font-medium">
-                  Acabado (OP-ACA + OP-V10)
-                  <span className="ml-2 text-[10px] uppercase">referencia</span>
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {factors ? formatNumber(factors.metrosReferencia) : "—"}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorFabXMetro)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpXMetro)}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalXMetro)}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
         <p className="text-xs text-muted-foreground">
-          El costeo por producto usa el denominador <strong>Inspección</strong>
-          (oficial): toda la tela se inspecciona en metros, así que captura el
-          output vendible real. Acabado (OP-ACA+V10) queda como referencia
-          comparativa.
+          Denominador: <strong>metros inspeccionados (TL/INSP)</strong> — toda la
+          tela se inspecciona en metros, así que captura el output vendible real.
         </p>
       </section>
 
