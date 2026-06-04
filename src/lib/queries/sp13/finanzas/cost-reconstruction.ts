@@ -69,6 +69,11 @@ export interface CostFactors {
   factorFabXMetro: number | null;
   factorOpXMetro: number | null;
   factorTotalXMetro: number | null;
+  /** Denominador alternativo: metros inspeccionados (TL/INSP). */
+  metrosInspeccion: number;
+  factorFabInsp: number | null;
+  factorOpInsp: number | null;
+  factorTotalInsp: number | null;
 }
 
 export interface MetersProducedVsSold {
@@ -76,9 +81,20 @@ export interface MetersProducedVsSold {
   metrosOpAca: number;
   metrosOpV10: number;
   metrosReferencia: number;
+  metrosInspeccion: number;
   metrosVendidos: number;
   kgVendidos: number;
   ratioVendidoProducido: number | null;
+}
+
+/** Totales de productos NO vendidos en metros (kg/Servicio/Pieza), solo MP. */
+export interface NonMeterTotals {
+  productos: number;
+  qtyByUom: Record<string, number>;
+  mpTotalMxn: number;
+  revenueMxn: number;
+  /** Margen vs costo de MP (no absorbe gastos por metro). */
+  marginMpPct: number | null;
 }
 
 export interface CostReconSnapshot {
@@ -87,6 +103,9 @@ export interface CostReconSnapshot {
   factors: CostFactors | null;
   rows: CostReconRow[];
   totals: CostReconTotals;
+  /** Productos en kg/otros, fuera del costeo por metro (solo MP). */
+  nonMeterRows: CostReconRow[];
+  nonMeterTotals: NonMeterTotals;
   metersHistory: MetersProducedVsSold[];
 }
 
@@ -186,7 +205,19 @@ async function _getCostReconSnapshotRaw(
   }
 
   // Recalcula unitarios (promedio ponderado del rango) y porcentajes.
-  const rows: CostReconRow[] = Array.from(acc.values()).map((r) => {
+  // El factor $/metro SOLO aplica a productos vendidos en metros. Los kg
+  // (y Servicio/Pieza) no tienen rendimiento metro→unidad confiable, así que
+  // se les pone factor 0 y se reportan aparte con su costo de MP únicamente.
+  const allRows: CostReconRow[] = Array.from(acc.values()).map((r) => {
+    const isMeter = r.uom === "m";
+    if (!isMeter) {
+      // Sin factor por metro: costo = solo MP.
+      r.gastosFabTotalMxn = 0;
+      r.gastosOpTotalMxn = 0;
+      r.factorFabUnitMxn = 0;
+      r.factorOpUnitMxn = 0;
+      r.costoTotalMxn = r.costoPrimoTotalMxn;
+    }
     if (r.qtySold > 0) {
       r.costoPrimoUnitMxn = r.costoPrimoTotalMxn / r.qtySold;
       r.factorFabUnitMxn = r.gastosFabTotalMxn / r.qtySold;
@@ -209,13 +240,20 @@ async function _getCostReconSnapshotRaw(
     return r;
   });
 
-  rows.sort((a, b) => b.costoTotalMxn - a.costoTotalMxn);
+  // Separa: análisis principal = productos en metros; kg/otros = aparte.
+  const rows = allRows
+    .filter((r) => r.uom === "m")
+    .sort((a, b) => b.costoTotalMxn - a.costoTotalMxn);
+  const nonMeterRows = allRows
+    .filter((r) => r.uom !== "m")
+    .sort((a, b) => b.revenueMxn - a.revenueMxn);
 
   // Factores agregados del rango (blended = Σ gastos / Σ metros).
   const inRange = factorRows.filter((f) =>
     monthsToUse.includes(f.mes as string),
   );
   const sumMetros = inRange.reduce((s, f) => s + n(f.metros_referencia), 0);
+  const sumInsp = inRange.reduce((s, f) => s + n(f.metros_inspeccion), 0);
   const sumFab = inRange.reduce((s, f) => s + n(f.gastos_fabricacion_mxn), 0);
   const sumOp = inRange.reduce((s, f) => s + n(f.gastos_operacion_mxn), 0);
   const factors: CostFactors | null =
@@ -227,6 +265,10 @@ async function _getCostReconSnapshotRaw(
           factorFabXMetro: sumMetros > 0 ? sumFab / sumMetros : null,
           factorOpXMetro: sumMetros > 0 ? sumOp / sumMetros : null,
           factorTotalXMetro: sumMetros > 0 ? (sumFab + sumOp) / sumMetros : null,
+          metrosInspeccion: sumInsp,
+          factorFabInsp: sumInsp > 0 ? sumFab / sumInsp : null,
+          factorOpInsp: sumInsp > 0 ? sumOp / sumInsp : null,
+          factorTotalInsp: sumInsp > 0 ? (sumFab + sumOp) / sumInsp : null,
         }
       : null;
 
@@ -270,6 +312,25 @@ async function _getCostReconSnapshotRaw(
       ((totals.revenueMxn - totals.costoTotalMxn) / totals.revenueMxn) * 100;
   }
 
+  // Totales kg / otros (solo MP, sin factor por metro).
+  const nonMeterTotals: NonMeterTotals = {
+    productos: nonMeterRows.length,
+    qtyByUom: {},
+    mpTotalMxn: nonMeterRows.reduce((s, r) => s + r.costoPrimoTotalMxn, 0),
+    revenueMxn: nonMeterRows.reduce((s, r) => s + r.revenueMxn, 0),
+    marginMpPct: null,
+  };
+  for (const r of nonMeterRows) {
+    const u = r.uom ?? "—";
+    nonMeterTotals.qtyByUom[u] = (nonMeterTotals.qtyByUom[u] ?? 0) + r.qtySold;
+  }
+  if (nonMeterTotals.revenueMxn > 0) {
+    nonMeterTotals.marginMpPct =
+      ((nonMeterTotals.revenueMxn - nonMeterTotals.mpTotalMxn) /
+        nonMeterTotals.revenueMxn) *
+      100;
+  }
+
   const metersHistory: MetersProducedVsSold[] = (
     (metersRes.data ?? []) as Record<string, unknown>[]
   )
@@ -279,6 +340,7 @@ async function _getCostReconSnapshotRaw(
       metrosOpAca: n(m.metros_op_aca),
       metrosOpV10: n(m.metros_op_v10),
       metrosReferencia: n(m.metros_referencia),
+      metrosInspeccion: n(m.metros_inspeccion),
       metrosVendidos: n(m.metros_vendidos),
       kgVendidos: n(m.kg_vendidos),
       ratioVendidoProducido: nOrNull(m.ratio_vendido_producido),
@@ -290,6 +352,8 @@ async function _getCostReconSnapshotRaw(
     factors,
     rows,
     totals,
+    nonMeterRows,
+    nonMeterTotals,
     metersHistory,
   };
 }
@@ -297,6 +361,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v2-revenue-pct-ytd", String(range)],
+    ["sp13-cost-reconstruction-v4-insp-official", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
