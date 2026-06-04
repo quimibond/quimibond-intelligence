@@ -87,6 +87,18 @@ export interface MetersProducedVsSold {
   ratioVendidoProducido: number | null;
 }
 
+/** Comparación mensual: los 3 metros y el gasto por metro bajo cada uno. */
+export interface MonthlyComparison {
+  mes: string;
+  gastosTotales: number;
+  fabricado: number;
+  inspeccionado: number;
+  vendido: number;
+  factorVsFabricado: number | null;
+  factorVsInspeccionado: number | null;
+  factorVsVendido: number | null;
+}
+
 /** Totales de productos NO vendidos en metros (kg/Servicio/Pieza), solo MP. */
 export interface NonMeterTotals {
   productos: number;
@@ -107,6 +119,8 @@ export interface CostReconSnapshot {
   nonMeterRows: CostReconRow[];
   nonMeterTotals: NonMeterTotals;
   metersHistory: MetersProducedVsSold[];
+  /** Comparación mensual de los 3 metros + gasto por metro bajo cada uno. */
+  monthlyComparison: MonthlyComparison[];
 }
 
 function n(v: unknown): number {
@@ -346,6 +360,34 @@ async function _getCostReconSnapshotRaw(
       ratioVendidoProducido: nOrNull(m.ratio_vendido_producido),
     }));
 
+  // Comparación mensual: 3 metros (fabricado/inspeccionado/vendido) + gasto/m
+  // bajo cada denominador. Solo meses con gastos cargados.
+  const ventasByMes = new Map(
+    ((metersRes.data ?? []) as Record<string, unknown>[]).map((m) => [
+      m.mes as string,
+      n(m.metros_vendidos),
+    ]),
+  );
+  const monthlyComparison: MonthlyComparison[] = factorRows
+    .map((f) => {
+      const gastos = n(f.gastos_fabricacion_mxn) + n(f.gastos_operacion_mxn);
+      const fabricado = n(f.metros_referencia);
+      const inspeccionado = n(f.metros_inspeccion);
+      const vendido = ventasByMes.get(f.mes as string) ?? 0;
+      return {
+        mes: f.mes as string,
+        gastosTotales: gastos,
+        fabricado,
+        inspeccionado,
+        vendido,
+        factorVsFabricado: fabricado > 0 ? gastos / fabricado : null,
+        factorVsInspeccionado: inspeccionado > 0 ? gastos / inspeccionado : null,
+        factorVsVendido: vendido > 0 ? gastos / vendido : null,
+      };
+    })
+    .filter((c) => c.gastosTotales > 0 && c.inspeccionado > 0)
+    .sort((a, b) => a.mes.localeCompare(b.mes));
+
   return {
     period,
     rangeLabel: bounds.label,
@@ -355,12 +397,13 @@ async function _getCostReconSnapshotRaw(
     nonMeterRows,
     nonMeterTotals,
     metersHistory,
+    monthlyComparison,
   };
 }
 
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v4-insp-official", String(range)],
+    ["sp13-cost-reconstruction-v5-three-meters", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
