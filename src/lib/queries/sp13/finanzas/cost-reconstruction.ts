@@ -91,13 +91,13 @@ export interface MetersProducedVsSold {
   ratioVendidoProducido: number | null;
 }
 
-/** Gasto por metro por mes: fabricación ÷ inspeccionado, operación ÷ vendido. */
+/** Gasto por KILO por mes: fabricación ÷ kg inspeccionados, operación ÷ kg vendidos. */
 export interface MonthlyComparison {
   mes: string;
   gastosFabMxn: number;
   gastosOpMxn: number;
-  inspeccionado: number;
-  vendidoEquiv: number;
+  kgInspeccion: number;
+  kgVendidos: number;
   factorFab: number | null;
   factorOp: number | null;
   factorTotal: number | null;
@@ -160,7 +160,7 @@ async function _getCostReconSnapshotRaw(
       (f) =>
         (f.mes as string) >= bounds.fromMonth &&
         (f.mes as string) <= bounds.toMonth &&
-        nOrNull(f.factor_fab_x_metro) != null,
+        nOrNull(f.factor_fab_kg) != null,
     )
     .map((f) => f.mes as string)
     .sort();
@@ -370,14 +370,14 @@ async function _getCostReconSnapshotRaw(
     .map((f) => {
       const gastosFab = n(f.gastos_fabricacion_mxn);
       const gastosOp = n(f.gastos_operacion_mxn);
-      const factorFab = nOrNull(f.factor_fab_insp);
-      const factorOp = nOrNull(f.factor_op_vendido);
+      const factorFab = nOrNull(f.factor_fab_kg);
+      const factorOp = nOrNull(f.factor_op_kg);
       return {
         mes: f.mes as string,
         gastosFabMxn: gastosFab,
         gastosOpMxn: gastosOp,
-        inspeccionado: n(f.metros_inspeccion),
-        vendidoEquiv: n(f.metros_vendidos_equiv),
+        kgInspeccion: n(f.kg_inspeccion),
+        kgVendidos: n(f.kg_vendidos),
         factorFab,
         factorOp,
         factorTotal:
@@ -387,7 +387,7 @@ async function _getCostReconSnapshotRaw(
       };
     })
     // Solo meses con gastos normales (excluye cierre anual con saldos negativos)
-    .filter((c) => c.gastosFabMxn > 0 && c.inspeccionado > 0)
+    .filter((c) => c.gastosFabMxn > 0 && c.kgInspeccion > 0)
     .sort((a, b) => a.mes.localeCompare(b.mes));
 
   return {
@@ -406,6 +406,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v8-op-sold", String(range)],
+    ["sp13-cost-reconstruction-v9-by-weight", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

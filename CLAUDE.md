@@ -1131,7 +1131,18 @@ costearla con el mismo factor $/metro se convierte kg→metros vía tabla
 - Migrations `20260604d_product_uom_conversion.sql`,
   `20260604e_full_cost_reconstruction_kg_conversion.sql`. Tabla overridable.
 
-**Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
+**Reparto por PESO (kg) (2026-06-04, vigente):** evolución del reparto por
+metro. Una tela de 140 g/m² consume ~3× recursos que una de 45 g/m² por metro,
+así que el factor es **$/kg**: fabricación ÷ kg inspeccionados, operación ÷ kg
+vendidos. Peso por unidad en tabla `product_kg_per_unit` (fuentes: CVU 1:1 real
+> gramaje(3 díg)×ancho del ref > weight Odoo; kg nativos=1; overridable).
+**Importados (' I$') NO cargan fabricación** (solo inspección/reempaque): fuera
+del denominador fab y fab_unit=0. Sin peso → aparte. `factor_fab_kg`/
+`factor_op_kg` en get_cost_factors_monthly; migrations `20260604i/j/k`.
+Pendiente fase "específico": híbrido por driver (inspección/empaque por metro,
+químicos/energía por peso, mapeando cuentas).
+
+**[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
 (lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
 (metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`
 expone `factor_op_vendido` y `metros_vendidos_equiv`;
