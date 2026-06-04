@@ -1102,9 +1102,29 @@ gastos 60%+ y margen a costo absorbido NEGATIVO, aunque su margen de MP se
 vea alto. Señal de precios que no cubren el costo fijo por metro. Total
 abril: MP 43%, fabricación 41%, operación 16%, margen absorbido 15%.
 
-**Supuesto:** factor por metro se suma por unidad (1 unidad ≈ 1 metro);
-para productos en kg es aproximación (visible vía uom). Migration
-`20260603_full_cost_reconstruction.sql`, query `cost-reconstruction.ts`.
+**Supuesto:** factor por metro se suma por unidad (1 unidad ≈ 1 metro).
+Migration `20260603_full_cost_reconstruction.sql`, query `cost-reconstruction.ts`.
+
+**Productos en kg (2026-06-04):** el factor $/metro SOLO aplica a productos
+con uom='m'. Los kg (y Servicio/Pieza) se separan en su propia sección con
+solo costo de MP + margen material, porque 1 kg de tela ≈ varios metros y
+cargarles el factor por unidad los distorsionaba (subabsorbían: 22% de
+ventas, ~4% del gasto fab). No hay gramaje en Odoo para convertir kg→m.
+`nonMeterRows`/`nonMeterTotals` en el snapshot.
+
+**% sobre ventas (2026-06-04):** las columnas por producto son % vs VENTAS
+(MP/ventas, Fab/ventas, Op/ventas) — Fab/ventas resaltada (ámbar ≥50%,
+rojo ≥100% = fabricar cuesta más que el precio). Soporte YTD: reconstruye
+cada mes con su factor y agrega por producto.
+
+**Denominador inspección vs acabado (2026-06-04):** migration
+`20260604_cost_factors_inspection.sql` agrega metros de INSPECCIÓN (TL/INSP,
+move_category transfer_interno, el gate final que mide toda la tela vendible)
+como denominador alternativo. `get_cost_factors_monthly` y
+`get_meters_produced_vs_sold` devuelven ambos. La página muestra los dos
+factores lado a lado para comparar; el costeo por producto sigue en
+ACABADO (OP-ACA+V10) hasta decidir el oficial. Inspección da factor más bajo
+(más metros: ene $9.88→$6.36); riesgo de doble conteo por reinspección.
 
 ### Migration
 

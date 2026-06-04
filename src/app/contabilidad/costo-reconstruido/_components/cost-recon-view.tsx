@@ -77,7 +77,16 @@ const SOURCE_LABEL: Record<string, string> = {
 };
 
 export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
-  const { period, rangeLabel, factors, rows, totals, metersHistory } = snapshot;
+  const {
+    period,
+    rangeLabel,
+    factors,
+    rows,
+    totals,
+    nonMeterRows,
+    nonMeterTotals,
+    metersHistory,
+  } = snapshot;
 
   // Top 30 por costo total para no saturar; resto agregado
   const TOP = 30;
@@ -98,7 +107,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
       {/* === Toolbar de export === */}
       <div className="flex items-center justify-end gap-2 print:hidden">
         <DataCsvButton
-          rows={toCsvRows(rows)}
+          rows={toCsvRows([...rows, ...nonMeterRows])}
           columns={CSV_COLUMNS}
           filename={`costo-reconstruido-${period}`}
           label="Exportar CSV (todos)"
@@ -141,6 +150,52 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
             highlight
           />
         </div>
+
+        {/* Comparación de denominadores: acabado vs inspección */}
+        <div className="rounded-md border overflow-hidden">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Denominador</th>
+                <th className="px-3 py-2 text-right">Metros</th>
+                <th className="px-3 py-2 text-right">Factor fab</th>
+                <th className="px-3 py-2 text-right">Factor op</th>
+                <th className="px-3 py-2 text-right">Factor total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr className="border-t bg-emerald-50/40">
+                <td className="px-3 py-2 font-medium">
+                  Acabado (OP-ACA + OP-V10)
+                  <span className="ml-2 rounded border border-emerald-300 bg-emerald-50 px-1 py-0.5 text-[10px] uppercase text-emerald-700">
+                    en uso
+                  </span>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {factors ? formatNumber(factors.metrosReferencia) : "—"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorFabXMetro)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpXMetro)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalXMetro)}</td>
+              </tr>
+              <tr className="border-t">
+                <td className="px-3 py-2 font-medium">Inspección (TL/INSP)</td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {factors ? formatNumber(factors.metrosInspeccion) : "—"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorFabInsp)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpInsp)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalInsp)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          El costeo por producto usa el denominador <strong>Acabado</strong>.
+          Inspección (transferencias TL/INSP) suele dar más metros → factor más
+          bajo; es el gate final que mide toda la tela vendible, pero puede
+          incluir reinspecciones. Comparándolos decidimos cuál se vuelve oficial.
+        </p>
       </section>
 
       {/* === Estructura vs ventas (lo que se va de cada peso vendido) === */}
@@ -198,6 +253,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                 <th className="px-3 py-2 text-right">OP-ACA</th>
                 <th className="px-3 py-2 text-right">OP-V10</th>
                 <th className="px-3 py-2 text-right border-l">Metros ref.</th>
+                <th className="px-3 py-2 text-right">Inspección</th>
                 <th className="px-3 py-2 text-right">Metros vendidos</th>
                 <th className="px-3 py-2 text-right">Kg vendidos</th>
                 <th className="px-3 py-2 text-right">Ratio v/p</th>
@@ -221,6 +277,9 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums border-l">
                     {formatNumber(m.metrosReferencia)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {formatNumber(m.metrosInspeccion)}
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatNumber(m.metrosVendidos)}
@@ -339,6 +398,95 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           cada metro.
         </p>
       </section>
+
+      {/* === Productos vendidos en kg (fuera del factor por metro) === */}
+      {nonMeterRows.length > 0 && (
+        <section className="space-y-3">
+          <h2 className="text-lg font-semibold">
+            Productos vendidos en kg / otros — solo materia prima
+          </h2>
+          <p className="text-sm text-muted-foreground">
+            Estos {nonMeterTotals.productos} productos NO se venden por metro,
+            así que <strong>no se les aplica el factor $/metro</strong> (1 kg de
+            tela son varios metros; cargarles el factor por unidad los
+            distorsionaría). Se muestran solo con su costo de MP (último costo) y
+            margen material. Para costearlos completo necesitaríamos su gramaje.
+          </p>
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+                <tr>
+                  <th className="px-3 py-2 text-left">Producto</th>
+                  <th className="px-3 py-2 text-right">Vendido</th>
+                  <th className="px-3 py-2 text-right border-l">MP unit</th>
+                  <th className="px-3 py-2 text-right">Ventas</th>
+                  <th className="px-3 py-2 text-right">MP total</th>
+                  <th className="px-3 py-2 text-right border-l">% MP/ventas</th>
+                  <th className="px-3 py-2 text-right">Margen MP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {nonMeterRows.map((r) => (
+                  <tr key={r.productId} className="border-t hover:bg-muted/20">
+                    <td className="px-3 py-2 font-medium">
+                      {r.productRef ?? r.productName ?? r.productId}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {formatNumber(r.qtySold)} {r.uom ?? ""}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums border-l">
+                      {fUnit(r.costoPrimoUnitMxn)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatCurrencyMXN(r.revenueMxn)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatCurrencyMXN(r.costoPrimoTotalMxn)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums border-l">
+                      {r.pctMpVsRevenue != null ? formatPercent(r.pctMpVsRevenue) : "—"}
+                    </td>
+                    <td
+                      className={cn(
+                        "px-3 py-2 text-right tabular-nums font-medium",
+                        r.marginFullPct != null && r.marginFullPct < 0
+                          ? "text-red-600"
+                          : "text-emerald-700",
+                      )}
+                    >
+                      {r.marginFullPct != null ? formatPercent(r.marginFullPct) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-muted/30 font-semibold">
+                <tr className="border-t-2">
+                  <td className="px-3 py-2" colSpan={3}>
+                    Total kg / otros ({nonMeterTotals.productos})
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCurrencyMXN(nonMeterTotals.revenueMxn, { compact: true })}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCurrencyMXN(nonMeterTotals.mpTotalMxn, { compact: true })}
+                  </td>
+                  <td className="px-3 py-2 border-l" />
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {nonMeterTotals.marginMpPct != null
+                      ? formatPercent(nonMeterTotals.marginMpPct)
+                      : "—"}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Nota: su margen aquí es <strong>vs MP solamente</strong>; el costo
+            real es mayor porque también consumen fabricación y operación que
+            este modelo aún no les asigna.
+          </p>
+        </section>
+      )}
     </div>
   );
 }
