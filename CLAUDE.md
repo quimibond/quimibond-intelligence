@@ -1142,6 +1142,27 @@ del denominador fab y fab_unit=0. Sin peso → aparte. `factor_fab_kg`/
 Pendiente fase "específico": híbrido por driver (inspección/empaque por metro,
 químicos/energía por peso, mapeando cuentas).
 
+**Peso por unidad — fuentes y prioridad (2026-06-04l):** `product_kg_per_unit`
+se rellena con esta prioridad (overridable con `source='manual'`):
+1. `kg_native` — productos uom=kg → 1.
+2. `cvu` — conversión medida real (órdenes TL/CVU 1:1). Empírica, gana.
+3. `ref_gramaje` — gramaje del ref SOLO si el primer bloque numérico tras las
+   letras tiene EXACTAMENTE 3 dígitos (×ancho/100/1000). Spec de ingeniería,
+   confiable para greige/jersey.
+4. `bom_weight` — peso recursivo desde la receta (`get_bom_weight_per_unit` +
+   `leaf_kg_per_unit`): explota la BOM y suma kg de cada hoja (hilo/químico en
+   kg directo; tela base en m × su kg/m; agua uom=L y servicios se ignoran).
+   Para productos SIN gramaje limpio, p.ej. **códigos de resina de 4 dígitos**
+   (ZN4032, AT9032, WP4032 — el 4032/9032 es la resina, NO gramaje).
+5. `odoo_weight` — último recurso (campo inconsistente: unos guardan kg/m,
+   otros g/m²; solo se acepta rango 0.01–1.5).
+   **Bug corregido:** el heurístico viejo `^[A-Za-z]+(\d{3})` malinterpretaba
+   los códigos de resina (403/903 como g/m²) y ZN4032BL152 caía a
+   odoo_weight=0.48 kg/m (~5× inflado; real por BOM ≈0.092). El guard de
+   "exactamente 3 dígitos" + bom_weight lo arreglan. ref_gramaje va ANTES que
+   bom_weight porque la receta sobre-estima en algunos (WC090…=1.48, irreal
+   para 90 g/m²; gramaje da 0.153). Migration `20260604l_product_kg_bom_weight.sql`.
+
 **[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
 (lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
 (metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`
