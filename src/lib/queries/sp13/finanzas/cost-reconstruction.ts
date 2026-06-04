@@ -219,19 +219,10 @@ async function _getCostReconSnapshotRaw(
   }
 
   // Recalcula unitarios (promedio ponderado del rango) y porcentajes.
-  // El factor $/metro SOLO aplica a productos vendidos en metros. Los kg
-  // (y Servicio/Pieza) no tienen rendimiento metro→unidad confiable, así que
-  // se les pone factor 0 y se reportan aparte con su costo de MP únicamente.
+  // El factor $/metro ya viene aplicado por el RPC: a metros directo y a kg
+  // convertidos a metros-equivalentes (product_uom_conversion). Los que no
+  // tienen conversión (desperdicio/servicio/pieza) vienen con factor 0.
   const allRows: CostReconRow[] = Array.from(acc.values()).map((r) => {
-    const isMeter = r.uom === "m";
-    if (!isMeter) {
-      // Sin factor por metro: costo = solo MP.
-      r.gastosFabTotalMxn = 0;
-      r.gastosOpTotalMxn = 0;
-      r.factorFabUnitMxn = 0;
-      r.factorOpUnitMxn = 0;
-      r.costoTotalMxn = r.costoPrimoTotalMxn;
-    }
     if (r.qtySold > 0) {
       r.costoPrimoUnitMxn = r.costoPrimoTotalMxn / r.qtySold;
       r.factorFabUnitMxn = r.gastosFabTotalMxn / r.qtySold;
@@ -254,12 +245,16 @@ async function _getCostReconSnapshotRaw(
     return r;
   });
 
-  // Separa: análisis principal = productos en metros; kg/otros = aparte.
+  // Separa: análisis principal = productos costeados (metros directos + kg
+  // convertidos que absorben factor). Aparte = sin factor (desperdicio /
+  // servicio / pieza / kg sin conversión), solo con MP.
+  const isCosted = (r: CostReconRow) =>
+    r.uom === "m" || r.gastosFabTotalMxn > 0 || r.gastosOpTotalMxn > 0;
   const rows = allRows
-    .filter((r) => r.uom === "m")
+    .filter(isCosted)
     .sort((a, b) => b.costoTotalMxn - a.costoTotalMxn);
   const nonMeterRows = allRows
-    .filter((r) => r.uom !== "m")
+    .filter((r) => !isCosted(r))
     .sort((a, b) => b.revenueMxn - a.revenueMxn);
 
   // Factores agregados del rango (blended = Σ gastos / Σ metros).
@@ -404,6 +399,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v5-three-meters", String(range)],
+    ["sp13-cost-reconstruction-v6-kg-conversion", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

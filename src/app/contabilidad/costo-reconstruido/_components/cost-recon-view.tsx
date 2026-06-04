@@ -287,6 +287,9 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           del producto</strong>: cuánto de cada peso vendido se va en MP,
           fabricación y operación. <strong>Fab/ventas &gt; 100%</strong>{" "}
           significa que fabricar el producto cuesta más que su precio de venta.
+          La tela vendida en <strong>kg</strong> se convierte a metros (CVU real
+          o gramaje×ancho) para cobrarle el mismo factor — por eso su factor por
+          unidad es mayor (1 kg ≈ 10-16 m).
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -372,14 +375,14 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
       {nonMeterRows.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">
-            5. Productos vendidos en kg / otros — solo materia prima
+            5. Productos sin factor — solo materia prima
           </h2>
           <p className="text-sm text-muted-foreground">
-            Estos {nonMeterTotals.productos} productos NO se venden por metro,
-            así que <strong>no se les aplica el factor $/metro</strong> (1 kg de
-            tela son varios metros; cargarles el factor por unidad los
-            distorsionaría). Se muestran solo con su costo de MP (último costo) y
-            margen material. Para costearlos completo necesitaríamos su gramaje.
+            Estos {nonMeterTotals.productos} productos no tienen conversión a
+            metros (desperdicio, servicio, pieza, o kg sin gramaje/CVU), así que
+            <strong> no absorben factor</strong> y se muestran solo con su costo
+            de MP y margen material. La tela en kg con conversión sí está en la
+            tabla principal de arriba, ya costeada completa.
           </p>
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-sm">
