@@ -280,10 +280,18 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
               {topRows.map((r) => (
                 <ProductRow key={r.productId} r={r} />
               ))}
+              {/* Resto: oculto en pantalla, visible al imprimir → el PDF trae todos */}
+              {restRows.map((r) => (
+                <ProductRow
+                  key={r.productId}
+                  r={r}
+                  className="hidden print:table-row"
+                />
+              ))}
               {restRows.length > 0 && (
-                <tr className="border-t bg-muted/10 text-muted-foreground">
+                <tr className="border-t bg-muted/10 text-muted-foreground print:hidden">
                   <td className="px-3 py-2 italic">
-                    +{restRows.length} productos restantes
+                    +{restRows.length} productos restantes (en CSV / PDF salen todos)
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatNumber(rest.qty)}
@@ -335,14 +343,14 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
   );
 }
 
-function ProductRow({ r }: { r: CostReconRow }) {
+function ProductRow({ r, className }: { r: CostReconRow; className?: string }) {
   // Fab/ventas alto = la fabricación se come gran parte del precio de venta.
   const fabHot =
     r.pctFabVsRevenue != null && r.pctFabVsRevenue >= 50;
   const fabCritical =
     r.pctFabVsRevenue != null && r.pctFabVsRevenue >= 100;
   return (
-    <tr className="border-t hover:bg-muted/20">
+    <tr className={cn("border-t hover:bg-muted/20", className)}>
       <td className="px-3 py-2 font-medium">
         <div className="flex items-center gap-2">
           <span>{r.productRef ?? r.productName ?? r.productId}</span>
