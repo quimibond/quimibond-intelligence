@@ -1117,6 +1117,20 @@ ventas, ~4% del gasto fab). No hay gramaje en Odoo para convertir kg→m.
 rojo ≥100% = fabricar cuesta más que el precio). Soporte YTD: reconstruye
 cada mes con su factor y agrega por producto.
 
+**Tela vendida en kg → conversión a metros (2026-06-04):** la tela se
+produce/inspecciona en metros pero parte se vende por peso (kg). Para
+costearla con el mismo factor $/metro se convierte kg→metros vía tabla
+`product_uom_conversion` (m_per_kg por SKU):
+- Fuente 1 **CVU** (órdenes TL/CVU que consumen metros y producen kg = la
+  conversión real de la empresa). Fuente 2 fallback **gramaje×ancho** del
+  ref (IWJ045...160 = 45 g/m² × 1.60 m → 13.9 m/kg). Ambas coinciden ~5%.
+- `get_full_cost_reconstruction` aplica `factor × m_per_kg` a productos kg
+  (metros-equivalentes). Sin conversión (desperdicio/servicio/pieza) → solo MP.
+- Hallazgo: costeada completa, la tela en kg da **margen negativo** a precios
+  actuales; incluirla baja el margen absorbido total de abril a ~breakeven.
+- Migrations `20260604d_product_uom_conversion.sql`,
+  `20260604e_full_cost_reconstruction_kg_conversion.sql`. Tabla overridable.
+
 **Denominador inspección vs acabado (2026-06-04):** migration
 `20260604_cost_factors_inspection.sql` agrega metros de INSPECCIÓN (TL/INSP,
 move_category transfer_interno, el gate final que mide toda la tela vendible)

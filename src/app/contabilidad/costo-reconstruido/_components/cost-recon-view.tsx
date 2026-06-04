@@ -80,12 +80,11 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
   const {
     period,
     rangeLabel,
-    factors,
     rows,
     totals,
     nonMeterRows,
     nonMeterTotals,
-    metersHistory,
+    monthlyComparison,
   } = snapshot;
 
   // Top 30 por costo total para no saturar; resto agregado
@@ -115,53 +114,133 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         <PrintButton />
       </div>
 
-      {/* === Factores del período === */}
-      <section className="space-y-3">
-        <div>
-          <h2 className="text-lg font-semibold">
-            Factores de gasto por metro — {rangeLabel} ({period})
-          </h2>
-          <p className="text-sm text-muted-foreground">
-            Gastos del mes ÷ <strong>metros inspeccionados (TL/INSP)</strong> —
-            la fuente de verdad: toda la tela se inspecciona en metros. El factor
-            se suma al costo primo MP de cada producto para reconstruir el costo
-            total &ldquo;por fuera&rdquo;.
-          </p>
-        </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Kpi
-            label="Metros inspeccionados"
-            value={factors ? `${formatNumber(factors.metrosInspeccion)} m` : "—"}
-            sub="TL/INSP (fuente de verdad)"
-          />
-          <Kpi
-            label="Factor fabricación"
-            value={fUnit(factors?.factorFabInsp)}
-            sub={factors ? `${formatCurrencyMXN(factors.gastosFabMxn)} MOD+OH+dep` : ""}
-          />
-          <Kpi
-            label="Factor operación"
-            value={fUnit(factors?.factorOpInsp)}
-            sub={factors ? `${formatCurrencyMXN(factors.gastosOpMxn)} gastos 6xx` : ""}
-          />
-          <Kpi
-            label="Factor total"
-            value={fUnit(factors?.factorTotalInsp)}
-            sub="$/metro absorbido"
-            highlight
-          />
-        </div>
+      {/* === Cómo se calcula (intro) === */}
+      <section className="rounded-md border bg-muted/20 p-4 space-y-2">
+        <h2 className="text-base font-semibold">Cómo leer este reporte</h2>
+        <p className="text-sm text-muted-foreground">
+          Reconstruimos el <strong>costo total de cada producto</strong>{" "}
+          repartiéndole los gastos de la fábrica y de operación. Tres pasos:
+        </p>
+        <ol className="text-sm text-muted-foreground list-decimal pl-5 space-y-1">
+          <li>
+            <strong>Gasto por metro</strong> = (gastos de fabricación + gastos de
+            operación del mes) ÷ metros producidos. El metro oficial es el{" "}
+            <strong>inspeccionado</strong> (toda la tela se mide ahí).
+          </li>
+          <li>
+            <strong>Costo del producto</strong> = su materia prima (a último
+            costo de compra) + ese gasto por metro.
+          </li>
+          <li>
+            Comparamos contra el <strong>precio de venta</strong> → cuánto de cada
+            peso vendido se va en MP, fabricación y operación, y qué margen queda.
+          </li>
+        </ol>
+      </section>
 
+      {/* === 1) Los tres metros === */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">1. Los tres metros del mes</h2>
+        <p className="text-sm text-muted-foreground">
+          La misma tela se puede contar en tres momentos. Vendes menos de lo que
+          inspeccionas/fabricas porque construyes inventario.
+        </p>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Mes</th>
+                <th className="px-3 py-2 text-right">Fabricado (acabado)</th>
+                <th className="px-3 py-2 text-right bg-emerald-50">Inspeccionado (oficial)</th>
+                <th className="px-3 py-2 text-right">Vendido</th>
+                <th className="px-3 py-2 text-right">Vendido ÷ inspeccionado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyComparison.map((m) => {
+                const ratio =
+                  m.inspeccionado > 0 ? m.vendido / m.inspeccionado : null;
+                return (
+                  <tr key={m.mes} className="border-t hover:bg-muted/20">
+                    <td className="px-3 py-2">{mesLabel(m.mes)}</td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {formatNumber(m.fabricado)} m
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
+                      {formatNumber(m.inspeccionado)} m
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {formatNumber(m.vendido)} m
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                      {ratio != null ? ratio.toFixed(2) : "—"}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
         <p className="text-xs text-muted-foreground">
-          Denominador: <strong>metros inspeccionados (TL/INSP)</strong> — toda la
-          tela se inspecciona en metros, así que captura el output vendible real.
+          <strong>Fabricado</strong> = salió de acabado (OP-ACA + OP-V10).{" "}
+          <strong>Inspeccionado</strong> = pasó por inspección final (TL/INSP) —
+          el oficial. <strong>Vendido</strong> = facturado (uom = m).
         </p>
       </section>
 
-      {/* === Estructura vs ventas (lo que se va de cada peso vendido) === */}
+      {/* === 2) Gasto por metro según qué midas === */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">
-          Estructura sobre ventas — total del mes
+          2. Gasto por metro — según qué metro uses de denominador
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          Mismo pozo de gastos (fabricación + operación) ÷ cada uno de los tres
+          metros. Usamos la columna <strong>inspeccionado</strong> para costear.
+        </p>
+        <div className="overflow-x-auto rounded-md border">
+          <table className="w-full text-sm">
+            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th className="px-3 py-2 text-left">Mes</th>
+                <th className="px-3 py-2 text-right">Gastos totales</th>
+                <th className="px-3 py-2 text-right border-l">÷ Fabricado</th>
+                <th className="px-3 py-2 text-right bg-emerald-50">÷ Inspeccionado (oficial)</th>
+                <th className="px-3 py-2 text-right">÷ Vendido</th>
+              </tr>
+            </thead>
+            <tbody>
+              {monthlyComparison.map((m) => (
+                <tr key={m.mes} className="border-t hover:bg-muted/20">
+                  <td className="px-3 py-2">{mesLabel(m.mes)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums">
+                    {formatCurrencyMXN(m.gastosTotales, { compact: true })}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums border-l text-muted-foreground">
+                    {fUnit(m.factorVsFabricado)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-semibold">
+                    {fUnit(m.factorVsInspeccionado)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
+                    {fUnit(m.factorVsVendido)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          El &ldquo;÷ vendido&rdquo; sale más caro porque vendes menos metros que
+          los que produces (el gasto fijo se reparte entre menos metros). El
+          oficial es <strong>÷ inspeccionado</strong>: costo real por metro de
+          tela buena.
+        </p>
+      </section>
+
+      {/* === 3) Estructura sobre ventas (total del período) === */}
+      <section className="space-y-3">
+        <h2 className="text-lg font-semibold">
+          3. Estructura sobre ventas — {rangeLabel} ({period})
         </h2>
         <p className="text-sm text-muted-foreground">
           De cada peso vendido, cuánto se va en materia prima, fabricación y
@@ -192,86 +271,15 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           <Kpi
             label="Ventas"
             value={formatCurrencyMXN(totals.revenueMxn, { compact: true })}
-            sub={`${totals.productos} productos`}
+            sub={`${totals.productos} productos en metros`}
           />
-        </div>
-      </section>
-
-      {/* === Metros fabricados vs vendidos === */}
-      <section className="space-y-3">
-        <h2 className="text-lg font-semibold">Metros fabricados vs vendidos</h2>
-        <p className="text-sm text-muted-foreground">
-          Inspección (TL/INSP) = denominador oficial. Acabado (OP-ACA+V10) y
-          vendidos (out_invoice uom=m, dedup) se muestran de referencia. Ratio =
-          vendidos ÷ inspeccionados: &lt;1 = produces más de lo que vendes
-          (construyes inventario); &gt;1 = vendes de inventario.
-        </p>
-        <div className="overflow-x-auto rounded-md border">
-          <table className="w-full text-sm">
-            <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
-              <tr>
-                <th className="px-3 py-2 text-left">Mes</th>
-                <th className="px-3 py-2 text-right">OP-ACA</th>
-                <th className="px-3 py-2 text-right">OP-V10</th>
-                <th className="px-3 py-2 text-right border-l">Metros ref.</th>
-                <th className="px-3 py-2 text-right">Inspección</th>
-                <th className="px-3 py-2 text-right">Metros vendidos</th>
-                <th className="px-3 py-2 text-right">Kg vendidos</th>
-                <th className="px-3 py-2 text-right">Ratio v/p</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metersHistory.map((m) => (
-                <tr
-                  key={m.mes}
-                  className={cn(
-                    "border-t hover:bg-muted/20",
-                    m.mes === period && "bg-muted/30 font-medium",
-                  )}
-                >
-                  <td className="px-3 py-2">{mesLabel(m.mes)}</td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {formatNumber(m.metrosOpAca)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {formatNumber(m.metrosOpV10)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums border-l">
-                    {formatNumber(m.metrosReferencia)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {formatNumber(m.metrosInspeccion)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums">
-                    {formatNumber(m.metrosVendidos)}
-                  </td>
-                  <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
-                    {formatNumber(m.kgVendidos)}
-                  </td>
-                  <td
-                    className={cn(
-                      "px-3 py-2 text-right tabular-nums font-medium",
-                      m.ratioVendidoProducido != null &&
-                        m.ratioVendidoProducido > 1
-                        ? "text-amber-600"
-                        : "text-emerald-700",
-                    )}
-                  >
-                    {m.ratioVendidoProducido != null
-                      ? m.ratioVendidoProducido.toFixed(2)
-                      : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       </section>
 
       {/* === Reconstrucción por producto === */}
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">
-          Costo reconstruido por producto (top {TOP})
+          4. Costo reconstruido por producto (top {TOP})
         </h2>
         <p className="text-sm text-muted-foreground">
           Costo primo con <strong>último costo de compra</strong> + factor
@@ -279,6 +287,9 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           del producto</strong>: cuánto de cada peso vendido se va en MP,
           fabricación y operación. <strong>Fab/ventas &gt; 100%</strong>{" "}
           significa que fabricar el producto cuesta más que su precio de venta.
+          La tela vendida en <strong>kg</strong> se convierte a metros (CVU real
+          o gramaje×ancho) para cobrarle el mismo factor — por eso su factor por
+          unidad es mayor (1 kg ≈ 10-16 m).
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -364,14 +375,14 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
       {nonMeterRows.length > 0 && (
         <section className="space-y-3">
           <h2 className="text-lg font-semibold">
-            Productos vendidos en kg / otros — solo materia prima
+            5. Productos sin factor — solo materia prima
           </h2>
           <p className="text-sm text-muted-foreground">
-            Estos {nonMeterTotals.productos} productos NO se venden por metro,
-            así que <strong>no se les aplica el factor $/metro</strong> (1 kg de
-            tela son varios metros; cargarles el factor por unidad los
-            distorsionaría). Se muestran solo con su costo de MP (último costo) y
-            margen material. Para costearlos completo necesitaríamos su gramaje.
+            Estos {nonMeterTotals.productos} productos no tienen conversión a
+            metros (desperdicio, servicio, pieza, o kg sin gramaje/CVU), así que
+            <strong> no absorben factor</strong> y se muestran solo con su costo
+            de MP y margen material. La tela en kg con conversión sí está en la
+            tabla principal de arriba, ya costeada completa.
           </p>
           <div className="overflow-x-auto rounded-md border">
             <table className="w-full text-sm">
