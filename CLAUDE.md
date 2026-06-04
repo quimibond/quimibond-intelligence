@@ -1174,6 +1174,18 @@ I traía 0.54, ~5× vs gemelo 0.106). Así entran al denominador de op (kg
 vendidos) y reciben su parte; fab sigue en 0 por el guard `is_import` (' I$').
 source='import_twin'. Migration `20260604m_import_twin_weight.sql`.
 
+**Factor $/kg suavizado (2026-06-04n):** el factor mensual oscila mucho (gasto
+fábrica ~fijo $5.5M ÷ kg inspeccionados volátiles 75k–112k → abr $72/kg vs may
+$38/kg), metiendo ruido en el margen por producto (X140NT165 saltaba −16%…+3%
+mes a mes). `get_cost_factors_monthly` agrega 3 columnas suavizadas
+(`factor_fab_kg_smooth`/`factor_op_kg_smooth`/`factor_total_kg_smooth`) =
+**promedio móvil ponderado 12m** (Σ gasto ÷ Σ kg sobre ventana, window function
+`ROWS BETWEEN 11 PRECEDING AND CURRENT ROW`, solo meses válidos para no
+contaminar con cierre anual). `get_full_cost_reconstruction` usa el suavizado;
+el crudo se conserva para auditar la volatilidad en la UI (sección 1 muestra
+ambos). Con esto X140 queda estable en ~−8% (señal honesta: tela pesada cuyo
+precio no cubre el costo absorbido). Migration `20260604n_cost_factors_smoothed.sql`.
+
 **[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
 (lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
 (metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`
