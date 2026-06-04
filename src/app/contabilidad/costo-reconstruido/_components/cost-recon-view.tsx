@@ -122,30 +122,31 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
             Factores de gasto por metro — {rangeLabel} ({period})
           </h2>
           <p className="text-sm text-muted-foreground">
-            Gastos del mes ÷ metros de referencia producidos (OP-ACA + OP-V10).
-            El factor se suma al costo primo MP de cada producto para
-            reconstruir el costo total &ldquo;por fuera&rdquo;.
+            Gastos del mes ÷ <strong>metros inspeccionados (TL/INSP)</strong> —
+            la fuente de verdad: toda la tela se inspecciona en metros. El factor
+            se suma al costo primo MP de cada producto para reconstruir el costo
+            total &ldquo;por fuera&rdquo;.
           </p>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Kpi
-            label="Metros referencia"
-            value={factors ? `${formatNumber(factors.metrosReferencia)} m` : "—"}
-            sub="OP-ACA + OP-V10"
+            label="Metros inspeccionados"
+            value={factors ? `${formatNumber(factors.metrosInspeccion)} m` : "—"}
+            sub="TL/INSP (fuente de verdad)"
           />
           <Kpi
             label="Factor fabricación"
-            value={fUnit(factors?.factorFabXMetro)}
+            value={fUnit(factors?.factorFabInsp)}
             sub={factors ? `${formatCurrencyMXN(factors.gastosFabMxn)} MOD+OH+dep` : ""}
           />
           <Kpi
             label="Factor operación"
-            value={fUnit(factors?.factorOpXMetro)}
+            value={fUnit(factors?.factorOpInsp)}
             sub={factors ? `${formatCurrencyMXN(factors.gastosOpMxn)} gastos 6xx` : ""}
           />
           <Kpi
             label="Factor total"
-            value={fUnit(factors?.factorTotalXMetro)}
+            value={fUnit(factors?.factorTotalInsp)}
             sub="$/metro absorbido"
             highlight
           />
@@ -166,10 +167,22 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
             <tbody>
               <tr className="border-t bg-emerald-50/40">
                 <td className="px-3 py-2 font-medium">
-                  Acabado (OP-ACA + OP-V10)
+                  Inspección (TL/INSP)
                   <span className="ml-2 rounded border border-emerald-300 bg-emerald-50 px-1 py-0.5 text-[10px] uppercase text-emerald-700">
-                    en uso
+                    oficial
                   </span>
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">
+                  {factors ? formatNumber(factors.metrosInspeccion) : "—"}
+                </td>
+                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorFabInsp)}</td>
+                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpInsp)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalInsp)}</td>
+              </tr>
+              <tr className="border-t text-muted-foreground">
+                <td className="px-3 py-2 font-medium">
+                  Acabado (OP-ACA + OP-V10)
+                  <span className="ml-2 text-[10px] uppercase">referencia</span>
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {factors ? formatNumber(factors.metrosReferencia) : "—"}
@@ -178,23 +191,14 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                 <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpXMetro)}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalXMetro)}</td>
               </tr>
-              <tr className="border-t">
-                <td className="px-3 py-2 font-medium">Inspección (TL/INSP)</td>
-                <td className="px-3 py-2 text-right tabular-nums">
-                  {factors ? formatNumber(factors.metrosInspeccion) : "—"}
-                </td>
-                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorFabInsp)}</td>
-                <td className="px-3 py-2 text-right tabular-nums">{fUnit(factors?.factorOpInsp)}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-semibold">{fUnit(factors?.factorTotalInsp)}</td>
-              </tr>
             </tbody>
           </table>
         </div>
         <p className="text-xs text-muted-foreground">
-          El costeo por producto usa el denominador <strong>Acabado</strong>.
-          Inspección (transferencias TL/INSP) suele dar más metros → factor más
-          bajo; es el gate final que mide toda la tela vendible, pero puede
-          incluir reinspecciones. Comparándolos decidimos cuál se vuelve oficial.
+          El costeo por producto usa el denominador <strong>Inspección</strong>
+          (oficial): toda la tela se inspecciona en metros, así que captura el
+          output vendible real. Acabado (OP-ACA+V10) queda como referencia
+          comparativa.
         </p>
       </section>
 
@@ -241,9 +245,10 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
       <section className="space-y-3">
         <h2 className="text-lg font-semibold">Metros fabricados vs vendidos</h2>
         <p className="text-sm text-muted-foreground">
-          Referencia = OP-ACA + OP-V10 (terminados). Vendidos = productos con
-          UoM en metros (out_invoice, dedup). Ratio &lt;1 = produces más de lo
-          que vendes (construyes inventario); &gt;1 = vendes de inventario.
+          Inspección (TL/INSP) = denominador oficial. Acabado (OP-ACA+V10) y
+          vendidos (out_invoice uom=m, dedup) se muestran de referencia. Ratio =
+          vendidos ÷ inspeccionados: &lt;1 = produces más de lo que vendes
+          (construyes inventario); &gt;1 = vendes de inventario.
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
