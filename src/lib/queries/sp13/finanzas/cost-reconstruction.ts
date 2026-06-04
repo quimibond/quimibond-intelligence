@@ -91,16 +91,16 @@ export interface MetersProducedVsSold {
   ratioVendidoProducido: number | null;
 }
 
-/** Comparación mensual: los 3 metros y el gasto por metro bajo cada uno. */
+/** Gasto por metro por mes: fabricación ÷ inspeccionado, operación ÷ vendido. */
 export interface MonthlyComparison {
   mes: string;
-  gastosTotales: number;
-  fabricado: number;
+  gastosFabMxn: number;
+  gastosOpMxn: number;
   inspeccionado: number;
-  vendido: number;
-  factorVsFabricado: number | null;
-  factorVsInspeccionado: number | null;
-  factorVsVendido: number | null;
+  vendidoEquiv: number;
+  factorFab: number | null;
+  factorOp: number | null;
+  factorTotal: number | null;
 }
 
 /** Totales de productos NO vendidos en metros (kg/Servicio/Pieza), solo MP. */
@@ -365,32 +365,29 @@ async function _getCostReconSnapshotRaw(
       ratioVendidoProducido: nOrNull(m.ratio_vendido_producido),
     }));
 
-  // Comparación mensual: 3 metros (fabricado/inspeccionado/vendido) + gasto/m
-  // bajo cada denominador. Solo meses con gastos cargados.
-  const ventasByMes = new Map(
-    ((metersRes.data ?? []) as Record<string, unknown>[]).map((m) => [
-      m.mes as string,
-      n(m.metros_vendidos),
-    ]),
-  );
+  // Gasto por metro por mes: fabricación ÷ inspeccionado, operación ÷ vendido.
   const monthlyComparison: MonthlyComparison[] = factorRows
     .map((f) => {
-      const gastos = n(f.gastos_fabricacion_mxn) + n(f.gastos_operacion_mxn);
-      const fabricado = n(f.metros_referencia);
-      const inspeccionado = n(f.metros_inspeccion);
-      const vendido = ventasByMes.get(f.mes as string) ?? 0;
+      const gastosFab = n(f.gastos_fabricacion_mxn);
+      const gastosOp = n(f.gastos_operacion_mxn);
+      const factorFab = nOrNull(f.factor_fab_insp);
+      const factorOp = nOrNull(f.factor_op_vendido);
       return {
         mes: f.mes as string,
-        gastosTotales: gastos,
-        fabricado,
-        inspeccionado,
-        vendido,
-        factorVsFabricado: fabricado > 0 ? gastos / fabricado : null,
-        factorVsInspeccionado: inspeccionado > 0 ? gastos / inspeccionado : null,
-        factorVsVendido: vendido > 0 ? gastos / vendido : null,
+        gastosFabMxn: gastosFab,
+        gastosOpMxn: gastosOp,
+        inspeccionado: n(f.metros_inspeccion),
+        vendidoEquiv: n(f.metros_vendidos_equiv),
+        factorFab,
+        factorOp,
+        factorTotal:
+          factorFab != null || factorOp != null
+            ? (factorFab ?? 0) + (factorOp ?? 0)
+            : null,
       };
     })
-    .filter((c) => c.gastosTotales > 0 && c.inspeccionado > 0)
+    // Solo meses con gastos normales (excluye cierre anual con saldos negativos)
+    .filter((c) => c.gastosFabMxn > 0 && c.inspeccionado > 0)
     .sort((a, b) => a.mes.localeCompare(b.mes));
 
   return {
@@ -409,6 +406,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v7-mp-avg", String(range)],
+    ["sp13-cost-reconstruction-v8-op-sold", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

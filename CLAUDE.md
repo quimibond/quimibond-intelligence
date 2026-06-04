@@ -1131,6 +1131,15 @@ costearla con el mismo factor $/metro se convierte kg→metros vía tabla
 - Migrations `20260604d_product_uom_conversion.sql`,
   `20260604e_full_cost_reconstruction_kg_conversion.sql`. Tabla overridable.
 
+**Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
+(lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
+(metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`
+expone `factor_op_vendido` y `metros_vendidos_equiv`;
+`get_full_cost_reconstruction` usa `factor_fab_insp` + `factor_op_vendido`.
+Funciona para 2024-2025 (inspección y gastos existen; solo "fabricado/acabado"
+OP-ACA es 2026-only). Subproductos SALDO/DESPERDICIO se excluyen del reporte.
+Migrations `20260604g/h`. Página reordenada: sección "tres metros" eliminada.
+
 **Denominador inspección vs acabado (2026-06-04):** migration
 `20260604_cost_factors_inspection.sql` agrega metros de INSPECCIÓN (TL/INSP,
 move_category transfer_interno, el gate final que mide toda la tela vendible)
