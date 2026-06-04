@@ -152,7 +152,11 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         <p className="text-sm text-muted-foreground">
           Fabricación se reparte entre los <strong>kg inspeccionados</strong>
           (sin importados); operación entre los <strong>kg vendidos</strong>. El
-          peso de cada producto sale de CVU real o gramaje×ancho.
+          peso de cada producto sale de CVU real o gramaje×ancho. El factor
+          mensual <em>crudo</em> oscila porque el gasto de fábrica es casi fijo
+          pero el volumen varía; el costeo por producto usa el{" "}
+          <strong>factor suavizado</strong> (promedio móvil ponderado 12&nbsp;meses)
+          para no castigar/premiar a un producto por el volumen del mes.
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -165,7 +169,8 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                 <th className="px-3 py-2 text-right border-l">Gasto operación</th>
                 <th className="px-3 py-2 text-right">kg vendidos</th>
                 <th className="px-3 py-2 text-right bg-emerald-50">Factor op ($/kg)</th>
-                <th className="px-3 py-2 text-right border-l font-semibold">Factor total ($/kg)</th>
+                <th className="px-3 py-2 text-right border-l text-muted-foreground">Factor total crudo</th>
+                <th className="px-3 py-2 text-right bg-amber-50 font-semibold">Factor total suavizado (12m)</th>
               </tr>
             </thead>
             <tbody>
@@ -190,8 +195,11 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   <td className="px-3 py-2 text-right tabular-nums bg-emerald-50/50 font-medium">
                     {fUnit(m.factorOp)}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums border-l font-semibold">
+                  <td className="px-3 py-2 text-right tabular-nums border-l text-muted-foreground">
                     {fUnit(m.factorTotal)}
+                  </td>
+                  <td className="px-3 py-2 text-right tabular-nums bg-amber-50/50 font-semibold">
+                    {fUnit(m.factorTotalSmooth)}
                   </td>
                 </tr>
               ))}

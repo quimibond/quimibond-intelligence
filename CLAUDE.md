@@ -1142,6 +1142,50 @@ del denominador fab y fab_unit=0. Sin peso → aparte. `factor_fab_kg`/
 Pendiente fase "específico": híbrido por driver (inspección/empaque por metro,
 químicos/energía por peso, mapeando cuentas).
 
+**Peso por unidad — fuentes y prioridad (2026-06-04l):** `product_kg_per_unit`
+se rellena con esta prioridad (overridable con `source='manual'`):
+1. `kg_native` — productos uom=kg → 1.
+2. `cvu` — conversión medida real (órdenes TL/CVU 1:1). Empírica, gana.
+3. `ref_gramaje` — gramaje del ref SOLO si el primer bloque numérico tras las
+   letras tiene EXACTAMENTE 3 dígitos (×ancho/100/1000). Spec de ingeniería,
+   confiable para greige/jersey.
+4. `bom_weight` — peso recursivo desde la receta (`get_bom_weight_per_unit` +
+   `leaf_kg_per_unit`): explota la BOM y suma kg de cada hoja (hilo/químico en
+   kg directo; tela base en m × su kg/m; agua uom=L y servicios se ignoran).
+   Para productos SIN gramaje limpio, p.ej. **códigos de resina de 4 dígitos**
+   (ZN4032, AT9032, WP4032 — el 4032/9032 es la resina, NO gramaje).
+5. `odoo_weight` — último recurso (campo inconsistente: unos guardan kg/m,
+   otros g/m²; solo se acepta rango 0.01–1.5).
+   **Bug corregido:** el heurístico viejo `^[A-Za-z]+(\d{3})` malinterpretaba
+   los códigos de resina (403/903 como g/m²) y ZN4032BL152 caía a
+   odoo_weight=0.48 kg/m (~5× inflado; real por BOM ≈0.092). El guard de
+   "exactamente 3 dígitos" + bom_weight lo arreglan. ref_gramaje va ANTES que
+   bom_weight porque la receta sobre-estima en algunos (WC090…=1.48, irreal
+   para 90 g/m²; gramaje da 0.153). Migration `20260604l_product_kg_bom_weight.sql`.
+
+**Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
+cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
+operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
+resina + BOM stub → sin fuente), así que conv=0 y quedaban sin op. Fix:
+heredan el peso de su **gemelo nacional** (mismo ref sin ' I', p.ej.
+'WP4032BL152 I' → 'WP4032BL152'); el gemelo debe ser tela en metros (uom='m')
+y SUSTITUYE cualquier odoo_weight propio (igual de poco confiable: WP4032BL152
+I traía 0.54, ~5× vs gemelo 0.106). Así entran al denominador de op (kg
+vendidos) y reciben su parte; fab sigue en 0 por el guard `is_import` (' I$').
+source='import_twin'. Migration `20260604m_import_twin_weight.sql`.
+
+**Factor $/kg suavizado (2026-06-04n):** el factor mensual oscila mucho (gasto
+fábrica ~fijo $5.5M ÷ kg inspeccionados volátiles 75k–112k → abr $72/kg vs may
+$38/kg), metiendo ruido en el margen por producto (X140NT165 saltaba −16%…+3%
+mes a mes). `get_cost_factors_monthly` agrega 3 columnas suavizadas
+(`factor_fab_kg_smooth`/`factor_op_kg_smooth`/`factor_total_kg_smooth`) =
+**promedio móvil ponderado 12m** (Σ gasto ÷ Σ kg sobre ventana, window function
+`ROWS BETWEEN 11 PRECEDING AND CURRENT ROW`, solo meses válidos para no
+contaminar con cierre anual). `get_full_cost_reconstruction` usa el suavizado;
+el crudo se conserva para auditar la volatilidad en la UI (sección 1 muestra
+ambos). Con esto X140 queda estable en ~−8% (señal honesta: tela pesada cuyo
+precio no cubre el costo absorbido). Migration `20260604n_cost_factors_smoothed.sql`.
+
 **[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
 (lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
 (metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`

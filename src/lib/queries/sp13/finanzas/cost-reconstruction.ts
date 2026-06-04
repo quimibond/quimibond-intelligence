@@ -98,9 +98,14 @@ export interface MonthlyComparison {
   gastosOpMxn: number;
   kgInspeccion: number;
   kgVendidos: number;
+  /** Factor mensual crudo (volátil — depende del volumen del mes). */
   factorFab: number | null;
   factorOp: number | null;
   factorTotal: number | null;
+  /** Factor SUAVIZADO (promedio móvil ponderado 12m) — el que usa el costeo. */
+  factorFabSmooth: number | null;
+  factorOpSmooth: number | null;
+  factorTotalSmooth: number | null;
 }
 
 /** Totales de productos NO vendidos en metros (kg/Servicio/Pieza), solo MP. */
@@ -372,6 +377,8 @@ async function _getCostReconSnapshotRaw(
       const gastosOp = n(f.gastos_operacion_mxn);
       const factorFab = nOrNull(f.factor_fab_kg);
       const factorOp = nOrNull(f.factor_op_kg);
+      const factorFabSmooth = nOrNull(f.factor_fab_kg_smooth);
+      const factorOpSmooth = nOrNull(f.factor_op_kg_smooth);
       return {
         mes: f.mes as string,
         gastosFabMxn: gastosFab,
@@ -383,6 +390,12 @@ async function _getCostReconSnapshotRaw(
         factorTotal:
           factorFab != null || factorOp != null
             ? (factorFab ?? 0) + (factorOp ?? 0)
+            : null,
+        factorFabSmooth,
+        factorOpSmooth,
+        factorTotalSmooth:
+          factorFabSmooth != null || factorOpSmooth != null
+            ? (factorFabSmooth ?? 0) + (factorOpSmooth ?? 0)
             : null,
       };
     })
@@ -406,6 +419,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v9-by-weight", String(range)],
+    ["sp13-cost-reconstruction-v12-smoothed-factor", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
