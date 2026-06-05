@@ -176,12 +176,16 @@ export function WorkcenterStandardCard({
       </div>
 
       <p className="text-xs text-muted-foreground">
-        Meses en gris se excluyen del promedio: reverso de cierre anual
-        (diciembre) o mes corriente incompleto. Las{" "}
+        Componentes limpios: <strong>energía/servicios</strong> = cuentas 504.01
+        mapeadas directo al centro (consumo real); <strong>mantto/otros</strong>{" "}
+        = overhead fabril no mapeado ÷ MOD-share (sin depreciación);{" "}
+        <strong>deprec. máq.</strong> = sólo 504.08 maquinaria × {config?.machineDeprecPct ?? 0}%
+        (sin amortización de instalaciones ni gastos de importación).
+        Meses en gris fuera del promedio: reverso de cierre (diciembre) o mes
+        corriente incompleto. Las{" "}
         <strong>horas-máquina del GL no son confiables</strong> antes de
         mayo-2026 (tracking parcial); por eso la tarifa usa las{" "}
-        <strong>horas objetivo</strong> de la config, no las del mes. Ajusta las
-        horas objetivo conforme se estabilice el tracking real.
+        <strong>horas objetivo</strong> de la config, no las del mes.
       </p>
     </section>
   );
