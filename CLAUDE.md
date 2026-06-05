@@ -1250,10 +1250,28 @@ MOD) sin depender del GL volátil.
   de la config (Tejido 10,200, el real de mayo), NO las horas del mes.
 - La query (`workcenter-standard.ts`) normaliza: promedia los meses válidos
   (excluye total≤0 del cierre y el mes corriente) ÷ horas objetivo.
-- **Resultado Tejido (16 meses):** costo normalizado $1.22M/mes → `costs_hour`
-  ≈ $76, `employee_costs_hour` ≈ $44, total ≈ $120/h. (Su config actual
-  $74.57 + $29.65 = $104 sub-absorbe ~13%, casi todo en MOD.) Editable en
+- **Componentes limpios (2026-06-05d):** energia_servicios = cuentas 504.01
+  DIRECTAMENTE mapeadas al centro (consumo real); mantto_otros = pool 504.01 no
+  mapeado ÷ MOD-share entre fabriles (SIN depreciación); deprec_maquinaria =
+  sólo 504.08 × pct (sin 504.23 amortización de instalaciones ni 504.01.0035
+  gastos de importación). Esto evita el doble conteo de depreciación que tenía
+  la primera versión (usaba el pool de get_overhead que ya la incluía).
+- **Resultado Tejido (16 meses):** costo normalizado $1.28M/mes → `costs_hour`
+  ≈ $82, `employee_costs_hour` ≈ $44, total ≈ $126/h. (Su config actual
+  $74.57 + $29.65 = $104 sub-absorbe ~21%, sobre todo en MOD.) Editable en
   `workcenter_cost_config` para moverlo.
+
+### Fix mapeo de energía por centro (2026-06-05d)
+
+`overhead_account_assignment` tenía la cuenta grande de agua sin mapear:
+**`504.01.0004 AGUA` ($230k/mes, el teñido) no estaba asignada** → caía al pool
+y se prorrateaba mal; TINTORERIA salía con ~$4,745 de overhead (sólo tenía
+"504.01.0013 AGUA OFICINAS" $4k). Fix: mapear `504.01.0004 AGUA → TINTORERIA`.
+Ahora Tintorería carga su agua (~$189k) y el pool de "otros" baja para los
+demás. Mapeo actual: ENERGÉTICOS→TEJIDO, GAS→ACABADO, AGUJADOS→TEJIDO,
+AGUA→TINTORERIA, GASTOS_IMPORTACION→ADMINISTRACION (aislado de fabril).
+**Pendiente CEO:** ¿ENERGÉTICOS (electricidad $110k) es 100% Tejido o se
+reparte con tintorería/acabado? Por ahora todo a Tejido.
 
 ### Migration
 
