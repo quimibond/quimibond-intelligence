@@ -58,6 +58,10 @@ export default async function CentrosDeCostoPage({
         <OdooPendingBanner actionKey="investigate-renta-abril-baja" />
       </Suspense>
 
+      <Suspense fallback={null}>
+        <OdooPendingBanner actionKey="workorder-tiempos-no-confiables" />
+      </Suspense>
+
       <Suspense fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}>
         <CostCentersBlock range={range} />
       </Suspense>

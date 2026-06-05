@@ -93,7 +93,7 @@ export function WorkcenterStandardCard({
           <RateBox
             label="Total por hora-máquina"
             value={fHour(suggested.totalHour)}
-            sub={`${formatNumber(config.targetMachineHours ?? 0)} h-máq/mes obj.`}
+            sub={`${formatNumber(Math.round(suggested.machineHoursUsed))} h-máq/mes (de producción)`}
           />
           <RateBox
             label="Base"
@@ -182,10 +182,11 @@ export function WorkcenterStandardCard({
         <strong>deprec. máq.</strong> = sólo 504.08 maquinaria × {config?.machineDeprecPct ?? 0}%
         (sin amortización de instalaciones ni gastos de importación).
         Meses en gris fuera del promedio: reverso de cierre (diciembre) o mes
-        corriente incompleto. Las{" "}
-        <strong>horas-máquina del GL no son confiables</strong> antes de
-        mayo-2026 (tracking parcial); por eso la tarifa usa las{" "}
-        <strong>horas objetivo</strong> de la config, no las del mes.
+        corriente incompleto. Las <strong>horas-máquina se derivan de la
+        producción</strong> (kg ÷ tasa estándar), porque las duraciones de los
+        workorders en Odoo son basura (órdenes de 5 a 432 kg/h, una de
+        578&nbsp;h). Arregla el cierre de workorders en Odoo para tener tiempos
+        reales.
       </p>
     </section>
   );
