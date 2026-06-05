@@ -1228,10 +1228,39 @@ factores lado a lado para comparar; el costeo por producto sigue en
 ACABADO (OP-ACA+V10) hasta decidir el oficial. Inspección da factor más bajo
 (más metros: ene $9.88→$6.36); riesgo de doble conteo por reinspección.
 
+### Costo estándar del workcenter, mes con mes (2026-06-05c)
+
+Card `WorkcenterStandardCard` en `/contabilidad/centros-de-costo`, RPC
+`get_cost_center_cost_monthly(p_cost_center, p_months_back)` + tabla
+`workcenter_cost_config` (editable). Sirve para fijar el **costo/hora** del
+workcenter en Odoo (`costs_hour` = máquina/overhead, `employee_costs_hour` =
+MOD) sin depender del GL volátil.
+
+- **El GL mensual es inservible como costo estándar**: la renta se paga según
+  flujo (un mes $0, el siguiente al doble), hay reverso de cierre anual
+  (dic-2025 renta −$7.6M) y la energía se factura con rezago. Por eso la renta
+  se toma **contractual fija** de `rent_lot_assignment` (Tejido $284,269/mes),
+  no del GL.
+- Componentes por mes: MOD (`get_nomina_by_cost_center`), renta contractual,
+  energía/servicios + mantto/otros (`get_overhead_by_cost_center`), y
+  depreciación de maquinaria = `504.08 × machine_deprec_pct` (config, 50% para
+  Tejido — **confirmar con activo fijo**).
+- Las **horas-máquina del GL (odoo_workorders) no son confiables** antes de
+  mayo-2026 (tracking parcial). La tarifa sugerida usa `target_machine_hours`
+  de la config (Tejido 10,200, el real de mayo), NO las horas del mes.
+- La query (`workcenter-standard.ts`) normaliza: promedia los meses válidos
+  (excluye total≤0 del cierre y el mes corriente) ÷ horas objetivo.
+- **Resultado Tejido (16 meses):** costo normalizado $1.22M/mes → `costs_hour`
+  ≈ $76, `employee_costs_hour` ≈ $44, total ≈ $120/h. (Su config actual
+  $74.57 + $29.65 = $104 sub-absorbe ~13%, casi todo en MOD.) Editable en
+  `workcenter_cost_config` para moverlo.
+
 ### Migration
 
 `supabase/migrations/20260504_cost_centers_overhead.sql` — schema +
 seed + RPCs. Idempotente con ON CONFLICT en seeds.
+`supabase/migrations/20260605c_workcenter_standard_cost.sql` — config +
+RPC del costo estándar mensual.
 
 ---
 
