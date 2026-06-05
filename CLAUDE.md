@@ -1186,6 +1186,25 @@ el crudo se conserva para auditar la volatilidad en la UI (sección 1 muestra
 ambos). Con esto X140 queda estable en ~−8% (señal honesta: tela pesada cuyo
 precio no cubre el costo absorbido). Migration `20260604n_cost_factors_smoothed.sql`.
 
+**Auditoría producto×producto (2026-06-05):** revisión de invariantes en todos
+los meses de 2026. Hallazgos:
+- **MP de importados sin costo propio → gemelo nacional.** KP2032T11GO152 I
+  ($196k venta) salía con MP=$0 (sin compras ni avg_cost). `get_bom_mp_cost_lastcost`
+  y `get_bom_raw_material_cost_per_unit` ahora heredan el MP del gemelo nacional
+  (ref sin ' I', tela en metros) cuando el importado no tiene costo propio. Solo
+  cambió ese 1 producto (los demás importados conservan su landed cost). Margen
+  86.5% → 46.9%. Migration `20260605_import_mp_twin_fallback.sql`.
+- **BOMs infladas (Odoo data) — WC090Q11JNT170, WJ055Q23JNT165.** Su receta
+  consume ~10× el peso físico de la tela → MP recursivo inflado ($78/m, $32/m) →
+  márgenes falsos −378%/−182%. Es error de captura en Odoo (cantidad de salida o
+  componentes por lote vs por metro). Registrado en `odoo_pending_actions`
+  (`bom-cantidades-infladas-wc090-wj055`) + `<OdooPendingBanner>` en la página.
+- **Confirmados como señal real (no bug):** kg-remanentes vendidos bajo costo
+  (1 kg ≈ varios metros, absorbe bien), telas pesadas vendidas baratas
+  (AT9032BL152, X140), y servicios/Pieza con MP=0 y margen 100%.
+- Invariante `costo_total = MP + fab + op` se cumple al 100%; ningún importado
+  carga fabricación; 0 productos con MP fallback a avg genérico.
+
 **[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
 (lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
 (metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`

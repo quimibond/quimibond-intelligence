@@ -419,6 +419,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v12-smoothed-factor", String(range)],
+    ["sp13-cost-reconstruction-v13-import-mp-twin", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
