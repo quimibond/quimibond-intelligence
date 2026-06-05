@@ -9,6 +9,7 @@ import { parseHistoryRange } from "@/components/patterns/history-range";
 import { Skeleton } from "@/components/ui/skeleton";
 
 import { getCostReconSnapshot } from "@/lib/queries/sp13/finanzas/cost-reconstruction";
+import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 import { CostReconView } from "./_components/cost-recon-view";
 
 export const dynamic = "force-dynamic";
@@ -31,6 +32,8 @@ export default async function CostoReconstruidoPage({
         subtitle="Absorption costing por fuera: MP (último costo de compra) + gastos por metro"
         actions={<HistorySelector paramName="period" defaultRange="mtd" />}
       />
+
+      <OdooPendingBanner actionKey="bom-cantidades-infladas-wc090-wj055" inline />
 
       <Suspense fallback={<Skeleton className="h-[600px] w-full rounded-lg" />}>
         <CostReconBlock range={range} />
