@@ -525,7 +525,7 @@ function Kpi({
   return (
     <div
       className={cn(
-        "rounded-md border p-3",
+        "rounded-md border p-3 print-keep-together",
         highlight && "border-emerald-300 bg-emerald-50/50",
       )}
     >
