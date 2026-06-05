@@ -53,13 +53,17 @@ export interface WorkcenterStandardSummary {
     deprecMaquinariaMxn: number;
     overheadMxn: number; // renta + energia + otros + deprec
     totalMxn: number;
+    /** Horas-máquina promedio (derivadas de producción). */
+    machineHours: number;
     nMeses: number;
   } | null;
-  /** Tarifas sugeridas (costo normalizado ÷ horas objetivo). */
+  /** Tarifas sugeridas (costo normalizado ÷ horas-máquina). */
   suggested: {
-    costsHour: number | null; // overhead ÷ horas objetivo
-    employeeCostsHour: number | null; // MOD ÷ horas objetivo
+    costsHour: number | null; // overhead ÷ horas
+    employeeCostsHour: number | null; // MOD ÷ horas
     totalHour: number | null;
+    /** Horas-máquina usadas como denominador (override de config o promedio). */
+    machineHoursUsed: number;
   } | null;
 }
 
@@ -139,7 +143,9 @@ async function _getRaw(
       }
     : null;
 
-  const validos = months.filter((m) => !m.excluido);
+  // Válidos para promediar: sin reverso de cierre / mes incompleto y con
+  // horas-máquina > 0 (derivadas de producción).
+  const validos = months.filter((m) => !m.excluido && m.horasMaquina > 0);
   const n = validos.length;
   const avg = (sel: (m: WorkcenterCostMonth) => number) =>
     n > 0 ? validos.reduce((s, m) => s + sel(m), 0) / n : 0;
@@ -158,17 +164,24 @@ async function _getRaw(
             avg((m) => m.manttoOtrosMxn) +
             avg((m) => m.deprecMaquinariaMxn),
           totalMxn: avg((m) => m.totalFabrilMxn),
+          machineHours: avg((m) => m.horasMaquina),
           nMeses: n,
         }
       : null;
 
-  const targetHours = config?.targetMachineHours ?? null;
+  // Denominador: override manual (target_machine_hours) si existe; si no, el
+  // promedio de horas-máquina derivadas de producción.
+  const hoursUsed =
+    config?.targetMachineHours && config.targetMachineHours > 0
+      ? config.targetMachineHours
+      : (norm?.machineHours ?? 0);
   const suggested =
-    norm && targetHours && targetHours > 0
+    norm && hoursUsed > 0
       ? {
-          costsHour: norm.overheadMxn / targetHours,
-          employeeCostsHour: norm.modMxn / targetHours,
-          totalHour: norm.totalMxn / targetHours,
+          costsHour: norm.overheadMxn / hoursUsed,
+          employeeCostsHour: norm.modMxn / hoursUsed,
+          totalHour: norm.totalMxn / hoursUsed,
+          machineHoursUsed: hoursUsed,
         }
       : null;
 
@@ -181,6 +194,6 @@ export const getWorkcenterStandard = (
 ) =>
   unstable_cache(
     () => _getRaw(costCenter, monthsBack),
-    ["sp13-workcenter-standard-v2-clean", costCenter, String(monthsBack)],
+    ["sp13-workcenter-standard-v3-prod-hours", costCenter, String(monthsBack)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

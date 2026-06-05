@@ -1245,9 +1245,12 @@ MOD) sin depender del GL volátil.
   energía/servicios + mantto/otros (`get_overhead_by_cost_center`), y
   depreciación de maquinaria = `504.08 × machine_deprec_pct` (config, 50% para
   Tejido — **confirmar con activo fijo**).
-- Las **horas-máquina del GL (odoo_workorders) no son confiables** antes de
-  mayo-2026 (tracking parcial). La tarifa sugerida usa `target_machine_hours`
-  de la config (Tejido 10,200, el real de mayo), NO las horas del mes.
+- Las **horas-máquina se DERIVAN de producción** (kg ÷ `std_kg_per_machine_hour`,
+  11 para circular), NO de las duraciones de workorders: éstas son basura
+  (órdenes de 432 kg/h con tiempo casi 0 a 5 kg/h con 578h = orden abierta sin
+  cerrar; `duration_expected`=0). Producción completa via
+  `get_production_by_cost_center`. Registrado en `odoo_pending_actions`
+  (`workorder-tiempos-no-confiables`) — el fix real es cerrar workorders en Odoo.
 - La query (`workcenter-standard.ts`) normaliza: promedia los meses válidos
   (excluye total≤0 del cierre y el mes corriente) ÷ horas objetivo.
 - **Componentes limpios (2026-06-05d):** energia_servicios = cuentas 504.01
@@ -1256,10 +1259,12 @@ MOD) sin depender del GL volátil.
   sólo 504.08 × pct (sin 504.23 amortización de instalaciones ni 504.01.0035
   gastos de importación). Esto evita el doble conteo de depreciación que tenía
   la primera versión (usaba el pool de get_overhead que ya la incluía).
-- **Resultado Tejido (16 meses):** costo normalizado $1.28M/mes → `costs_hour`
-  ≈ $82, `employee_costs_hour` ≈ $44, total ≈ $126/h. (Su config actual
-  $74.57 + $29.65 = $104 sub-absorbe ~21%, sobre todo en MOD.) Editable en
-  `workcenter_cost_config` para moverlo.
+- **Resultado Tejido (16 meses):** costo normalizado $1.28M/mes ÷ ~8,900
+  horas-máquina (de producción) → `costs_hour` ≈ $94, `employee_costs_hour`
+  ≈ $50, total ≈ $144/h. (Con las horas infladas de workorders salía ~$126;
+  los tiempos rotos la subestimaban ~12%.) Su config actual $74.57 + $29.65 =
+  $104 sub-absorbe ~30%. Editable en `workcenter_cost_config`
+  (`std_kg_per_machine_hour`, `machine_deprec_pct`).
 
 ### Fix mapeo de energía por centro (2026-06-05d)
 
