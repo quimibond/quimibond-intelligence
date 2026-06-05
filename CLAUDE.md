@@ -1201,7 +1201,12 @@ los meses de 2026. Hallazgos:
   (`bom-cantidades-infladas-wc090-wj055`) + `<OdooPendingBanner>` en la página.
 - **Confirmados como señal real (no bug):** kg-remanentes vendidos bajo costo
   (1 kg ≈ varios metros, absorbe bien), telas pesadas vendidas baratas
-  (AT9032BL152, X140), y servicios/Pieza con MP=0 y margen 100%.
+  (X140), y servicios/Pieza con MP=0 y margen 100%.
+- **AT9032BL152 — peso CVU malo, corregido (2026-06-05b).** El CEO confirmó que
+  AT9032 pesa 72 g/m² con resina; CVU lo midió 0.244 kg/m (~2× inflado, único
+  outlier de CVU vs BOM). Override manual a 0.072×1.52=0.1094 kg/m
+  (`source='manual'`, sobrevive re-seeds). Margen feb −101.7% → −16.5%. NO era
+  tela pesada — era medición CVU errónea. Migration `20260605b_at9032_weight_override.sql`.
 - Invariante `costo_total = MP + fab + op` se cumple al 100%; ningún importado
   carga fabricación; 0 productos con MP fallback a avg genérico.
 
