@@ -267,9 +267,45 @@ html[data-table-density="compact"] [data-slot="data-table"] tfoot td {
     print-color-adjust: exact !important;
   }
 
+  /* Un reporte impreso siempre va en BLANCO: si el usuario está en modo
+   * oscuro, forzamos las superficies neutras a su versión clara para el PDF.
+   * Los colores de Tailwind con paleta fija (bg-amber-50, text-red-600…) no
+   * dependen de estas variables, así que siguen saliendo bien. */
+  html,
+  body {
+    background: #fff !important;
+  }
+  .dark {
+    --background: oklch(1 0 0);
+    --foreground: oklch(0.145 0 0);
+    --card: oklch(1 0 0);
+    --card-foreground: oklch(0.145 0 0);
+    --popover: oklch(1 0 0);
+    --popover-foreground: oklch(0.145 0 0);
+    --secondary: oklch(0.965 0 0);
+    --secondary-foreground: oklch(0.205 0 0);
+    --muted: oklch(0.965 0 0);
+    --muted-foreground: oklch(0.45 0 0);
+    --accent: oklch(0.965 0 0);
+    --accent-foreground: oklch(0.205 0 0);
+    --border: oklch(0.85 0 0);
+    --input: oklch(0.85 0 0);
+  }
+
   /* Márgenes de página razonables */
   @page {
     margin: 10mm;
+  }
+
+  /* Reportes con tablas anchas (costo reconstruido, centros de costo): se
+   * imprimen en HORIZONTAL para que quepan todas las columnas. Named page
+   * scoped al contenedor del reporte — no afecta documentos en vertical. */
+  [data-table-export-root] {
+    page: landscape-report;
+  }
+  @page landscape-report {
+    size: A4 landscape;
+    margin: 8mm;
   }
 
   /* Los contenedores con scroll horizontal recortan en impresión: liberarlos */
@@ -285,8 +321,12 @@ html[data-table-density="compact"] [data-slot="data-table"] tfoot td {
     table-layout: auto;
     font-size: 8.5px !important;
   }
+  /* Encabezado y total se repiten en cada página de una tabla larga */
   thead {
-    display: table-header-group; /* repetir encabezado en cada página */
+    display: table-header-group;
+  }
+  tfoot {
+    display: table-footer-group;
   }
   th,
   td {
@@ -295,11 +335,27 @@ html[data-table-density="compact"] [data-slot="data-table"] tfoot td {
     word-break: break-word;
   }
 
-  /* No partir filas ni tarjetas entre páginas */
-  tr,
+  /* NO partir una fila a la mitad… */
+  tr {
+    break-inside: avoid;
+  }
+  /* …pero SÍ permitir que tablas/secciones largas fluyan a la siguiente
+   * página (antes: break-inside:avoid en section/.rounded-md recortaba el
+   * top 30 a una sola página). */
   section,
   .rounded-md,
-  .rounded-lg {
+  .rounded-lg,
+  .overflow-x-auto {
+    break-inside: auto;
+  }
+  /* Un título no debe quedar solo al pie de página */
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+  /* Tarjetas chicas (KPIs) que sí conviene mantener juntas */
+  .print-keep-together {
     break-inside: avoid;
   }
 }
