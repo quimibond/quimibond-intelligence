@@ -46,6 +46,14 @@ export interface CostReconRow {
   pctOpVsRevenue: number | null;
   marginFullPct: number | null;
   mpSource: string;
+  /** Peso kg/m (productos en m) — para convertir precio entre unidades. */
+  kgPerUnit: number;
+  /** Metros por kg (productos en kg) — para convertir precio entre unidades. */
+  mPerKg: number;
+  /** Precio de venta por METRO (MXN), nativo o convertido. */
+  precioMetroMxn: number | null;
+  /** Precio de venta por KILO (MXN), nativo o convertido. */
+  precioKgMxn: number | null;
 }
 
 export interface CostReconTotals {
@@ -225,6 +233,10 @@ async function _getCostReconSnapshotRaw(
           pctOpVsRevenue: null,
           marginFullPct: null,
           mpSource: (r.mp_source as string) ?? "—",
+          kgPerUnit: n(r.kg_per_unit),
+          mPerKg: n(r.m_per_kg),
+          precioMetroMxn: null,
+          precioKgMxn: null,
         });
       }
     }
@@ -254,6 +266,18 @@ async function _getCostReconSnapshotRaw(
       r.pctOpVsRevenue = (r.gastosOpTotalMxn / r.revenueMxn) * 100;
       r.marginFullPct =
         ((r.revenueMxn - r.costoTotalMxn) / r.revenueMxn) * 100;
+    }
+    // Precio de venta en $/m y $/kg. El nativo viene de su uom; el otro se
+    // convierte con el peso: tela en m usa kg/m; tela en kg usa m/kg.
+    if (r.qtySold > 0 && r.revenueMxn > 0) {
+      const precioNativo = r.revenueMxn / r.qtySold;
+      if (r.uom === "m") {
+        r.precioMetroMxn = precioNativo;
+        r.precioKgMxn = r.kgPerUnit > 0 ? precioNativo / r.kgPerUnit : null;
+      } else if (r.uom === "kg") {
+        r.precioKgMxn = precioNativo;
+        r.precioMetroMxn = r.mPerKg > 0 ? precioNativo / r.mPerKg : null;
+      }
     }
     return r;
   });
@@ -419,6 +443,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v14-at9032-weight", String(range)],
+    ["sp13-cost-reconstruction-v15-precio-kg-m", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
