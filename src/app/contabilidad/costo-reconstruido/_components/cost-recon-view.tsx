@@ -12,6 +12,8 @@ const CSV_COLUMNS = [
   { key: "uom", label: "UoM" },
   { key: "qty", label: "Cantidad vendida" },
   { key: "ventas", label: "Ventas MXN" },
+  { key: "precio_m", label: "Precio venta $/m" },
+  { key: "precio_kg", label: "Precio venta $/kg" },
   { key: "primo_unit", label: "Costo primo MP unit (último costo)" },
   { key: "primo_avg_unit", label: "Costo primo MP unit (promedio)" },
   { key: "fab_unit", label: "Factor fabricación unit" },
@@ -36,6 +38,8 @@ function toCsvRows(rows: CostReconRow[]): Record<string, unknown>[] {
     uom: r.uom ?? "",
     qty: r.qtySold,
     ventas: r.revenueMxn,
+    precio_m: r.precioMetroMxn != null ? Math.round(r.precioMetroMxn * 100) / 100 : "",
+    precio_kg: r.precioKgMxn != null ? Math.round(r.precioKgMxn * 100) / 100 : "",
     primo_unit: r.costoPrimoUnitMxn,
     primo_avg_unit: r.costoPrimoAvgUnitMxn,
     fab_unit: r.factorFabUnitMxn,
@@ -263,7 +267,10 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           y operación <strong>según el peso</strong> del producto (su kg ×
           factor $/kg). Los % son <strong>sobre las ventas</strong>. Importados
           (&ldquo; I&rdquo;) no cargan fabricación. <strong>Fab/ventas &gt; 100%</strong>{" "}
-          = fabricar cuesta más que el precio de venta.
+          = fabricar cuesta más que el precio de venta. El{" "}
+          <strong>precio de venta se muestra en $/m y $/kg</strong> (el otro se
+          convierte con el peso del producto; la tela en m usa kg/m, la tela en
+          kg usa m/kg).
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
@@ -271,6 +278,8 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
               <tr>
                 <th className="px-3 py-2 text-left">Producto</th>
                 <th className="px-3 py-2 text-right">Vendido</th>
+                <th className="px-3 py-2 text-right border-l bg-sky-50">Precio $/m</th>
+                <th className="px-3 py-2 text-right bg-sky-50">Precio $/kg</th>
                 <th className="px-3 py-2 text-right border-l">MP últ.</th>
                 <th className="px-3 py-2 text-right text-muted-foreground">MP prom.</th>
                 <th className="px-3 py-2 text-right">+Fab</th>
@@ -302,6 +311,8 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                   <td className="px-3 py-2 text-right tabular-nums">
                     {formatNumber(rest.qty)}
                   </td>
+                  <td className="px-3 py-2 border-l" />
+                  <td className="px-3 py-2" />
                   <td className="px-3 py-2 border-l" colSpan={5} />
                   <td className="px-3 py-2 text-right tabular-nums" />
                   <td className="px-3 py-2 text-right tabular-nums" />
@@ -312,7 +323,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
             </tbody>
             <tfoot className="bg-muted/30 font-semibold">
               <tr className="border-t-2">
-                <td className="px-3 py-2" colSpan={6}>
+                <td className="px-3 py-2" colSpan={8}>
                   Total ({totals.productos} productos)
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold">
@@ -374,6 +385,8 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                 <tr>
                   <th className="px-3 py-2 text-left">Producto</th>
                   <th className="px-3 py-2 text-right">Vendido</th>
+                  <th className="px-3 py-2 text-right border-l bg-sky-50">Precio $/m</th>
+                  <th className="px-3 py-2 text-right bg-sky-50">Precio $/kg</th>
                   <th className="px-3 py-2 text-right border-l">MP unit</th>
                   <th className="px-3 py-2 text-right">Ventas</th>
                   <th className="px-3 py-2 text-right">MP total</th>
@@ -389,6 +402,12 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                       {formatNumber(r.qtySold)} {r.uom ?? ""}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums border-l bg-sky-50/40">
+                      {fUnit(r.precioMetroMxn)}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums bg-sky-50/40">
+                      {fUnit(r.precioKgMxn)}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums border-l">
                       {fUnit(r.costoPrimoUnitMxn)}
@@ -417,7 +436,7 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
               </tbody>
               <tfoot className="bg-muted/30 font-semibold">
                 <tr className="border-t-2">
-                  <td className="px-3 py-2" colSpan={3}>
+                  <td className="px-3 py-2" colSpan={5}>
                     Total kg / otros ({nonMeterTotals.productos})
                   </td>
                   <td className="px-3 py-2 text-right tabular-nums">
@@ -465,6 +484,12 @@ function ProductRow({ r, className }: { r: CostReconRow; className?: string }) {
       </td>
       <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
         {formatNumber(r.qtySold)} {r.uom ?? ""}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums border-l bg-sky-50/40 font-medium">
+        {fUnit(r.precioMetroMxn)}
+      </td>
+      <td className="px-3 py-2 text-right tabular-nums bg-sky-50/40 font-medium">
+        {fUnit(r.precioKgMxn)}
       </td>
       <td className="px-3 py-2 text-right tabular-nums border-l">
         {fUnit(r.costoPrimoUnitMxn)}
