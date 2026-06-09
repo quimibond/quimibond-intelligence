@@ -162,6 +162,28 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           <strong>factor suavizado</strong> (promedio móvil ponderado 12&nbsp;meses)
           para no castigar/premiar a un producto por el volumen del mes.
         </p>
+        {(() => {
+          const h = [...monthlyComparison]
+            .reverse()
+            .find((m) => m.factorFabPesoKg != null || m.factorFabLargoM != null);
+          if (!h) return null;
+          return (
+            <div className="rounded-md border bg-sky-50/50 p-3 text-sm">
+              <strong>Reparto híbrido de fabricación</strong> (driver real, el
+              que usa el costeo):{" "}
+              <span className="font-semibold tabular-nums">
+                {fUnit(h.factorFabPesoKg)}/kg
+              </span>{" "}
+              por <strong>peso</strong> (tejido + tintorería) ＋{" "}
+              <span className="font-semibold tabular-nums">
+                {fUnit(h.factorFabLargoM)}/m
+              </span>{" "}
+              por <strong>largo</strong> (acabado + entretelas, plano por metro).
+              Una tela pesada solo paga más en la parte por peso, no en la de
+              largo — por eso ya no se castiga.
+            </div>
+          );
+        })()}
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">
             <thead className="bg-muted/40 text-xs uppercase tracking-wide text-muted-foreground">
@@ -263,14 +285,15 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           3. Costo reconstruido por producto (top {TOP})
         </h2>
         <p className="text-sm text-muted-foreground">
-          Costo primo con <strong>último costo de compra</strong> + fabricación
-          y operación <strong>según el peso</strong> del producto (su kg ×
-          factor $/kg). Los % son <strong>sobre las ventas</strong>. Importados
-          (&ldquo; I&rdquo;) no cargan fabricación. <strong>Fab/ventas &gt; 100%</strong>{" "}
-          = fabricar cuesta más que el precio de venta. El{" "}
+          Costo primo con <strong>último costo de compra</strong>. La
+          fabricación se reparte <strong>híbrido por driver</strong>: la parte
+          por <strong>peso</strong> (tejido + tintorería) × su kg, más la parte
+          por <strong>largo</strong> (acabado + entretelas) × sus metros — así
+          una tela pesada no paga de más en los procesos que corren por metro.
+          Operación va por peso. Los % son <strong>sobre las ventas</strong>.
+          Importados (&ldquo; I&rdquo;) no cargan fabricación. El{" "}
           <strong>precio de venta se muestra en $/m y $/kg</strong> (el otro se
-          convierte con el peso del producto; la tela en m usa kg/m, la tela en
-          kg usa m/kg).
+          convierte con el peso del producto).
         </p>
         <div className="overflow-x-auto rounded-md border">
           <table className="w-full text-sm">

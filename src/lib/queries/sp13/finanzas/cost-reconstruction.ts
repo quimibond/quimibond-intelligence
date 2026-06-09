@@ -114,6 +114,10 @@ export interface MonthlyComparison {
   factorFabSmooth: number | null;
   factorOpSmooth: number | null;
   factorTotalSmooth: number | null;
+  /** Reparto HÍBRIDO de fabricación: peso ($/kg, tejido+tintorería) + largo
+   * ($/m, acabado+entretelas). Es lo que realmente usa el costeo por producto. */
+  factorFabPesoKg: number | null;
+  factorFabLargoM: number | null;
 }
 
 /** Totales de productos NO vendidos en metros (kg/Servicio/Pieza), solo MP. */
@@ -421,6 +425,8 @@ async function _getCostReconSnapshotRaw(
           factorFabSmooth != null || factorOpSmooth != null
             ? (factorFabSmooth ?? 0) + (factorOpSmooth ?? 0)
             : null,
+        factorFabPesoKg: nOrNull(f.factor_fab_peso_kg_smooth),
+        factorFabLargoM: nOrNull(f.factor_fab_largo_m_smooth),
       };
     })
     // Solo meses con gastos normales (excluye cierre anual con saldos negativos)
@@ -443,6 +449,6 @@ async function _getCostReconSnapshotRaw(
 export const getCostReconSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostReconSnapshotRaw(range),
-    ["sp13-cost-reconstruction-v15-precio-kg-m", String(range)],
+    ["sp13-cost-reconstruction-v16-fab-hibrido", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

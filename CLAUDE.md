@@ -1186,6 +1186,20 @@ el crudo se conserva para auditar la volatilidad en la UI (sección 1 muestra
 ambos). Con esto X140 queda estable en ~−8% (señal honesta: tela pesada cuyo
 precio no cubre el costo absorbido). Migration `20260604n_cost_factors_smoothed.sql`.
 
+**Fabricación HÍBRIDA por driver (2026-06-05g):** repartir 100% de la
+fabricación por PESO sobre-castigaba a las telas pesadas (tienen menos metros
+por kg, y los procesos que corren por metro no tardan más con tela pesada).
+Drivers (confirmados con CEO): **TEJIDO + TINTORERIA → peso (kg)** (hilo,
+químicos, agua, calor); **ACABADO + ENTRETELAS → largo (metros)** (velocidad de
+línea). Split ~47% peso / 53% largo (`costing_config.fab_weight_share`, editable).
+`get_cost_factors_monthly` expone `factor_fab_peso_kg_smooth` (ws × fab/kg) y
+`factor_fab_largo_m_smooth` ((1-ws) × fab/metro). `get_full_cost_reconstruction`
+aplica: tela en m → `kg_per_m × peso_kg + largo_m`; tela en kg → `peso_kg +
+m_per_kg × largo_m`. Resultado (mayo): peso $26.61/kg + largo $2.85/m → X140
+pesado baja fab −33% ($13.08→$8.74/m), ligeros suben (estaban subsidiados), el
+promedio paga igual. Operación sigue por peso (kg). Migration
+`20260605g_fab_hybrid_driver.sql`.
+
 **Auditoría producto×producto (2026-06-05):** revisión de invariantes en todos
 los meses de 2026. Hallazgos:
 - **MP de importados sin costo propio → gemelo nacional.** KP2032T11GO152 I
