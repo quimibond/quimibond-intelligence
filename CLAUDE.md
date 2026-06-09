@@ -1190,8 +1190,10 @@ precio no cubre el costo absorbido). Migration `20260604n_cost_factors_smoothed.
 fabricación por PESO sobre-castigaba a las telas pesadas (tienen menos metros
 por kg, y los procesos que corren por metro no tardan más con tela pesada).
 Drivers (confirmados con CEO): **TEJIDO + TINTORERIA → peso (kg)** (hilo,
-químicos, agua, calor); **ACABADO + ENTRETELAS → largo (metros)** (velocidad de
-línea). Split ~47% peso / 53% largo (`costing_config.fab_weight_share`, editable).
+químicos, agua, calor); **ACABADO MOD/línea + ENTRETELAS + inspección → largo
+(metros)** (velocidad de línea); **GAS de acabado (504.01.0003) → peso** (secar
+tela pesada consume más gas/metro). Split ~**67% peso / 33% largo**
+(`costing_config.fab_weight_share`=0.67, editable; era 0.47 antes de mover el gas).
 `get_cost_factors_monthly` expone `factor_fab_peso_kg_smooth` (ws × fab/kg) y
 `factor_fab_largo_m_smooth` ((1-ws) × fab/metro). `get_full_cost_reconstruction`
 aplica: tela en m → `kg_per_m × peso_kg + largo_m`; tela en kg → `peso_kg +
