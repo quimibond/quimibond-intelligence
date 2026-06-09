@@ -1163,6 +1163,21 @@ se rellena con esta prioridad (overridable con `source='manual'`):
    bom_weight porque la receta sobre-estima en algunos (WC090…=1.48, irreal
    para 90 g/m²; gramaje da 0.153). Migration `20260604l_product_kg_bom_weight.sql`.
 
+**Maestro de pesos de Jessica (2026-06-05l):** se cargó el peso autoritativo de
+los productos del Excel industrial (`volumen_industrial`, hojas `kg totales del
+año` + `CONFECCIÓN`) como `source='manual'`. Cada producto trae gramaje (g/m²) +
+ancho de rama (m); `kg_per_unit = gramaje/1000 × ancho_rama` (= 1/Rdto de la
+hoja, verificado al peso). Se sobre-escribieron **29 productos** que estaban en
+`bom_weight` o sin peso — todos los de **código de resina** (4032/9032: WM4032,
+ZN4032, WP4032, WNY4032, WNS4032, WTT4032, WR4032, WN4032) más XJ14021GO165. El
+BOM SOBRE-ESTIMABA estos 18–44% (merma de hilo + agua de la receta dentro del
+peso), inflando el overhead/operación que se les repartía. Ejemplos: WM4032OW152
+0.1043→0.0654 (−37%), ZN4032BL152 0.0920→0.0631 (−31%), WNY4032BL151 0.2744→
+0.2079 (−24%), XJ14021GO165 0.4153→0.2310 (−44%). **NO se tocaron** los que ya
+estaban en `cvu` (medición real en planta, manda sobre la spec) ni `ref_gramaje`
+(gramaje limpio del ref): coinciden con el maestro dentro de ~5%. Maestro
+overridable. Migration `20260605l_weight_master_jessica.sql`. Cache v17→v18.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
