@@ -1199,6 +1199,33 @@ overridable. Migration `20260605l_weight_master_jessica.sql`. Cache v17→v18.
    galga). No se cambió el std; queda como dato de referencia si se recalibra.
    kg/hr de la RAMA (acabado) por producto: 100–225 kg/h (≠ tejido).
 
+**Ruteo de fabricación por PROCESO — entretelas (2026-06-12c):** el costo
+reconstruido aplicaba el factor blendeado (tejido+tintorería+acabado, ~$5.5/m)
+a TODOS los productos en metros. Las **entretelas NO pasan por ese tren**: se
+fabrican en carda / **puntos** (aplicación de resina, proceso nuevo) / espolvoreo
+/ perfoquim / impregnación / termofijado — todo en el centro ENTRETELAS. El
+blendeado las sobre-costeaba (A70BL155: fab $5.47/m falso). Fix:
+- **Clasificación por CATEGORÍA de Odoo**: `category ILIKE '%Entretela%' AND NOT
+  '%Importaci%'`. Las familias (Carda/Puntos/Espolvoreo/Perfoquim/Impregnación/
+  Termofijado) viven en la categoría del producto; importadas siguen con fab=0.
+- **`get_entretela_fab_factor_monthly`**: factor $/m = (MOD centro ENTRETELAS +
+  renta contractual Lote 10 $352,062/mes + `entretela_overhead_extra_mxn`
+  configurable) ÷ metros de entretela producidos, suavizado 12m. ~**$2.3/m** en
+  2026 (cuadra con el $2.05 documentado), vs $5.5 blendeado.
+- **`get_full_cost_reconstruction`**: las entretelas usan ese factor (fallback al
+  blendeado para periodos sin producción de carda, p.ej. pre-2026). Resultado:
+  46 entretelas vendidas 2026-05 pasan de margen negativo a **+40% promedio**;
+  las telas NO se mueven. Migration `20260612c_entretela_process_routing.sql`.
+  Cache v19→v20.
+- **Luz de la carda**: NO se separó. Los energéticos (504.01.0001, $5-53k/mes) no
+  correlacionan con la producción de carda (OP-CAR feb-2026+) — están dominados
+  por tejido. Queda el knob `entretela_overhead_extra_mxn` (default 0) para que
+  el CEO sume energía/depreciación de carda si la cuantifica.
+- **Fase 1 (alcance actual)**: el pool de tela (`get_cost_factors_monthly`) se
+  deja intacto — todavía incluye MOD+renta de entretelas (~$427k/mes, ~8%) y sus
+  metros en el denominador (se compensan parcialmente). Fase 2 (con visto bueno)
+  migraría todo a costeo por centro para el split quirúrgico del GL.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de

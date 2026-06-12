@@ -288,8 +288,11 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           Costo primo con <strong>último costo de compra</strong>. La
           fabricación se reparte <strong>híbrido por driver</strong>: la parte
           por <strong>peso</strong> (tejido + tintorería) × su kg, más la parte
-          por <strong>largo</strong> (acabado + entretelas) × sus metros — así
+          por <strong>largo</strong> (acabado) × sus metros — así
           una tela pesada no paga de más en los procesos que corren por metro.
+          Las <strong>entretelas</strong> (carda, puntos/resina, espolvoreo…) no
+          pasan por tejido/tintorería/acabado: cargan su propio factor del centro
+          ENTRETELAS (MOD + renta + energía carda ÷ metros, ~$2.3/m).
           Operación va por peso. Los % son <strong>sobre las ventas</strong>.
           Importados (&ldquo; I&rdquo;) no cargan fabricación. El{" "}
           <strong>precio de venta se muestra en $/m y $/kg</strong> (el otro se
