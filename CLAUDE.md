@@ -1163,6 +1163,123 @@ se rellena con esta prioridad (overridable con `source='manual'`):
    bom_weight porque la receta sobre-estima en algunos (WC090…=1.48, irreal
    para 90 g/m²; gramaje da 0.153). Migration `20260604l_product_kg_bom_weight.sql`.
 
+**Maestro de pesos de Jessica (2026-06-05l):** se cargó el peso autoritativo de
+los productos del Excel industrial (`volumen_industrial`, hojas `kg totales del
+año` + `CONFECCIÓN`) como `source='manual'`. Cada producto trae gramaje (g/m²) +
+ancho de rama (m); `kg_per_unit = gramaje/1000 × ancho_rama` (= 1/Rdto de la
+hoja, verificado al peso). Se sobre-escribieron **29 productos** que estaban en
+`bom_weight` o sin peso — todos los de **código de resina** (4032/9032: WM4032,
+ZN4032, WP4032, WNY4032, WNS4032, WTT4032, WR4032, WN4032) más XJ14021GO165. El
+BOM SOBRE-ESTIMABA estos 18–44% (merma de hilo + agua de la receta dentro del
+peso), inflando el overhead/operación que se les repartía. Ejemplos: WM4032OW152
+0.1043→0.0654 (−37%), ZN4032BL152 0.0920→0.0631 (−31%), WNY4032BL151 0.2744→
+0.2079 (−24%), XJ14021GO165 0.4153→0.2310 (−44%). **NO se tocaron** los que ya
+estaban en `cvu` (medición real en planta, manda sobre la spec) ni `ref_gramaje`
+(gramaje limpio del ref): coinciden con el maestro dentro de ~5%. Maestro
+overridable. Migration `20260605l_weight_master_jessica.sql`. Cache v17→v18.
+
+**Plan de Capacidades — hoja `capacidad instalada` (2026-06-12):** segundo Excel
+(`Copia_de_Copia_de_Plan_de_capacidades.xlsx`) con la capacidad de las DOS ramas
+(stenters) de acabado UNITECH + BRUCKNER. Aporta 3 cosas:
+1. **Capacidad instalada de acabado (rama):** ~**1.19M m/mes** sin tiempo extra,
+   ~**1.75M m/mes** con T.Extra (ambas ramas). UNITECH 1,727 m/h, BRUCKNER
+   1,831 m/h; 360 hrs/mes (turnos 48+42 hrs/sem). Útil como denominador de
+   utilización vs metros realmente acabados (rama burden / cost center ACABADO).
+2. **Tabla de rendimiento por producto acabado (73 SKUs):** peso (g/m²), ancho de
+   rama (m), rendimiento (m/kg) — `gram` y `rend` coinciden exacto. Misma fuente
+   de ingeniería que el maestro de Jessica; sirvió para extender pesos: 62 de 73
+   ya coincidían con ref_gramaje/cvu/manual; se llenaron 7 sin peso y se
+   corrigieron 4 en bom_weight (familia WD038 jersey ligero ±13-18%). Migration
+   `20260612_weight_master_capacidad_instalada.sql`. Cache v18→v19. (OJO:
+   WN075Q66JBL205 y XJ140Q21JGO165 traen ancho inconsistente con su código en
+   esta hoja —205→1.65— pero ya están en `manual` del maestro, protegidos.)
+3. **Ritmo de tejido (hoja TEJIDO):** ~**8.75–9.4 kg/h por máquina** de tejido
+   circular (greige). Está por debajo del `std_kg_per_machine_hour=11` del
+   workcenter, pero dentro del rango 8.3–12.6 que ya documentamos (varía por
+   galga). No se cambió el std; queda como dato de referencia si se recalibra.
+   kg/hr de la RAMA (acabado) por producto: 100–225 kg/h (≠ tejido).
+
+**Ruteo de fabricación por PROCESO — entretelas (2026-06-12c):** el costo
+reconstruido aplicaba el factor blendeado (tejido+tintorería+acabado, ~$5.5/m)
+a TODOS los productos en metros. Las **entretelas NO pasan por ese tren**: se
+fabrican en carda / **puntos** (aplicación de resina, proceso nuevo) / espolvoreo
+/ perfoquim / impregnación / termofijado — todo en el centro ENTRETELAS. El
+blendeado las sobre-costeaba (A70BL155: fab $5.47/m falso). Fix:
+- **Clasificación por CATEGORÍA de Odoo**: `category ILIKE '%Entretela%' AND NOT
+  '%Importaci%'`. Las familias (Carda/Puntos/Espolvoreo/Perfoquim/Impregnación/
+  Termofijado) viven en la categoría del producto; importadas siguen con fab=0.
+- **`get_entretela_fab_factor_monthly`**: factor $/m = (MOD centro ENTRETELAS +
+  renta contractual Lote 10 $352,062/mes + `entretela_overhead_extra_mxn`
+  configurable) ÷ metros de entretela producidos, suavizado 12m. ~**$2.3/m** en
+  2026 (cuadra con el $2.05 documentado), vs $5.5 blendeado.
+- **`get_full_cost_reconstruction`**: las entretelas usan ese factor (fallback al
+  blendeado para periodos sin producción de carda, p.ej. pre-2026). Resultado:
+  46 entretelas vendidas 2026-05 pasan de margen negativo a **+40% promedio**;
+  las telas NO se mueven. Migration `20260612c_entretela_process_routing.sql`.
+  Cache v19→v20.
+- **Luz de la carda**: NO se separó. Los energéticos (504.01.0001, $5-53k/mes) no
+  correlacionan con la producción de carda (OP-CAR feb-2026+) — están dominados
+  por tejido. Queda el knob `entretela_overhead_extra_mxn` (default 0) para que
+  el CEO sume energía/depreciación de carda si la cuantifica.
+- **Fase 1**: rutea entretelas a su factor; el pool de tela quedó intacto
+  (todavía con MOD+renta de entretelas dentro). Migration `20260612c`.
+- **Fase 2 (2026-06-12d, vigente)**: split quirúrgico. `get_cost_factors_monthly`
+  ahora resta del pool de tela el costo de entretelas (MOD ENTRETELAS + renta
+  contractual Lote 10) del numerador y sus metros/kg del denominador, SOLO para
+  los dos factores que costean (`factor_fab_peso_kg_smooth`/`largo_m_smooth`).
+  Guard 2026+ (effective_from de la renta). Op y columnas legacy intactas;
+  entretelas no se ven afectadas (usan su factor). **Efecto: la fabricación de
+  TODA la tela sube ~+11% prom** (X140 fab $10.62→$12.87, margen −2.3%→−9.2%;
+  WJ053 +14.8%→+6.6%) — correcto: se quita el subsidio que la entretela (ligera)
+  le daba a la tela al diluir el denominador en kg. Migration
+  `20260612d_tela_pool_split_phase2.sql`. Cache v20→v21.
+
+**Operación por % de ventas (2026-06-12e):** antes la operación (6xx admin/ventas)
+se repartía por **kg vendidos**, penalizando a las telas pesadas por metro. Pero
+admin/ventas escalan con cuánto vendes en pesos, no con kilos. Ahora
+`get_full_cost_reconstruction`: `op_unit = op_pct × precio_venta`, donde
+`op_pct = Σ gastos 6xx ÷ Σ ventas` 12m suavizado (guard `op_pool>0` excluye el
+cierre de diciembre con op negativo). ~17.9% en 2026. Respeta la eficiencia: la
+pesada deja de pagar op de más por su peso. `gastos_op_total = op_pct × revenue`.
+Migration `20260612e_op_por_ventas.sql`.
+
+**Entretelas TEJIDAS llevan tejido+tintorería (2026-06-12f):** el ruteo de
+`20260612c` mandaba TODAS las entretelas a carda-only, pero la familia "Puntos"
+(resina) está mezclada: ~31 de base **tejido circular (tejida)** + ~15 carda.
+Las tejidas (ZN4032, WP4032, WNS/WNY/WR/WM/WTT 4032 — "tejido circular
+fusionable") SÍ pasan por tejido y tintorería. Fix en `get_full_cost_reconstruction`:
+- **entretela tejida** (`name ~ 'tejido circular'|'tejida'` sin 'no tejida'):
+  `fab = peso_kg × factor_peso (tejido+tintorería) + factor_entretela (puntos)`.
+  SIN factor largo (rama/acabado, que no usan).
+- **entretela carda** (no tejida): solo `factor_entretela` (~$2.3/m).
+- Resultado: tejidas pasan de margen +37-40% a ~**+7-12%** (alineadas con telas
+  de peso comparable, p.ej. WJ053 +6%); carda no cambian (~+42%). Clasificador
+  por nombre, corregible. Migration `20260612f_entretela_tejida_tintoreria.sql`.
+  Cache v21→v22.
+
+**Auditoría costo por depto/familia + fix doble conteo (2026-06-12g):** revisión
+de que el GL se reparte sin duplicados. Se halló sobre-absorción: la Fase 2
+había sacado del denominador de PESO TODOS los kg de entretela, pero las tejidas
+SÍ consumen tejido+tintorería y SÍ pagan la tarifa de peso → su costo de tejido
+se contaba 2 veces (~$295k/mes). Fix en `get_cost_factors_monthly`: del
+denominador de peso solo se restan los kg de entretela **CARDA** (las tejidas se
+quedan). El denominador de largo sigue restando todos los metros de entretela.
+Tras el fix, la sobre-absorción residual (~$754k en mayo) es **suavizado**: el GL
+de fab varía $5.4–7.3M/mes pero mayo cayó a $3.9M (timing de renta), y el factor
+suavizado refleja el promedio → se promedia en el año, no es duplicado.
+Migration `20260612g_tela_pool_carda_only_denom.sql`. Cache v22→v23.
+
+**Clasificador robusto + página de auditoría (2026-06-12h/i):** la regla
+tejida/carda se unificó a: tejida = entretela, `name NOT ~ 'no tejid'` y
+(`'tejido circular'|'tejida'|categoría 'Puntos'`); carda = el resto. Captura las
+resin de Puntos sin "tejido circular" en el nombre (p.ej. WM4032AZ160) que antes
+se sub-costeaban. Misma regla en `get_full_cost_reconstruction` y el denominador
+de `get_cost_factors_monthly` (`20260612h`). Cache v23→v24.
+Nueva página **`/contabilidad/auditoria-costos`**: reconciliación GL ↔ absorbido
+por departamento (centro de costo) y por familia de producto, con drift por mes
+(suavizado, no duplicado). RPCs `get_cost_audit_by_department` /
+`get_cost_audit_by_family` (`20260612i`), query `cost-audit.ts`.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
