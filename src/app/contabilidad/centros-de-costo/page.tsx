@@ -11,10 +11,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { OdooPendingBanner } from "@/components/odoo-pending-banner";
 
 import { getCostCentersSnapshot } from "@/lib/queries/sp13/finanzas/cost-centers";
+import { getDefectCost } from "@/lib/queries/sp13/finanzas/defect-cost";
 import { getRamaBurden } from "@/lib/queries/sp13/finanzas/rama-burden";
 import { getWorkcenterStandard } from "@/lib/queries/sp13/finanzas/workcenter-standard";
 import { CostCentersTable } from "./_components/cost-centers-table";
 import { CostCentersIntro } from "./_components/cost-centers-intro";
+import { DefectCostCard } from "./_components/defect-cost-card";
 import { RamaBurdenCard } from "./_components/rama-burden-card";
 import { WorkcenterStandardCard } from "./_components/workcenter-standard-card";
 
@@ -62,6 +64,10 @@ export default async function CentrosDeCostoPage({
         <OdooPendingBanner actionKey="workorder-tiempos-no-confiables" />
       </Suspense>
 
+      <Suspense fallback={null}>
+        <OdooPendingBanner actionKey="saldo-desperdicio-costo-cero" />
+      </Suspense>
+
       <Suspense fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}>
         <CostCentersBlock range={range} />
       </Suspense>
@@ -72,6 +78,10 @@ export default async function CentrosDeCostoPage({
 
       <Suspense fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}>
         <RamaBurdenBlock />
+      </Suspense>
+
+      <Suspense fallback={<Skeleton className="h-[420px] w-full rounded-lg" />}>
+        <DefectCostBlock />
       </Suspense>
     </PageLayout>
   );
@@ -94,4 +104,9 @@ async function CostCentersBlock({
 async function RamaBurdenBlock() {
   const summary = await getRamaBurden(12);
   return <RamaBurdenCard summary={summary} />;
+}
+
+async function DefectCostBlock() {
+  const summary = await getDefectCost(18);
+  return <DefectCostCard summary={summary} />;
 }
