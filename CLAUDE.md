@@ -1221,10 +1221,18 @@ blendeado las sobre-costeaba (A70BL155: fab $5.47/m falso). Fix:
   correlacionan con la producción de carda (OP-CAR feb-2026+) — están dominados
   por tejido. Queda el knob `entretela_overhead_extra_mxn` (default 0) para que
   el CEO sume energía/depreciación de carda si la cuantifica.
-- **Fase 1 (alcance actual)**: el pool de tela (`get_cost_factors_monthly`) se
-  deja intacto — todavía incluye MOD+renta de entretelas (~$427k/mes, ~8%) y sus
-  metros en el denominador (se compensan parcialmente). Fase 2 (con visto bueno)
-  migraría todo a costeo por centro para el split quirúrgico del GL.
+- **Fase 1**: rutea entretelas a su factor; el pool de tela quedó intacto
+  (todavía con MOD+renta de entretelas dentro). Migration `20260612c`.
+- **Fase 2 (2026-06-12d, vigente)**: split quirúrgico. `get_cost_factors_monthly`
+  ahora resta del pool de tela el costo de entretelas (MOD ENTRETELAS + renta
+  contractual Lote 10) del numerador y sus metros/kg del denominador, SOLO para
+  los dos factores que costean (`factor_fab_peso_kg_smooth`/`largo_m_smooth`).
+  Guard 2026+ (effective_from de la renta). Op y columnas legacy intactas;
+  entretelas no se ven afectadas (usan su factor). **Efecto: la fabricación de
+  TODA la tela sube ~+11% prom** (X140 fab $10.62→$12.87, margen −2.3%→−9.2%;
+  WJ053 +14.8%→+6.6%) — correcto: se quita el subsidio que la entretela (ligera)
+  le daba a la tela al diluir el denominador en kg. Migration
+  `20260612d_tela_pool_split_phase2.sql`. Cache v20→v21.
 
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
