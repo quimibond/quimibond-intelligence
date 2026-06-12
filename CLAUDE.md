@@ -1257,6 +1257,18 @@ fusionable") SÍ pasan por tejido y tintorería. Fix en `get_full_cost_reconstru
   por nombre, corregible. Migration `20260612f_entretela_tejida_tintoreria.sql`.
   Cache v21→v22.
 
+**Auditoría costo por depto/familia + fix doble conteo (2026-06-12g):** revisión
+de que el GL se reparte sin duplicados. Se halló sobre-absorción: la Fase 2
+había sacado del denominador de PESO TODOS los kg de entretela, pero las tejidas
+SÍ consumen tejido+tintorería y SÍ pagan la tarifa de peso → su costo de tejido
+se contaba 2 veces (~$295k/mes). Fix en `get_cost_factors_monthly`: del
+denominador de peso solo se restan los kg de entretela **CARDA** (las tejidas se
+quedan). El denominador de largo sigue restando todos los metros de entretela.
+Tras el fix, la sobre-absorción residual (~$754k en mayo) es **suavizado**: el GL
+de fab varía $5.4–7.3M/mes pero mayo cayó a $3.9M (timing de renta), y el factor
+suavizado refleja el promedio → se promedia en el año, no es duplicado.
+Migration `20260612g_tela_pool_carda_only_denom.sql`. Cache v22→v23.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
