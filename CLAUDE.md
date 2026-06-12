@@ -1234,6 +1234,29 @@ blendeado las sobre-costeaba (A70BL155: fab $5.47/m falso). Fix:
   le daba a la tela al diluir el denominador en kg. Migration
   `20260612d_tela_pool_split_phase2.sql`. Cache v20→v21.
 
+**Operación por % de ventas (2026-06-12e):** antes la operación (6xx admin/ventas)
+se repartía por **kg vendidos**, penalizando a las telas pesadas por metro. Pero
+admin/ventas escalan con cuánto vendes en pesos, no con kilos. Ahora
+`get_full_cost_reconstruction`: `op_unit = op_pct × precio_venta`, donde
+`op_pct = Σ gastos 6xx ÷ Σ ventas` 12m suavizado (guard `op_pool>0` excluye el
+cierre de diciembre con op negativo). ~17.9% en 2026. Respeta la eficiencia: la
+pesada deja de pagar op de más por su peso. `gastos_op_total = op_pct × revenue`.
+Migration `20260612e_op_por_ventas.sql`.
+
+**Entretelas TEJIDAS llevan tejido+tintorería (2026-06-12f):** el ruteo de
+`20260612c` mandaba TODAS las entretelas a carda-only, pero la familia "Puntos"
+(resina) está mezclada: ~31 de base **tejido circular (tejida)** + ~15 carda.
+Las tejidas (ZN4032, WP4032, WNS/WNY/WR/WM/WTT 4032 — "tejido circular
+fusionable") SÍ pasan por tejido y tintorería. Fix en `get_full_cost_reconstruction`:
+- **entretela tejida** (`name ~ 'tejido circular'|'tejida'` sin 'no tejida'):
+  `fab = peso_kg × factor_peso (tejido+tintorería) + factor_entretela (puntos)`.
+  SIN factor largo (rama/acabado, que no usan).
+- **entretela carda** (no tejida): solo `factor_entretela` (~$2.3/m).
+- Resultado: tejidas pasan de margen +37-40% a ~**+7-12%** (alineadas con telas
+  de peso comparable, p.ej. WJ053 +6%); carda no cambian (~+42%). Clasificador
+  por nombre, corregible. Migration `20260612f_entretela_tejida_tintoreria.sql`.
+  Cache v21→v22.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de

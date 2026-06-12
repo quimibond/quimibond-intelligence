@@ -155,7 +155,9 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
         <h2 className="text-lg font-semibold">1. Gasto por kilo, por mes</h2>
         <p className="text-sm text-muted-foreground">
           Fabricación se reparte entre los <strong>kg inspeccionados</strong>
-          (sin importados); operación entre los <strong>kg vendidos</strong>. El
+          (sin importados). La <strong>operación</strong> en el costo por producto
+          ya NO va por kg — se carga como <strong>% de ventas</strong> (ver
+          sección 3); la columna de op por kg aquí queda como referencia. El
           peso de cada producto sale de CVU real o gramaje×ancho. El factor
           mensual <em>crudo</em> oscila porque el gasto de fábrica es casi fijo
           pero el volumen varía; el costeo por producto usa el{" "}
@@ -290,10 +292,13 @@ export function CostReconView({ snapshot }: { snapshot: CostReconSnapshot }) {
           por <strong>peso</strong> (tejido + tintorería) × su kg, más la parte
           por <strong>largo</strong> (acabado) × sus metros — así
           una tela pesada no paga de más en los procesos que corren por metro.
-          Las <strong>entretelas</strong> (carda, puntos/resina, espolvoreo…) no
-          pasan por tejido/tintorería/acabado: cargan su propio factor del centro
-          ENTRETELAS (MOD + renta + energía carda ÷ metros, ~$2.3/m).
-          Operación va por peso. Los % son <strong>sobre las ventas</strong>.
+          Las <strong>entretelas de carda</strong> (no tejidas) no pasan por
+          tejido/tintorería/acabado: cargan solo su factor del centro ENTRETELAS
+          (~$2.3/m). Las <strong>entretelas tejidas</strong> (tejido circular
+          fusionable) sí llevan tejido + tintorería (factor peso) más su acabado
+          de entretela; no cargan rama. <strong>Operación</strong> se reparte por
+          <strong>% de ventas</strong> (admin/ventas no dependen del peso). Los %
+          son <strong>sobre las ventas</strong>.
           Importados (&ldquo; I&rdquo;) no cargan fabricación. El{" "}
           <strong>precio de venta se muestra en $/m y $/kg</strong> (el otro se
           convierte con el peso del producto).
