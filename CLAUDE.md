@@ -1269,6 +1269,17 @@ de fab varía $5.4–7.3M/mes pero mayo cayó a $3.9M (timing de renta), y el fa
 suavizado refleja el promedio → se promedia en el año, no es duplicado.
 Migration `20260612g_tela_pool_carda_only_denom.sql`. Cache v22→v23.
 
+**Clasificador robusto + página de auditoría (2026-06-12h/i):** la regla
+tejida/carda se unificó a: tejida = entretela, `name NOT ~ 'no tejid'` y
+(`'tejido circular'|'tejida'|categoría 'Puntos'`); carda = el resto. Captura las
+resin de Puntos sin "tejido circular" en el nombre (p.ej. WM4032AZ160) que antes
+se sub-costeaban. Misma regla en `get_full_cost_reconstruction` y el denominador
+de `get_cost_factors_monthly` (`20260612h`). Cache v23→v24.
+Nueva página **`/contabilidad/auditoria-costos`**: reconciliación GL ↔ absorbido
+por departamento (centro de costo) y por familia de producto, con drift por mes
+(suavizado, no duplicado). RPCs `get_cost_audit_by_department` /
+`get_cost_audit_by_family` (`20260612i`), query `cost-audit.ts`.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
