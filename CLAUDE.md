@@ -1178,6 +1178,27 @@ estaban en `cvu` (medición real en planta, manda sobre la spec) ni `ref_gramaje
 (gramaje limpio del ref): coinciden con el maestro dentro de ~5%. Maestro
 overridable. Migration `20260605l_weight_master_jessica.sql`. Cache v17→v18.
 
+**Plan de Capacidades — hoja `capacidad instalada` (2026-06-12):** segundo Excel
+(`Copia_de_Copia_de_Plan_de_capacidades.xlsx`) con la capacidad de las DOS ramas
+(stenters) de acabado UNITECH + BRUCKNER. Aporta 3 cosas:
+1. **Capacidad instalada de acabado (rama):** ~**1.19M m/mes** sin tiempo extra,
+   ~**1.75M m/mes** con T.Extra (ambas ramas). UNITECH 1,727 m/h, BRUCKNER
+   1,831 m/h; 360 hrs/mes (turnos 48+42 hrs/sem). Útil como denominador de
+   utilización vs metros realmente acabados (rama burden / cost center ACABADO).
+2. **Tabla de rendimiento por producto acabado (73 SKUs):** peso (g/m²), ancho de
+   rama (m), rendimiento (m/kg) — `gram` y `rend` coinciden exacto. Misma fuente
+   de ingeniería que el maestro de Jessica; sirvió para extender pesos: 62 de 73
+   ya coincidían con ref_gramaje/cvu/manual; se llenaron 7 sin peso y se
+   corrigieron 4 en bom_weight (familia WD038 jersey ligero ±13-18%). Migration
+   `20260612_weight_master_capacidad_instalada.sql`. Cache v18→v19. (OJO:
+   WN075Q66JBL205 y XJ140Q21JGO165 traen ancho inconsistente con su código en
+   esta hoja —205→1.65— pero ya están en `manual` del maestro, protegidos.)
+3. **Ritmo de tejido (hoja TEJIDO):** ~**8.75–9.4 kg/h por máquina** de tejido
+   circular (greige). Está por debajo del `std_kg_per_machine_hour=11` del
+   workcenter, pero dentro del rango 8.3–12.6 que ya documentamos (varía por
+   galga). No se cambió el std; queda como dato de referencia si se recalibra.
+   kg/hr de la RAMA (acabado) por producto: 100–225 kg/h (≠ tejido).
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
