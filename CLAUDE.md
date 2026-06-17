@@ -1297,6 +1297,20 @@ variable**; MOD ($3M, plantilla), renta, depreciación, otros OH y operación
   `get_contribution_by_product`, `get_fixed_costs_monthly`. Query
   `contribution-margin.ts`. La absorción (costo-reconstruido) se mantiene para P&L.
 
+**Explorador de costos por producto (2026-06-17):** página **`/contabilidad/costos-producto`**
+con buscador sobre TODOS los productos vendibles (~2,931, vendidos o no — el
+reporte de costo-reconstruido solo muestra los vendidos). Tabla materializada
+`product_cost_catalog` (PK odoo_product_id) + `refresh_product_cost_catalog(p_period)`;
+refresh nocturno dentro de `/api/pipeline/refresh-cogs-monthly`. Desglose por
+unidad: MP (último costo BOM), energía (variable $/kg×peso), costo variable, fab
+absorbido por proceso (tela/entretela), costo absorbido, precio referencia
+(**prom 12m con qty DEDUPLICADA por el triplet lista/desc/neta** — sin dedup el
+precio sale ~1/3, p.ej. X140 $11 falso vs $34 real), op, contribución y márgenes.
+Reusa la clasificación del modelo. Migration `20260617_product_cost_catalog.sql`,
+query `product-cost-catalog.ts`. **Nota:** el qty del triplet (3 líneas, misma
+cantidad) requiere `DISTINCT ON (move, product, quantity)` en cualquier cálculo
+de precio/qty — varios productos textiles lo tienen pese a "IEPS N/A".
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de

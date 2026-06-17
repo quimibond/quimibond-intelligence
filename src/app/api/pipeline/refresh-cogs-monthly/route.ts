@@ -38,19 +38,31 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: 500 });
     }
 
+    // Refrescar también el catálogo de costos por producto (mismo propósito).
+    let catalogRows = 0;
+    const { data: catData, error: catErr } = await sb.rpc(
+      "refresh_product_cost_catalog",
+    );
+    if (catErr) {
+      console.error("[refresh-cogs-monthly] catalog", catErr.message);
+    } else {
+      catalogRows = Number(catData) || 0;
+    }
+
     const elapsedMs = Date.now() - start;
     const rowsUpdated = Number(data) || 0;
 
     await sb.from("pipeline_logs").insert({
       level: "info",
       phase: "refresh_cogs_monthly",
-      message: `Refreshed ${rowsUpdated} months in ${elapsedMs}ms`,
-      metadata: { rows: rowsUpdated, elapsed_ms: elapsedMs },
+      message: `Refreshed ${rowsUpdated} months + ${catalogRows} productos (catálogo) in ${elapsedMs}ms`,
+      metadata: { rows: rowsUpdated, catalog_rows: catalogRows, elapsed_ms: elapsedMs },
     });
 
     return NextResponse.json({
       success: true,
       rows: rowsUpdated,
+      catalog_rows: catalogRows,
       elapsed_ms: elapsedMs,
     });
   } catch (e) {
