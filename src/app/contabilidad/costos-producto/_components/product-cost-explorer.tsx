@@ -140,7 +140,8 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
         variable). Las columnas marcadas con * son de <strong>absorción</strong>:
         incluyen el prorrateo de costos FIJOS (MOD plantilla, renta, depreciación)
         por unidad — sirven para el P&L de largo plazo, NO para decidir si vender
-        un metro más.
+        un metro más. <strong>Costo total*</strong> = MP + fabricación + operación
+        (todo incluido); <strong>Margen total*</strong> = precio − costo total.
       </p>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
@@ -156,8 +157,9 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
               <th className="px-3 py-2 text-right">Contribución</th>
               <th className="px-3 py-2 text-right">CM %</th>
               <th className="border-l px-3 py-2 text-right">Fab. fijos*</th>
-              <th className="px-3 py-2 text-right">Costo absorbido*</th>
-              <th className="px-3 py-2 text-right">Margen abs.*</th>
+              <th className="px-3 py-2 text-right">Operación*</th>
+              <th className="px-3 py-2 text-right">Costo total*</th>
+              <th className="px-3 py-2 text-right">Margen total*</th>
             </tr>
           </thead>
           <tbody>
@@ -194,7 +196,8 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                   {fP(r.cmPct)}
                 </td>
                 <td className="border-l px-3 py-1.5 text-right text-muted-foreground">{fM(r.fabAbsorbidoUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right text-muted-foreground">{fM(r.costoTotalAbsorbidoUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right text-muted-foreground">{fM(r.opUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right font-semibold">{fM(r.costoTotalAbsorbidoUnitMxn)}</td>
                 <td
                   className={cn(
                     "px-3 py-1.5 text-right",
@@ -209,7 +212,7 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={13} className="px-3 py-6 text-center text-muted-foreground">
                   Sin resultados. Prueba otra búsqueda.
                 </td>
               </tr>
