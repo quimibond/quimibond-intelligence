@@ -5,7 +5,54 @@ import type {
   ProductCostCatalog,
   ProductCostRow,
 } from "@/lib/queries/sp13/finanzas/product-cost-catalog";
+import { DataCsvButton } from "@/components/patterns/report-export";
 import { cn } from "@/lib/utils";
+
+const CSV_COLUMNS = [
+  { key: "ref", label: "Clave" },
+  { key: "nombre", label: "Producto" },
+  { key: "familia", label: "Familia" },
+  { key: "uom", label: "UoM" },
+  { key: "kg_por_unidad", label: "Kg por unidad" },
+  { key: "mp", label: "MP (último costo)" },
+  { key: "energia", label: "Energía (variable)" },
+  { key: "costo_variable", label: "Costo variable" },
+  { key: "fab_absorbido", label: "Fabricación absorbida" },
+  { key: "costo_abs_sin_op", label: "Costo absorbido (sin op)" },
+  { key: "operacion", label: "Operación" },
+  { key: "costo_total_absorbido", label: "Costo total absorbido" },
+  { key: "precio", label: "Precio referencia" },
+  { key: "precio_fuente", label: "Fuente precio" },
+  { key: "contribucion", label: "Contribución unit" },
+  { key: "cm_pct", label: "Margen contribución %" },
+  { key: "margen_absorbido_pct", label: "Margen absorbido %" },
+  { key: "mp_fuente", label: "Fuente MP" },
+];
+
+function toCsvRows(rows: ProductCostRow[]): Record<string, unknown>[] {
+  const r2 = (v: number | null) =>
+    v == null ? "" : Math.round(v * 100) / 100;
+  return rows.map((r) => ({
+    ref: r.internalRef ?? "",
+    nombre: r.name ?? "",
+    familia: r.familia ?? "",
+    uom: r.uom ?? "",
+    kg_por_unidad: r.kgPerUnit ?? "",
+    mp: r2(r.mpUnitMxn),
+    energia: r2(r.energiaUnitMxn),
+    costo_variable: r2(r.costoVariableUnitMxn),
+    fab_absorbido: r2(r.fabAbsorbidoUnitMxn),
+    costo_abs_sin_op: r2(r.costoProdAbsorbidoUnitMxn),
+    operacion: r2(r.opUnitMxn),
+    costo_total_absorbido: r2(r.costoTotalAbsorbidoUnitMxn),
+    precio: r2(r.precioRefMxn),
+    precio_fuente: r.precioFuente ?? "",
+    contribucion: r2(r.contribucionUnitMxn),
+    cm_pct: r.cmPct ?? "",
+    margen_absorbido_pct: r.margenAbsorbidoPct ?? "",
+    mp_fuente: r.mpSource ?? "",
+  }));
+}
 
 const money = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -80,8 +127,21 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
           {filtered.length.toLocaleString("es-MX")} resultados
           {filtered.length > LIMIT ? ` (mostrando ${LIMIT})` : ""}
         </span>
+        <DataCsvButton
+          rows={toCsvRows(filtered)}
+          columns={CSV_COLUMNS}
+          filename="costos-por-producto"
+          label="Exportar CSV"
+        />
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        <strong>Decisión = margen de contribución</strong> (precio − costo
+        variable). Las columnas marcadas con * son de <strong>absorción</strong>:
+        incluyen el prorrateo de costos FIJOS (MOD plantilla, renta, depreciación)
+        por unidad — sirven para el P&L de largo plazo, NO para decidir si vender
+        un metro más.
+      </p>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
@@ -89,15 +149,15 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
               <th className="px-3 py-2 text-left">Clave</th>
               <th className="px-3 py-2 text-left">Familia</th>
               <th className="px-3 py-2 text-right">UoM</th>
+              <th className="px-3 py-2 text-right">Precio</th>
               <th className="px-3 py-2 text-right">MP</th>
               <th className="px-3 py-2 text-right">Energía</th>
-              <th className="px-3 py-2 text-right">Costo var.</th>
-              <th className="px-3 py-2 text-right">Fab. abs.</th>
-              <th className="px-3 py-2 text-right">Costo abs. (s/op)</th>
-              <th className="px-3 py-2 text-right">Precio</th>
-              <th className="px-3 py-2 text-right">Contrib.</th>
+              <th className="px-3 py-2 text-right">Costo variable</th>
+              <th className="px-3 py-2 text-right">Contribución</th>
               <th className="px-3 py-2 text-right">CM %</th>
-              <th className="px-3 py-2 text-right">Margen abs.</th>
+              <th className="border-l px-3 py-2 text-right">Fab. fijos*</th>
+              <th className="px-3 py-2 text-right">Costo absorbido*</th>
+              <th className="px-3 py-2 text-right">Margen abs.*</th>
             </tr>
           </thead>
           <tbody>
@@ -111,11 +171,6 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                 </td>
                 <td className="px-3 py-1.5 text-xs">{r.familia}</td>
                 <td className="px-3 py-1.5 text-right text-muted-foreground">{r.uom}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.mpUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.energiaUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right font-medium">{fM(r.costoVariableUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.fabAbsorbidoUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.costoProdAbsorbidoUnitMxn)}</td>
                 <td className="px-3 py-1.5 text-right">
                   {fM(r.precioRefMxn)}
                   {r.precioFuente && (
@@ -126,7 +181,10 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-1.5 text-right">{fM(r.contribucionUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right">{fM(r.mpUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right">{fM(r.energiaUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right font-medium">{fM(r.costoVariableUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right font-semibold">{fM(r.contribucionUnitMxn)}</td>
                 <td
                   className={cn(
                     "px-3 py-1.5 text-right font-semibold",
@@ -135,11 +193,13 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                 >
                   {fP(r.cmPct)}
                 </td>
+                <td className="border-l px-3 py-1.5 text-right text-muted-foreground">{fM(r.fabAbsorbidoUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right text-muted-foreground">{fM(r.costoTotalAbsorbidoUnitMxn)}</td>
                 <td
                   className={cn(
                     "px-3 py-1.5 text-right",
                     (r.margenAbsorbidoPct ?? 0) < 0
-                      ? "text-red-600"
+                      ? "text-red-600/70"
                       : "text-muted-foreground",
                   )}
                 >

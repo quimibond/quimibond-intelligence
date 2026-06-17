@@ -37,14 +37,22 @@ export interface ProductCostCatalog {
 
 async function _raw(): Promise<ProductCostCatalog> {
   const sb = getServiceClient();
-  const { data } = await sb
-    .from("product_cost_catalog")
-    .select(
-      "internal_ref,name,familia,uom,kg_per_unit,mp_unit_mxn,energia_unit_mxn,costo_variable_unit_mxn,fab_absorbido_unit_mxn,costo_prod_absorbido_unit_mxn,precio_ref_mxn,precio_fuente,op_unit_mxn,costo_total_absorbido_unit_mxn,contribucion_unit_mxn,cm_pct,margen_absorbido_pct,mp_source,period,refreshed_at",
-    )
-    .order("internal_ref", { ascending: true });
+  const cols =
+    "internal_ref,name,familia,uom,kg_per_unit,mp_unit_mxn,energia_unit_mxn,costo_variable_unit_mxn,fab_absorbido_unit_mxn,costo_prod_absorbido_unit_mxn,precio_ref_mxn,precio_fuente,op_unit_mxn,costo_total_absorbido_unit_mxn,contribucion_unit_mxn,cm_pct,margen_absorbido_pct,mp_source,period,refreshed_at";
 
-  const raw = (data ?? []) as Record<string, unknown>[];
+  // PostgREST devuelve máx 1000 filas por request → paginar (el catálogo tiene ~2,900).
+  const PAGE = 1000;
+  const raw: Record<string, unknown>[] = [];
+  for (let from = 0; from < 20000; from += PAGE) {
+    const { data, error } = await sb
+      .from("product_cost_catalog")
+      .select(cols)
+      .order("internal_ref", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error || !data || data.length === 0) break;
+    raw.push(...(data as Record<string, unknown>[]));
+    if (data.length < PAGE) break;
+  }
   const num = (v: unknown) => (v == null ? null : Number(v));
   const rows: ProductCostRow[] = raw.map((r) => ({
     internalRef: (r.internal_ref as string) ?? null,
@@ -75,7 +83,7 @@ async function _raw(): Promise<ProductCostCatalog> {
 }
 
 export const getProductCostCatalog = () =>
-  unstable_cache(_raw, ["sp13-product-cost-catalog-v1"], {
+  unstable_cache(_raw, ["sp13-product-cost-catalog-v2-allrows"], {
     revalidate: 300,
     tags: ["sp13", "finanzas", "cost-centers"],
   })();
