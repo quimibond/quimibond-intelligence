@@ -1280,6 +1280,23 @@ por departamento (centro de costo) y por familia de producto, con drift por mes
 (suavizado, no duplicado). RPCs `get_cost_audit_by_department` /
 `get_cost_audit_by_family` (`20260612i`), query `cost-audit.ts`.
 
+**Costeo por MARGEN DE CONTRIBUCIÓN (2026-06-12j):** corrección de mejor
+práctica. El costo reconstruido (absorción total) sirve para el P&L pero
+distorsiona decisiones de precio/mezcla porque reparte costos FIJOS por unidad.
+CEO confirmó: **solo la energía (luz/gas/agua, 504.01.0001/0003/0004) es
+variable**; MOD ($3M, plantilla), renta, depreciación, otros OH y operación
+(6xx) son FIJOS (~$7.6M/mes). Nueva página **`/contabilidad/margen-contribucion`**:
+- Costo variable/u = MP (último costo) + energía ($/kg × peso). Importados sin energía.
+- **Contribución = precio − costo variable**; un producto vale la pena si CM>0
+  aunque su costo absorbido salga negativo (ej. X140: absorbido −9% pero CM
+  +$14/m / 43% → sí conviene venderlo, aporta a fijos).
+- Fijos = costo del período; **punto de equilibrio** = fijos prom 12m ÷ CM%.
+  Mayo 2026: CM global 61.7%, fijos ~$7.6M/mes, break-even ~$12.3M ventas/mes,
+  **0 productos con contribución negativa**.
+- Tabla `costing_variable_accounts` (editable: qué cuentas son variables). RPCs
+  `get_contribution_by_product`, `get_fixed_costs_monthly`. Query
+  `contribution-margin.ts`. La absorción (costo-reconstruido) se mantiene para P&L.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
