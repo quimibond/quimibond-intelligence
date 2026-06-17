@@ -5,7 +5,54 @@ import type {
   ProductCostCatalog,
   ProductCostRow,
 } from "@/lib/queries/sp13/finanzas/product-cost-catalog";
+import { DataCsvButton } from "@/components/patterns";
 import { cn } from "@/lib/utils";
+
+const CSV_COLUMNS = [
+  { key: "ref", label: "Clave" },
+  { key: "nombre", label: "Producto" },
+  { key: "familia", label: "Familia" },
+  { key: "uom", label: "UoM" },
+  { key: "kg_por_unidad", label: "Kg por unidad" },
+  { key: "mp", label: "MP (último costo)" },
+  { key: "energia", label: "Energía (variable)" },
+  { key: "costo_variable", label: "Costo variable" },
+  { key: "fab_absorbido", label: "Fabricación absorbida" },
+  { key: "costo_abs_sin_op", label: "Costo absorbido (sin op)" },
+  { key: "operacion", label: "Operación" },
+  { key: "costo_total_absorbido", label: "Costo total absorbido" },
+  { key: "precio", label: "Precio referencia" },
+  { key: "precio_fuente", label: "Fuente precio" },
+  { key: "contribucion", label: "Contribución unit" },
+  { key: "cm_pct", label: "Margen contribución %" },
+  { key: "margen_absorbido_pct", label: "Margen absorbido %" },
+  { key: "mp_fuente", label: "Fuente MP" },
+];
+
+function toCsvRows(rows: ProductCostRow[]): Record<string, unknown>[] {
+  const r2 = (v: number | null) =>
+    v == null ? "" : Math.round(v * 100) / 100;
+  return rows.map((r) => ({
+    ref: r.internalRef ?? "",
+    nombre: r.name ?? "",
+    familia: r.familia ?? "",
+    uom: r.uom ?? "",
+    kg_por_unidad: r.kgPerUnit ?? "",
+    mp: r2(r.mpUnitMxn),
+    energia: r2(r.energiaUnitMxn),
+    costo_variable: r2(r.costoVariableUnitMxn),
+    fab_absorbido: r2(r.fabAbsorbidoUnitMxn),
+    costo_abs_sin_op: r2(r.costoProdAbsorbidoUnitMxn),
+    operacion: r2(r.opUnitMxn),
+    costo_total_absorbido: r2(r.costoTotalAbsorbidoUnitMxn),
+    precio: r2(r.precioRefMxn),
+    precio_fuente: r.precioFuente ?? "",
+    contribucion: r2(r.contribucionUnitMxn),
+    cm_pct: r.cmPct ?? "",
+    margen_absorbido_pct: r.margenAbsorbidoPct ?? "",
+    mp_fuente: r.mpSource ?? "",
+  }));
+}
 
 const money = new Intl.NumberFormat("es-MX", {
   style: "currency",
@@ -80,6 +127,12 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
           {filtered.length.toLocaleString("es-MX")} resultados
           {filtered.length > LIMIT ? ` (mostrando ${LIMIT})` : ""}
         </span>
+        <DataCsvButton
+          rows={toCsvRows(filtered)}
+          columns={CSV_COLUMNS}
+          filename="costos-por-producto"
+          label="Exportar CSV"
+        />
       </div>
 
       <div className="overflow-x-auto rounded-lg border">
