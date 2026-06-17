@@ -135,6 +135,13 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
         />
       </div>
 
+      <p className="text-xs text-muted-foreground">
+        <strong>Decisión = margen de contribución</strong> (precio − costo
+        variable). Las columnas marcadas con * son de <strong>absorción</strong>:
+        incluyen el prorrateo de costos FIJOS (MOD plantilla, renta, depreciación)
+        por unidad — sirven para el P&L de largo plazo, NO para decidir si vender
+        un metro más.
+      </p>
       <div className="overflow-x-auto rounded-lg border">
         <table className="w-full text-sm">
           <thead className="bg-muted/50 text-xs uppercase text-muted-foreground">
@@ -142,15 +149,15 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
               <th className="px-3 py-2 text-left">Clave</th>
               <th className="px-3 py-2 text-left">Familia</th>
               <th className="px-3 py-2 text-right">UoM</th>
+              <th className="px-3 py-2 text-right">Precio</th>
               <th className="px-3 py-2 text-right">MP</th>
               <th className="px-3 py-2 text-right">Energía</th>
-              <th className="px-3 py-2 text-right">Costo var.</th>
-              <th className="px-3 py-2 text-right">Fab. abs.</th>
-              <th className="px-3 py-2 text-right">Costo abs. (s/op)</th>
-              <th className="px-3 py-2 text-right">Precio</th>
-              <th className="px-3 py-2 text-right">Contrib.</th>
+              <th className="px-3 py-2 text-right">Costo variable</th>
+              <th className="px-3 py-2 text-right">Contribución</th>
               <th className="px-3 py-2 text-right">CM %</th>
-              <th className="px-3 py-2 text-right">Margen abs.</th>
+              <th className="border-l px-3 py-2 text-right">Fab. fijos*</th>
+              <th className="px-3 py-2 text-right">Costo absorbido*</th>
+              <th className="px-3 py-2 text-right">Margen abs.*</th>
             </tr>
           </thead>
           <tbody>
@@ -164,11 +171,6 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                 </td>
                 <td className="px-3 py-1.5 text-xs">{r.familia}</td>
                 <td className="px-3 py-1.5 text-right text-muted-foreground">{r.uom}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.mpUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.energiaUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right font-medium">{fM(r.costoVariableUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.fabAbsorbidoUnitMxn)}</td>
-                <td className="px-3 py-1.5 text-right">{fM(r.costoProdAbsorbidoUnitMxn)}</td>
                 <td className="px-3 py-1.5 text-right">
                   {fM(r.precioRefMxn)}
                   {r.precioFuente && (
@@ -179,7 +181,10 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                     </span>
                   )}
                 </td>
-                <td className="px-3 py-1.5 text-right">{fM(r.contribucionUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right">{fM(r.mpUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right">{fM(r.energiaUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right font-medium">{fM(r.costoVariableUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right font-semibold">{fM(r.contribucionUnitMxn)}</td>
                 <td
                   className={cn(
                     "px-3 py-1.5 text-right font-semibold",
@@ -188,11 +193,13 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                 >
                   {fP(r.cmPct)}
                 </td>
+                <td className="border-l px-3 py-1.5 text-right text-muted-foreground">{fM(r.fabAbsorbidoUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right text-muted-foreground">{fM(r.costoTotalAbsorbidoUnitMxn)}</td>
                 <td
                   className={cn(
                     "px-3 py-1.5 text-right",
                     (r.margenAbsorbidoPct ?? 0) < 0
-                      ? "text-red-600"
+                      ? "text-red-600/70"
                       : "text-muted-foreground",
                   )}
                 >
