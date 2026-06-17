@@ -1280,6 +1280,37 @@ por departamento (centro de costo) y por familia de producto, con drift por mes
 (suavizado, no duplicado). RPCs `get_cost_audit_by_department` /
 `get_cost_audit_by_family` (`20260612i`), query `cost-audit.ts`.
 
+**Costeo por MARGEN DE CONTRIBUCIÓN (2026-06-12j):** corrección de mejor
+práctica. El costo reconstruido (absorción total) sirve para el P&L pero
+distorsiona decisiones de precio/mezcla porque reparte costos FIJOS por unidad.
+CEO confirmó: **solo la energía (luz/gas/agua, 504.01.0001/0003/0004) es
+variable**; MOD ($3M, plantilla), renta, depreciación, otros OH y operación
+(6xx) son FIJOS (~$7.6M/mes). Nueva página **`/contabilidad/margen-contribucion`**:
+- Costo variable/u = MP (último costo) + energía ($/kg × peso). Importados sin energía.
+- **Contribución = precio − costo variable**; un producto vale la pena si CM>0
+  aunque su costo absorbido salga negativo (ej. X140: absorbido −9% pero CM
+  +$14/m / 43% → sí conviene venderlo, aporta a fijos).
+- Fijos = costo del período; **punto de equilibrio** = fijos prom 12m ÷ CM%.
+  Mayo 2026: CM global 61.7%, fijos ~$7.6M/mes, break-even ~$12.3M ventas/mes,
+  **0 productos con contribución negativa**.
+- Tabla `costing_variable_accounts` (editable: qué cuentas son variables). RPCs
+  `get_contribution_by_product`, `get_fixed_costs_monthly`. Query
+  `contribution-margin.ts`. La absorción (costo-reconstruido) se mantiene para P&L.
+
+**Explorador de costos por producto (2026-06-17):** página **`/contabilidad/costos-producto`**
+con buscador sobre TODOS los productos vendibles (~2,931, vendidos o no — el
+reporte de costo-reconstruido solo muestra los vendidos). Tabla materializada
+`product_cost_catalog` (PK odoo_product_id) + `refresh_product_cost_catalog(p_period)`;
+refresh nocturno dentro de `/api/pipeline/refresh-cogs-monthly`. Desglose por
+unidad: MP (último costo BOM), energía (variable $/kg×peso), costo variable, fab
+absorbido por proceso (tela/entretela), costo absorbido, precio referencia
+(**prom 12m con qty DEDUPLICADA por el triplet lista/desc/neta** — sin dedup el
+precio sale ~1/3, p.ej. X140 $11 falso vs $34 real), op, contribución y márgenes.
+Reusa la clasificación del modelo. Migration `20260617_product_cost_catalog.sql`,
+query `product-cost-catalog.ts`. **Nota:** el qty del triplet (3 líneas, misma
+cantidad) requiere `DISTINCT ON (move, product, quantity)` en cualquier cálculo
+de precio/qty — varios productos textiles lo tienen pese a "IEPS N/A".
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
