@@ -5,7 +5,7 @@ import type {
   ProductCostCatalog,
   ProductCostRow,
 } from "@/lib/queries/sp13/finanzas/product-cost-catalog";
-import { DataCsvButton } from "@/components/patterns";
+import { DataCsvButton } from "@/components/patterns/report-export";
 import { cn } from "@/lib/utils";
 
 const CSV_COLUMNS = [
