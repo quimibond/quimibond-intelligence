@@ -17,6 +17,8 @@ const CSV_COLUMNS = [
   { key: "mp", label: "MP (último costo)" },
   { key: "energia", label: "Energía (variable)" },
   { key: "costo_variable", label: "Costo variable" },
+  { key: "costo_variable_kg", label: "Costo variable $/kg" },
+  { key: "contribucion_kg", label: "Contribución $/kg" },
   { key: "fab_absorbido", label: "Fabricación absorbida" },
   { key: "costo_abs_sin_op", label: "Costo absorbido (sin op)" },
   { key: "operacion", label: "Operación" },
@@ -41,6 +43,8 @@ function toCsvRows(rows: ProductCostRow[]): Record<string, unknown>[] {
     mp: r2(r.mpUnitMxn),
     energia: r2(r.energiaUnitMxn),
     costo_variable: r2(r.costoVariableUnitMxn),
+    costo_variable_kg: r2(perKg(r.costoVariableUnitMxn, r.kgPerUnit)),
+    contribucion_kg: r2(perKg(r.contribucionUnitMxn, r.kgPerUnit)),
     fab_absorbido: r2(r.fabAbsorbidoUnitMxn),
     costo_abs_sin_op: r2(r.costoProdAbsorbidoUnitMxn),
     operacion: r2(r.opUnitMxn),
@@ -62,6 +66,9 @@ const money = new Intl.NumberFormat("es-MX", {
 });
 const fM = (v: number | null) => (v == null ? "—" : money.format(v));
 const fP = (v: number | null) => (v == null ? "—" : `${v.toFixed(1)}%`);
+/** Convierte un valor $/unidad a $/kg usando el peso del producto. */
+const perKg = (v: number | null, kg: number | null) =>
+  v == null || !kg || kg <= 0 ? null : v / kg;
 
 const FAMILIAS = [
   "Todas",
@@ -154,7 +161,9 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
               <th className="px-3 py-2 text-right">MP</th>
               <th className="px-3 py-2 text-right">Energía</th>
               <th className="px-3 py-2 text-right">Costo variable</th>
+              <th className="px-3 py-2 text-right">Costo var. $/kg</th>
               <th className="px-3 py-2 text-right">Contribución</th>
+              <th className="px-3 py-2 text-right">Contrib. $/kg</th>
               <th className="px-3 py-2 text-right">CM %</th>
               <th className="border-l px-3 py-2 text-right">Fab. fijos*</th>
               <th className="px-3 py-2 text-right">Operación*</th>
@@ -186,7 +195,18 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                 <td className="px-3 py-1.5 text-right">{fM(r.mpUnitMxn)}</td>
                 <td className="px-3 py-1.5 text-right">{fM(r.energiaUnitMxn)}</td>
                 <td className="px-3 py-1.5 text-right font-medium">{fM(r.costoVariableUnitMxn)}</td>
+                <td className="px-3 py-1.5 text-right">{fM(perKg(r.costoVariableUnitMxn, r.kgPerUnit))}</td>
                 <td className="px-3 py-1.5 text-right font-semibold">{fM(r.contribucionUnitMxn)}</td>
+                <td
+                  className={cn(
+                    "px-3 py-1.5 text-right font-semibold",
+                    (perKg(r.contribucionUnitMxn, r.kgPerUnit) ?? 0) < 0
+                      ? "text-red-600"
+                      : "text-emerald-600",
+                  )}
+                >
+                  {fM(perKg(r.contribucionUnitMxn, r.kgPerUnit))}
+                </td>
                 <td
                   className={cn(
                     "px-3 py-1.5 text-right font-semibold",
@@ -212,7 +232,7 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
             ))}
             {shown.length === 0 && (
               <tr>
-                <td colSpan={13} className="px-3 py-6 text-center text-muted-foreground">
+                <td colSpan={15} className="px-3 py-6 text-center text-muted-foreground">
                   Sin resultados. Prueba otra búsqueda.
                 </td>
               </tr>
