@@ -73,7 +73,7 @@ const perKg = (v: number | null, kg: number | null) =>
 const FAMILIAS = [
   "Todas",
   "Tela acabado (m)",
-  "Tela greige (kg)",
+  "Tela por kg",
   "Entretela tejida",
   "Entretela carda",
   "importado",
