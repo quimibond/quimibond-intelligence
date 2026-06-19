@@ -83,7 +83,7 @@ async function _raw(): Promise<ProductCostCatalog> {
 }
 
 export const getProductCostCatalog = () =>
-  unstable_cache(_raw, ["sp13-product-cost-catalog-v5-tela-por-kg"], {
+  unstable_cache(_raw, ["sp13-product-cost-catalog-v6-machinery-lease"], {
     revalidate: 300,
     tags: ["sp13", "finanzas", "cost-centers"],
   })();

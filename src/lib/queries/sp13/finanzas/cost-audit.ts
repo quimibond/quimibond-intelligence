@@ -184,7 +184,7 @@ async function _raw(range: HistoryRange): Promise<CostAuditSnapshot | null> {
 }
 
 export const getCostAuditSnapshot = (range: HistoryRange) =>
-  unstable_cache(() => _raw(range), ["sp13-cost-audit-v1", String(range)], {
+  unstable_cache(() => _raw(range), ["sp13-cost-audit-v2-machinery-lease", String(range)], {
     revalidate: 300,
     tags: ["sp13", "finanzas", "cost-centers"],
   })();

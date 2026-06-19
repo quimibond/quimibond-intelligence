@@ -1311,6 +1311,23 @@ query `product-cost-catalog.ts`. **Nota:** el qty del triplet (3 líneas, misma
 cantidad) requiere `DISTINCT ON (move, product, quantity)` en cualquier cálculo
 de precio/qty — varios productos textiles lo tienen pese a "IEPS N/A".
 
+**Arrendamiento de MAQUINARIA en fabricación (2026-06-19):** el CEO confirmó que
+el leaseback financiero **701.11.0001** ($4.54M YTD Ene–May, ~$909k/mes) es el
+arrendamiento de la maquinaria PRODUCTIVA — NO es la renta de la nave/oficinas
+(504.01.0008 planta + 603.45 oficinas). Son activos distintos. Como la maquinaria
+se usa para producir, su costo es overhead fijo de fabricación (análogo a la
+depreciación de maquinaria propia). Antes vivía 100% debajo del EBIT y no tocaba
+ningún costo de producto. Fix: se agregó `account_code LIKE '701.11%'` al filtro
+`fab` de la CTE `gastos` en `get_cost_factors_monthly`. Es "general toda la
+producción" → fluye por el split híbrido peso/largo del pool de tela (las
+entretelas usan su propio factor, intacto — la maquinaria arrendada es del tren
+de tela). **Efecto: pool de fab Ene–May $27.76M → $32.30M (+16%); factor por
+unidad +16%.** Cobertura del pool (absorbido en vendibles vendidos YTD) baja de
+~95% a ~90% (el resto queda en inventario/no-vendibles). El P&L financiero
+(`pnl.ts`) NO cambia: 701.11 sigue debajo del EBIT (es costeo gerencial, no
+contable). Migration `20260619_machinery_lease_in_fab.sql`. Cache:
+cost-reconstruction v24→v25, cost-audit v1→v2, product-cost-catalog v5→v6.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
