@@ -1328,6 +1328,19 @@ unidad +16%.** Cobertura del pool (absorbido en vendibles vendidos YTD) baja de
 contable). Migration `20260619_machinery_lease_in_fab.sql`. Cache:
 cost-reconstruction v24→v25, cost-audit v1→v2, product-cost-catalog v5→v6.
 
+**Desglose por componente en la UI (2026-06-19):** `/contabilidad/costos-producto`
+ahora es expandible — clic en un producto abre el desglose completo: **MP por
+receta** (Hilo/Colorante/Químicos/Resina/Fibra/Semiterminado/Maquila/Otros;
+importados=landed), **Fabricación** abierta en sus 8 componentes GL (MOD, luz,
+gas, agua, renta planta, otros OH, depreciación, maquinaria) y **Operación** en
+3 (602 admin/ventas, 603 corporativo, otros). Mecánica: `get_cost_pool_composition(p_period)`
+da el % de cada componente del pool (YTD del año, ventana limpia sin el reverso
+de cierre de diciembre); la UI multiplica `fab_unit × share` / `op_unit × share`
+(desglose proporcional — mismo mix para todos; entretelas usan factor propio así
+que su split interno es indicativo). La MP se materializa en `product_mp_breakdown`
+(refresh nocturno en `/api/pipeline/refresh-cogs-monthly`, escalada a `mp_unit`).
+Migration `20260619b_product_cost_detail.sql`. Cache product-cost-catalog v6→v7.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
