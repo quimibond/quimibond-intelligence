@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type {
+  PoolComponent,
   ProductCostCatalog,
   ProductCostRow,
 } from "@/lib/queries/sp13/finanzas/product-cost-catalog";
@@ -73,7 +74,7 @@ const perKg = (v: number | null, kg: number | null) =>
 const FAMILIAS = [
   "Todas",
   "Tela acabado (m)",
-  "Tela greige (kg)",
+  "Tela por kg",
   "Entretela tejida",
   "Entretela carda",
   "importado",
@@ -82,9 +83,96 @@ const FAMILIAS = [
 
 const LIMIT = 200;
 
+/** Detalle desglosado de un producto: MP por receta + componentes de fab y op. */
+function CostDetail({
+  row,
+  fabComposition,
+  opComposition,
+}: {
+  row: ProductCostRow;
+  fabComposition: PoolComponent[];
+  opComposition: PoolComponent[];
+}) {
+  const mpTotal = row.mpUnitMxn ?? 0;
+  const fab = row.fabAbsorbidoUnitMxn ?? 0;
+  const op = row.opUnitMxn ?? 0;
+  const Bar = ({ items }: { items: { label: string; v: number; pct: number }[] }) => (
+    <table className="w-full text-xs">
+      <tbody>
+        {items.map((it) => (
+          <tr key={it.label} className="border-t border-border/40">
+            <td className="py-1 pr-2">{it.label}</td>
+            <td className="py-1 pr-2 text-right tabular-nums">{fM(it.v)}</td>
+            <td className="w-24 py-1 text-right text-muted-foreground tabular-nums">
+              {it.pct.toFixed(1)}%
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+  const mpItems = row.mpBuckets.map((b) => ({
+    label: b.bucket,
+    v: b.costUnitMxn,
+    pct: mpTotal ? (b.costUnitMxn / mpTotal) * 100 : 0,
+  }));
+  const fabItems = fab
+    ? fabComposition.map((c) => ({
+        label: c.component,
+        v: fab * c.share,
+        pct: c.share * 100,
+      }))
+    : [];
+  const opItems = op
+    ? opComposition.map((c) => ({
+        label: c.component,
+        v: op * c.share,
+        pct: c.share * 100,
+      }))
+    : [];
+  return (
+    <div className="grid gap-6 bg-muted/30 px-4 py-4 md:grid-cols-3">
+      <div>
+        <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+          Materia prima · {fM(mpTotal)}/u
+        </div>
+        {mpItems.length ? (
+          <Bar items={mpItems} />
+        ) : (
+          <p className="text-xs text-muted-foreground">Sin desglose de receta.</p>
+        )}
+      </div>
+      <div>
+        <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+          Fabricación · {fM(fab)}/u
+        </div>
+        {fabItems.length ? (
+          <Bar items={fabItems} />
+        ) : (
+          <p className="text-xs text-muted-foreground">
+            Sin fabricación (importado / sin proceso).
+          </p>
+        )}
+      </div>
+      <div>
+        <div className="mb-1 text-xs font-semibold uppercase text-muted-foreground">
+          Operación · {fM(op)}/u
+        </div>
+        {opItems.length ? <Bar items={opItems} /> : <p className="text-xs text-muted-foreground">—</p>}
+        <p className="mt-3 text-[11px] leading-snug text-muted-foreground">
+          Fabricación y operación se desglosan en proporción al pool GL (mismo mix
+          para todos). La energía (luz+gas+agua) es la porción variable dentro de
+          fabricación.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
   const [q, setQ] = useState("");
   const [fam, setFam] = useState("Todas");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
@@ -108,7 +196,11 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
         energía. Fabricación absorbida por proceso (tela/entretela). Precio =
         promedio realizado 12m (o lista/AVCO si no se ha vendido).{" "}
         <strong>Contribución</strong> = precio − costo variable (decisión);{" "}
-        <strong>margen absorbido</strong> = precio − costo total con fijos.
+        <strong>margen absorbido</strong> = precio − costo total con fijos.{" "}
+        <span className="text-foreground">
+          Haz clic en un producto para ver el desglose completo (MP por receta,
+          fabricación y operación por componente).
+        </span>
       </p>
 
       <div className="flex flex-wrap items-center gap-3">
@@ -173,9 +265,20 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
           </thead>
           <tbody>
             {shown.map((r: ProductCostRow) => (
-              <tr key={r.internalRef} className="border-t align-top">
+              <Fragment key={r.internalRef}>
+              <tr
+                className="cursor-pointer border-t align-top hover:bg-muted/40"
+                onClick={() =>
+                  setExpanded(expanded === r.internalRef ? null : r.internalRef)
+                }
+              >
                 <td className="px-3 py-1.5">
-                  <div className="font-medium">{r.internalRef}</div>
+                  <div className="flex items-center gap-1 font-medium">
+                    <span className="text-muted-foreground">
+                      {expanded === r.internalRef ? "▾" : "▸"}
+                    </span>
+                    {r.internalRef}
+                  </div>
                   <div className="max-w-[16rem] truncate text-xs text-muted-foreground">
                     {r.name}
                   </div>
@@ -229,6 +332,18 @@ export function ProductCostExplorer({ data }: { data: ProductCostCatalog }) {
                   {fP(r.margenAbsorbidoPct)}
                 </td>
               </tr>
+              {expanded === r.internalRef && (
+                <tr className="border-t-0">
+                  <td colSpan={15} className="p-0">
+                    <CostDetail
+                      row={r}
+                      fabComposition={data.fabComposition}
+                      opComposition={data.opComposition}
+                    />
+                  </td>
+                </tr>
+              )}
+              </Fragment>
             ))}
             {shown.length === 0 && (
               <tr>

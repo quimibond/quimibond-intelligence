@@ -49,6 +49,12 @@ export async function POST(request: NextRequest) {
       catalogRows = Number(catData) || 0;
     }
 
+    // Desglose de MP por receta (depende del catálogo ya refrescado).
+    const { error: mpErr } = await sb.rpc("refresh_product_mp_breakdown");
+    if (mpErr) {
+      console.error("[refresh-cogs-monthly] mp-breakdown", mpErr.message);
+    }
+
     const elapsedMs = Date.now() - start;
     const rowsUpdated = Number(data) || 0;
 
