@@ -1341,6 +1341,31 @@ que su split interno es indicativo). La MP se materializa en `product_mp_breakdo
 (refresh nocturno en `/api/pipeline/refresh-cogs-monthly`, escalada a `mp_unit`).
 Migration `20260619b_product_cost_detail.sql`. Cache product-cost-catalog v6→v7.
 
+**Clasificación de costo desacoplada de las categorías (2026-06-23):** el cost
+model clasificaba producto→proceso con ~38 patrones `ILIKE` (`%Entretela%`,
+`%Puntos%`, `%tejida%`, `%no tejid%`) regados en 5 funciones — frágil y parchado
+repetidamente (saga `20260612c→h`). Ahora hay **una sola fuente de verdad**:
+`public.costo_bucket(category, name, internal_ref)` → `ent_tejida | ent_carda |
+tela`. La usan `get_cost_factors_monthly`, `get_entretela_fab_factor_monthly`,
+`get_full_cost_reconstruction`, `get_cost_audit_by_family` y
+`refresh_product_cost_catalog`.
+- **Agnóstico al import**: devuelve solo la familia de proceso; el import (' I$'
+  → fab=0) se maneja aparte en cada función (`is_import`), así la entretela
+  importada que sí se manufactura permanece en el denominador del factor entretela.
+- **Reconoce la estructura PT nueva** (Tejido Circular/No Tejido × Con/Sin resina)
+  y cae al fallback viejo idéntico. Mientras Odoo no sincronice las categorías
+  nuevas reproduce HOY byte-a-byte. Mapeo: `Tejido Circular/Sin resina`→tela,
+  `Tejido Circular/Con resina`→ent_tejida, `No Tejido/*resina`→ent_carda.
+- **Por qué importa**: cuando se importe la reestructura PT (dibujo→WIP, PT =
+  base×resina), el costeo seguirá clasificando bien **sin tocar código**.
+- **Validado byte-neutral** vs snapshots pre-swap: reconstruction 0 diffs en 7
+  periodos (Σ|Δ|=$0.0000), factores 0 diffs en 48 meses, entretela 0 diffs,
+  audit 0 diffs, catálogo 0 diffs de familia (1,354 productos). Verificación
+  estructural: `costo_bucket` == lógica vieja en 0/7,339 productos.
+- Migrations `20260623_costo_bucket_helper.sql` +
+  `20260623_cost_model_use_costo_bucket.sql`. NO toca `cost_center` ni el
+  clasificador de proceso de entretela (`clasificar_entretela_proceso`).
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
