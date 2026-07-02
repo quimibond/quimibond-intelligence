@@ -912,6 +912,38 @@ Crecimiento exponencial = señal operativa de inventario que necesita
 atención: faltantes físicos, scrap no documentado, o errores de captura
 en conteos.
 
+> **⚠️ Restated (auditoría 2026-07-02):** este trend quedó obsoleto — el GL
+> fue re-trabajado a mano. Abril hoy muestra +$210k (no $379k) y junio ~$0
+> porque los ajustes del conteo físico de junio ($6.4M de cargos originales)
+> se reclasificaron editando los asientos posteados: $3.57M fueron a parar a
+> equity 999998. Ver `docs/audit-2026-07-02-inventario-contabilidad.md`.
+
+### Auditoría inventario↔contabilidad (2026-07-02) — correcciones de premisas
+
+Auditoría completa en `docs/audit-2026-07-02-inventario-contabilidad.md`.
+Correcciones a "verdades" documentadas arriba:
+
+1. **El CAPA mensual NO murió el 1-abr-2026.** El journal CAPA DE VALORACIÓN
+   siguió capitalizando COGS→inventario todo 2026 ($15.07M ene–jun: débito
+   115.03.01/115.04.01, crédito 501.01.01). El saldo de WIP 115.03.01
+   ($15.45M) es ~87% estos asientos manuales, no producción real (~50 MOs
+   abiertas). Pending action `capa-valoracion-manual-detener`.
+2. **115.01.01 "Inventario" existe desde jun-2026 y está NEGATIVA** (−$3.14M
+   al 2-jul): categorías re-apuntadas sin asiento de transferencia. Además hay
+   vendibles en categorías "Producto en Proceso/*" que despachan COGS desde
+   115.03.01. Pending action `cuentas-valuacion-categoria-realinear`.
+3. **Ediciones de líneas de asientos posteados no re-sincronizaban**: el
+   filtro incremental de `_push_account_entries_stock` era por
+   `move.write_date` y las ediciones de línea no lo tocan → `lines_stock`,
+   `mv_entry_lines_flat` y `mv_stock_move_account_matches` pueden mostrar
+   versiones viejas del GL. Fixeado en qb19 (`line_ids.write_date` en el
+   domain). Para históricos: re-push heavy con
+   `last_heavy_sync_date='2026-05-31'`. `odoo_account_balances` (rebuild
+   completo horario) es la única verdad garantizada del GL.
+4. Programa de revaluación al costo reconstruido: pending action
+   `revaluacion-inventario-costo-reconstruido` (GL $51.6M vs físico $43.1M;
+   PT a MP+fab $17.76M vs AVCO $11.95M; MP a último costo ~$39.0M).
+
 ### Productos importados ("I") y notas de crédito (2026-05-04)
 
 Migration `20260504_pnl_limpio_imports_and_refunds_fix.sql` corrige dos
