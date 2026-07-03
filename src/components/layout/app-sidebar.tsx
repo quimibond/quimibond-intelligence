@@ -114,6 +114,7 @@ const topGroups: NavGroup[] = [
           { href: "/contabilidad/costos-producto", label: "Costos por producto" },
           { href: "/contabilidad/margen-contribucion", label: "Margen de contribución" },
           { href: "/contabilidad/auditoria-costos", label: "Auditoría de costos" },
+          { href: "/contabilidad/cierre-inventario", label: "Cierre de inventario" },
         ],
       },
       { href: "/reporte", label: "Reportes mensuales", icon: FileText },
