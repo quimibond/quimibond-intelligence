@@ -23,7 +23,7 @@ contaminan. En orden de gravedad:
 |---|---|---|---|
 | F1 | Mapa categoría→cuenta de valuación roto: se vende desde WIP y el switch de junio dejó 115.01.01 **negativa** | −$3.14M (115.01.01) / $2.4M vendido desde 115.03 | Nuevo |
 | F2 | Journal **CAPA DE VALORACIÓN sigue vivo**: capitaliza COGS→inventario a mano cada mes de 2026 | $15.07M en 2026; ~87% del saldo WIP | Nuevo (contradice premisa documentada) |
-| F3 | El conteo físico de junio ($38.5M bruto) se **reclasificó a mano fuera del P&L**, $3.57M a equity 999998 | $4.85M neto removido de 501.01.08 | Nuevo |
+| F3 | El conteo físico de junio ($38.5M bruto) se **reclasificó a mano fuera del P&L** ~~$3.57M a equity 999998~~ (**corregido 2026-07-03**: la cifra de 999998 era la fila sintética de utilidad neta, no un asiento; los asientos del conteo fueron CANCELADOS) | $4.85M neto removido de 501.01.08 | Nuevo |
 | F4 | Punto ciego del sync: ediciones de líneas no re-sincronizan → **silver mostraba la versión pre-edición** | integridad de datos | **Fixeado en qb19 (este PR)** |
 | F5 | Refacciones/activo fijo dentro del ciclo textil: doble capitalización + conteos a COGS | $4.15M dup YTD + $663k jun a 501.01.08 | Conocido, sin fix de raíz |
 | F6 | Gap de valuación: GL $51.6M vs físico Odoo $43.1M vs reconstruido ~$47–57M según política | ±$6M por decisión de política | Cuantificado |
@@ -126,6 +126,22 @@ Consecuencias:
   en Odoo contra qué cuenta se hacía antes.
 
 ### F3 — Conteo de junio reclasificado a mano, $3.57M a equity (crítico)
+
+> **⚠️ CORRECCIÓN 2026-07-03 — el paso 3 era un falso positivo.** La fila
+> mensual de 999998 en `odoo_account_balances` es **SINTÉTICA**: la fabrica
+> `_push_account_balances` (qb19, SP5 §14.2) como utilidad neta del período
+> para que `gold_balance_sheet` cuadre — en Odoo `equity_unaffected` es un
+> saldo calculado sin move lines. Verificado: cuadra al centavo con
+> Σingresos−Σgastos los 7 meses de 2026, y tras extender el filtro del sync a
+> cuentas `999%` y re-push completo desde 2025-12-31 hay **CERO líneas reales
+> de 999998** en `lines_stock` (all-time). El "$3.57M a 999998" era esa fila
+> sintética leída como asiento. Lo que sí ocurrió después: el CEO **CANCELÓ**
+> los asientos del conteo (Cantidad de producto actualizada) el 2-jul, así que
+> las diferencias físicas del conteo hoy no están en el GL y deben
+> incorporarse en el corte final (activo fijo / REA / 501.01.08 / mantenimiento
+> según la clasificación con evidencia). La guardia
+> `inventory.equity_999998_manual` se re-apuntó a líneas reales
+> (migration `20260703b_999998_synthetic_guard_fix.sql`).
 
 Secuencia reconstruida:
 1. Junio: conteo físico masivo — 1,384 ajustes, $38.5M de valor bruto tocado.
@@ -254,9 +270,11 @@ de junio lo corrigió; cerrar esa acción tras verificar).
 1. **Depurar WIP**: los $13.46M de CAPA 2026 en 115.03.01, asiento por asiento →
    qué es costo ya vendido (a 501.01.01 del período) y qué es inventario real (a
    PT, entra a la revaluación). Meta: 115.03.01 = valor de las ~50 MOs abiertas.
-2. **Revertir el cargo a 999998** ($3.57M) con asiento de reclasificación al
-   destino que dicte el análisis del conteo (merma textil→501.01.08; error de
-   captura→contra depuración WIP; refacciones→mantenimiento).
+2. ~~Revertir el cargo a 999998 ($3.57M)~~ **(corregido 2026-07-03: no existe
+   ese cargo — ver nota en F3).** En su lugar: incorporar el resultado del
+   conteo cancelado al corte final con destino por grupo (máquinas→activo
+   fijo; refacciones fantasma→REA; merma textil real→501.01.08;
+   refacciones reales→mantenimiento).
 3. **115.01.01 a cero** con la transferencia de saldos de F1.1.
 4. **Conciliar 115.02.02** ($3.36M contable vs ~$2.74M físico de refacciones).
 5. Corregir 4 SKUs stock negativo + 15 SKUs sin costo.
@@ -279,7 +297,8 @@ Invariantes nuevas en el motor de reconciliación (`audit_tolerances`):
 - `inventory.gl_vs_physical_drift` — |GL 115.x − Σ stock×costo| > $50k por bucket, diaria.
 - `inventory.negative_bucket` — saldo 115.* < 0, horaria.
 - `inventory.capa_journal_activity` — cualquier asiento nuevo en CAPA DE VALORACIÓN → issue crítico.
-- `inventory.equity_manual_posting` — movimiento manual a 999998 → issue crítico.
+- `inventory.equity_999998_manual` — asiento REAL a 999998 → issue crítico
+  (v2 2026-07-03: lee `lines_stock`, no el saldo sintético de `odoo_account_balances`).
 - `inventory.adjustment_nontextil_to_cogs` — ajustes de refacciones/activos cayendo a 501.01.08.
 Además: banners `<OdooPendingBanner>` de las 5 acciones nuevas en /contabilidad e
 /inventario/conciliacion.
@@ -289,7 +308,9 @@ Además: banners `<OdooPendingBanner>` de las 5 acciones nuevas en /contabilidad
 - **D2:** Destino de la depuración del WIP/CAPA ($13.5M): cuánto reconoce el P&L
   2026 vs cuánto pasa a PT en la revaluación (lo dicta el análisis por asiento,
   pero el CEO debe validar el golpe a resultados).
-- **D3:** Destino del $3.57M en 999998 (depende del detalle del conteo de junio).
+- **D3:** ~~Destino del $3.57M en 999998~~ (corregido 2026-07-03: no existe —
+  la decisión real es el destino del conteo cancelado por grupo: activo fijo /
+  REA fantasmas / 501.01.08 textil, ya clasificado con evidencia).
 
 ---
 

@@ -912,11 +912,14 @@ Crecimiento exponencial = señal operativa de inventario que necesita
 atención: faltantes físicos, scrap no documentado, o errores de captura
 en conteos.
 
-> **⚠️ Restated (auditoría 2026-07-02):** este trend quedó obsoleto — el GL
-> fue re-trabajado a mano. Abril hoy muestra +$210k (no $379k) y junio ~$0
-> porque los ajustes del conteo físico de junio ($6.4M de cargos originales)
-> se reclasificaron editando los asientos posteados: $3.57M fueron a parar a
-> equity 999998. Ver `docs/audit-2026-07-02-inventario-contabilidad.md`.
+> **⚠️ Restated (auditoría 2026-07-02, corregido 2026-07-03):** este trend
+> quedó obsoleto — el GL fue re-trabajado a mano. Abril hoy muestra +$210k
+> (no $379k) y junio ~$0 porque los asientos del conteo físico de junio
+> ($6.4M de cargos originales) fueron **CANCELADOS** por el CEO el 2-jul.
+> (La versión original de esta nota decía "$3.57M fueron a parar a equity
+> 999998" — era un falso positivo: la fila de 999998 en odoo_account_balances
+> es SINTÉTICA, ver corrección abajo.) Ver
+> `docs/audit-2026-07-02-inventario-contabilidad.md`.
 
 ### Auditoría inventario↔contabilidad (2026-07-02) — correcciones de premisas
 
@@ -943,6 +946,16 @@ Correcciones a "verdades" documentadas arriba:
 4. Programa de revaluación al costo reconstruido: pending action
    `revaluacion-inventario-costo-reconstruido` (GL $51.6M vs físico $43.1M;
    PT a MP+fab $17.76M vs AVCO $11.95M; MP a último costo ~$39.0M).
+5. **La fila 999998 de `odoo_account_balances` es SINTÉTICA** (corrección
+   2026-07-03): `_push_account_balances` la fabrica como utilidad neta del
+   período para que `gold_balance_sheet` cuadre — equity_unaffected no tiene
+   move lines reales en Odoo. Cuadra al centavo con Σingresos−Σgastos.
+   **NUNCA usarla como evidencia de asientos manuales a equity.** El "$3.57M
+   del conteo de junio a 999998" del hallazgo F3 era esta fila mal leída; en
+   realidad los asientos del conteo fueron CANCELADOS. Verificado con el
+   filtro `999%` nuevo del sync (qb19): 0 líneas reales de 999998 all-time.
+   La guardia `inventory.equity_999998_manual` lee `lines_stock` desde
+   `20260703b_999998_synthetic_guard_fix.sql`.
 
 ### Productos importados ("I") y notas de crédito (2026-05-04)
 
