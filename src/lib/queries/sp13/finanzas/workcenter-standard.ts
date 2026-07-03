@@ -194,6 +194,6 @@ export const getWorkcenterStandard = (
 ) =>
   unstable_cache(
     () => _getRaw(costCenter, monthsBack),
-    ["sp13-workcenter-standard-v3-prod-hours", costCenter, String(monthsBack)],
+    ["sp13-workcenter-standard-v4-arbol-nuevo", costCenter, String(monthsBack)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();

@@ -155,7 +155,7 @@ async function _raw(range: HistoryRange): Promise<ContributionSnapshot | null> {
 }
 
 export const getContributionSnapshot = (range: HistoryRange) =>
-  unstable_cache(() => _raw(range), ["sp13-contribution-v1", String(range)], {
+  unstable_cache(() => _raw(range), ["sp13-contribution-v2-arbol-nuevo", String(range)], {
     revalidate: 300,
     tags: ["sp13", "finanzas", "cost-centers"],
   })();

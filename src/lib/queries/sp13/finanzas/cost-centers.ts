@@ -233,6 +233,6 @@ function num(v: unknown): number {
 export const getCostCentersSnapshot = (range: HistoryRange) =>
   unstable_cache(
     () => _getCostCentersSnapshotRaw(range),
-    ["sp13-cost-centers-snapshot-v1", String(range)],
+    ["sp13-cost-centers-snapshot-v2-arbol-nuevo", String(range)],
     { revalidate: 300, tags: ["sp13", "finanzas", "cost-centers"] },
   )();
