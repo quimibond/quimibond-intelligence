@@ -122,7 +122,7 @@ export const CLOSE_WORKSTREAMS: Array<{
   },
   {
     actionKey: "conteo-junio-reclasificado-999998",
-    paso: "4. Revertir 999998 y reclasificar el conteo de junio",
+    paso: "4. Incorporar el conteo de junio al corte final (999998 limpia)",
     fase: "Fase 2",
   },
   {
