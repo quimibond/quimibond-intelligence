@@ -141,7 +141,7 @@ async function _raw(): Promise<ProductCostCatalog> {
 }
 
 export const getProductCostCatalog = () =>
-  unstable_cache(_raw, ["sp13-product-cost-catalog-v7-desglose"], {
+  unstable_cache(_raw, ["sp13-product-cost-catalog-v8-arbol-nuevo"], {
     revalidate: 300,
     tags: ["sp13", "finanzas", "cost-centers"],
   })();

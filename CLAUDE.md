@@ -1386,6 +1386,23 @@ que su split interno es indicativo). La MP se materializa en `product_mp_breakdo
 (refresh nocturno en `/api/pipeline/refresh-cogs-monthly`, escalada a `mp_unit`).
 Migration `20260619b_product_cost_detail.sql`. Cache product-cost-catalog v6→v7.
 
+**Árbol de categorías NUEVO + costo_bucket (2026-07-03):** el CEO reorganizó
+product.category en Odoo con niveles semánticos (1º ESTADO→cuenta 115.x,
+2º CONSTRUCCIÓN→factor de costeo, 3º PRODUCTO→cuenta de venta; el MERCADO se
+deriva: entretela⇒confección 401.01.01, tela⇒industrial 401.01.02). Árbol PT:
+`Tejido Circular/{Industrial (telas), Entretela fusionable tejida}`,
+`No Tejido/{Entretela fusionable, Entretela sin resina, Perfoquim}`,
+`Importación (" I")`, `Subproducto`. PP espejo de la nomenclatura de refs
+(H=crudo→Tejido Circular, I=teñido→Teñido, J=terminado→PT, " IT"→PP/Importación,
+prefijo I=presentación en kg). La clasificación tela/ent_tejida/ent_carda está
+CENTRALIZADA en **`costo_bucket(cat,name,ref)`** — todas las funciones de costeo
+la llaman; migration `20260703e_costo_bucket_arbol_nuevo.sql` la extendió a las
+rutas nuevas (Perfoquim ya no contiene "Entretela"; "fusionable tejida" reemplaza
+la pista "Puntos") conservando los patrones viejos como fallback. Si se agregan
+hojas al árbol, tocar SOLO costo_bucket. Caches: cost-reconstruction v26,
+cost-audit v3, product-cost-catalog v8, cost-centers v2, workcenter-standard v4,
+contribution v2.
+
 **Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
 cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
 operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
