@@ -71,6 +71,8 @@ const topGroups: NavGroup[] = [
     collapsible: true,
     storageKey: "sidebar-group-decision",
     items: [
+      { href: "/hoy", label: "Hoy", icon: Home },
+      { href: "/dinero", label: "Dinero", icon: Banknote },
       { href: "/", label: "Home", icon: Home, exact: true },
       { href: "/inbox", label: "Inbox", icon: Inbox, badgeKey: "alerts" },
       { href: "/briefings", label: "Briefings", icon: FileText },
