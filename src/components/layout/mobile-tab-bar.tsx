@@ -48,10 +48,10 @@ interface TabDef {
 // misma taxonomía del sidebar (Clientes / Financiero / Operación / Equipo /
 // Admin).
 const primaryTabs: TabDef[] = [
-  { href: "/", label: "Home", icon: Home, exact: true },
-  { href: "/inbox", label: "Insights", icon: Inbox },
+  { href: "/hoy", label: "Hoy", icon: Home },
+  { href: "/dinero", label: "Dinero", icon: Banknote },
   { href: "/chat", label: "Chat IA", icon: Sparkles },
-  { href: "/finanzas", label: "Finanzas", icon: Banknote },
+  { href: "/inbox", label: "Insights", icon: Inbox },
 ];
 
 // Secciones secundarias en el sheet "Más" — mismo taxonomy que sidebar.
@@ -73,6 +73,7 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
   {
     label: "Financiero",
     tabs: [
+      { href: "/finanzas", label: "Finanzas", icon: Banknote },
       { href: "/ventas", label: "Ventas", icon: TrendingUp },
       { href: "/cobranza", label: "Cobranza", icon: AlertTriangle },
       { href: "/contabilidad", label: "Contabilidad", icon: FileText },
