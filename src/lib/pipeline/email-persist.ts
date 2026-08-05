@@ -15,6 +15,8 @@ interface PersistResult {
   emails_saved: number;
   threads_saved: number;
   emails_missing_thread: number;
+  /** DB error messages from failed batches — empty when everything persisted. */
+  errors: string[];
 }
 
 function chunk<T>(arr: T[], size: number): T[][] {
@@ -28,7 +30,7 @@ export async function persistEmailsAndThreads(
   validEmails: ParsedEmail[],
 ): Promise<PersistResult> {
   if (!validEmails.length) {
-    return { emails_saved: 0, threads_saved: 0, emails_missing_thread: 0 };
+    return { emails_saved: 0, threads_saved: 0, emails_missing_thread: 0, errors: [] };
   }
 
   // 1. Group by gmail_thread_id and build thread rows
@@ -126,13 +128,17 @@ export async function persistEmailsAndThreads(
 
   let saved = 0;
   let missingThread = 0;
+  const errors: string[] = [];
   for (const batch of chunk(emailRows, 50)) {
     missingThread += batch.filter((b) => b.thread_id === null).length;
     const { error } = await supabase
       .from("emails")
       .upsert(batch, { onConflict: "gmail_message_id", ignoreDuplicates: true });
     if (!error) saved += batch.length;
-    else console.error("[email-persist] email batch upsert failed", error);
+    else {
+      console.error("[email-persist] email batch upsert failed", error);
+      errors.push(error.message);
+    }
   }
 
   if (missingThread > 0) {
@@ -145,5 +151,6 @@ export async function persistEmailsAndThreads(
     emails_saved: saved,
     threads_saved: threadRows.length,
     emails_missing_thread: missingThread,
+    errors,
   };
 }

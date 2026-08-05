@@ -89,26 +89,39 @@ export async function POST(request: NextRequest) {
     const saved = persistResult.emails_saved;
     const threads = { length: persistResult.threads_saved };
 
-    // Save history state with last_sync_at timestamp
-    for (const [account, historyId] of Object.entries(result.newHistoryState)) {
-      await supabase
-        .from("sync_state")
-        .upsert(
-          { account, last_history_id: historyId, emails_synced: saved, last_sync_at: new Date().toISOString() },
-          { onConflict: "account" }
-        );
+    // CRITICAL: only advance the Gmail history cursor if persistence worked.
+    // Advancing it while every insert fails permanently skips those emails —
+    // this is exactly how 2+ months of mail were lost (May 29 – Aug 5 2026,
+    // broken BEFORE INSERT triggers made every upsert fail while the cursor
+    // kept moving forward).
+    const persistTotallyFailed = validEmails.length > 0 && saved === 0;
+    if (!persistTotallyFailed) {
+      for (const [account, historyId] of Object.entries(result.newHistoryState)) {
+        await supabase
+          .from("sync_state")
+          .upsert(
+            { account, last_history_id: historyId, emails_synced: saved, last_sync_at: new Date().toISOString() },
+            { onConflict: "account" }
+          );
+      }
     }
 
     // Log to pipeline_logs for monitoring
+    const persistFailed = persistResult.errors.length > 0;
     await supabase.from("pipeline_logs").insert({
-      level: result.failedCount > 0 ? "warning" : "info",
+      level: persistFailed ? "error" : result.failedCount > 0 ? "warning" : "info",
       phase: "emails_synced",
-      message: `Sync: ${saved} emails, ${threads.length} threads (${result.successCount} cuentas ok, ${result.failedCount} fallidas)`,
+      message: persistFailed
+        ? `Sync FALLÓ al guardar: ${saved}/${validEmails.length} emails (${persistResult.errors[0]})`
+        : `Sync: ${saved} emails, ${threads.length} threads (${result.successCount} cuentas ok, ${result.failedCount} fallidas)`,
       details: {
         total: saved,
+        fetched: validEmails.length,
         threads: threads.length,
         accounts_ok: result.successCount,
         accounts_failed: result.failedCount,
+        persist_errors: persistResult.errors.slice(0, 3),
+        history_cursor_advanced: !persistTotallyFailed,
       },
     });
 
