@@ -1,15 +1,29 @@
+/**
+ * Ficha 360 de empresa (rediseño 2026-08-06, fase B de "todo conectado").
+ *
+ * Antes: 8 tabs excluyentes vía ?tab= — quién es, qué debe, qué compró y
+ * qué dijo vivían en pantallas separadas. Ahora: UNA página scrolleable
+ * con anclas (SectionNav) donde todo convive; cada sección reutiliza el
+ * componente de la tab original y carga en su propio Suspense.
+ *
+ * Cambios de fondo:
+ * - FinancieroTab eliminado del render: duplicaba Panorama (mismo aging,
+ *   mismo trend). Sus MetricRows viven ahora en la sección Salud.
+ * - Sección "Salud" nueva: tier, riesgo, OTD, máx días vencido, señales —
+ *   campos de gold_company_360 que ya se fetcheaban y se descartaban.
+ * - ?tab= se ignora (los ~33 links entrantes apuntan a la raíz).
+ */
+
 import { Suspense } from "react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Building2 } from "lucide-react";
-import { z } from "zod";
 
-import { PageLayout, PageHeader } from "@/components/patterns";
+import { KpiCard, PageLayout, PageHeader, SectionNav, StatGrid } from "@/components/patterns";
 import { CompanyKpiHero } from "@/components/patterns/company-kpi-hero";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
-import { parseSearchParams } from "@/lib/url-state";
 
 import {
   fetchCompanyById,
@@ -21,10 +35,8 @@ import {
   getCompanyRecentInsights,
 } from "@/lib/queries/_shared/companies";
 
-import { TabPicker, type TabKey } from "./_components/TabPicker";
 import { PanoramaTab } from "./_components/PanoramaTab";
 import { ComercialTab } from "./_components/ComercialTab";
-import { FinancieroTab } from "./_components/FinancieroTab";
 import { OperativoTab } from "./_components/OperativoTab";
 import { FiscalTab } from "./_components/FiscalTab";
 import { PagosTab } from "./_components/PagosTab";
@@ -37,31 +49,6 @@ import {
 } from "@/lib/queries/canonical/company-drift";
 
 export const dynamic = "force-dynamic";
-
-const detailSchema = z.object({
-  tab: z
-    .enum([
-      "panorama",
-      "comercial",
-      "financiero",
-      "operativo",
-      "fiscal",
-      "pagos",
-      "comunicaciones",
-      "auditoria_sat",
-    ])
-    .catch("panorama"),
-});
-
-const BASE_TAB_ORDER: TabKey[] = [
-  "panorama",
-  "comercial",
-  "financiero",
-  "operativo",
-  "fiscal",
-  "pagos",
-  "comunicaciones",
-];
 
 export async function generateMetadata({
   params,
@@ -99,6 +86,13 @@ function toAgingData(
   return buckets;
 }
 
+const RISK_LABEL: Record<string, string> = {
+  low: "Bajo",
+  medium: "Medio",
+  high: "Alto",
+  critical: "Crítico",
+};
+
 export default async function EmpresaDetailPage({
   params,
   searchParams,
@@ -111,7 +105,6 @@ export default async function EmpresaDetailPage({
   if (!Number.isFinite(id)) notFound();
 
   const raw = await searchParams;
-  const { tab } = parseSearchParams(raw, detailSchema);
 
   const [
     canonical,
@@ -138,7 +131,7 @@ export default async function EmpresaDetailPage({
     getCompanyDetail(id).catch(() => null),
     // Drift fields may be null on empresas recién creadas where the hourly
     // refresh job hasn't computed the aggregates yet — swallow errors so
-    // the rest of the page still renders (see memory feedback_server_component_top_level_throws).
+    // the rest of the page still renders.
     getCompanyDrift(id).catch(() => null),
     getCompanyOrders(id, 3).catch(() => []),
     getCompanyRecentInsights(id, 5).catch(() => []),
@@ -236,20 +229,23 @@ export default async function EmpresaDetailPage({
 
   const trendSeries = (trend ?? []).map((t) => t.total_mxn ?? 0);
 
-  const showDriftTab = shouldShowDriftTab(driftAggregates);
-  const visibleTabs: TabKey[] = showDriftTab
-    ? [...BASE_TAB_ORDER, "auditoria_sat"]
-    : BASE_TAB_ORDER;
+  const showDrift = shouldShowDriftTab(driftAggregates);
+  const driftRows = showDrift ? await getCompanyDriftRows(id).catch(() => []) : [];
 
-  // Clamp the active tab to what's visible — if the URL asks for "auditoria_sat"
-  // but the company has no drift, fall back to panorama instead of rendering
-  // an orphan panel.
-  const activeTab: TabKey = visibleTabs.includes(tab) ? tab : "panorama";
+  const riskSignals = Array.isArray(c360.risk_signals)
+    ? (c360.risk_signals as unknown[]).map(String).slice(0, 5)
+    : [];
 
-  const driftRows =
-    showDriftTab && activeTab === "auditoria_sat"
-      ? await getCompanyDriftRows(id).catch(() => [])
-      : [];
+  const sections = [
+    { id: "salud", label: "Salud" },
+    { id: "panorama", label: "Panorama" },
+    { id: "comercial", label: "Comercial" },
+    { id: "operativo", label: "Operativo" },
+    { id: "pagos", label: "Pagos" },
+    { id: "comunicaciones", label: "Comunicación" },
+    { id: "fiscal", label: "Fiscal" },
+    ...(showDrift ? [{ id: "auditoria-sat", label: "Auditoría SAT" }] : []),
+  ];
 
   return (
     <PageLayout>
@@ -266,32 +262,115 @@ export default async function EmpresaDetailPage({
         company360={c360ForHero}
         trend={trendSeries}
       />
-      <TabPicker activeTab={activeTab} tabs={visibleTabs} />
-      <Suspense fallback={<Skeleton className="h-48 w-full" />}>
-        {activeTab === "panorama" && <PanoramaTab detail={newTabDetail} />}
-        {activeTab === "financiero" && <FinancieroTab detail={newTabDetail} />}
-        {/* Legacy tabs — use their current prop signatures */}
-        {activeTab === "comercial" && legacyDetail && (
-          <ComercialTab company={legacyDetail} searchParams={raw} />
-        )}
-        {activeTab === "operativo" && legacyDetail && (
-          <OperativoTab company={legacyDetail} searchParams={raw} />
-        )}
-        {activeTab === "fiscal" && <FiscalTab companyId={id} />}
-        {activeTab === "pagos" && legacyDetail && (
-          <PagosTab company={legacyDetail} />
-        )}
-        {activeTab === "comunicaciones" && (
-          <CommsTimeline
-            entityType="company"
-            entityId={id}
-            searchParams={raw}
+      <SectionNav items={sections} />
+
+      <section id="salud" className="scroll-mt-24 space-y-3">
+        <h2 className="text-base font-semibold">Salud de la relación</h2>
+        <StatGrid columns={{ mobile: 2, tablet: 3, desktop: 6 }}>
+          <KpiCard title="Tier" value={c360.tier ?? "—"} size="sm" />
+          <KpiCard
+            title="Riesgo"
+            value={RISK_LABEL[c360.risk_level ?? ""] ?? (c360.risk_level || "—")}
+            size="sm"
+            tone={
+              c360.risk_level === "critical" || c360.risk_level === "high"
+                ? "danger"
+                : c360.risk_level === "medium"
+                  ? "warning"
+                  : "default"
+            }
           />
+          <KpiCard
+            title="OTD 90 días"
+            value={c360.otd_rate_90d}
+            format="percent"
+            size="sm"
+            tone={c360.otd_rate_90d != null && c360.otd_rate_90d < 80 ? "danger" : "default"}
+          />
+          <KpiCard
+            title="Máx días vencido"
+            value={c360.max_days_overdue}
+            format="number"
+            size="sm"
+            tone={(c360.max_days_overdue ?? 0) > 60 ? "danger" : "default"}
+          />
+          <KpiCard
+            title="Última factura"
+            value={c360.last_invoice_date ?? "—"}
+            size="sm"
+          />
+          <KpiCard
+            title="Último email"
+            value={c360.last_email_at ? String(c360.last_email_at).slice(0, 10) : "—"}
+            size="sm"
+            subtitle={c360.email_count != null ? `${c360.email_count} emails` : undefined}
+          />
+        </StatGrid>
+        {riskSignals.length > 0 && (
+          <ul className="space-y-1 text-sm text-muted-foreground">
+            {riskSignals.map((s) => (
+              <li key={s}>⚠️ {s}</li>
+            ))}
+          </ul>
         )}
-        {activeTab === "auditoria_sat" && driftAggregates && (
-          <AuditoriaSatTab aggregates={driftAggregates} rows={driftRows} />
-        )}
-      </Suspense>
+      </section>
+
+      <section id="panorama" className="scroll-mt-24 space-y-3">
+        <h2 className="text-base font-semibold">Panorama</h2>
+        <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+          <PanoramaTab detail={newTabDetail} />
+        </Suspense>
+      </section>
+
+      {legacyDetail && (
+        <section id="comercial" className="scroll-mt-24 space-y-3">
+          <h2 className="text-base font-semibold">Comercial — qué compra</h2>
+          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+            <ComercialTab company={legacyDetail} searchParams={raw} />
+          </Suspense>
+        </section>
+      )}
+
+      {legacyDetail && (
+        <section id="operativo" className="scroll-mt-24 space-y-3">
+          <h2 className="text-base font-semibold">Operativo — entregas y actividades</h2>
+          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+            <OperativoTab company={legacyDetail} searchParams={raw} />
+          </Suspense>
+        </section>
+      )}
+
+      {legacyDetail && (
+        <section id="pagos" className="scroll-mt-24 space-y-3">
+          <h2 className="text-base font-semibold">Pagos recibidos</h2>
+          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+            <PagosTab company={legacyDetail} />
+          </Suspense>
+        </section>
+      )}
+
+      <section id="comunicaciones" className="scroll-mt-24 space-y-3">
+        <h2 className="text-base font-semibold">Comunicación</h2>
+        <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+          <CommsTimeline entityType="company" entityId={id} searchParams={raw} />
+        </Suspense>
+      </section>
+
+      <section id="fiscal" className="scroll-mt-24 space-y-3">
+        <h2 className="text-base font-semibold">Fiscal (SAT)</h2>
+        <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+          <FiscalTab companyId={id} />
+        </Suspense>
+      </section>
+
+      {showDrift && driftAggregates && (
+        <section id="auditoria-sat" className="scroll-mt-24 space-y-3">
+          <h2 className="text-base font-semibold">Auditoría SAT ↔ Odoo</h2>
+          <Suspense fallback={<Skeleton className="h-48 w-full" />}>
+            <AuditoriaSatTab aggregates={driftAggregates} rows={driftRows} />
+          </Suspense>
+        </section>
+      )}
     </PageLayout>
   );
 }
