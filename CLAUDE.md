@@ -404,20 +404,37 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 
 ## Crons (Vercel)
 
+> **Poda 2026-08-05 (decisión CEO):** se retiraron `orchestrate`, `validate`,
+> `learn`, `daily-digest` y `evolve` (agentes especulativos + schema evolution
+> — este último creó los triggers rotos que tumbaron el sync de Gmail 2 meses).
+> Ver vercel.json para la lista viva.
+
 | Frecuencia | Endpoint | Que hace |
 |---|---|---|
-| */30 min | /api/cycle/run?type=quick | Extract → Heal → Validate |
-| */15 min | /api/agents/orchestrate | Ejecuta 1 agente (round-robin) |
+| */30 min | /api/pipeline/sync-emails | Sync Gmail (52 cuentas) |
+| cada 15 min | /api/pipeline/backfill-sweep | Drena cola email_backfill_state (no-op si vacía) |
+| */5 min | /api/pipeline/analyze | Procesa 1 cuenta de email (KG) |
 | */30 min | /api/agents/auto-fix | Repara datos rotos automaticamente |
-| */30 min | /api/agents/validate | Limpia insights stale + deduplica |
-| */4h | /api/agents/learn | Feedback → memorias |
-| */6h | /api/pipeline/health-scores | Recalcula scores de contactos |
-| 6:00am | /api/agents/evolve | Schema improvements via Claude |
+| */30 min | /api/agents/cleanup | Dedup + linking + enriquecimiento |
+| */15 min | /api/pipeline/embeddings | Vectores voyage-3 (loop con time budget) |
+| hourly :05 | /api/system/health | **Watchdog unificado**: crons+Odoo+Gmail+errores → email al CEO si algo falla (requiere scope gmail.send; si no, log level=error visible en /hoy) |
 | 6:30am | /api/pipeline/briefing | Briefing diario CEO |
 
 ---
 
-## Agentes de IA — 8 Directores activos
+## Agentes de IA — DESACTIVADOS (2026-08-05)
+
+> **Decisión CEO 2026-08-05:** los 8 directores fueron desactivados
+> (`ai_agents.is_active=false`) y sus 68 insights activos archivados. Datos:
+> de 37,168 insights históricos solo 3% fue accionado. Reemplazo: alertas
+> determinísticas en `/hoy` (piso de cash, cobranza por riesgo, entregas
+> tarde, recompras vencidas). Reversible con
+> `UPDATE ai_agents SET is_active=true WHERE slug='...'`.
+> El rediseño del frontend (vistas `/hoy` y `/dinero`, 2026-08-05) es la
+> dirección nueva: 5 vistas, cero IA especulativa, salud de datos visible.
+> La sección siguiente se conserva como referencia histórica.
+
+## [HISTÓRICO] Agentes de IA — 8 Directores
 
 Round-robin via `/api/agents/orchestrate` (Vercel cron, hourly). Cada director
 corre con Sonnet 4.6, max 5 insights por corrida, confianza ≥80%, dedup por

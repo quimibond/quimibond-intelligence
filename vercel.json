@@ -17,32 +17,12 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/agents/orchestrate",
-      "schedule": "0 * * * *"
-    },
-    {
       "path": "/api/agents/cleanup",
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/agents/validate",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/agents/learn",
-      "schedule": "45 */4 * * *"
-    },
-    {
-      "path": "/api/agents/daily-digest",
-      "schedule": "0 14 * * *"
-    },
-    {
       "path": "/api/pipeline/snapshot",
       "schedule": "30 5 * * *"
-    },
-    {
-      "path": "/api/agents/evolve",
-      "schedule": "0 6 * * *"
     },
     {
       "path": "/api/pipeline/briefing",
@@ -54,7 +34,7 @@
     },
     {
       "path": "/api/pipeline/embeddings",
-      "schedule": "15 */4 * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/agents/identity-resolution",
@@ -62,7 +42,7 @@
     },
     {
       "path": "/api/system/health",
-      "schedule": "0 */3 * * *"
+      "schedule": "5 * * * *"
     },
     {
       "path": "/api/system/data-quality-check",
