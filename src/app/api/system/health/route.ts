@@ -67,9 +67,13 @@ export async function GET(request: NextRequest) {
 
   try {
     // ── 1. Crons de Vercel via pipeline_logs ─────────────────────────────
+    // Filtrar a las phases monitoreadas: sin esto, las phases ruidosas
+    // empujan a las poco frecuentes fuera de la ventana de muestreo y
+    // generan falsos "nunca ha corrido".
     const { data: logs } = await supabase
       .from("pipeline_logs")
       .select("phase, created_at")
+      .in("phase", Object.keys(CRON_INTERVALS))
       .order("created_at", { ascending: false })
       .limit(500);
 
@@ -154,17 +158,21 @@ export async function GET(request: NextRequest) {
         .sort()
         .join("|");
 
-      const { data: lastAlert } = await supabase
+      // Anti-spam: máximo UN correo cada 24h, sin importar si el set de
+      // problemas cambió (decisión CEO 2026-08-06 — el hash cambiaba cada
+      // hora por detalles menores y llegaba un correo por hora). El estado
+      // horario completo sigue visible en /hoy vía el log de abajo.
+      const { data: recentAlerts } = await supabase
         .from("pipeline_logs")
         .select("details, created_at")
         .eq("phase", "watchdog")
-        .gte("created_at", new Date(now - 6 * 3600000).toISOString())
+        .gte("created_at", new Date(now - 24 * 3600000).toISOString())
         .order("created_at", { ascending: false })
-        .limit(1)
-        .maybeSingle();
+        .limit(30);
 
-      const alreadyAlerted =
-        (lastAlert?.details as { issue_hash?: string } | null)?.issue_hash === issueHash;
+      const alreadyAlerted = (recentAlerts ?? []).some(
+        (a) => (a.details as { email_sent?: boolean } | null)?.email_sent === true,
+      );
 
       if (!alreadyAlerted) {
         const body = [
