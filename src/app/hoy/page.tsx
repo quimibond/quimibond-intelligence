@@ -33,8 +33,10 @@ import { getCashKpis, getCashProjection, getRunwayKpis } from "@/lib/queries/sp1
 import { getActionList, getArKpis, type ActionListItem } from "@/lib/queries/sp13/cobranza";
 import {
   getDataHealth,
+  getEmailPendings,
   getLateDeliveries,
   getReorderRisks,
+  type EmailPending,
   type ReorderRisk,
 } from "@/lib/queries/sp13/hoy";
 
@@ -225,12 +227,64 @@ const reorderColumns: DataTableColumn<ReorderRisk>[] = [
   },
 ];
 
+const TIPO_LABEL: Record<string, string> = {
+  rfq: "RFQ",
+  cotizacion: "Cotización",
+  solicitud_documento: "Documentos",
+  compromiso_entrega: "Entrega",
+  promesa_pago: "Pago",
+  otro: "Otro",
+};
+
+const pendingColumns: DataTableColumn<EmailPending>[] = [
+  {
+    key: "tipo",
+    header: "Tipo",
+    cell: (r) => (
+      <Badge variant={r.tipo === "rfq" || r.tipo === "cotizacion" ? "destructive" : "secondary"}>
+        {TIPO_LABEL[r.tipo] ?? r.tipo}
+      </Badge>
+    ),
+  },
+  {
+    key: "descripcion",
+    header: "Pendiente",
+    cell: (r) => <span className="line-clamp-2">{r.descripcion}</span>,
+  },
+  {
+    key: "companyName",
+    header: "Cliente",
+    cell: (r) => <span className="text-muted-foreground">{r.companyName ?? "—"}</span>,
+  },
+  {
+    key: "deadline",
+    header: "Vence",
+    cell: (r) => {
+      if (!r.deadline) return <span className="text-muted-foreground">—</span>;
+      const days = Math.ceil((new Date(r.deadline).getTime() - Date.now()) / 86400000);
+      return (
+        <span className={days <= 3 ? "text-destructive font-semibold" : "font-medium"}>
+          {r.deadline}
+          {days >= 0 ? ` (${days}d)` : " (vencido)"}
+        </span>
+      );
+    },
+  },
+  {
+    key: "account",
+    header: "Buzón",
+    cell: (r) => <span className="text-muted-foreground text-xs">{r.account ?? "—"}</span>,
+    hideOnMobile: true,
+  },
+];
+
 async function DecisionHoy() {
-  const [projection, acciones, entregas, recompras] = await Promise.all([
+  const [projection, acciones, entregas, recompras, pendientes] = await Promise.all([
     getCashProjection(30),
     getActionList(5),
     getLateDeliveries(),
     getReorderRisks(),
+    getEmailPendings(),
   ]);
 
   const alerts: React.ReactNode[] = [];
@@ -257,6 +311,25 @@ async function DecisionHoy() {
   return (
     <div className="space-y-6">
       {alerts}
+
+      {pendientes.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">
+            Compromisos detectados en el correo
+          </h3>
+          <DataTable
+            data={pendientes}
+            columns={pendingColumns}
+            rowKey={(r) => String(r.id)}
+            rowHref={(r) => (r.companyId != null ? `/empresas/${r.companyId}` : "/hoy")}
+            density="compact"
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Detectados automáticamente en los hilos de clientes (RFQs, documentos solicitados,
+            entregas y pagos prometidos). Se resuelven solos cuando el hilo recibe respuesta.
+          </p>
+        </div>
+      )}
 
       <div>
         <h3 className="mb-2 text-sm font-semibold">

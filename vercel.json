@@ -9,6 +9,10 @@
       "schedule": "7,22,37,52 * * * *"
     },
     {
+      "path": "/api/pipeline/extract-pending",
+      "schedule": "40 */2 * * *"
+    },
+    {
       "path": "/api/pipeline/analyze",
       "schedule": "*/5 * * * *"
     },

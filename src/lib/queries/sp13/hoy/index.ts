@@ -141,6 +141,49 @@ async function _getDataHealth(): Promise<DataHealth> {
   };
 }
 
+export interface EmailPending {
+  id: number;
+  threadId: number;
+  tipo: string;
+  descripcion: string;
+  deadline: string | null;
+  companyId: number | null;
+  companyName: string | null;
+  account: string | null;
+  detectedAt: string;
+}
+
+async function _getEmailPendings(): Promise<EmailPending[]> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase
+    .from("email_pending_actions")
+    .select("id, thread_id, tipo, descripcion, deadline, company_id, company_name, account, detected_at")
+    .eq("status", "open")
+    .order("deadline", { ascending: true, nullsFirst: false })
+    .order("detected_at", { ascending: false })
+    .limit(10);
+  if (error) {
+    console.error("[hoy] email_pending_actions", error);
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id as number,
+    threadId: r.thread_id as number,
+    tipo: r.tipo as string,
+    descripcion: r.descripcion as string,
+    deadline: (r.deadline as string | null) ?? null,
+    companyId: (r.company_id as number | null) ?? null,
+    companyName: (r.company_name as string | null) ?? null,
+    account: (r.account as string | null) ?? null,
+    detectedAt: r.detected_at as string,
+  }));
+}
+
+export const getEmailPendings = unstable_cache(_getEmailPendings, ["hoy-email-pendings-v1"], {
+  revalidate: 120,
+  tags: ["hoy"],
+});
+
 export const getLateDeliveries = unstable_cache(_getLateDeliveries, ["hoy-late-deliveries-v1"], {
   revalidate: 120,
   tags: ["hoy"],
