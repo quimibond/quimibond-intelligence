@@ -34,24 +34,41 @@ import {
   type InsightsByDepartment,
   type EmployeeRow,
 } from "@/lib/queries/operational/team";
-import { formatNumber } from "@/lib/formatters";
+import { formatNumber, formatRelative } from "@/lib/formatters";
 import { DataSourceBadge } from "@/components/ui/DataSourceBadge";
+import Link from "next/link";
+import {
+  getMailboxActivity,
+  getMailboxThreads,
+  type MailboxActivity,
+  type MailboxThread,
+} from "@/lib/queries/sp13/comunicacion";
 
 export const revalidate = 60; // 60s ISR cache · data freshness OK (pg_cron 15min)
 export const metadata = { title: "Equipo" };
 
-export default function EquipoPage() {
+interface EquipoPageProps {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}
+
+export default async function EquipoPage({ searchParams }: EquipoPageProps) {
+  const sp = await searchParams;
+  const rawBuzon = typeof sp.buzon === "string" ? sp.buzon : undefined;
+  // Solo aceptar buzones del dominio para evitar params arbitrarios
+  const buzon = rawBuzon && /^[a-z0-9._-]+@quimibond\.com(\.mx)?$/i.test(rawBuzon) ? rawBuzon : undefined;
+
   return (
     <PageLayout>
       <PageHeader
         title="Equipo"
-        subtitle="¿Quién tiene backlog, qué insights tiene pendientes y cómo está distribuido?"
+        subtitle="¿Quién tiene backlog, qué comunicación pendiente y cómo está distribuido?"
         actions={<DataSourceBadge source="odoo" coverage="2021+" />}
       />
 
       <SectionNav
         items={[
           { id: "kpis", label: "Resumen" },
+          { id: "comunicacion", label: "Comunicación" },
           { id: "backlog", label: "Backlog" },
           { id: "insights-dept", label: "Insights por depto" },
           { id: "departments", label: "Departamentos" },
@@ -71,6 +88,26 @@ export default function EquipoPage() {
       >
         <TeamHeroKpis />
       </Suspense>
+      </section>
+
+      {/* Comunicación por integrante */}
+      <section id="comunicacion" className="scroll-mt-24">
+      <Card data-table-export-root>
+        <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2">
+          <CardTitle className="text-base">
+            Comunicación por integrante
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              clic en un buzón para ver sus últimos hilos
+            </span>
+          </CardTitle>
+          <TableExportButton filename="team-mailboxes" />
+        </CardHeader>
+        <CardContent className="pb-4">
+          <Suspense fallback={<Skeleton className="h-[300px] rounded-xl" />}>
+            <MailboxSection selected={buzon} />
+          </Suspense>
+        </CardContent>
+      </Card>
       </section>
 
       {/* Backlog crítico */}
@@ -527,5 +564,132 @@ async function EmployeesTable() {
         description: "No hay empleados activos.",
       }}
     />
+  );
+}
+
+// ──────────────────────────────────────────────────────────────────────────
+// Comunicación por integrante (rediseño 2026-08-06)
+// ──────────────────────────────────────────────────────────────────────────
+const mailboxColumns = (selected?: string): DataTableColumn<MailboxActivity>[] => [
+  {
+    key: "account",
+    header: "Buzón",
+    cell: (r) => (
+      <Link
+        href={`/equipo?buzon=${encodeURIComponent(r.account)}#comunicacion`}
+        className={
+          r.account === selected ? "font-semibold underline" : "font-medium hover:underline"
+        }
+      >
+        {r.personName ?? r.account.split("@")[0]}
+        <span className="block text-xs font-normal text-muted-foreground">{r.account}</span>
+      </Link>
+    ),
+  },
+  {
+    key: "sinRespuesta",
+    header: "Sin responder",
+    align: "right",
+    cell: (r) =>
+      r.sinRespuesta > 0 ? (
+        <Badge variant="destructive">{r.sinRespuesta}</Badge>
+      ) : (
+        <span className="text-muted-foreground">0</span>
+      ),
+  },
+  {
+    key: "recibidos7d",
+    header: "Recibidos 7d",
+    align: "right",
+    cell: (r) => formatNumber(r.recibidos7d),
+    hideOnMobile: true,
+  },
+  {
+    key: "enviados7d",
+    header: "Enviados 7d",
+    align: "right",
+    cell: (r) => formatNumber(r.enviados7d),
+    hideOnMobile: true,
+  },
+  {
+    key: "lastActivity",
+    header: "Último movimiento",
+    cell: (r) => (r.lastActivity ? formatRelative(r.lastActivity) : "—"),
+  },
+];
+
+const mailboxThreadColumns: DataTableColumn<MailboxThread>[] = [
+  {
+    key: "subject",
+    header: "Asunto",
+    cell: (r) => (
+      <span className="line-clamp-1">
+        {r.esperandoRespuesta && (
+          <Badge variant="destructive" className="mr-1 align-middle">
+            esperando
+          </Badge>
+        )}
+        {r.subject ?? "(sin asunto)"}
+      </span>
+    ),
+  },
+  {
+    key: "companyName",
+    header: "Cliente / contraparte",
+    cell: (r) =>
+      r.companyId ? (
+        <Link href={`/empresas/${r.companyId}`} className="text-muted-foreground hover:underline">
+          {r.companyName ?? "—"}
+        </Link>
+      ) : (
+        <span className="text-muted-foreground">{r.lastSender ?? "—"}</span>
+      ),
+  },
+  {
+    key: "messageCount",
+    header: "Msgs",
+    align: "right",
+    cell: (r) => r.messageCount,
+    hideOnMobile: true,
+  },
+  {
+    key: "lastActivity",
+    header: "Último mensaje",
+    cell: (r) => formatRelative(r.lastActivity),
+  },
+];
+
+async function MailboxSection({ selected }: { selected?: string }) {
+  const activity = await getMailboxActivity();
+  const threads = selected ? await getMailboxThreads(selected) : null;
+
+  return (
+    <div className="space-y-6">
+      <DataTable
+        data={activity}
+        columns={mailboxColumns(selected)}
+        rowKey={(r) => r.account}
+        density="compact"
+        emptyState={{ icon: Inbox, title: "Sin actividad de correo" }}
+      />
+
+      {selected && threads && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">
+            Últimos hilos de <span className="font-mono">{selected}</span>
+          </h3>
+          <DataTable
+            data={threads}
+            columns={mailboxThreadColumns}
+            rowKey={(r) => String(r.threadId)}
+            density="compact"
+            emptyState={{ icon: Inbox, title: "Sin hilos recientes" }}
+          />
+          <p className="mt-2 text-xs text-muted-foreground">
+            &ldquo;Esperando&rdquo; = el último mensaje es del cliente y aún no hay respuesta de este buzón.
+          </p>
+        </div>
+      )}
+    </div>
   );
 }
