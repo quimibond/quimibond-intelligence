@@ -259,7 +259,7 @@ async function ComunicacionSection() {
           data={unanswered}
           columns={unansweredColumns}
           rowKey={(r) => String(r.threadId)}
-          rowHref={(r) => (r.companyId != null ? `/empresas/${r.companyId}` : "/threads")}
+          rowHref={(r) => `/hilos/${r.threadId}`}
           emptyState={{ icon: CheckCircle2, title: "Todo respondido" }}
           density="compact"
         />

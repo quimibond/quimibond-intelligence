@@ -682,6 +682,7 @@ async function MailboxSection({ selected }: { selected?: string }) {
             data={threads}
             columns={mailboxThreadColumns}
             rowKey={(r) => String(r.threadId)}
+            rowHref={(r) => `/hilos/${r.threadId}`}
             density="compact"
             emptyState={{ icon: Inbox, title: "Sin hilos recientes" }}
           />
