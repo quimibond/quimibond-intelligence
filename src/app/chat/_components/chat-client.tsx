@@ -20,11 +20,11 @@ interface ChatMessage {
 }
 
 const SUGGESTIONS = [
-  "¿Cuál es mi runway actual y qué clientes lo ponen en riesgo?",
-  "Top 5 clientes que dejaron de comprar en los últimos 60 días",
-  "@finanzas dame un resumen del flujo de caja del mes",
-  "@ventas qué vendedor está bajando más en el trimestre",
-  "Stock crítico que debo ordenar esta semana",
+  "¿Qué ha pasado con TQ-1 este mes? (pedidos, cartera y correos)",
+  "¿Qué cotizaciones o RFQs tenemos pendientes de responder?",
+  "¿A qué clientes les urge cobrar y cuánto nos deben?",
+  "¿Qué margen tenemos en la familia WD038 y a cómo la vendemos?",
+  "¿Qué clientes activos llevan semanas sin escribirnos?",
 ];
 
 function generateId() {
@@ -114,6 +114,16 @@ export function ChatClient() {
             const event = JSON.parse(data);
             if (event.type === "director") {
               director = { slug: event.slug, label: event.label };
+            } else if (event.type === "tool" && event.label) {
+              // Actividad del analista: se muestra en la burbuja mientras
+              // trabaja; el primer delta de texto la reemplaza.
+              setMessages((prev) =>
+                prev.map((m) =>
+                  m.id === assistantMsg.id && !assistantText
+                    ? { ...m, content: `🔍 ${event.label}…`, pending: true }
+                    : m
+                )
+              );
             } else if (event.type === "delta" && event.text) {
               assistantText += event.text;
               setMessages((prev) =>
