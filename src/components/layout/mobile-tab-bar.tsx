@@ -50,8 +50,8 @@ interface TabDef {
 const primaryTabs: TabDef[] = [
   { href: "/hoy", label: "Hoy", icon: Home },
   { href: "/dinero", label: "Dinero", icon: Banknote },
-  { href: "/chat", label: "Chat IA", icon: Sparkles },
-  { href: "/inbox", label: "Insights", icon: Inbox },
+  { href: "/operacion", label: "Operación", icon: Factory },
+  { href: "/chat", label: "Pregunta", icon: Sparkles },
 ];
 
 // Secciones secundarias en el sheet "Más" — mismo taxonomy que sidebar.
@@ -60,7 +60,6 @@ const moreGroups: Array<{ label: string; tabs: TabDef[] }> = [
     label: "Atajos",
     tabs: [
       { href: "/reporte", label: "Reportes mes", icon: FileText },
-      { href: "/briefings", label: "Briefings", icon: FileText },
     ],
   },
   {

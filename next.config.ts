@@ -13,6 +13,11 @@ const nextConfig: NextConfig = {
       { source: "/companies/:path*", destination: "/empresas/:path*", permanent: true },
       { source: "/contacts", destination: "/contactos", permanent: true },
       { source: "/contacts/:path*", destination: "/contactos/:path*", permanent: true },
+      // Rediseño 2026-08-06: inbox/briefings quedaron vacíos al apagar los
+      // agentes especulativos — redirect temporal a /hoy (no permanente por
+      // si se reactivan).
+      { source: "/inbox", destination: "/hoy", permanent: false },
+      { source: "/briefings", destination: "/hoy", permanent: false },
     ];
   },
 };
