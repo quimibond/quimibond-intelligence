@@ -44,6 +44,23 @@ export async function GET(request: NextRequest) {
   const authError = validatePipelineAuth(request);
   if (authError) return authError;
 
+  // Modo prueba: /api/system/health?test_email=1 (desde el navegador con
+  // sesión iniciada) manda un correo de verificación al destinatario del
+  // watchdog. Sirve para confirmar que el scope gmail.send está autorizado.
+  const url = new URL(request.url);
+  if (url.searchParams.get("test_email")) {
+    const result = await sendAlertEmail(
+      "✅ Prueba de alertas — Quimibond Intelligence",
+      [
+        "Este es un correo de prueba del watchdog.",
+        "",
+        "Si lo estás leyendo, el scope gmail.send está autorizado y las",
+        "alertas automáticas de salud de datos van a llegar a este buzón.",
+      ].join("\n"),
+    );
+    return NextResponse.json({ test_email: true, ...result });
+  }
+
   const supabase = getServiceClient();
   const now = Date.now();
   const issues: Issue[] = [];
