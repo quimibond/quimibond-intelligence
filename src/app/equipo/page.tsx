@@ -686,7 +686,7 @@ async function MailboxSection({ selected }: { selected?: string }) {
             emptyState={{ icon: Inbox, title: "Sin hilos recientes" }}
           />
           <p className="mt-2 text-xs text-muted-foreground">
-            "Esperando" = el último mensaje es del cliente y aún no hay respuesta de este buzón.
+            &ldquo;Esperando&rdquo; = el último mensaje es del cliente y aún no hay respuesta de este buzón.
           </p>
         </div>
       )}
