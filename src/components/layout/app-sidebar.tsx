@@ -73,10 +73,8 @@ const topGroups: NavGroup[] = [
     items: [
       { href: "/hoy", label: "Hoy", icon: Home },
       { href: "/dinero", label: "Dinero", icon: Banknote },
-      { href: "/", label: "Home", icon: Home, exact: true },
-      { href: "/inbox", label: "Inbox", icon: Inbox, badgeKey: "alerts" },
-      { href: "/briefings", label: "Briefings", icon: FileText },
-      { href: "/chat", label: "Chat", icon: Sparkles },
+      { href: "/operacion", label: "Operación", icon: Factory },
+      { href: "/chat", label: "Pregunta", icon: Sparkles },
     ],
   },
   {
@@ -138,7 +136,6 @@ const topGroups: NavGroup[] = [
     collapsible: true,
     storageKey: "sidebar-group-sistema",
     items: [
-      { href: "/directores", label: "Directores", icon: Bot },
       { href: "/datos", label: "Datos", icon: Database },
       {
         href: "/sistema",
