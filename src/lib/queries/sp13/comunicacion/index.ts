@@ -75,6 +75,107 @@ async function _getSilentCustomers(): Promise<SilentCustomer[]> {
   }));
 }
 
+export interface MailboxActivity {
+  account: string;
+  personName: string | null;
+  recibidos7d: number;
+  enviados7d: number;
+  sinRespuesta: number;
+  lastActivity: string | null;
+}
+
+export interface MailboxThread {
+  threadId: number;
+  subject: string | null;
+  companyId: number | null;
+  companyName: string | null;
+  lastSender: string | null;
+  lastSenderType: string | null;
+  lastActivity: string;
+  messageCount: number;
+  esperandoRespuesta: boolean;
+}
+
+async function _getMailboxActivity(): Promise<MailboxActivity[]> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.rpc("get_mailbox_activity");
+  if (error) {
+    console.error("[comunicacion] get_mailbox_activity", error);
+    return [];
+  }
+  const rows = (data ?? []) as Record<string, unknown>[];
+
+  // Nombre de la persona vía odoo_users (si el buzón coincide con su email)
+  const accounts = rows.map((r) => String(r.account));
+  const { data: users } = await supabase
+    .from("odoo_users")
+    .select("email, name")
+    .in("email", accounts);
+  const nameByEmail = new Map(
+    (users ?? []).map((u) => [String(u.email).toLowerCase(), u.name as string]),
+  );
+
+  return rows.map((r) => ({
+    account: String(r.account),
+    personName: nameByEmail.get(String(r.account).toLowerCase()) ?? null,
+    recibidos7d: Number(r.recibidos_7d ?? 0),
+    enviados7d: Number(r.enviados_7d ?? 0),
+    sinRespuesta: Number(r.sin_respuesta ?? 0),
+    lastActivity: (r.last_activity as string | null) ?? null,
+  }));
+}
+
+async function _getMailboxThreads(account: string): Promise<MailboxThread[]> {
+  const supabase = getServiceClient();
+  const { data: threads } = await supabase
+    .from("threads")
+    .select(
+      "id, subject, company_id, last_sender, last_sender_type, last_activity, message_count, has_internal_reply",
+    )
+    .eq("account", account)
+    .order("last_activity", { ascending: false })
+    .limit(20);
+
+  const rows = threads ?? [];
+  const companyIds = [...new Set(rows.map((t) => t.company_id).filter(Boolean))] as number[];
+  const nameById = new Map<number, string>();
+  if (companyIds.length) {
+    const { data: companies } = await supabase
+      .from("companies")
+      .select("id, name")
+      .in("id", companyIds);
+    for (const c of companies ?? []) nameById.set(c.id as number, c.name as string);
+  }
+
+  return rows.map((t) => ({
+    threadId: t.id as number,
+    subject: (t.subject as string | null) ?? null,
+    companyId: (t.company_id as number | null) ?? null,
+    companyName: t.company_id ? (nameById.get(t.company_id as number) ?? null) : null,
+    lastSender: (t.last_sender as string | null) ?? null,
+    lastSenderType: (t.last_sender_type as string | null) ?? null,
+    lastActivity: t.last_activity as string,
+    messageCount: Number(t.message_count ?? 0),
+    esperandoRespuesta: t.last_sender_type === "external" && Boolean(t.has_internal_reply),
+  }));
+}
+
+export const getMailboxActivity = unstable_cache(
+  _getMailboxActivity,
+  ["comunicacion-mailbox-activity-v1"],
+  { revalidate: 300, tags: ["comunicacion"] },
+);
+
+// Cache por buzón: unstable_cache no soporta keys dinámicas por arg en la
+// misma entrada, así que se cachea con el account dentro del key extra.
+export function getMailboxThreads(account: string): Promise<MailboxThread[]> {
+  return unstable_cache(
+    () => _getMailboxThreads(account),
+    ["comunicacion-mailbox-threads-v1", account],
+    { revalidate: 120, tags: ["comunicacion"] },
+  )();
+}
+
 export const getUnansweredThreads = unstable_cache(
   _getUnansweredThreads,
   ["comunicacion-unanswered-v1"],
