@@ -13,6 +13,10 @@
       "schedule": "40 */2 * * *"
     },
     {
+      "path": "/api/pipeline/email-digest",
+      "schedule": "45 12 * * *"
+    },
+    {
       "path": "/api/pipeline/analyze",
       "schedule": "*/5 * * * *"
     },

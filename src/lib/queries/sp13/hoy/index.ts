@@ -184,6 +184,33 @@ export const getEmailPendings = unstable_cache(_getEmailPendings, ["hoy-email-pe
   tags: ["hoy"],
 });
 
+export interface EmailDigest {
+  id: number;
+  digestDate: string;
+  contentMd: string;
+  trigger: string;
+  createdAt: string;
+}
+
+// Sin unstable_cache: tras "Generar ahora" el refresh debe traer el nuevo.
+export async function getLatestEmailDigest(): Promise<EmailDigest | null> {
+  const supabase = getServiceClient();
+  const { data } = await supabase
+    .from("email_digests")
+    .select("id, digest_date, content_md, trigger, created_at")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: data.id as number,
+    digestDate: data.digest_date as string,
+    contentMd: data.content_md as string,
+    trigger: data.trigger as string,
+    createdAt: data.created_at as string,
+  };
+}
+
 export const getLateDeliveries = unstable_cache(_getLateDeliveries, ["hoy-late-deliveries-v1"], {
   revalidate: 120,
   tags: ["hoy"],
