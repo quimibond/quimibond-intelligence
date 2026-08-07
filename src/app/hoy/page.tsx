@@ -34,11 +34,13 @@ import { getActionList, getArKpis, type ActionListItem } from "@/lib/queries/sp1
 import {
   getDataHealth,
   getEmailPendings,
+  getLatestEmailDigest,
   getLateDeliveries,
   getReorderRisks,
   type EmailPending,
   type ReorderRisk,
 } from "@/lib/queries/sp13/hoy";
+import { DigestButton } from "./_components/digest-button";
 
 export const revalidate = 60;
 
@@ -48,6 +50,7 @@ export const metadata: Metadata = {
 
 const SECTIONS = [
   { id: "mes", label: "El mes" },
+  { id: "correo", label: "Resumen de correo" },
   { id: "decision", label: "Necesita decisión" },
   { id: "confianza", label: "Salud de datos" },
 ];
@@ -64,6 +67,17 @@ export default function HoyPage() {
       <QuestionSection id="mes" question="¿Cómo va el mes?">
         <Suspense fallback={<LoadingCard />}>
           <MesKpis />
+        </Suspense>
+      </QuestionSection>
+
+      <QuestionSection
+        id="correo"
+        question="¿Qué pasó en el correo?"
+        subtext="Resumen ejecutivo de las últimas 24 horas. Se genera solo cada mañana a las 6:45 y llega a tu email."
+        actions={<DigestButton />}
+      >
+        <Suspense fallback={<LoadingCard />}>
+          <ResumenCorreo />
         </Suspense>
       </QuestionSection>
 
@@ -226,6 +240,71 @@ const reorderColumns: DataTableColumn<ReorderRisk>[] = [
     hideOnMobile: true,
   },
 ];
+
+function renderDigestMd(md: string): React.ReactNode[] {
+  const out: React.ReactNode[] = [];
+  let list: string[] = [];
+  const flush = (key: string) => {
+    if (list.length) {
+      out.push(
+        <ul key={key} className="ml-4 list-disc space-y-1 text-sm">
+          {list.map((item, i) => (
+            <li key={i}>{renderBold(item)}</li>
+          ))}
+        </ul>,
+      );
+      list = [];
+    }
+  };
+  const renderBold = (text: string): React.ReactNode =>
+    text.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 === 1 ? <strong key={i}>{part}</strong> : part));
+
+  md.split("\n").forEach((line, idx) => {
+    const l = line.trim();
+    if (l.startsWith("## ")) {
+      flush(`ul-${idx}`);
+      out.push(
+        <h3 key={idx} className="mt-3 text-sm font-semibold first:mt-0">
+          {l.slice(3)}
+        </h3>,
+      );
+    } else if (l.startsWith("- ") || l.startsWith("* ")) {
+      list.push(l.slice(2));
+    } else if (l) {
+      flush(`ul-${idx}`);
+      out.push(
+        <p key={idx} className="text-sm text-muted-foreground">
+          {renderBold(l)}
+        </p>,
+      );
+    }
+  });
+  flush("ul-end");
+  return out;
+}
+
+async function ResumenCorreo() {
+  const digest = await getLatestEmailDigest();
+
+  if (!digest) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        Aún no hay resúmenes. El primero se genera automáticamente mañana a las 6:45, o usa
+        &ldquo;Generar ahora&rdquo;.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <p className="text-xs text-muted-foreground">
+        {digest.digestDate} · generado {digest.trigger === "manual" ? "a mano" : "automáticamente"} ·{" "}
+        {formatRelative(digest.createdAt)}
+      </p>
+      <div className="space-y-2">{renderDigestMd(digest.contentMd)}</div>
+    </div>
+  );
+}
 
 const TIPO_LABEL: Record<string, string> = {
   rfq: "RFQ",
