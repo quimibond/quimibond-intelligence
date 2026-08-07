@@ -662,35 +662,74 @@ const mailboxThreadColumns: DataTableColumn<MailboxThread>[] = [
 async function MailboxSection({ selected }: { selected?: string }) {
   const activity = await getMailboxActivity();
   const threads = selected ? await getMailboxThreads(selected) : null;
+  const selectedRow = selected
+    ? activity.find((a) => a.account.toLowerCase() === selected.toLowerCase())
+    : undefined;
+
+  // Con un buzón seleccionado, el DETALLE va primero (los hilos de esa
+  // persona, cada uno clickeable a /hilos/[id]) y la tabla general se
+  // colapsa abajo — antes el detalle quedaba enterrado tras 52 filas.
+  if (selected && threads) {
+    return (
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h3 className="text-sm font-semibold">
+              {selectedRow?.personName ?? selected.split("@")[0]}{" "}
+              <span className="font-mono text-xs font-normal text-muted-foreground">{selected}</span>
+            </h3>
+            {selectedRow && (
+              <p className="text-xs text-muted-foreground">
+                {selectedRow.sinRespuesta} sin responder · {selectedRow.recibidos7d} recibidos /{" "}
+                {selectedRow.enviados7d} enviados (7d)
+              </p>
+            )}
+          </div>
+          <Link href="/equipo#comunicacion" className="text-sm underline hover:text-primary">
+            ← Todos los buzones
+          </Link>
+        </div>
+
+        <DataTable
+          data={threads}
+          columns={mailboxThreadColumns}
+          rowKey={(r) => String(r.threadId)}
+          rowHref={(r) => `/hilos/${r.threadId}`}
+          density="compact"
+          emptyState={{ icon: Inbox, title: "Sin hilos recientes" }}
+        />
+        <p className="text-xs text-muted-foreground">
+          Clic en un hilo para leer la conversación completa. &ldquo;Esperando&rdquo; = el último
+          mensaje es del cliente y aún no hay respuesta de este buzón.
+        </p>
+
+        <details>
+          <summary className="cursor-pointer text-sm text-muted-foreground">
+            Ver los demás buzones
+          </summary>
+          <div className="mt-3">
+            <DataTable
+              data={activity}
+              columns={mailboxColumns(selected)}
+              rowKey={(r) => r.account}
+              rowHref={(r) => `/equipo?buzon=${encodeURIComponent(r.account)}#comunicacion`}
+              density="compact"
+              emptyState={{ icon: Inbox, title: "Sin actividad de correo" }}
+            />
+          </div>
+        </details>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      <DataTable
-        data={activity}
-        columns={mailboxColumns(selected)}
-        rowKey={(r) => r.account}
-        density="compact"
-        emptyState={{ icon: Inbox, title: "Sin actividad de correo" }}
-      />
-
-      {selected && threads && (
-        <div>
-          <h3 className="mb-2 text-sm font-semibold">
-            Últimos hilos de <span className="font-mono">{selected}</span>
-          </h3>
-          <DataTable
-            data={threads}
-            columns={mailboxThreadColumns}
-            rowKey={(r) => String(r.threadId)}
-            rowHref={(r) => `/hilos/${r.threadId}`}
-            density="compact"
-            emptyState={{ icon: Inbox, title: "Sin hilos recientes" }}
-          />
-          <p className="mt-2 text-xs text-muted-foreground">
-            &ldquo;Esperando&rdquo; = el último mensaje es del cliente y aún no hay respuesta de este buzón.
-          </p>
-        </div>
-      )}
-    </div>
+    <DataTable
+      data={activity}
+      columns={mailboxColumns(selected)}
+      rowKey={(r) => r.account}
+      rowHref={(r) => `/equipo?buzon=${encodeURIComponent(r.account)}#comunicacion`}
+      density="compact"
+      emptyState={{ icon: Inbox, title: "Sin actividad de correo" }}
+    />
   );
 }
