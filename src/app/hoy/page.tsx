@@ -321,7 +321,7 @@ async function DecisionHoy() {
             data={pendientes}
             columns={pendingColumns}
             rowKey={(r) => String(r.id)}
-            rowHref={(r) => (r.companyId != null ? `/empresas/${r.companyId}` : "/hoy")}
+            rowHref={(r) => `/hilos/${r.threadId}`}
             density="compact"
           />
           <p className="mt-2 text-xs text-muted-foreground">
