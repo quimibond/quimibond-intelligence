@@ -41,8 +41,10 @@ import {
 } from "@/lib/queries/operational/operations";
 import { getStockoutSummary, getStockoutQueue, type StockoutRow } from "@/lib/queries/analytics";
 import {
+  getDemandVsOrders,
   getSilentCustomers,
   getUnansweredThreads,
+  type DemandVsOrders,
   type SilentCustomer,
   type UnansweredThread,
 } from "@/lib/queries/sp13/comunicacion";
@@ -55,6 +57,7 @@ export const metadata: Metadata = {
 
 const SECTIONS = [
   { id: "resumen", label: "Resumen" },
+  { id: "demanda", label: "Demanda vs Odoo" },
   { id: "comunicacion", label: "Comunicación" },
   { id: "ventas", label: "Ventas" },
   { id: "entregas", label: "Entregas" },
@@ -74,6 +77,16 @@ export default function OperacionPage() {
       <QuestionSection id="resumen" question="¿Cómo va la operación?">
         <Suspense fallback={<LoadingCard />}>
           <ResumenKpis />
+        </Suspense>
+      </QuestionSection>
+
+      <QuestionSection
+        id="demanda"
+        question="¿Qué están pidiendo los clientes por correo vs qué hay en Odoo?"
+        subtext="Releases y forecasts extraídos de los correos de clientes (últimos 21 días), cruzados con pedidos abiertos y entregas de 30 días."
+      >
+        <Suspense fallback={<LoadingCard />}>
+          <DemandaSection />
         </Suspense>
       </QuestionSection>
 
@@ -176,6 +189,87 @@ async function ResumenKpis() {
         href="/operaciones"
       />
     </StatGrid>
+  );
+}
+
+const demandColumns: DataTableColumn<DemandVsOrders>[] = [
+  {
+    key: "companyName",
+    header: "Cliente",
+    cell: (r) => <span className="font-medium">{r.companyName}</span>,
+  },
+  {
+    key: "productRef",
+    header: "Producto",
+    cell: (r) => (
+      <div>
+        <p className="font-mono text-xs">{r.productRef}</p>
+        {r.periodLabel && <p className="text-xs text-muted-foreground">{r.periodLabel}</p>}
+      </div>
+    ),
+  },
+  {
+    key: "qtyDemandada",
+    header: "Pedido por correo",
+    align: "right",
+    cell: (r) => (
+      <span className="font-medium">
+        {Math.round(r.qtyDemandada).toLocaleString("es-MX")} {r.uom ?? ""}
+      </span>
+    ),
+  },
+  {
+    key: "qtyPedidosAbiertos",
+    header: "En pedidos Odoo",
+    align: "right",
+    cell: (r) => {
+      const gap = r.qtyPedidosAbiertos + r.qtyEntregada30d < r.qtyDemandada * 0.9;
+      return (
+        <span className={gap ? "text-destructive font-semibold" : undefined}>
+          {Math.round(r.qtyPedidosAbiertos).toLocaleString("es-MX")}
+        </span>
+      );
+    },
+  },
+  {
+    key: "qtyEntregada30d",
+    header: "Entregado 30d",
+    align: "right",
+    cell: (r) => Math.round(r.qtyEntregada30d).toLocaleString("es-MX"),
+    hideOnMobile: true,
+  },
+  {
+    key: "lastSignal",
+    header: "Correo",
+    cell: (r) => formatRelative(r.lastSignal),
+    hideOnMobile: true,
+  },
+];
+
+async function DemandaSection() {
+  const demand = await getDemandVsOrders();
+
+  return (
+    <div>
+      <DataTable
+        data={demand}
+        columns={demandColumns}
+        rowKey={(r) => `${r.companyId}-${r.productRef}`}
+        rowHref={(r) => (r.threadId != null ? `/hilos/${r.threadId}` : "/operacion")}
+        emptyState={{
+          icon: CheckCircle2,
+          title: "Sin demanda extraída aún",
+          description: "El extractor corre cada 2 horas sobre los releases/forecasts que llegan por correo.",
+        }}
+        density="compact"
+      />
+      <p className="mt-2 text-xs text-muted-foreground">
+        En rojo: la demanda del cliente no está cubierta por pedidos abiertos + entregas recientes
+        (posible pedido sin capturar o entrega incompleta). Clic en la fila para leer el correo
+        fuente. Nota: por ahora solo se leen tablas escritas en el cuerpo del correo — los Excel
+        adjuntos aún no.
+      </p>
+    </div>
   );
 }
 
