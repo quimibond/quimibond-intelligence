@@ -21,6 +21,10 @@
       "schedule": "50 */2 * * *"
     },
     {
+      "path": "/api/pipeline/extract-demand-files",
+      "schedule": "55 */2 * * *"
+    },
+    {
       "path": "/api/pipeline/analyze",
       "schedule": "*/5 * * * *"
     },
