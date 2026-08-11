@@ -160,6 +160,45 @@ async function _getMailboxThreads(account: string): Promise<MailboxThread[]> {
   }));
 }
 
+export interface DemandVsOrders {
+  companyId: number | null;
+  companyName: string;
+  productRef: string;
+  qtyDemandada: number;
+  uom: string | null;
+  periodLabel: string | null;
+  lastSignal: string;
+  threadId: number | null;
+  qtyPedidosAbiertos: number;
+  qtyEntregada30d: number;
+}
+
+async function _getDemandVsOrders(): Promise<DemandVsOrders[]> {
+  const supabase = getServiceClient();
+  const { data, error } = await supabase.rpc("get_demand_vs_orders", { p_days: 21 });
+  if (error) {
+    console.error("[comunicacion] get_demand_vs_orders", error);
+    return [];
+  }
+  return ((data ?? []) as Record<string, unknown>[]).map((r) => ({
+    companyId: r.company_id == null ? null : Number(r.company_id),
+    companyName: (r.company_name as string) ?? "—",
+    productRef: (r.product_ref as string) ?? "—",
+    qtyDemandada: Number(r.qty_demandada ?? 0),
+    uom: (r.uom as string | null) ?? null,
+    periodLabel: (r.period_label as string | null) ?? null,
+    lastSignal: r.last_signal as string,
+    threadId: r.thread_id == null ? null : Number(r.thread_id),
+    qtyPedidosAbiertos: Number(r.qty_pedidos_abiertos ?? 0),
+    qtyEntregada30d: Number(r.qty_entregada_30d ?? 0),
+  }));
+}
+
+export const getDemandVsOrders = unstable_cache(_getDemandVsOrders, ["comunicacion-demand-v1"], {
+  revalidate: 300,
+  tags: ["comunicacion"],
+});
+
 export const getMailboxActivity = unstable_cache(
   _getMailboxActivity,
   ["comunicacion-mailbox-activity-v1"],
