@@ -16,6 +16,12 @@ import { getServiceClient } from "@/lib/supabase-server";
 import { validatePipelineAuth } from "@/lib/pipeline/auth";
 import { callClaude, logTokenUsage } from "@/lib/claude";
 import { sendAlertEmail } from "@/lib/alerts/send-email";
+import {
+  renderDigestEmailHtml,
+  type PendingActionRow,
+  type UnansweredThreadRow,
+  type SilentCustomerRow,
+} from "@/lib/alerts/digest-email-html";
 
 export const maxDuration = 120;
 
@@ -114,18 +120,44 @@ export async function POST(request: NextRequest) {
 
     // ── Persistir ────────────────────────────────────────────────────────
     const today = new Date().toLocaleDateString("sv-SE", { timeZone: "America/Mexico_City" });
+    const pendientes = (pendingRes.data ?? []) as PendingActionRow[];
+    const hilos = (Array.isArray(unansweredRes.data)
+      ? unansweredRes.data
+      : []) as UnansweredThreadRow[];
+    const callados = (Array.isArray(silentRes.data)
+      ? silentRes.data
+      : []) as SilentCustomerRow[];
     const stats = {
       correos_externos_24h: correos.length,
-      pendientes: (pendingRes.data ?? []).length,
-      sin_respuesta: Array.isArray(unansweredRes.data) ? unansweredRes.data.length : 0,
+      pendientes: pendientes.length,
+      sin_respuesta: hilos.length,
+      clientes_callados: callados.length,
     };
 
     // ── Email (solo cron) ────────────────────────────────────────────────
+    const systemUrl = "https://quimibond-intelligence.vercel.app/hoy";
     let emailed = false;
     if (!isManual) {
+      const dateLabel = new Date().toLocaleDateString("es-MX", {
+        timeZone: "America/Mexico_City",
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      });
+      const html = renderDigestEmailHtml({
+        dateLabel,
+        contentMd,
+        stats,
+        pendientes,
+        hilosSinRespuesta: hilos,
+        clientesCallados: callados,
+        systemUrl,
+      });
       const result = await sendAlertEmail(
         `📬 Resumen de correo — ${today}`,
-        `${contentMd}\n\n—\nVer en el sistema: https://quimibond-intelligence.vercel.app/hoy`,
+        `${contentMd}\n\n—\nVer en el sistema: ${systemUrl}`,
+        html,
       );
       emailed = result.ok;
       if (!result.ok) console.error("[email-digest] send failed:", result.error);
