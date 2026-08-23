@@ -20,9 +20,15 @@ export interface AlertEmailResult {
   error?: string;
 }
 
+/** Base64 con saltos de línea cada 76 chars (RFC 2045). */
+function b64Wrap(s: string): string {
+  return Buffer.from(s, "utf-8").toString("base64").replace(/(.{76})/g, "$1\r\n");
+}
+
 export async function sendAlertEmail(
   subject: string,
   textBody: string,
+  htmlBody?: string,
 ): Promise<AlertEmailResult> {
   const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
   if (!serviceAccountJson) {
@@ -42,17 +48,39 @@ export async function sendAlertEmail(
     });
     const gmail = google.gmail({ version: "v1", auth });
 
-    const raw = Buffer.from(
-      [
-        `From: Quimibond Intelligence <${from}>`,
-        `To: ${to}`,
-        `Subject: =?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`,
-        "MIME-Version: 1.0",
-        "Content-Type: text/plain; charset=UTF-8",
+    const headers = [
+      `From: Quimibond Intelligence <${from}>`,
+      `To: ${to}`,
+      `Subject: =?UTF-8?B?${Buffer.from(subject).toString("base64")}?=`,
+      "MIME-Version: 1.0",
+    ];
+
+    // Con htmlBody manda multipart/alternative (texto plano como fallback);
+    // sin él, texto plano igual que siempre.
+    let mime: string[];
+    if (htmlBody) {
+      const boundary = `=_qb_${Date.now().toString(36)}`;
+      mime = [
+        ...headers,
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
         "",
-        textBody,
-      ].join("\r\n"),
-    )
+        `--${boundary}`,
+        "Content-Type: text/plain; charset=UTF-8",
+        "Content-Transfer-Encoding: base64",
+        "",
+        b64Wrap(textBody),
+        `--${boundary}`,
+        "Content-Type: text/html; charset=UTF-8",
+        "Content-Transfer-Encoding: base64",
+        "",
+        b64Wrap(htmlBody),
+        `--${boundary}--`,
+      ];
+    } else {
+      mime = [...headers, "Content-Type: text/plain; charset=UTF-8", "", textBody];
+    }
+
+    const raw = Buffer.from(mime.join("\r\n"))
       .toString("base64")
       .replace(/\+/g, "-")
       .replace(/\//g, "_")
