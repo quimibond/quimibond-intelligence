@@ -61,7 +61,7 @@ Deno.serve(async (req: Request) => {
       } catch {
         parsed = text;
       }
-      results.push({ ok: res.ok, taxpayer, extractor, from: fromIso, to: toIso, extraction: res.ok ? parsed : undefined, error: res.ok ? undefined : String(parsed).slice(0, 500), status: res.status });
+      results.push({ ok: res.ok, taxpayer, extractor, from: fromIso, to: toIso, extraction: res.ok ? parsed : undefined, error: res.ok ? undefined : (typeof parsed === "string" ? parsed : JSON.stringify(parsed)).slice(0, 500), status: res.status });
     } catch (e) {
       results.push({ ok: false, taxpayer, extractor, from: fromIso, to: toIso, error: e instanceof Error ? e.message : String(e) });
     }
