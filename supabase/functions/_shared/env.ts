@@ -51,6 +51,18 @@ export async function pipelineLog(
   }
 }
 
+/**
+ * Lee un secreto: primero variable de entorno de la función, luego Vault
+ * (RPC edge_secret). Devuelve null si no existe en ninguno.
+ */
+export async function loadSecret(supabase: Client, envName: string, vaultName: string): Promise<string | null> {
+  const env = Deno.env.get(envName);
+  if (env) return env;
+  const { data, error } = await supabase.rpc("edge_secret", { p_name: vaultName });
+  if (error || !data) return null;
+  return String(data);
+}
+
 export async function readBody(req: Request): Promise<Record<string, unknown>> {
   try {
     const text = await req.text();

@@ -1,0 +1,156 @@
+/**
+ * health (Edge Function) — watchdog unificado, cada hora (pg_cron
+ * `memoria_watchdog`). Reemplaza a /api/system/health de Vercel.
+ *
+ * Revisa en un solo lugar:
+ *   1. Jobs pg_cron memoria_* (última corrida exitosa vs intervalo esperado,
+ *      vía RPC memoria_cron_health) — antes eran los crons de Vercel.
+ *   2. Sync de Odoo (odoo_sync_freshness).
+ *   3. Gmail (edad del último correo guardado).
+ *   4. Syntage (edad del último webhook recibido).
+ *   5. Errores level=error en pipeline_logs (3 h).
+ *
+ * Si hay problemas: log phase='watchdog' level='error' y UN correo al CEO
+ * como máximo cada 24 h (sendMail; requiere scope gmail.send — si no,
+ * degrada a solo log). Body { "test_email": true } manda un correo de prueba.
+ */
+import { serviceClient, authorizeCron, json, readBody } from "../_shared/env.ts";
+import { sendMail, mailDefaults } from "../_shared/mailer.ts";
+
+// job pg_cron → intervalo esperado en minutos entre corridas exitosas.
+const JOB_INTERVALS: Record<string, number> = {
+  memoria_sync_emails: 30,
+  memoria_attachments_extract: 2,
+  memoria_backfill_sweep: 1, // solo se exige mientras haya cuentas pendientes
+  memoria_syntage_daily: 1440,
+  memoria_watchdog: 60,
+};
+
+interface Issue {
+  kind: "cron_stale" | "cron_failing" | "odoo_stale" | "gmail_stale" | "syntage_stale" | "pipeline_errors";
+  detail: string;
+}
+
+Deno.serve(async (req: Request) => {
+  const supabase = serviceClient();
+  const denied = await authorizeCron(req, supabase);
+  if (denied) return denied;
+
+  const body = await readBody(req);
+  if (body.test_email === true) {
+    const r = await sendMail(
+      supabase,
+      "✅ Prueba de alertas — Quimibond Intelligence (Edge)",
+      ["Este es un correo de prueba del watchdog en Supabase Edge Functions.", "", "Si lo estás leyendo, el scope gmail.send está autorizado y las alertas de salud de datos van a llegar a este buzón."].join("\n"),
+    );
+    return json({ test_email: true, ...r, ...mailDefaults() });
+  }
+
+  const now = Date.now();
+  const issues: Issue[] = [];
+
+  // 1. Jobs pg_cron
+  const { data: jobs, error: jobsErr } = await supabase.rpc("memoria_cron_health");
+  if (jobsErr) issues.push({ kind: "cron_failing", detail: `memoria_cron_health: ${jobsErr.message}` });
+  const { count: backfillPending } = await supabase.from("email_backfill_state").select("account", { count: "exact", head: true }).eq("done", false);
+  const byName = new Map<string, { active: boolean; last_ok: string | null; last_run: string | null; failures_3h: number }>();
+  for (const j of (jobs ?? []) as { jobname: string; active: boolean; last_ok: string | null; last_run: string | null; failures_3h: number }[]) byName.set(j.jobname, j);
+  for (const [name, interval] of Object.entries(JOB_INTERVALS)) {
+    if (name === "memoria_backfill_sweep" && !(backfillPending ?? 0)) continue;
+    const j = byName.get(name);
+    if (!j) {
+      issues.push({ kind: "cron_stale", detail: `${name}: job no existe` });
+      continue;
+    }
+    if (!j.active) {
+      issues.push({ kind: "cron_stale", detail: `${name}: job desactivado` });
+      continue;
+    }
+    const minutesAgo = j.last_ok ? Math.round((now - new Date(j.last_ok).getTime()) / 60000) : null;
+    if (minutesAgo === null || minutesAgo > Math.max(interval * 2.5, 15)) {
+      issues.push({ kind: "cron_stale", detail: `${name}: ${minutesAgo === null ? "nunca ha corrido bien" : `${minutesAgo} min sin corrida exitosa (esperado cada ${interval})`}` });
+    }
+    if ((j.failures_3h ?? 0) >= 3) {
+      issues.push({ kind: "cron_failing", detail: `${name}: ${j.failures_3h} corridas fallidas en 3h` });
+    }
+  }
+
+  // 2. Odoo
+  const { data: freshness } = await supabase.from("odoo_sync_freshness").select("table_name, status, hours_ago, expected_hours");
+  for (const t of (freshness ?? []) as { table_name: string; status: string; hours_ago: number | null; expected_hours: number | null }[]) {
+    const hoursAgo = t.hours_ago == null ? null : Number(t.hours_ago);
+    const expected = t.expected_hours == null ? 2 : Number(t.expected_hours);
+    if (t.status === "stale" || (hoursAgo != null && hoursAgo > expected * 3)) {
+      issues.push({ kind: "odoo_stale", detail: `odoo ${t.table_name}: ${hoursAgo != null ? `${Math.round(hoursAgo)}h` : "?"} sin sync (esperado cada ${expected}h)` });
+    }
+  }
+
+  // 3. Gmail
+  const { data: lastEmail } = await supabase.from("emails").select("email_date").order("email_date", { ascending: false }).limit(1).maybeSingle();
+  const emailAgeHours = lastEmail?.email_date ? (now - new Date(lastEmail.email_date).getTime()) / 3600000 : null;
+  if (emailAgeHours === null || emailAgeHours > 3) {
+    issues.push({ kind: "gmail_stale", detail: `Gmail: último email guardado hace ${emailAgeHours === null ? "?" : Math.round(emailAgeHours)}h (umbral 3h)` });
+  }
+
+  // 4. Syntage (webhooks): umbral 72h — la extracción diaria genera eventos cada día hábil.
+  const { data: lastSyn } = await supabase.from("syntage_webhook_events").select("received_at").order("received_at", { ascending: false }).limit(1).maybeSingle();
+  const synAgeHours = lastSyn?.received_at ? (now - new Date(lastSyn.received_at).getTime()) / 3600000 : null;
+  if (synAgeHours === null || synAgeHours > 72) {
+    issues.push({ kind: "syntage_stale", detail: `Syntage: último webhook hace ${synAgeHours === null ? "?" : Math.round(synAgeHours / 24)} días (umbral 3 días)` });
+  }
+
+  // 5. Errores recientes
+  const { data: recentErrors } = await supabase
+    .from("pipeline_logs")
+    .select("phase, message, created_at")
+    .eq("level", "error")
+    .neq("phase", "watchdog")
+    .gte("created_at", new Date(now - 3 * 3600000).toISOString())
+    .order("created_at", { ascending: false })
+    .limit(10);
+  const errs = (recentErrors ?? []) as { phase: string; message: string | null }[];
+  if (errs.length > 0) {
+    const phases = [...new Set(errs.map((e) => e.phase))];
+    issues.push({ kind: "pipeline_errors", detail: `${errs.length} errores en 3h en: ${phases.join(", ")} — primero: "${errs[0].message?.slice(0, 120)}"` });
+  }
+
+  const healthy = issues.length === 0;
+  let emailSent = false;
+  let emailError: string | null = null;
+  let deduped = false;
+
+  if (!healthy) {
+    const { data: recentAlerts } = await supabase
+      .from("pipeline_logs")
+      .select("details, created_at")
+      .eq("phase", "watchdog")
+      .gte("created_at", new Date(now - 24 * 3600000).toISOString())
+      .order("created_at", { ascending: false })
+      .limit(30);
+    deduped = ((recentAlerts ?? []) as { details: { email_sent?: boolean } | null }[]).some((a) => a.details?.email_sent === true);
+
+    if (!deduped) {
+      const text = [
+        `El watchdog de Quimibond Intelligence detectó ${issues.length} problema(s):`,
+        "",
+        ...issues.map((i) => `• [${i.kind}] ${i.detail}`),
+        "",
+        "Detalle: tabla pipeline_logs (phase=watchdog) en Supabase, o pregúntale a Claude por MCP.",
+      ].join("\n");
+      const r = await sendMail(supabase, `⚠️ Quimibond Intelligence: ${issues.length} problema(s) de datos`, text);
+      emailSent = r.ok;
+      emailError = r.error ?? null;
+    }
+
+    await supabase.from("pipeline_logs").insert({
+      level: "error",
+      phase: "watchdog",
+      message: `Watchdog: ${issues.length} problemas — ${issues.map((i) => i.kind).join(", ")}`,
+      details: { issues: issues.map((i) => i.detail), email_sent: emailSent, email_error: emailError, deduped, runtime: "edge" },
+    });
+  } else {
+    await supabase.from("pipeline_logs").insert({ level: "info", phase: "watchdog", message: "Watchdog: todo en orden", details: { runtime: "edge" } });
+  }
+
+  return json({ healthy, issues, email_sent: emailSent, email_error: emailError, deduped, checked_at: new Date().toISOString() });
+});
