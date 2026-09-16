@@ -14,8 +14,9 @@ import { serviceClient, authorizeCron, json, pipelineLog } from "../_shared/env.
 import { GmailClient, GmailApiError, loadServiceAccount, decodeBase64Url } from "../_shared/gmail.ts";
 
 const BUCKET = "email-attachments";
-const BATCH = 4;
+const BATCH = 8;
 const BYTE_BUDGET = 700_000; // bytes parseados por invocación antes de parar
+const MAX_DOWNLOAD_BYTES = 3_000_000; // más grande ni se baja: decodificar 12 MB de base64 ya revienta la CPU
 const MAX_TEXT_CHARS = 200_000;
 const MAX_ATTEMPTS = 3;
 const PDF_MAX_BYTES = 2 * 1024 * 1024;
@@ -141,12 +142,21 @@ Deno.serve(async (req: Request) => {
     .select("id");
   stats.failed += exhaustedRows?.length ?? 0;
 
+  // Archivos enormes: se saltan sin bajarlos (el tamaño viene de Gmail al registrar el adjunto).
+  await supabase
+    .from("email_attachments")
+    .update({ extract_status: "skipped", skip_reason: "too_large", updated_at: new Date().toISOString() })
+    .eq("extract_status", "pending")
+    .gt("size_bytes", MAX_DOWNLOAD_BYTES);
+
+  // Chicos primero: más archivos por corrida dentro del presupuesto de CPU.
   const { data: pending, error } = await supabase
     .from("email_attachments")
     .select("id, email_id, gmail_attachment_id, filename, mime_type, size_bytes, attempts, emails!inner(account, gmail_message_id)")
     .eq("extract_status", "pending")
     .lt("attempts", MAX_ATTEMPTS)
-    .order("created_at", { ascending: true })
+    .lte("size_bytes", MAX_DOWNLOAD_BYTES)
+    .order("size_bytes", { ascending: true })
     .limit(BATCH);
   if (error) return json({ error: error.message }, 500);
 
