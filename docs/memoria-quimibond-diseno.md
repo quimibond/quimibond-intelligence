@@ -527,7 +527,28 @@ Migración `20260916c_memory_edge_cron.sql`. Los jobs `pg_cron` se crean
 2. ✅ Prueba: `sync-emails` en las 52 cuentas (53/53 respuestas 200), `backfill-sweep` de 10 días en `planeacion@` (82 correos re-ingresados con `ingest_version=2`, raw en `email-raw`, 88 adjuntos registrados), `attachments-extract` (los 18 con extractor quedaron `done`; imágenes chicas `skipped`).
 3. ✅ Jobs `memoria_sync_emails`, `memoria_backfill_sweep` y `memoria_attachments_extract` **activos**. Correr en paralelo con el `sync-emails` viejo de Vercel es inocuo: el upsert es idempotente y `ingest_emails_v2` solo sube de versión.
 4. ⏳ Desactivar los crons en Vercel (Project → Settings → Cron Jobs → Disable). Lo hace el CEO desde el dashboard; el deploy viejo (`0288ba6`) sigue sincronizando cada 30 min con ingest v1.
-5. ⏳ Sembrar el backfill v2 del histórico (`email_backfill_state` desde `2025-10-01`) **solo después del paso 4**: el `backfill-sweep` viejo de Vercel (cada 15 min) drena la misma cola con ingest v1 y pisaría `page_token`.
+5. ✅ Crons de Vercel apagados por el CEO (~20:50 UTC) y backfill v2 del histórico sembrado (`email_backfill_state` desde `2025-10-01`, 52 cuentas).
+
+**Incidente 2026-09-16 20:52–21:33 UTC (base colgada 40 min).** La primera
+ronda del backfill lanzó 52 invocaciones simultáneas de `backfill-sweep`
+(`invoke_edge_backfill_pending` sin límite). Efectos en cadena: 47 respuestas
+504 y 3 `BOOT_ERROR` del runtime de Edge, PgBouncer sin conexiones
+(`max_client_conn`), y cada `ingest_emails_v2` de 50 filas tardando 60–176 s
+hasta que Postgres dejó de responder (ni pg_cron ni PostgREST). Hizo falta
+**Restart project** desde el dashboard. Causa raíz del costo por fila: el
+índice `idx_emails_embedding_hnsw` (818 MB, contra `shared_buffers` de 256 MB).
+Cada UPDATE del ingest reescribe columnas TOAST grandes, la fila no cabe como
+HOT y Postgres reinserta el vector en el grafo HNSW en disco. Correcciones:
+
+- `20260916d_memory_backfill_throttle.sql`: `invoke_edge_backfill_pending(p_max)`
+  lanza como máximo `p_max` cuentas por corrida (las menos recientes, marcadas
+  con `updated_at = now()` para rotar) y el job corre cada minuto.
+- `20260916e_memory_drop_emails_hnsw.sql`: drop del HNSW. Único consumidor,
+  `search_similar_emails` (chat del frontend, retirado). La columna
+  `embedding` se conserva hasta la Fase 5. Tras el drop: 173 correos en 17 s
+  por invocación, sin statements lentos.
+- Regla: **nunca abanicar decenas de invocaciones largas de Edge a la vez**;
+  el sync de 52 cuentas se tolera porque cada llamada dura ~1 s.
 
 ```sql
 -- paso 5, cuando Vercel ya no corra crons

@@ -7,7 +7,8 @@
 --
 -- Ahora: máximo p_max cuentas por corrida (las menos recientes, marcadas como
 -- reclamadas con updated_at = now() para rotar) y el job corre cada minuto.
--- 3 cuentas × 2 páginas × 100 correos = ~600 correos/min.
+-- 2 cuentas × 2 páginas × 100 correos = ~400 correos/min (medido tras el drop del HNSW: 9-22 s por invocación).
+-- Producción corre con p_max = 2; 3 también aguantó en pruebas.
 
 BEGIN;
 
@@ -49,7 +50,7 @@ DECLARE
   j record;
 BEGIN
   FOR j IN SELECT jobid FROM cron.job WHERE jobname = 'memoria_backfill_sweep' LOOP
-    PERFORM cron.alter_job(job_id := j.jobid, schedule := '* * * * *', command := $cmd$SELECT public.invoke_edge_backfill_pending(3)$cmd$);
+    PERFORM cron.alter_job(job_id := j.jobid, schedule := '* * * * *', command := $cmd$SELECT public.invoke_edge_backfill_pending(2)$cmd$);
   END LOOP;
 END $do$;
 
