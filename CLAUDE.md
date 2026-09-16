@@ -58,8 +58,21 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 - `syntage_files` (PDFs/XMLs blob), `syntage_webhook_events` (audit log)
 - Maestros: `syntage_taxpayers`, `syntage_entity_map`, `syntage_extractions`
 
-**Gmail (3 tablas):**
-- `emails` (117k rows), `threads` (50k), `email_recipients`
+**Gmail (4 tablas):**
+- `emails` (232k rows), `threads` (112k), `email_recipients`, `email_attachments`
+- **Memoria Fase 1 (2026-09-16):** el ingest v2 guarda el cuerpo completo
+  (`body_full`), el HTML (`body_html`), el mensaje sin citas ni firma
+  (`body_clean`), headers de threading (`message_id_hdr`, `in_reply_to_hdr`,
+  `references_hdr`), `cc`/`bcc`, `labels` y el payload crudo de Gmail en el
+  bucket privado `email-raw` (`raw_storage_path`). `ingest_version` = 1 legacy
+  (cuerpo cortado a 5k chars), 2 completo. El upsert es el RPC
+  `ingest_emails_v2` (solo actualiza si la versión entrante es mayor).
+  `email_attachments` registra cada adjunto; `/api/pipeline/attachments-extract`
+  (cada 15 min) los baja, deduplica por sha256 al bucket `email-attachments` y
+  extrae texto (PDF/Excel/Word/CSV) en `extracted_text`. Cobertura en la vista
+  `memory_coverage`. Diseño completo y fases siguientes en
+  `docs/memoria-quimibond-diseno.md`. `body` sigue existiendo por compat con
+  `analyze`/`embeddings`/`extract-*`; se retira en Fase 5.
 
 **Knowledge graph (extraído de emails):**
 - `entities`, `entity_relationships`, `facts`, `ai_extracted_facts`, `action_items`
@@ -411,8 +424,9 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 
 | Frecuencia | Endpoint | Que hace |
 |---|---|---|
-| */30 min | /api/pipeline/sync-emails | Sync Gmail (52 cuentas) |
+| */30 min | /api/pipeline/sync-emails | Sync Gmail (51 cuentas), ingest v2 completo |
 | cada 15 min | /api/pipeline/backfill-sweep | Drena cola email_backfill_state (no-op si vacía) |
+| cada 15 min | /api/pipeline/attachments-extract | Baja adjuntos pendientes a Storage y extrae texto (memoria fase 1) |
 | */5 min | /api/pipeline/analyze | Procesa 1 cuenta de email (KG) |
 | */30 min | /api/agents/auto-fix | Repara datos rotos automaticamente |
 | */30 min | /api/agents/cleanup | Dedup + linking + enriquecimiento |

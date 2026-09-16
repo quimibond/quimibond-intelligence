@@ -4,10 +4,22 @@
  */
 import { google } from "googleapis";
 import { JWT } from "google-auth-library";
+import { htmlToText, stripQuotedText, legacyBody } from "@/lib/pipeline/email-clean";
+
+/** Versión del ingest que producen estas funciones (emails.ingest_version). */
+export const INGEST_VERSION = 2;
+const MAX_HTML_CHARS = 1_000_000;
 
 interface GmailAccount {
   email: string;
   department: string;
+}
+
+interface ParsedAttachment {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId?: string;
 }
 
 interface ParsedEmail {
@@ -18,15 +30,32 @@ interface ParsedEmail {
   from: string;
   from_email: string;
   to: string;
+  cc: string;
+  bcc: string;
   subject: string;
   subject_normalized: string;
   date: string;
+  /** LEGACY: texto colapsado a una línea y cortado a 5,000 chars (compat con consumidores viejos). */
   body: string;
+  /** Texto plano completo con saltos de línea. */
+  body_full: string;
+  /** HTML original si el mensaje lo trae (cap 1 MB). */
+  body_html: string | null;
+  /** Solo el mensaje nuevo: sin citas, firma ni banners. */
+  body_clean: string;
   snippet: string;
-  attachments: { filename: string; mimeType: string; size: number }[];
+  attachments: ParsedAttachment[];
   has_attachments: boolean;
   is_reply: boolean;
   sender_type: "internal" | "external";
+  message_id_hdr: string | null;
+  in_reply_to_hdr: string | null;
+  references_hdr: string[];
+  labels: string[];
+  /** Payload completo de Gmail (format=full) para guardar en Storage. */
+  raw_payload: unknown;
+  raw_size_bytes: number;
+  ingest_version: number;
 }
 
 const INTERNAL_DOMAINS = ["quimibond.com", "quimibond.com.mx"];
@@ -143,9 +172,17 @@ async function fetchAccountEmails(
   return { emails, newHistoryId };
 }
 
+/**
+ * Convierte un mensaje de Gmail (format=full) en ParsedEmail.
+ *
+ * Ingest v2 (Memoria Fase 1): conserva el cuerpo completo, el HTML, los
+ * encabezados de threading (Message-ID / In-Reply-To / References), Cc/Bcc y
+ * labels, y deriva `body_clean` sin citas ni firma. `body` sigue siendo el
+ * texto colapsado a 5,000 chars para los consumidores legacy.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseMessage(msg: any, account: GmailAccount): ParsedEmail | null {
-  if (!msg.id || !msg.payload) return null;
+export function parseMessage(msg: any, account: GmailAccount): ParsedEmail | null {
+  if (!msg?.id || !msg.payload) return null;
 
   const headers: { name?: string; value?: string }[] = msg.payload.headers ?? [];
   const getHeader = (name: string) =>
@@ -154,21 +191,24 @@ function parseMessage(msg: any, account: GmailAccount): ParsedEmail | null {
   const from = getHeader("From");
   const fromEmail = extractEmail(from);
   const to = getHeader("To");
+  const cc = getHeader("Cc");
+  const bcc = getHeader("Bcc");
   const subject = getHeader("Subject") || "(sin asunto)";
   const date = getHeader("Date");
+  const messageIdHdr = getHeader("Message-ID") || getHeader("Message-Id") || null;
+  const inReplyTo = getHeader("In-Reply-To") || null;
+  const references = getHeader("References").split(/\s+/).map((r) => r.trim()).filter(Boolean);
 
-  // Extract body
-  let body = "";
-  if (msg.payload.body?.data) {
-    body = Buffer.from(msg.payload.body.data, "base64url").toString("utf-8");
-  } else if (msg.payload.parts) {
-    body = extractBodyFromParts(msg.payload.parts);
-  }
-  // Strip HTML tags for plain text
-  body = body.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  // Cuerpos: primer text/plain y primer text/html (sin adjuntos con filename)
+  const bodies = collectBodies(msg.payload);
+  const plainRaw = bodies.plain ? decodeBody(bodies.plain) : "";
+  const html = bodies.html ? decodeBody(bodies.html) : "";
+  const bodyFull = (plainRaw.trim() ? plainRaw : htmlToText(html)).replace(/\r\n?/g, "\n").trim();
+  const bodyClean = stripQuotedText(bodyFull);
 
   // Attachments
   const attachments = extractAttachments(msg.payload.parts ?? []);
+  const rawJson = JSON.stringify(msg);
 
   return {
     account: account.email,
@@ -178,39 +218,71 @@ function parseMessage(msg: any, account: GmailAccount): ParsedEmail | null {
     from,
     from_email: fromEmail,
     to,
+    cc,
+    bcc,
     subject,
     subject_normalized: normalizeSubject(subject),
     date,
-    body: body.slice(0, 5000),
+    body: legacyBody(bodyFull, 5000),
+    body_full: bodyFull,
+    body_html: html ? html.slice(0, MAX_HTML_CHARS) : null,
+    body_clean: bodyClean,
     snippet: (msg.snippet ?? "").slice(0, 500),
     attachments,
     has_attachments: attachments.length > 0,
-    is_reply: /^(re|rv):/i.test(subject),
+    is_reply: /^(re|rv):/i.test(subject) || Boolean(inReplyTo),
     sender_type: isInternal(fromEmail) ? "internal" : "external",
+    message_id_hdr: messageIdHdr,
+    in_reply_to_hdr: inReplyTo,
+    references_hdr: references,
+    labels: Array.isArray(msg.labelIds) ? msg.labelIds.map(String) : [],
+    raw_payload: msg,
+    raw_size_bytes: Buffer.byteLength(rawJson, "utf-8"),
+    ingest_version: INGEST_VERSION,
   };
 }
 
-function extractBodyFromParts(parts: unknown[]): string {
-  for (const part of parts as { mimeType?: string; body?: { data?: string }; parts?: unknown[] }[]) {
-    if (part.mimeType === "text/plain" && part.body?.data) {
-      return Buffer.from(part.body.data, "base64url").toString("utf-8");
-    }
-    if (part.parts) {
-      const nested = extractBodyFromParts(part.parts);
-      if (nested) return nested;
-    }
+function decodeBody(data: string): string {
+  try {
+    return Buffer.from(data, "base64url").toString("utf-8");
+  } catch {
+    return "";
   }
-  // Fallback to HTML
-  for (const part of parts as { mimeType?: string; body?: { data?: string } }[]) {
-    if (part.mimeType === "text/html" && part.body?.data) {
-      return Buffer.from(part.body.data, "base64url").toString("utf-8");
-    }
-  }
-  return "";
 }
 
-function extractAttachments(parts: unknown[]): { filename: string; mimeType: string; size: number; attachmentId?: string }[] {
-  const attachments: { filename: string; mimeType: string; size: number; attachmentId?: string }[] = [];
+interface MimePart {
+  mimeType?: string;
+  filename?: string;
+  body?: { data?: string; attachmentId?: string; size?: number };
+  parts?: MimePart[];
+}
+
+/**
+ * Recorre el árbol MIME y devuelve el primer text/plain y el primer text/html
+ * que NO sean adjuntos. Maneja multipart/alternative, multipart/mixed y
+ * multipart/related anidados (Outlook mete el HTML dentro de related).
+ */
+export function collectBodies(payload: MimePart): { plain: string | null; html: string | null } {
+  const out: { plain: string | null; html: string | null } = { plain: null, html: null };
+  const walk = (part: MimePart) => {
+    if (!part) return;
+    const mime = (part.mimeType ?? "").toLowerCase();
+    const isAttachment = Boolean(part.filename) && part.filename !== "";
+    if (!isAttachment && part.body?.data) {
+      if (mime === "text/plain" && out.plain === null) out.plain = part.body.data;
+      else if (mime === "text/html" && out.html === null) out.html = part.body.data;
+    }
+    for (const child of part.parts ?? []) {
+      if (out.plain !== null && out.html !== null) return;
+      walk(child);
+    }
+  };
+  walk(payload);
+  return out;
+}
+
+export function extractAttachments(parts: unknown[]): ParsedAttachment[] {
+  const attachments: ParsedAttachment[] = [];
   for (const part of parts as { filename?: string; mimeType?: string; body?: { size?: number; attachmentId?: string; data?: string }; parts?: unknown[] }[]) {
     if (part.filename && (part.body?.attachmentId || part.body?.data)) {
       attachments.push({
@@ -352,4 +424,4 @@ export async function syncAllAccounts(
   return { emails: allEmails, newHistoryState, successCount, failedCount };
 }
 
-export type { ParsedEmail, GmailAccount };
+export type { ParsedEmail, ParsedAttachment, GmailAccount };

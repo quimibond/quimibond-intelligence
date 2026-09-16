@@ -489,6 +489,21 @@ Los 232k correos existentes tienen `ingest_version=1` (cuerpo truncado, sin HTML
 - Vista `memory.coverage`: correos por `ingest_version`, chunks sin embedding, hilos con resumen desactualizado, hechos activos por tipo, y edad del más viejo pendiente. Se muestra en `/datos`.
 - `logTokenUsage` ya existente registra el gasto por pipeline.
 
+## Estado de implementación
+
+| Fecha | Qué | Dónde |
+| --- | --- | --- |
+| 2026-09-16 | Fase 1 implementada: columnas crudas en `emails`, `email_attachments`, buckets `email-raw` y `email-attachments`, RPC `ingest_emails_v2`, vista `memory_coverage`, parser v2 (`gmail.ts`), limpiador determinístico (`email-clean.ts`), extractor de adjuntos (`/api/pipeline/attachments-extract`, cron 15 min), set de 40 preguntas y runner (`scripts/memory-eval/`) | Migraciones `20260916_memory_01_emails_raw.sql` + `20260916b` aplicadas en producción |
+
+Desviaciones respecto al diseño original de la capa 1:
+
+- **El "raw" es el payload JSON de Gmail (`format=full`), no un `.eml`.** Trae todos los headers, todas las partes de texto y los `attachmentId`; los bytes de los adjuntos se bajan aparte a `email-attachments`. Evita duplicar cada llamada a Gmail con `format=raw` y pesa ~25 KB por correo igual que el `.eml`.
+- **`email_attachments` es única por (email, nombre, tamaño)**, no por `gmail_attachment_id`: Gmail no garantiza que el id sea estable entre lecturas; el extractor lo re-localiza si caducó.
+- **Imágenes > 100 KB quedan `skipped` con motivo `image_vision_phase3`** hasta que exista `topic` por hilo (Fase 3); no bloquean la cola.
+- **`memory_coverage` vive en `public`** porque el schema `memory` de la Fase 2 requiere exponerlo en la API de Supabase (Dashboard → API → Exposed schemas) antes de que `supabase-js` pueda leerlo; se documenta como paso previo de la Fase 2.
+
+Pendiente para cerrar la Fase 1 tras el deploy: sembrar `email_backfill_state` con `since='2025-10-01'` para las 51 cuentas (re-ingesta v2 del histórico, 4 a 6 días) y correr el baseline de las 40 preguntas.
+
 ## Plan de migración por fases
 
 Cinco fases, cada una con criterio de salida verificable y sin cortar lo que hoy funciona. Lo nuevo corre en paralelo; lo viejo se apaga solo cuando la fase siguiente ya lo reemplazó. Estimación total: 6 a 8 semanas de trabajo efectivo.
