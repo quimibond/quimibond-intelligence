@@ -67,8 +67,8 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
   bucket privado `email-raw` (`raw_storage_path`). `ingest_version` = 1 legacy
   (cuerpo cortado a 5k chars), 2 completo. El upsert es el RPC
   `ingest_emails_v2` (solo actualiza si la versión entrante es mayor).
-  `email_attachments` registra cada adjunto; `/api/pipeline/attachments-extract`
-  (cada 15 min) los baja, deduplica por sha256 al bucket `email-attachments` y
+  `email_attachments` registra cada adjunto; la Edge Function `attachments-extract`
+  (pg_cron cada 2 min) los baja, deduplica por sha256 al bucket `email-attachments` y
   extrae texto (PDF/Excel/Word/CSV) en `extracted_text`. Cobertura en la vista
   `memory_coverage`. Diseño completo y fases siguientes en
   `docs/memoria-quimibond-diseno.md`. `body` sigue existiendo por compat con
@@ -423,7 +423,9 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 > pipelines de correo se movieron a `supabase/functions/*` (Deno) disparados
 > por `pg_cron` + `pg_net`: `sync-emails` (una cuenta por invocación),
 > `backfill-sweep`, `attachments-extract`. Jobs `memoria_*` en `cron.job`,
-> inactivos hasta el cutover. Secretos en Vault (`cron_secret`,
+> **activos desde 2026-09-16** (el sync de correo ya corre en Supabase; solo
+> falta apagar los crons de Vercel y sembrar el backfill histórico v2).
+> Secretos en Vault (`cron_secret`,
 > `google_service_account_json`) vía RPC `edge_secret`. Buzones en tabla
 > `gmail_accounts`. Consumidores de la memoria: Claude por MCP + correo diario.
 > Cutover, checklist de retiro de Vercel y lo que falta portar

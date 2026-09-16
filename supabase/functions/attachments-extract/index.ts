@@ -5,18 +5,22 @@
  * Reemplaza a /api/pipeline/attachments-extract de Vercel.
  *
  * Límite de 2 s de CPU por invocación: se procesan pocos archivos por corrida
- * (pg_cron cada 2 min) y `attempts` se incrementa ANTES de procesar, así un
- * archivo que agota la CPU no se reintenta para siempre (3 intentos → failed).
+ * (pg_cron cada 2 min) con un presupuesto de bytes parseados (un xlsx de 1 MB
+ * ya consume ~1 s de CPU), y `attempts` se incrementa ANTES de procesar, así
+ * un archivo que agota la CPU no se reintenta para siempre: al tercer intento
+ * la fila queda `failed` (skip_reason cpu_limit) en la siguiente corrida.
  */
 import { serviceClient, authorizeCron, json, pipelineLog } from "../_shared/env.ts";
 import { GmailClient, GmailApiError, loadServiceAccount, decodeBase64Url } from "../_shared/gmail.ts";
 
 const BUCKET = "email-attachments";
-const BATCH = 6;
+const BATCH = 4;
+const BYTE_BUDGET = 700_000; // bytes parseados por invocación antes de parar
 const MAX_TEXT_CHARS = 200_000;
 const MAX_ATTEMPTS = 3;
-const PDF_MAX_BYTES = 4 * 1024 * 1024;
-const PDF_MAX_PAGES = 40;
+const PDF_MAX_BYTES = 2 * 1024 * 1024;
+const PDF_MAX_PAGES = 20;
+const SHEET_MAX_BYTES = 2 * 1024 * 1024;
 
 interface PendingRow {
   id: number;
@@ -67,6 +71,7 @@ async function extractText(kind: Kind, bytes: Uint8Array): Promise<string | null
       return (text as string[]).slice(0, PDF_MAX_PAGES).join("\n");
     }
     case "sheet": {
+      if (bytes.length > SHEET_MAX_BYTES) return null;
       const XLSX = await import("npm:xlsx@0.18.5");
       const wb = XLSX.read(bytes, { type: "array" });
       const parts: string[] = [];
@@ -125,7 +130,16 @@ Deno.serve(async (req: Request) => {
   if (!sa) return json({ error: "GOOGLE_SERVICE_ACCOUNT_JSON no configurado" }, 503);
 
   const started = Date.now();
-  const stats = { done: 0, failed: 0, skipped: 0, reused: 0, bytes: 0 };
+  const stats = { done: 0, failed: 0, skipped: 0, reused: 0, bytes: 0, deferred: 0 };
+
+  // Filas que agotaron intentos (la CPU mató la invocación a medio archivo): cerrarlas.
+  const { data: exhaustedRows } = await supabase
+    .from("email_attachments")
+    .update({ extract_status: "failed", skip_reason: "cpu_limit", last_error: "agotó intentos (límite de CPU)", updated_at: new Date().toISOString() })
+    .eq("extract_status", "pending")
+    .gte("attempts", MAX_ATTEMPTS)
+    .select("id");
+  stats.failed += exhaustedRows?.length ?? 0;
 
   const { data: pending, error } = await supabase
     .from("email_attachments")
@@ -143,6 +157,10 @@ Deno.serve(async (req: Request) => {
   const clients = new Map<string, GmailClient>();
 
   for (const row of rows) {
+    if (stats.bytes >= BYTE_BUDGET) {
+      stats.deferred++;
+      continue; // presupuesto de CPU agotado: queda pending para la siguiente corrida
+    }
     const email = Array.isArray(row.emails) ? row.emails[0] : row.emails;
     const now = new Date().toISOString();
     // attempts++ antes de procesar: si la CPU nos mata a medio archivo, no se repite eternamente
@@ -185,13 +203,16 @@ Deno.serve(async (req: Request) => {
         const { error: upErr } = await bucket.upload(path, dl.bytes, { contentType: row.mime_type || "application/octet-stream", upsert: true });
         if (upErr) throw new Error(`storage: ${upErr.message}`);
         storagePath = path;
-        stats.bytes += dl.bytes.length;
       } else {
         stats.reused++;
       }
       const kind = kindOf(row.filename, row.mime_type);
-      if (text === undefined) text = await extractText(kind, dl.bytes);
-      const noExtractor = kind === "other" || (kind === "pdf" && text === null);
+      if (text === undefined) {
+        stats.bytes += dl.bytes.length; // solo el parseo cuesta CPU; el texto reutilizado no
+        text = await extractText(kind, dl.bytes);
+      }
+      const tooLarge = (kind === "pdf" || kind === "sheet") && text === null;
+      const noExtractor = kind === "other" || tooLarge;
       await supabase
         .from("email_attachments")
         .update({
@@ -200,7 +221,7 @@ Deno.serve(async (req: Request) => {
           storage_path: storagePath,
           extracted_text: text ? text.slice(0, MAX_TEXT_CHARS) : null,
           extract_status: noExtractor ? "skipped" : "done",
-          skip_reason: noExtractor ? (kind === "pdf" ? "pdf_too_large" : "no_extractor") : null,
+          skip_reason: noExtractor ? (tooLarge ? `${kind}_too_large` : "no_extractor") : null,
           last_error: null,
           updated_at: new Date().toISOString(),
         })
@@ -223,7 +244,7 @@ Deno.serve(async (req: Request) => {
     supabase,
     "attachments_extract",
     stats.failed > 0 ? "warning" : "info",
-    `Adjuntos: ${stats.done} extraídos, ${stats.reused} reutilizados, ${stats.skipped} sin extractor, ${stats.failed} fallidos (${rows.length} en lote, ${elapsed}s)`,
+    `Adjuntos: ${stats.done} extraídos, ${stats.reused} reutilizados, ${stats.skipped} sin extractor, ${stats.failed} fallidos, ${stats.deferred} diferidos (${rows.length} en lote, ${Math.round(stats.bytes / 1024)} KB, ${elapsed}s)`,
     { ...stats, queued: rows.length, elapsed_s: elapsed },
   );
   return json({ ok: true, ...stats, queued: rows.length, elapsed_s: elapsed });

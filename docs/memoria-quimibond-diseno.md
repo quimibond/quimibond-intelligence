@@ -512,23 +512,29 @@ de correo dejan de vivir en `src/app/api/pipeline/*` (Vercel) y pasan a
 | --- | --- | --- |
 | `sync-emails` | Edge Function, una cuenta por invocación | `pg_cron` `memoria_sync_emails` cada 30 min → `invoke_edge_per_account('sync-emails')` (52 llamadas `pg_net`, una por buzón activo en `gmail_accounts`). Cada invocación queda bajo el límite de 2 s de CPU. |
 | `backfill-sweep` | Edge Function, una cuenta y 2 páginas por invocación | `memoria_backfill_sweep` cada 5 min → una llamada por cuenta con `done=false` en `email_backfill_state`. |
-| `attachments-extract` | Edge Function, 6 adjuntos por invocación | `memoria_attachments_extract` cada 2 min. PDF con `unpdf` (máx 4 MB / 40 páginas), Excel con `xlsx`, Word con `mammoth`. `attempts` se incrementa antes de procesar para que un archivo que agote la CPU no se repita sin fin. |
+| `attachments-extract` | Edge Function, hasta 4 adjuntos y ~700 KB parseados por invocación | `memoria_attachments_extract` cada 2 min. PDF con `unpdf` (máx 2 MB / 20 páginas), Excel con `xlsx` (máx 2 MB), Word con `mammoth`. `attempts` se incrementa antes de procesar; al agotar 3 intentos la fila pasa a `failed` con `skip_reason='cpu_limit'`. **No invocarla en paralelo**: tres llamadas simultáneas comparten el worker y lo tiran con `WORKER_RESOURCE_LIMIT` (546). |
 | Gmail | `_shared/gmail.ts` | Cliente REST propio con JWT firmado por `jose` (sin `googleapis`, que no cabe en el bundle). |
 | Secretos | Vault + RPC `edge_secret` | `cron_secret` (generado en la migración, compartido pg_cron ↔ funciones, header `x-cron-secret`) y `google_service_account_json` (pegar una vez). Las funciones también aceptan `GOOGLE_SERVICE_ACCOUNT_JSON` / `CRON_SECRET` como secretos de Edge Functions. |
 | Buzones | tabla `gmail_accounts` | Reemplaza a `GMAIL_ACCOUNTS_JSON`; `active=false` saca un buzón del sync. |
 | Observabilidad | `pipeline_logs` (`details.runtime='edge'`) y `memory_coverage` | Mismas `phase` que antes (`emails_synced`, `backfill_sweep`, `attachments_extract`). |
 
 Migración `20260916c_memory_edge_cron.sql`. Los jobs `pg_cron` se crean
-**inactivos**: mientras Vercel siga corriendo su `sync-emails`, dos procesos
-sobre el mismo cursor de Gmail se pisarían.
+**inactivos** y se activan en el cutover.
 
-**Cutover (orden):**
+**Cutover (estado al 2026-09-16 20:50 UTC):**
 
-1. Guardar el service account en Vault: `SELECT vault.create_secret('<json>', 'google_service_account_json', 'Gmail service account (delegación de dominio)');` — o como secreto `GOOGLE_SERVICE_ACCOUNT_JSON` en Edge Functions.
-2. Probar una cuenta: `SELECT invoke_edge('sync-emails', '{"account":"info@quimibond.com"}');` y revisar `net._http_response` y `pipeline_logs`.
-3. Desactivar los crons en Vercel (Project → Settings → Cron Jobs → Disable).
-4. Activar los jobs: `SELECT cron.alter_job(jobid, active := true) FROM cron.job WHERE jobname LIKE 'memoria_%';`
-5. Sembrar el backfill v2 del histórico (`email_backfill_state` desde `2025-10-01`).
+1. ✅ Service account en Vault (`google_service_account_json`). Las funciones lo leen por `edge_secret`.
+2. ✅ Prueba: `sync-emails` en las 52 cuentas (53/53 respuestas 200), `backfill-sweep` de 10 días en `planeacion@` (82 correos re-ingresados con `ingest_version=2`, raw en `email-raw`, 88 adjuntos registrados), `attachments-extract` (los 18 con extractor quedaron `done`; imágenes chicas `skipped`).
+3. ✅ Jobs `memoria_sync_emails`, `memoria_backfill_sweep` y `memoria_attachments_extract` **activos**. Correr en paralelo con el `sync-emails` viejo de Vercel es inocuo: el upsert es idempotente y `ingest_emails_v2` solo sube de versión.
+4. ⏳ Desactivar los crons en Vercel (Project → Settings → Cron Jobs → Disable). Lo hace el CEO desde el dashboard; el deploy viejo (`0288ba6`) sigue sincronizando cada 30 min con ingest v1.
+5. ⏳ Sembrar el backfill v2 del histórico (`email_backfill_state` desde `2025-10-01`) **solo después del paso 4**: el `backfill-sweep` viejo de Vercel (cada 15 min) drena la misma cola con ingest v1 y pisaría `page_token`.
+
+```sql
+-- paso 5, cuando Vercel ya no corra crons
+INSERT INTO email_backfill_state (account, since, page_token, done, last_error, updated_at)
+SELECT email, DATE '2025-10-01', NULL, false, NULL, now() FROM gmail_accounts WHERE active
+ON CONFLICT (account) DO UPDATE SET since = EXCLUDED.since, page_token = NULL, done = false, last_error = NULL, updated_at = now();
+```
 
 **Retiro de Vercel (checklist, después del cutover):**
 
@@ -550,6 +556,7 @@ con `supabase-js`; por MCP (`execute_sql`) no hace falta.
 | Fecha | Qué | Dónde |
 | --- | --- | --- |
 | 2026-09-16 | Fase 1 implementada: columnas crudas en `emails`, `email_attachments`, buckets `email-raw` y `email-attachments`, RPC `ingest_emails_v2`, vista `memory_coverage`, parser v2 (`gmail.ts`), limpiador determinístico (`email-clean.ts`), extractor de adjuntos (`/api/pipeline/attachments-extract`, cron 15 min), set de 40 preguntas y runner (`scripts/memory-eval/`) | Migraciones `20260916_memory_01_emails_raw.sql` + `20260916b` aplicadas en producción |
+| 2026-09-16 | Pipelines de correo en Supabase Edge Functions (`sync-emails`, `backfill-sweep`, `attachments-extract`) + pg_cron/pg_net; service account en Vault; jobs `memoria_*` activos; ingest v2 verificado en producción (ver "Cambio de rumbo" → Cutover) | Migración `20260916c_memory_edge_cron.sql`; funciones desplegadas con `verify_jwt=false` (auth por `x-cron-secret`) |
 
 Desviaciones respecto al diseño original de la capa 1:
 
@@ -558,7 +565,7 @@ Desviaciones respecto al diseño original de la capa 1:
 - **Imágenes > 100 KB quedan `skipped` con motivo `image_vision_phase3`** hasta que exista `topic` por hilo (Fase 3); no bloquean la cola.
 - **`memory_coverage` vive en `public`** porque el schema `memory` de la Fase 2 requiere exponerlo en la API de Supabase (Dashboard → API → Exposed schemas) antes de que `supabase-js` pueda leerlo; se documenta como paso previo de la Fase 2.
 
-Pendiente para cerrar la Fase 1 tras el deploy: sembrar `email_backfill_state` con `since='2025-10-01'` para las 51 cuentas (re-ingesta v2 del histórico, 4 a 6 días) y correr el baseline de las 40 preguntas.
+Pendiente para cerrar la Fase 1: apagar los crons de Vercel, sembrar `email_backfill_state` con `since='2025-10-01'` para las 52 cuentas (re-ingesta v2 del histórico; a 2 páginas por cuenta cada 5 min son ~2,400 correos/hora/cuenta) y correr el baseline de las 40 preguntas.
 
 ## Plan de migración por fases
 
