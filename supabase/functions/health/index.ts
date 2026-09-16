@@ -66,6 +66,7 @@ Deno.serve(async (req: Request) => {
       issues.push({ kind: "cron_stale", detail: `${name}: job desactivado` });
       continue;
     }
+    if (!j.last_run) continue; // recién programado, aún no le toca (p.ej. el diario)
     const minutesAgo = j.last_ok ? Math.round((now - new Date(j.last_ok).getTime()) / 60000) : null;
     if (minutesAgo === null || minutesAgo > Math.max(interval * 2.5, 15)) {
       issues.push({ kind: "cron_stale", detail: `${name}: ${minutesAgo === null ? "nunca ha corrido bien" : `${minutesAgo} min sin corrida exitosa (esperado cada ${interval})`}` });
