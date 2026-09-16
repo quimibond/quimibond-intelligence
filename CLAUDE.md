@@ -415,7 +415,24 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 
 ---
 
-## Crons (Vercel)
+## Decisión 2026-09-16: el frontend se retira; pipelines a Supabase Edge Functions
+
+> El CEO no usa el frontend de Next.js (0 visitas en 7 días; las vistas de
+> negocio viven en Odoo: `quimibond_cash_flow`, `qb_capacidad_costeo`, SGI) y
+> la cuenta de Vercel está en plan Hobby (rechaza crons > diarios). Los
+> pipelines de correo se movieron a `supabase/functions/*` (Deno) disparados
+> por `pg_cron` + `pg_net`: `sync-emails` (una cuenta por invocación),
+> `backfill-sweep`, `attachments-extract`. Jobs `memoria_*` en `cron.job`,
+> inactivos hasta el cutover. Secretos en Vault (`cron_secret`,
+> `google_service_account_json`) vía RPC `edge_secret`. Buzones en tabla
+> `gmail_accounts`. Consumidores de la memoria: Claude por MCP + correo diario.
+> Cutover, checklist de retiro de Vercel y lo que falta portar
+> (`email-digest`, `extract-*`, `health`, Syntage) en
+> `docs/memoria-quimibond-diseno.md` → "Cambio de rumbo". La tabla de crons
+> de abajo describe el deploy viejo de Vercel, que sigue corriendo hasta el
+> cutover.
+
+## Crons (Vercel, deploy congelado hasta el cutover)
 
 > **Poda 2026-08-05 (decisión CEO):** se retiraron `orchestrate`, `validate`,
 > `learn`, `daily-digest` y `evolve` (agentes especulativos + schema evolution
