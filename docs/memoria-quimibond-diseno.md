@@ -489,6 +489,108 @@ Los 232k correos existentes tienen `ingest_version=1` (cuerpo truncado, sin HTML
 - Vista `memory.coverage`: correos por `ingest_version`, chunks sin embedding, hilos con resumen desactualizado, hechos activos por tipo, y edad del más viejo pendiente. Se muestra en `/datos`.
 - `logTokenUsage` ya existente registra el gasto por pipeline.
 
+## Cambio de rumbo (2026-09-16): sin frontend, sin Vercel
+
+**Decisión del CEO:** el frontend de Next.js se retira. En los últimos 7 días
+Vercel registró 0 visitas a páginas y 0 llamadas al chat; toda la actividad
+eran crons de pipeline. Las vistas de negocio viven ya en Odoo (addons
+`quimibond_cash_flow`, `qb_capacidad_costeo`, `quimibond_sgi`). Además la
+cuenta de Vercel bajó a plan Hobby, que rechaza cualquier deploy con crons
+más frecuentes que diarios.
+
+**Consumidores reales de la memoria:**
+
+1. Claude vía MCP (Supabase + Odoo), como en las sesiones de trabajo del CEO.
+2. El resumen diario por correo (`email-digest`).
+3. Odoo, cuando convenga exponer algo dentro del ERP.
+
+**Infraestructura nueva: Supabase Edge Functions + pg_cron.** Los pipelines
+de correo dejan de vivir en `src/app/api/pipeline/*` (Vercel) y pasan a
+`supabase/functions/*` (Deno), disparados desde la base:
+
+| Pieza | Dónde | Notas |
+| --- | --- | --- |
+| `sync-emails` | Edge Function, una cuenta por invocación | `pg_cron` `memoria_sync_emails` cada 30 min → `invoke_edge_per_account('sync-emails')` (52 llamadas `pg_net`, una por buzón activo en `gmail_accounts`). Cada invocación queda bajo el límite de 2 s de CPU. |
+| `backfill-sweep` | Edge Function, una cuenta y 2 páginas por invocación | `memoria_backfill_sweep` cada 5 min → una llamada por cuenta con `done=false` en `email_backfill_state`. |
+| `attachments-extract` | Edge Function, hasta 4 adjuntos y ~700 KB parseados por invocación | `memoria_attachments_extract` cada 2 min. PDF con `unpdf` (máx 2 MB / 20 páginas), Excel con `xlsx` (máx 2 MB), Word con `mammoth`. `attempts` se incrementa antes de procesar; al agotar 3 intentos la fila pasa a `failed` con `skip_reason='cpu_limit'`. **No invocarla en paralelo**: tres llamadas simultáneas comparten el worker y lo tiran con `WORKER_RESOURCE_LIMIT` (546). |
+| Gmail | `_shared/gmail.ts` | Cliente REST propio con JWT firmado por `jose` (sin `googleapis`, que no cabe en el bundle). |
+| Secretos | Vault + RPC `edge_secret` | `cron_secret` (generado en la migración, compartido pg_cron ↔ funciones, header `x-cron-secret`) y `google_service_account_json` (pegar una vez). Las funciones también aceptan `GOOGLE_SERVICE_ACCOUNT_JSON` / `CRON_SECRET` como secretos de Edge Functions. |
+| Buzones | tabla `gmail_accounts` | Reemplaza a `GMAIL_ACCOUNTS_JSON`; `active=false` saca un buzón del sync. |
+| Observabilidad | `pipeline_logs` (`details.runtime='edge'`) y `memory_coverage` | Mismas `phase` que antes (`emails_synced`, `backfill_sweep`, `attachments_extract`). |
+
+Migración `20260916c_memory_edge_cron.sql`. Los jobs `pg_cron` se crean
+**inactivos** y se activan en el cutover.
+
+**Cutover (estado al 2026-09-16 20:50 UTC):**
+
+1. ✅ Service account en Vault (`google_service_account_json`). Las funciones lo leen por `edge_secret`.
+2. ✅ Prueba: `sync-emails` en las 52 cuentas (53/53 respuestas 200), `backfill-sweep` de 10 días en `planeacion@` (82 correos re-ingresados con `ingest_version=2`, raw en `email-raw`, 88 adjuntos registrados), `attachments-extract` (los 18 con extractor quedaron `done`; imágenes chicas `skipped`).
+3. ✅ Jobs `memoria_sync_emails`, `memoria_backfill_sweep` y `memoria_attachments_extract` **activos**. Correr en paralelo con el `sync-emails` viejo de Vercel es inocuo: el upsert es idempotente y `ingest_emails_v2` solo sube de versión.
+4. ⏳ Desactivar los crons en Vercel (Project → Settings → Cron Jobs → Disable). Lo hace el CEO desde el dashboard; el deploy viejo (`0288ba6`) sigue sincronizando cada 30 min con ingest v1.
+5. ✅ Crons de Vercel apagados por el CEO (~20:50 UTC) y backfill v2 del histórico sembrado (`email_backfill_state` desde `2025-10-01`, 52 cuentas).
+
+**Incidente 2026-09-16 20:52–21:33 UTC (base colgada 40 min).** La primera
+ronda del backfill lanzó 52 invocaciones simultáneas de `backfill-sweep`
+(`invoke_edge_backfill_pending` sin límite). Efectos en cadena: 47 respuestas
+504 y 3 `BOOT_ERROR` del runtime de Edge, PgBouncer sin conexiones
+(`max_client_conn`), y cada `ingest_emails_v2` de 50 filas tardando 60–176 s
+hasta que Postgres dejó de responder (ni pg_cron ni PostgREST). Hizo falta
+**Restart project** desde el dashboard. Causa raíz del costo por fila: el
+índice `idx_emails_embedding_hnsw` (818 MB, contra `shared_buffers` de 256 MB).
+Cada UPDATE del ingest reescribe columnas TOAST grandes, la fila no cabe como
+HOT y Postgres reinserta el vector en el grafo HNSW en disco. Correcciones:
+
+- `20260916d_memory_backfill_throttle.sql`: `invoke_edge_backfill_pending(p_max)`
+  lanza como máximo `p_max` cuentas por corrida (las menos recientes, marcadas
+  con `updated_at = now()` para rotar) y el job corre cada minuto.
+- `20260916e_memory_drop_emails_hnsw.sql`: drop del HNSW. Único consumidor,
+  `search_similar_emails` (chat del frontend, retirado). La columna
+  `embedding` se conserva hasta la Fase 5. Tras el drop: 173 correos en 17 s
+  por invocación, sin statements lentos.
+- Regla: **nunca abanicar decenas de invocaciones largas de Edge a la vez**;
+  el sync de 52 cuentas se tolera porque cada llamada dura ~1 s.
+
+```sql
+-- paso 5, cuando Vercel ya no corra crons
+INSERT INTO email_backfill_state (account, since, page_token, done, last_error, updated_at)
+SELECT email, DATE '2025-10-01', NULL, false, NULL, now() FROM gmail_accounts WHERE active
+ON CONFLICT (account) DO UPDATE SET since = EXCLUDED.since, page_token = NULL, done = false, last_error = NULL, updated_at = now();
+```
+
+**Retiro de Vercel (checklist, después del cutover):**
+
+- [x] **Syntage → Edge Functions (2026-09-16 22:00 UTC).** `syntage-webhook` (misma librería `_shared/syntage/`, firma HMAC con Web Crypto) y `syntage-daily` (job `memoria_syntage_daily` 05:00 UTC). Secretos en Vault: `syntage_api_key`, `syntage_webhook_secret` (cargados 2026-09-16 23:39 UTC; `syntage-daily` ya pide la extracción: 202 Accepted, extracción `a2c36b1f`). El endpoint ya apunta a la Edge Function; la firma del webhook se valida cuando llegue el primer evento. En Syntage hay que apuntar el endpoint a `https://tozqezmivpblmcubmnpi.supabase.co/functions/v1/syntage-webhook`. Hallazgo: **no llega ningún webhook desde 2026-05-01** aunque la extracción diaria se pedía con éxito (1/1 ok cada día) — revisar en el panel de Syntage si el endpoint quedó deshabilitado por fallos.
+- [x] **Watchdog → Edge Function `health`** (job `memoria_watchdog` cada hora en :05; RPC `memoria_cron_health` para leer `cron.job_run_details`). Vigila jobs `memoria_*`, Odoo, Gmail, Syntage y errores; correo de alerta con `_shared/mailer.ts` (Gmail REST, scope `gmail.send`, remitente `info@quimibond.com`), máximo uno cada 24 h. Body `{"test_email": true}` manda una prueba.
+- [x] **Correo diario y extractores → Edge Functions (2026-09-16 23:00 UTC).** `email-digest` (job `memoria_email_digest` 12:45 UTC; `claude-opus-5`; HTML en `_shared/digest-email-html.ts`, ya sin botón al frontend) y `email-extract` con `task` = `pending` | `demand` | `demand_files` (jobs cada 2 h a :40/:50/:55; `claude-sonnet-5`, effort low; adjuntos por Gmail REST + xlsx). SDK oficial `npm:@anthropic-ai/sdk@0.126.0` en `_shared/claude.ts`, tokens a `token_usage`. Secreto `anthropic_api_key` en Vault (cargado 2026-09-16 23:39 UTC; digest manual verificado: 10 correos, 15 pendientes, resumen generado con Opus).
+- [ ] **Apagar los crons sin consumidor** ya no aplica: el CEO desactivó todos los crons de Vercel el 2026-09-16 (~20:50 UTC). `analyze`, `embeddings`, `auto-fix`, `cleanup`, `briefing`, `refresh-*`, `finanzas/*`, `snapshot`, `retention` quedan apagados y sin sustituto; se revisan uno a uno si alguna vista de Odoo depende de sus tablas (`refresh-cogs-monthly` alimenta `cogs_monthly_cache` y `product_cost_catalog`, que lee `/contabilidad/*`... del frontend retirado — confirmar que Odoo no las usa).
+- [x] **Hallazgo colateral (watchdog, 2026-09-16 22:01 UTC): el push horario de Odoo lleva 22 días muerto.** Resuelto 23:21 UTC: el CEO reactivó los crons y corrió el push a mano (24 tablas frescas). Colateral: 500 facturas de ago/sep no entraron por dos CFDI duplicados en Odoo (batch atómico); fix en qb19 PR #255 + `force_push_full` tras desplegar. Detalle original: `quimibond.sync.log` no registra "Push completo" desde el 2026-08-25 y "Pull completo" desde el 2026-06-01; solo corre el push pesado (stock/manufactura) cada ~12 h. 21 tablas `odoo_*` (facturas, bancos, pedidos, productos) están 528 h atrasadas. Los crons `ir.cron` no son accesibles por MCP: hay que entrar a Odoo → Ajustes → Técnico → Acciones planificadas, buscar "Quimibond Sync" y reactivar/ejecutar "Push to Supabase (every 1h)", "Full Push (nightly 3am)" y "Pull from Supabase (every 5min)" (Odoo.sh los desactiva tras fallos repetidos). Mientras, cualquier cifra financiera en Supabase es del 25 de agosto.
+- [ ] Apagar sin portar: `analyze` (KG legacy sin consumidor), `embeddings` (vector por correo; lo reemplaza `memory.chunks` en Fase 2), `auto-fix`, `cleanup`, `identity-resolution`, `enrich-companies`, `briefing`, `snapshot`, `refresh-views`, `refresh-cogs-*`, `retention`, `dq-check`, `data-quality-check`, `finanzas/*`, `verify-follow-ups`. Cada uno alimentaba páginas que ya nadie abre; los que toquen datos que Odoo sí lee se revisan uno a uno antes de apagar.
+- [ ] El proyecto de Supabase nació desde la integración de Vercel (organización `vercel_icfg_…`). **No borrar la integración ni el proyecto de Vercel sin antes mover la organización de Supabase a una cuenta propia**, o la facturación y el acceso podrían verse afectados. Borrar solo los crons y el deploy.
+- [ ] Archivar el código del frontend (`src/app/**` salvo `api/syntage` mientras no se porte) y mover `docs/` y `supabase/` a la raíz del repo.
+
+**Fases 2 a 5 (ajuste):** la capa 3 deja de ser "tools del analista" y pasa a ser
+funciones SQL (`memory.search`, `memory.entity_brief`, `memory.thread_brief`)
+que Claude llama por MCP; `memory-chunk`, `memory-embed`, `memory-consolidate`
+y `memory-verify` se escriben como Edge Functions desde el inicio. El schema
+`memory` sigue necesitando exponerse en la API de Supabase solo si se lee
+con `supabase-js`; por MCP (`execute_sql`) no hace falta.
+
+## Estado de implementación
+
+| Fecha | Qué | Dónde |
+| --- | --- | --- |
+| 2026-09-16 | Fase 1 implementada: columnas crudas en `emails`, `email_attachments`, buckets `email-raw` y `email-attachments`, RPC `ingest_emails_v2`, vista `memory_coverage`, parser v2 (`gmail.ts`), limpiador determinístico (`email-clean.ts`), extractor de adjuntos (`/api/pipeline/attachments-extract`, cron 15 min), set de 40 preguntas y runner (`scripts/memory-eval/`) | Migraciones `20260916_memory_01_emails_raw.sql` + `20260916b` aplicadas en producción |
+| 2026-09-16 | Pipelines de correo en Supabase Edge Functions (`sync-emails`, `backfill-sweep`, `attachments-extract`) + pg_cron/pg_net; service account en Vault; jobs `memoria_*` activos; ingest v2 verificado en producción (ver "Cambio de rumbo" → Cutover) | Migración `20260916c_memory_edge_cron.sql`; funciones desplegadas con `verify_jwt=false` (auth por `x-cron-secret`) |
+
+Desviaciones respecto al diseño original de la capa 1:
+
+- **El "raw" es el payload JSON de Gmail (`format=full`), no un `.eml`.** Trae todos los headers, todas las partes de texto y los `attachmentId`; los bytes de los adjuntos se bajan aparte a `email-attachments`. Evita duplicar cada llamada a Gmail con `format=raw` y pesa ~25 KB por correo igual que el `.eml`.
+- **`email_attachments` es única por (email, nombre, tamaño)**, no por `gmail_attachment_id`: Gmail no garantiza que el id sea estable entre lecturas; el extractor lo re-localiza si caducó.
+- **Imágenes > 100 KB quedan `skipped` con motivo `image_vision_phase3`** hasta que exista `topic` por hilo (Fase 3); no bloquean la cola.
+- **`memory_coverage` vive en `public`** porque el schema `memory` de la Fase 2 requiere exponerlo en la API de Supabase (Dashboard → API → Exposed schemas) antes de que `supabase-js` pueda leerlo; se documenta como paso previo de la Fase 2.
+
+Pendiente para cerrar la Fase 1: apagar los crons de Vercel, sembrar `email_backfill_state` con `since='2025-10-01'` para las 52 cuentas (re-ingesta v2 del histórico; a 2 páginas por cuenta cada 5 min son ~2,400 correos/hora/cuenta) y correr el baseline de las 40 preguntas.
+
 ## Plan de migración por fases
 
 Cinco fases, cada una con criterio de salida verificable y sin cortar lo que hoy funciona. Lo nuevo corre en paralelo; lo viejo se apaga solo cuando la fase siguiente ya lo reemplazó. Estimación total: 6 a 8 semanas de trabajo efectivo.

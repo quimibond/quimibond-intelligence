@@ -46,3 +46,4 @@ next-env.d.ts
 # claude-flow hook artifacts (auto-generated, per-session — not versioned)
 .claude-flow/
 
+scripts/memory-eval/results/

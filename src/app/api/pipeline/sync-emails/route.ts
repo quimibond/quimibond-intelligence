@@ -116,6 +116,11 @@ export async function POST(request: NextRequest) {
         : `Sync: ${saved} emails, ${threads.length} threads (${result.successCount} cuentas ok, ${result.failedCount} fallidas)`,
       details: {
         total: saved,
+        inserted: persistResult.emails_inserted,
+        updated: persistResult.emails_updated,
+        skipped: persistResult.emails_skipped,
+        attachments_registered: persistResult.attachments_registered,
+        raw_uploaded: persistResult.raw_uploaded,
         fetched: validEmails.length,
         threads: threads.length,
         accounts_ok: result.successCount,
@@ -128,6 +133,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       emails: saved,
+      inserted: persistResult.emails_inserted,
+      updated: persistResult.emails_updated,
       threads: threads.length,
       accounts_ok: result.successCount,
       accounts_failed: result.failedCount,

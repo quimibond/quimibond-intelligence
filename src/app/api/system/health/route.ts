@@ -33,6 +33,7 @@ const CRON_INTERVALS: Record<string, number> = {
   reconcile: 1440, // /api/pipeline/reconcile
   embeddings: 15, // /api/pipeline/embeddings
   identity_resolution: 120, // /api/agents/identity-resolution
+  attachments_extract: 15, // /api/pipeline/attachments-extract (memoria fase 1)
 };
 
 interface Issue {

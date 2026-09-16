@@ -58,8 +58,21 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 - `syntage_files` (PDFs/XMLs blob), `syntage_webhook_events` (audit log)
 - Maestros: `syntage_taxpayers`, `syntage_entity_map`, `syntage_extractions`
 
-**Gmail (3 tablas):**
-- `emails` (117k rows), `threads` (50k), `email_recipients`
+**Gmail (4 tablas):**
+- `emails` (232k rows), `threads` (112k), `email_recipients`, `email_attachments`
+- **Memoria Fase 1 (2026-09-16):** el ingest v2 guarda el cuerpo completo
+  (`body_full`), el HTML (`body_html`), el mensaje sin citas ni firma
+  (`body_clean`), headers de threading (`message_id_hdr`, `in_reply_to_hdr`,
+  `references_hdr`), `cc`/`bcc`, `labels` y el payload crudo de Gmail en el
+  bucket privado `email-raw` (`raw_storage_path`). `ingest_version` = 1 legacy
+  (cuerpo cortado a 5k chars), 2 completo. El upsert es el RPC
+  `ingest_emails_v2` (solo actualiza si la versión entrante es mayor).
+  `email_attachments` registra cada adjunto; la Edge Function `attachments-extract`
+  (pg_cron cada minuto) los baja, deduplica por sha256 al bucket `email-attachments` y
+  extrae texto (PDF/Excel/Word/CSV) en `extracted_text`. Cobertura en la vista
+  `memory_coverage`. Diseño completo y fases siguientes en
+  `docs/memoria-quimibond-diseno.md`. `body` sigue existiendo por compat con
+  `analyze`/`embeddings`/`extract-*`; se retira en Fase 5.
 
 **Knowledge graph (extraído de emails):**
 - `entities`, `entity_relationships`, `facts`, `ai_extracted_facts`, `action_items`
@@ -402,25 +415,45 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 
 ---
 
-## Crons (Vercel)
+## Decisión 2026-09-16: el frontend se retira; pipelines a Supabase Edge Functions
 
-> **Poda 2026-08-05 (decisión CEO):** se retiraron `orchestrate`, `validate`,
-> `learn`, `daily-digest` y `evolve` (agentes especulativos + schema evolution
-> — este último creó los triggers rotos que tumbaron el sync de Gmail 2 meses).
-> Ver vercel.json para la lista viva.
+> El CEO no usa el frontend de Next.js (0 visitas en 7 días; las vistas de
+> negocio viven en Odoo: `quimibond_cash_flow`, `qb_capacidad_costeo`, SGI) y
+> la cuenta de Vercel está en plan Hobby. **Los crons de Vercel están apagados
+> desde el 2026-09-16** y todo lo que sí se usa corre en `supabase/functions/*`
+> (Deno) disparado por `pg_cron` + `pg_net` (`invoke_edge`). Secretos en Vault
+> vía RPC `edge_secret`: `cron_secret`, `google_service_account_json`,
+> `anthropic_api_key`, `syntage_api_key`, `syntage_webhook_secret`. Buzones en
+> `gmail_accounts`. Consumidores de la memoria: Claude por MCP + correo diario.
+> Diseño, cutover, incidente del backfill y checklist en
+> `docs/memoria-quimibond-diseno.md` → "Cambio de rumbo".
 
-| Frecuencia | Endpoint | Que hace |
-|---|---|---|
-| */30 min | /api/pipeline/sync-emails | Sync Gmail (52 cuentas) |
-| cada 15 min | /api/pipeline/backfill-sweep | Drena cola email_backfill_state (no-op si vacía) |
-| */5 min | /api/pipeline/analyze | Procesa 1 cuenta de email (KG) |
-| */30 min | /api/agents/auto-fix | Repara datos rotos automaticamente |
-| */30 min | /api/agents/cleanup | Dedup + linking + enriquecimiento |
-| */15 min | /api/pipeline/embeddings | Vectores voyage-3 (loop con time budget) |
-| hourly :05 | /api/system/health | **Watchdog unificado**: crons+Odoo+Gmail+errores → email al CEO si algo falla (requiere scope gmail.send; si no, log level=error visible en /hoy) |
-| 6:30am | /api/pipeline/briefing | Briefing diario CEO |
+## Jobs pg_cron → Edge Functions (vivos)
 
----
+| Job | Cuándo | Edge Function | Qué hace |
+|---|---|---|---|
+| `memoria_sync_emails` | */30 min | `sync-emails` (52 llamadas, una por buzón) | Sync incremental de Gmail, ingest v2 completo |
+| `memoria_backfill_sweep` | cada minuto | `backfill-sweep` (2 cuentas/min) | Re-ingesta v2 del histórico desde 2025-10-01 (`email_backfill_state`) |
+| `memoria_attachments_extract` | cada minuto | `attachments-extract` | Baja adjuntos ≤3 MB a Storage y extrae texto (chicos primero, presupuesto de CPU) |
+| `memoria_watchdog` | :05 cada hora | `health` | Salud de jobs (`memoria_cron_health`), Odoo, Gmail, Syntage, errores → correo al CEO máx. 1/día |
+| `memoria_syntage_daily` | 05:00 UTC | `syntage-daily` | Pide a Syntage la extracción incremental de CFDIs (4 días) |
+| — (webhook) | realtime | `syntage-webhook` | Receptor de webhooks de Syntage (firma HMAC). Apuntar Syntage a `/functions/v1/syntage-webhook` |
+| `memoria_email_digest` | 12:45 UTC | `email-digest` | Resumen ejecutivo del correo 24 h (Claude) → `email_digests` + correo HTML |
+| `memoria_extract_pending` | :40 cada 2 h | `email-extract` `{task:"pending"}` | Pendientes accionables por hilo → `email_pending_actions` |
+| `memoria_extract_demand` | :50 cada 2 h | `email-extract` `{task:"demand"}` | Demanda en cuerpos de correo → `customer_demand_signals` |
+| `memoria_extract_demand_files` | :55 cada 2 h | `email-extract` `{task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
+
+Reglas aprendidas el 2026-09-16: nunca abanicar decenas de invocaciones largas
+a la vez (52 backfills simultáneos tiraron la base 40 min); `emails` no debe
+tener índice HNSW (818 MB contra 256 MB de buffers: cada update costaba
+segundos); una Edge Function tiene 2 s de CPU por invocación, así que los
+extractores de adjuntos trabajan con presupuesto de bytes.
+
+**Apagados sin sustituto (crons viejos de Vercel):** `analyze`, `embeddings`,
+`auto-fix`, `cleanup`, `identity-resolution`, `enrich-companies`, `briefing`,
+`snapshot`, `reconcile`, `refresh-views`, `refresh-cogs-*`, `retention`,
+`dq-check`, `data-quality-check`, `finanzas/*`, `verify-follow-ups`. Alimentaban
+páginas del frontend retirado; revisar antes de borrar código si Odoo lee sus tablas.
 
 ## Agentes de IA — DESACTIVADOS (2026-08-05)
 
