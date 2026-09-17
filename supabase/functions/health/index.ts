@@ -5,10 +5,12 @@
  * Revisa en un solo lugar:
  *   1. Jobs pg_cron memoria_* (última corrida exitosa vs intervalo esperado,
  *      vía RPC memoria_cron_health) — antes eran los crons de Vercel.
- *   2. Sync de Odoo (odoo_sync_freshness).
+ *   2. Sync de Odoo: solo contactos/empresas (odoo_push_last_events,
+ *      método 'contacts'), que es lo único que la memoria consume desde
+ *      2026-09-17. El SAT vive ahora en Odoo (addon quimibond_sat), así
+ *      que ya no se vigila Syntage aquí.
  *   3. Gmail (edad del último correo guardado).
- *   4. Syntage (edad del último webhook recibido).
- *   5. Errores level=error en pipeline_logs (3 h).
+ *   4. Errores level=error en pipeline_logs (3 h).
  *
  * Si hay problemas: log phase='watchdog' level='error' y UN correo al CEO
  * como máximo cada 24 h (sendMail; requiere scope gmail.send — si no,
@@ -22,12 +24,11 @@ const JOB_INTERVALS: Record<string, number> = {
   memoria_sync_emails: 30,
   memoria_attachments_extract: 2,
   memoria_backfill_sweep: 1, // solo se exige mientras haya cuentas pendientes
-  memoria_syntage_daily: 1440,
   memoria_watchdog: 60,
 };
 
 interface Issue {
-  kind: "cron_stale" | "cron_failing" | "odoo_stale" | "gmail_stale" | "syntage_stale" | "pipeline_errors";
+  kind: "cron_stale" | "cron_failing" | "odoo_stale" | "gmail_stale" | "pipeline_errors";
   detail: string;
 }
 
@@ -76,14 +77,18 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // 2. Odoo
-  const { data: freshness } = await supabase.from("odoo_sync_freshness").select("table_name, status, hours_ago, expected_hours");
-  for (const t of (freshness ?? []) as { table_name: string; status: string; hours_ago: number | null; expected_hours: number | null }[]) {
-    const hoursAgo = t.hours_ago == null ? null : Number(t.hours_ago);
-    const expected = t.expected_hours == null ? 2 : Number(t.expected_hours);
-    if (t.status === "stale" || (hoursAgo != null && hoursAgo > expected * 3)) {
-      issues.push({ kind: "odoo_stale", detail: `odoo ${t.table_name}: ${hoursAgo != null ? `${Math.round(hoursAgo)}h` : "?"} sin sync (esperado cada ${expected}h)` });
-    }
+  // 2. Odoo: el push horario de qb19 solo manda contactos/empresas (push_models=contacts).
+  const { data: lastPush } = await supabase
+    .from("odoo_push_last_events")
+    .select("created_at")
+    .eq("method", "contacts")
+    .eq("status", "success")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const pushAgeHours = lastPush?.created_at ? (now - new Date(lastPush.created_at).getTime()) / 3600000 : null;
+  if (pushAgeHours === null || pushAgeHours > 6) {
+    issues.push({ kind: "odoo_stale", detail: `odoo contacts: ${pushAgeHours === null ? "?" : Math.round(pushAgeHours)}h sin push exitoso (esperado cada 1h, umbral 6h)` });
   }
 
   // 3. Gmail
@@ -93,14 +98,7 @@ Deno.serve(async (req: Request) => {
     issues.push({ kind: "gmail_stale", detail: `Gmail: último email guardado hace ${emailAgeHours === null ? "?" : Math.round(emailAgeHours)}h (umbral 3h)` });
   }
 
-  // 4. Syntage (webhooks): umbral 72h — la extracción diaria genera eventos cada día hábil.
-  const { data: lastSyn } = await supabase.from("syntage_webhook_events").select("received_at").order("received_at", { ascending: false }).limit(1).maybeSingle();
-  const synAgeHours = lastSyn?.received_at ? (now - new Date(lastSyn.received_at).getTime()) / 3600000 : null;
-  if (synAgeHours === null || synAgeHours > 72) {
-    issues.push({ kind: "syntage_stale", detail: `Syntage: último webhook hace ${synAgeHours === null ? "?" : Math.round(synAgeHours / 24)} días (umbral 3 días)` });
-  }
-
-  // 5. Errores recientes
+  // 4. Errores recientes
   const { data: recentErrors } = await supabase
     .from("pipeline_logs")
     .select("phase, message, created_at")

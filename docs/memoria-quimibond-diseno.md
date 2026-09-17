@@ -568,6 +568,33 @@ ON CONFLICT (account) DO UPDATE SET since = EXCLUDED.since, page_token = NULL, d
 - [ ] El proyecto de Supabase nació desde la integración de Vercel (organización `vercel_icfg_…`). **No borrar la integración ni el proyecto de Vercel sin antes mover la organización de Supabase a una cuenta propia**, o la facturación y el acceso podrían verse afectados. Borrar solo los crons y el deploy.
 - [ ] Archivar el código del frontend (`src/app/**` salvo `api/syntage` mientras no se porte) y mover `docs/` y `supabase/` a la raíz del repo.
 
+**Supabase solo para lo que Odoo no tiene (2026-09-17, decisión CEO).** El SAT
+vive ahora en Odoo (addon `quimibond_sat` en qb19: ingesta Syntage por webhook
++ API, comparación CFDI ↔ facturas al centavo, complementos de pago, alerta
+diaria). En consecuencia, esta noche se apagó en Supabase todo lo que
+duplicaba a Odoo, de forma reversible:
+
+- `cron.unschedule('memoria_syntage_daily')`: ya no se pide extracción a
+  Syntage desde aquí; el webhook de Syntage apunta a
+  `https://www.quimibond.com/quimibond_sat/webhook`. Las Edge Functions
+  `syntage-daily` y `syntage-webhook` quedan desplegadas pero sin uso; las
+  tablas `syntage_*` se conservan (25,542 complementos de pago sirvieron para
+  el backfill de `sat.cfdi.pago`) hasta que el CEO apruebe borrarlas.
+- Jobs pg_cron de silver/gold **desactivados** (`cron.alter_job(jobid, active := false)`),
+  porque sus insumos `odoo_*` dejan de refrescarse: jobids 1, 2, 7, 8, 9, 10,
+  11, 12, 13, 14, 15, 16, 17, 19, 20, 21, 22, 23, 25, 26, 28, 29, 30, 31, 32,
+  34, 35, 36, 37 (reconcile, matchers, refresh de MVs, data quality, drift,
+  inventario, sentinel). Quedan activos: `memoria_*`, `comms_invariants_hourly`
+  (hilos sin respuesta, es de correo) y las dos limpiezas de retención. Para
+  revertir: mismo `alter_job` con `active := true`.
+- Push de qb19 a Supabase reducido a `contacts` (contactos + empresas), que es
+  lo único que la memoria consume (`get_silent_customers`,
+  `get_unanswered_client_threads`, ligado de correos por dominio). Parámetro
+  `quimibond_intelligence.push_models` (`all` para volver a todo).
+- Watchdog `health` v3: ya no vigila Syntage ni `odoo_sync_freshness`; el
+  check de Odoo mide la edad del último push exitoso de `contacts` en
+  `odoo_push_last_events` (umbral 6 h).
+
 **Fases 2 a 5 (ajuste):** la capa 3 deja de ser "tools del analista" y pasa a ser
 funciones SQL (`memory.search`, `memory.entity_brief`, `memory.thread_brief`)
 que Claude llama por MCP; `memory-chunk`, `memory-embed`, `memory-consolidate`
