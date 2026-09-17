@@ -1941,9 +1941,9 @@ quimibond_intelligence.supabase_service_key=...
 ## Deployment
 
 ### Frontend (Vercel)
-- Push a `main` → auto-deploy
-- Crons configurados en `vercel.json`
-- Vercel Pro (300s timeout)
+- Push a `main` → auto-deploy (frontend retirado desde 2026-09-16; el deploy solo mantiene las rutas API vivas)
+- **Sin crons en `vercel.json`** (2026-09-17): los pipelines corren en Supabase (pg_cron + Edge Functions). El plan Hobby rechazaba todo deploy con crons sub-diarios ("Deployment failed" en cada PR desde el 16-sep).
+- Vercel Hobby
 
 ### Backend (Odoo.sh)
 - Branch `quimibond` = produccion
