@@ -75,6 +75,26 @@ async function uploadRawPayloads(supabase: Client, emails: ParsedEmail[]): Promi
   return paths;
 }
 
+
+/** Postgres no acepta `\u0000` ni surrogates sueltos dentro de json/jsonb y
+ * PostgREST responde PGRST102 "Empty or invalid json" para todo el lote. Un
+ * solo correo con un NUL en el cuerpo (HTML roto, adjunto inline) atoraba el
+ * backfill de un buzón entero en la misma página. Se limpian todas las cadenas
+ * del payload antes de mandarlo. */
+export function sanitizeJson<T>(value: T): T {
+  if (typeof value === "string") {
+    // deno-lint-ignore no-control-regex
+    return value.replace(/\u0000/g, "").replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "") as T;
+  }
+  if (Array.isArray(value)) return value.map((v) => sanitizeJson(v)) as T;
+  if (value && typeof value === "object") {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) out[k] = sanitizeJson(v);
+    return out as T;
+  }
+  return value;
+}
+
 export async function persistEmailsAndThreads(supabase: Client, validEmails: ParsedEmail[]): Promise<PersistResult> {
   const result: PersistResult = {
     emails_saved: 0,
@@ -125,7 +145,7 @@ export async function persistEmailsAndThreads(supabase: Client, validEmails: Par
   if (threadRows.length) {
     const { data: upserted, error: threadErr } = await supabase
       .from("threads")
-      .upsert(threadRows, { onConflict: "gmail_thread_id" })
+      .upsert(sanitizeJson(threadRows), { onConflict: "gmail_thread_id" })
       .select("id, gmail_thread_id");
     if (threadErr) console.error("[email-persist] thread upsert failed", threadErr);
     for (const t of upserted ?? []) threadIdByGmail.set(t.gmail_thread_id as string, t.id as number);
@@ -141,7 +161,7 @@ export async function persistEmailsAndThreads(supabase: Client, validEmails: Par
   result.raw_uploaded = rawPaths.size;
 
   // 3. Correos via RPC condicional
-  const emailRows = validEmails.map((e) => ({
+  const emailRows = validEmails.map((e) => sanitizeJson({
     account: e.account,
     sender: e.from,
     recipient: e.to,
@@ -210,7 +230,7 @@ export async function persistEmailsAndThreads(supabase: Client, validEmails: Par
   for (const batch of chunk(attachmentRows, 200)) {
     const { error } = await supabase
       .from("email_attachments")
-      .upsert(batch, { onConflict: "email_id,filename,size_bytes", ignoreDuplicates: true });
+      .upsert(sanitizeJson(batch), { onConflict: "email_id,filename,size_bytes", ignoreDuplicates: true });
     if (error) {
       console.error("[email-persist] email_attachments upsert failed", error);
       result.errors.push(`attachments: ${error.message}`);
