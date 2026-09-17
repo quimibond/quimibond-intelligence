@@ -435,13 +435,21 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 | `memoria_sync_emails` | */30 min | `sync-emails` (52 llamadas, una por buzón) | Sync incremental de Gmail, ingest v2 completo |
 | `memoria_backfill_sweep` | cada minuto | `backfill-sweep` (2 cuentas/min) | Re-ingesta v2 del histórico desde 2025-10-01 (`email_backfill_state`) |
 | `memoria_attachments_extract` | cada minuto | `attachments-extract` | Baja adjuntos ≤3 MB a Storage y extrae texto (chicos primero, presupuesto de CPU) |
-| `memoria_watchdog` | :05 cada hora | `health` | Salud de jobs (`memoria_cron_health`), Odoo, Gmail, Syntage, errores → correo al CEO máx. 1/día |
-| `memoria_syntage_daily` | 05:00 UTC | `syntage-daily` | Pide a Syntage la extracción incremental de CFDIs (4 días) |
-| — (webhook) | realtime | `syntage-webhook` | Receptor de webhooks de Syntage (firma HMAC). Apuntar Syntage a `/functions/v1/syntage-webhook` |
+| `memoria_watchdog` | :05 cada hora | `health` | Salud de jobs (`memoria_cron_health`), push de contactos de Odoo (`odoo_push_last_events`), Gmail, errores → correo al CEO máx. 1/día |
 | `memoria_email_digest` | 12:45 UTC | `email-digest` | Resumen ejecutivo del correo 24 h (Claude) → `email_digests` + correo HTML |
 | `memoria_extract_pending` | :40 cada 2 h | `email-extract` `{task:"pending"}` | Pendientes accionables por hilo → `email_pending_actions` |
 | `memoria_extract_demand` | :50 cada 2 h | `email-extract` `{task:"demand"}` | Demanda en cuerpos de correo → `customer_demand_signals` |
 | `memoria_extract_demand_files` | :55 cada 2 h | `email-extract` `{task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
+
+> **2026-09-17 — Supabase solo para lo que Odoo no tiene.** El SAT vive en Odoo
+> (addon `quimibond_sat` de qb19: CFDI, comparación al centavo, complementos de
+> pago, alerta diaria). Se apagó `memoria_syntage_daily` (el webhook de Syntage
+> apunta a Odoo), se desactivaron los jobs pg_cron de silver/gold (lista de
+> jobids y cómo revertir en `docs/memoria-quimibond-diseno.md` → "Supabase solo
+> para lo que Odoo no tiene") y el push de qb19 quedó en `contacts` únicamente
+> (`quimibond_intelligence.push_models`). Las tablas `odoo_*`, `syntage_*`,
+> `canonical_*` y `gold_*` siguen existiendo pero **ya no se refrescan**: no
+> tomar cifras de ahí; la fuente es Odoo por MCP.
 
 Reglas aprendidas el 2026-09-16: nunca abanicar decenas de invocaciones largas
 a la vez (52 backfills simultáneos tiraron la base 40 min); `emails` no debe
