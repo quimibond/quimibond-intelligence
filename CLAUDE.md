@@ -451,6 +451,12 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 > `canonical_*` y `gold_*` siguen existiendo pero **ya no se refrescan**: no
 > tomar cifras de ahí; la fuente es Odoo por MCP.
 
+Incidente 2026-09-17: con compute Small la base pasó 9 h saturada en IO (backfill +
+adjuntos cada minuto sobre `emails` de 3.4 GB) y el watchdog no avisó porque
+consulta la misma base. Compute ahora **Medium** (1 GB de buffers). Cadencia de
+contención si se repite: backfill `*/2` con `invoke_edge_backfill_pending(1)`,
+adjuntos `*/5`. Detalle en `docs/memoria-quimibond-diseno.md`.
+
 Reglas aprendidas el 2026-09-16: nunca abanicar decenas de invocaciones largas
 a la vez (52 backfills simultáneos tiraron la base 40 min); `emails` no debe
 tener índice HNSW (818 MB contra 256 MB de buffers: cada update costaba
