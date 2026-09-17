@@ -595,6 +595,29 @@ duplicaba a Odoo, de forma reversible:
   check de Odoo mide la edad del último push exitoso de `contacts` en
   `odoo_push_last_events` (umbral 6 h).
 
+**Incidente 2026-09-17 07:00–16:35 UTC (base saturada 9 h, compute Small → Medium).**
+El backfill v2 corrió toda la noche sin fallas (~288 invocaciones/h) hasta que a
+las ~06:15 UTC coincidió con los jobs diarios de silver/gold (reconciliación,
+refresh de MVs) y se agotó el presupuesto de disco de la instancia Small
+(`shared_buffers` 256 MB contra una tabla `emails` de 3.4 GB: 478 MB de filas,
+2.7 GB de TOAST con `body`, `body_full`, `body_html`, `body_clean` y el
+`embedding` de 1,536 floats que ya nadie usa, más 21 índices de los que 8 nunca
+se han usado). A partir de las 07:00 todo esperaba `DataFileRead`: inserts
+triviales de 10–30 s, `pgbouncer.get_auth` de 33 s, cada `backfill-sweep` y
+`attachments-extract` en 504 a los 150 s, 38 % de los `sync-emails` fallando,
+el digest de las 12:45 y los extractores caídos, y el watchdog también (sus
+propias consultas expiraban, así que **no alertó**: vigila la base desde la
+misma base). Contención a las 16:27: pausa de `memoria_backfill_sweep` y
+`memoria_attachments_extract`. Causa raíz de tamaño: el CEO subió el compute a
+**Medium** a las 16:35 (`shared_buffers` 1 GB, `max_connections` 120); a las
+16:38 se reactivaron ambos jobs a su cadencia original (cada minuto, 2 buzones)
+y se disparó el digest a mano. A las 16:55: 0 fallos, 0 timeouts, probe de 20 s
+→ 12 ms. Lecciones: (1) un watchdog que dependa de la base no sirve cuando la
+base es el problema — hace falta un ping externo; (2) la Fase 5 (drop de
+`embedding`, `body` y los índices sin uso) no es cosmética, reduce la tabla a la
+mitad; (3) si vuelve la saturación, la cadencia de contención es backfill
+`*/2 * * * *` con `invoke_edge_backfill_pending(1)` y adjuntos `*/5 * * * *`.
+
 **Fases 2 a 5 (ajuste):** la capa 3 deja de ser "tools del analista" y pasa a ser
 funciones SQL (`memory.search`, `memory.entity_brief`, `memory.thread_brief`)
 que Claude llama por MCP; `memory-chunk`, `memory-embed`, `memory-consolidate`
