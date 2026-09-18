@@ -440,6 +440,66 @@ PIPELINE → AGENTES (8 directores) → CEO INBOX
 | `memoria_extract_pending` | :40 cada 2 h | `email-extract` `{task:"pending"}` | Pendientes accionables por hilo → `email_pending_actions` |
 | `memoria_extract_demand` | :50 cada 2 h | `email-extract` `{task:"demand"}` | Demanda en cuerpos de correo → `customer_demand_signals` |
 | `memoria_extract_demand_files` | :55 cada 2 h | `email-extract` `{task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
+| `memoria_ligas` | cada 10 min | SQL `memoria_link_recent('3 days')` | Ligas determinísticas: contactos nuevos por dominio de empresa de Odoo, `sender_contact_id`, `company_id`, agregados y `conv_key` del hilo, ritmo del contacto |
+| `memoria_consolidar` | cada 5 min | `memory-consolidate` (10 conversaciones/corrida, Sonnet) | Resumen vivo por conversación + hechos con vigencia + grafo → `memoria_thread_summaries`, `memoria_facts`, `kg_nodes`/`kg_edges` |
+| `memoria_grafo_nocturno` | 08:15 UTC | SQL `kg_refresh_deterministic()` | Nodos/aristas que salen de los datos (empresas de Odoo, contactos, buzones, usuarios, quién atiende a quién) |
+
+## Memoria Fase 3 (2026-09-18): ligas, resúmenes vivos, hechos y grafo
+
+> **Hallazgo que lo motivó:** desde que se apagaron los pipelines de Vercel, el
+> ingest v2 creaba hilos pero **no ligaba** `sender_contact_id` (0 % desde el
+> 14-sep) ni `threads.company_id` (9 hilos con empresa de 17,530 en 30 días).
+> La pestaña Memoria de Odoo y los extractores estaban ciegos a lo nuevo.
+> `memoria_link_recent()` lo repara y corre cada 10 min (backfill de 60 días
+> hecho el 18-sep: 251 contactos nuevos, 25k correos ligados, 34k hilos
+> recalculados).
+
+**Una conversación = un resumen.** Gmail abre un hilo por buzón: el mismo
+intercambio copiado a 3 buzones son 3 `threads`. `threads.conv_key` = Message-ID
+raíz (`references_hdr[1]` o `message_id_hdr` del correo más antiguo; fallback
+`gmail_thread_id`). `memoria_hilos_pendientes()` agrupa por `conv_key` (hilo
+canónico = menor id, `thread_ids` hermanos) y `memoria_hilo_mensajes()` devuelve
+los correos sin duplicar. En 30 días: 15,155 hilos = 8,727 conversaciones.
+
+**Qué entra a la cola** (`20260918c`): empresas de Odoo (`odoo_partner_id`,
+cliente o proveedor, dominio no genérico) con alguien de fuera en la
+conversación, de 2+ correos o de 1 correo reciente (14 d) de la contraparte.
+Prioridad: ya resumidas con correo nuevo → multi-correo → recientes. Sin el
+filtro entraban conversaciones 100 % internas (empleados dados de alta como
+partner, el banco) y 31k conversaciones; con él, ~1.5k de rezago.
+
+**Tablas nuevas:**
+
+| Tabla | Qué guarda |
+|---|---|
+| `memoria_thread_summaries` | Por conversación (PK `thread_id` canónico, `conv_key`, `thread_ids`): `tema`, `resumen`, `estado` (abierto/cerrado/informativo), `esperando_a` (nosotros/ellos/nadie), `tono`, `acuerdos`, `pendientes`, `summarized_through`, `version`. Se rehace incremental (resumen anterior + correos nuevos) cuando `last_activity > summarized_through`. |
+| `memoria_facts` | Hechos con vigencia por nodo (empresa o contacto): `categoria` (condiciones_pago, precio, producto, logistica, calidad, contacto_clave, proceso, preferencia, riesgo, otro), `hecho`, `vigente_desde/hasta`, `status`, `confianza`, `evidencia` (hilo + correos), `veces`. Dedup por hash del texto; repetido ⇒ `veces+1`, confianza +0.1. |
+| `kg_nodes` | Nodos: `empresa` (key = companies.id), `contacto` (email), `usuario` (email Odoo), `buzon` (gmail_accounts), `hilo` (threads.id), `producto`, `tema`. `props` jsonb, `source` determinista/claude. |
+| `kg_edges` | Aristas con peso y evidencia: `trabaja_en`, `persona_de`, `atiende` / `atiende:<area>`, `escribe_a`, `sobre` (hilo→empresa), `participa` (contacto/buzón→hilo). Únicas por (src, dst, rel). |
+
+**RPCs para consumir la memoria (Odoo y Claude por MCP):**
+- `memoria_brief(p_company_id | p_odoo_partner_id)` → ficha jsonb: empresa,
+  encargados (buzón, área, %), contactos, hechos vigentes, últimas 12
+  conversaciones resumidas, stats. La pestaña Memoria de Odoo (`qb_memoria`
+  1.2) la muestra como "Quién la atiende", "Lo que sabemos" y "Conversaciones".
+- `memoria_buscar(p_texto, p_company_id, p_limit)` → búsqueda websearch en
+  español sobre resúmenes y hechos. **Cómo preguntarle a la memoria hoy:** por
+  MCP, `select * from memoria_buscar('condiciones de pago shawmut')` y luego
+  `memoria_brief` de la empresa; Claude arma la respuesta con eso y Odoo.
+- `memoria_guardar_consolidacion(thread_id, payload, model)` la usa la Edge
+  Function; `kg_upsert_node/edge` para escribir al grafo desde SQL.
+
+**Costo y ritmo:** Sonnet, ~5.8k tokens de entrada y ~1.1k de salida por
+conversación (`token_usage.endpoint = 'memory-consolidate'`); 10 conversaciones
+por corrida de 5 min ≈ 2,900/día máximo. Salida `max_tokens 3000`; si Claude se
+corta, la llamada falla explícitamente (no se guarda JSON a medias).
+
+**Deuda conocida:** hechos casi duplicados con distinta redacción (dedup solo
+por hash exacto); los primeros 51 resúmenes incluyeron conversaciones internas
+(antes del filtro 3c); `contacts.role` se llena desde `personas` solo si estaba
+vacío. Siguiente: pendientes de `memoria_thread_summaries` → obligaciones en
+Odoo; "pregúntale a la memoria" desde la ficha del contacto; memoria de
+decisiones del CEO.
 
 > **2026-09-17 — Supabase solo para lo que Odoo no tiene.** El SAT vive en Odoo
 > (addon `quimibond_sat` de qb19: CFDI, comparación al centavo, complementos de

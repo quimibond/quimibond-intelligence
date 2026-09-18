@@ -52,6 +52,9 @@ export async function claudeText(client: Anthropic, supabase: Client, call: Clau
   if (res.stop_reason === "refusal") {
     throw new Error(`Claude rechazó la solicitud (${res.stop_details?.category ?? "sin categoría"})`);
   }
+  if (res.stop_reason === "max_tokens") {
+    throw new Error(`Respuesta truncada en max_tokens=${call.max_tokens} (${label}); subir el presupuesto o acotar la salida.`);
+  }
   return res.content
     .filter((b): b is Anthropic.TextBlock => b.type === "text")
     .map((b) => b.text)
@@ -66,9 +69,36 @@ export async function claudeJSON<T>(client: Anthropic, supabase: Client, call: C
     return JSON.parse(raw) as T;
   } catch {
     const m = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (m) return JSON.parse(m[1].trim()) as T;
-    const arr = raw.match(/\[[\s\S]*\]/);
-    if (arr) return JSON.parse(arr[0]) as T;
+    if (m) {
+      try {
+        return JSON.parse(m[1].trim()) as T;
+      } catch { /* sigue con el recorte por llaves/corchetes */ }
+    }
+    // Primer objeto o array balanceado (lo que aparezca primero), ignorando texto alrededor.
+    const iObj = raw.indexOf("{");
+    const iArr = raw.indexOf("[");
+    const open = iObj === -1 ? "[" : iArr === -1 ? "{" : iObj < iArr ? "{" : "[";
+    const close = open === "{" ? "}" : "]";
+    const start = raw.indexOf(open);
+    if (start !== -1) {
+      let depth = 0;
+      let inStr = false;
+      for (let i = start; i < raw.length; i++) {
+        const ch = raw[i];
+        if (inStr) {
+          if (ch === "\\") i++;
+          else if (ch === '"') inStr = false;
+          continue;
+        }
+        if (ch === '"') inStr = true;
+        else if (ch === open) depth++;
+        else if (ch === close && --depth === 0) {
+          try {
+            return JSON.parse(raw.slice(start, i + 1)) as T;
+          } catch { break; }
+        }
+      }
+    }
     console.error(`[${label}] respuesta no JSON:`, raw.slice(0, 300));
     throw new Error("No se pudo interpretar la respuesta de Claude como JSON.");
   }
