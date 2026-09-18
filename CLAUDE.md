@@ -114,7 +114,7 @@ y luego `memoria_brief` de la empresa. Ejemplo:
 | `analyst_query` | `email-extract`, `email-digest` | SELECT de solo lectura parametrizado para armar el contexto de Claude |
 | `memoria_hilos_pendientes` | `memory-consolidate` | Cola de conversaciones por `conv_key` (hilo canónico + hermanos) |
 | `memoria_hilo_mensajes` | `memory-consolidate` | Correos de una conversación sin duplicar entre buzones, con `adjuntos_texto` (texto de hasta 3 adjuntos por correo, dedup por sha256, 2,500 caracteres cada uno) |
-| `memoria_adjuntos_reusar_hermanos`, `memoria_adjuntos_reclamar` | `attachments-extract` | Heredar sha/archivo/texto entre buzones (mismo Message-ID) sin volver a bajar; reclamar lotes con `FOR UPDATE SKIP LOCKED` + `claimed_at` para correr dos invocaciones por minuto |
+| `memoria_adjuntos_reusar_hermanos`, `memoria_adjuntos_reclamar` | `attachments-extract` | Heredar sha/archivo/texto entre buzones (mismo Message-ID) sin volver a bajar; reclamar lotes con `FOR UPDATE SKIP LOCKED` + `claimed_at` para correr dos invocaciones por minuto. **Prioridad:** `select invoke_edge('attachments-extract', '{"gmail_message_ids": ["…"]}')` (o `email_ids`) extrae ya los adjuntos de esos correos; repetir hasta que el log diga 0 en lote |
 | `memoria_guardar_consolidacion` | `memory-consolidate` | Escribe resumen, hechos y grafo en una transacción |
 | `get_unanswered_client_threads`, `get_silent_customers` | `email-digest` | Hilos de cliente sin respuesta y clientes callados |
 | `expire_email_pending_actions` | `email-extract` | Vence pendientes viejos |
