@@ -1,0 +1,2012 @@
+# Quimibond Intelligence — Documentacion Completa
+
+## Que es
+
+Plataforma de inteligencia comercial para Quimibond (empresa textil mexicana). Conecta Odoo ERP + Gmail + Claude AI para darle al CEO insights accionables sobre su negocio.
+
+**Stack:** Next.js 15 + React 19 + Supabase (PostgreSQL + pgvector) + Claude API + Odoo 19
+
+**Repos:**
+- `quimibond-intelligence` — Frontend (Vercel)
+- `qb19` — Addon de Odoo (Odoo.sh)
+
+---
+
+## Arquitectura
+
+```
+ODOO ERP (qb19 addon)         SAT (Syntage webhooks)        Gmail
+  ↓ push cada 1h                ↓ realtime                   ↓ cada 30min
+┌──────────────────────────────────────────────────────────────────┐
+│ BRONZE (raw ingest)                                              │
+│   odoo_*  (24 tablas, ~1.29 GB)                                  │
+│   syntage_*  (12 tablas, ~707 MB)                                │
+│   emails / threads (Gmail, ~570 MB)                              │
+└──────────────────────────────────────────────────────────────────┘
+  ↓ matchers + reconcile (pg_cron 30min/1h/2h)
+┌──────────────────────────────────────────────────────────────────┐
+│ SILVER (reconciled, dedupped, FK-resolved)                       │
+│   canonical_* (11 tablas + 5 MVs + 7 vistas, ~1.12 GB)           │
+│   mv_* (4 MVs intermedias, ~127 MB)                              │
+│   reconciliation_issues / mdm_manual_overrides / source_links    │
+└──────────────────────────────────────────────────────────────────┘
+  ↓ vistas SQL (no materializadas, evaluadas on-read)
+┌──────────────────────────────────────────────────────────────────┐
+│ GOLD (CEO-facing aggregates)                                     │
+│   gold_* (12 vistas)                                             │
+└──────────────────────────────────────────────────────────────────┘
+  ↓ src/lib/queries/** (con unstable_cache para gold/canonical)
+PIPELINE → AGENTES (8 directores) → CEO INBOX
+```
+
+### Capas — inventario verificado (2026-04-28)
+
+#### BRONZE — raw ingest, no se modifica
+
+**Odoo (24 tablas, push qb19 cada 1h):**
+- Catálogo: `odoo_chart_of_accounts`, `odoo_currency_rates`, `odoo_stock_locations`, `odoo_workcenters`
+- Maestros: `odoo_products`, `odoo_users`, `odoo_employees`, `odoo_departments`, `odoo_orderpoints`
+- Transaccionales: `odoo_invoices`, `odoo_invoice_lines`, `odoo_sale_orders`, `odoo_order_lines`, `odoo_purchase_orders`, `odoo_deliveries`, `odoo_account_payments`, `odoo_activities`, `odoo_crm_leads`
+- Manufactura: `odoo_manufacturing`, `odoo_workorders`, `odoo_stock_moves` (1.65M rows), `odoo_account_entries_stock` (240k rows)
+- Saldos: `odoo_account_balances` (P&L mensual agregado), `odoo_bank_balances`
+- Sentinela: `odoo_sync_freshness`, `odoo_push_last_events` (auxiliares)
+
+**Syntage SAT (12 tablas, webhook + pull-sync):**
+- `syntage_invoices` (130k rows, CFDIs), `syntage_invoice_line_items` (181k rows)
+- `syntage_invoice_payments` (25k rows, complementos de pago)
+- `syntage_tax_returns`, `syntage_tax_retentions`, `syntage_tax_status`, `syntage_electronic_accounting`
+- `syntage_files` (PDFs/XMLs blob), `syntage_webhook_events` (audit log)
+- Maestros: `syntage_taxpayers`, `syntage_entity_map`, `syntage_extractions`
+
+**Gmail (4 tablas):**
+- `emails` (232k rows), `threads` (112k), `email_recipients`, `email_attachments`
+- **Memoria Fase 1 (2026-09-16):** el ingest v2 guarda el cuerpo completo
+  (`body_full`), el HTML (`body_html`), el mensaje sin citas ni firma
+  (`body_clean`), headers de threading (`message_id_hdr`, `in_reply_to_hdr`,
+  `references_hdr`), `cc`/`bcc`, `labels` y el payload crudo de Gmail en el
+  bucket privado `email-raw` (`raw_storage_path`). `ingest_version` = 1 legacy
+  (cuerpo cortado a 5k chars), 2 completo. El upsert es el RPC
+  `ingest_emails_v2` (solo actualiza si la versión entrante es mayor).
+  `email_attachments` registra cada adjunto; la Edge Function `attachments-extract`
+  (pg_cron cada minuto) los baja, deduplica por sha256 al bucket `email-attachments` y
+  extrae texto (PDF/Excel/Word/CSV) en `extracted_text`. Cobertura en la vista
+  `memory_coverage`. Diseño completo y fases siguientes en
+  `docs/memoria-quimibond-diseno.md`. `body` sigue existiendo por compat con
+  `analyze`/`embeddings`/`extract-*`; se retira en Fase 5.
+
+**Knowledge graph (extraído de emails):**
+- `entities`, `entity_relationships`, `facts`, `ai_extracted_facts`, `action_items`
+
+#### SILVER — reconciliado, dedup, FKs resueltas
+
+**Canonical (Pattern A + C, 11 tablas + 5 MVs + 7 views):**
+- MDM (Pattern C): `canonical_companies` (4.9k), `canonical_contacts` (2k), `canonical_products` (6k), `canonical_employees` (view)
+- Operativo refresh-on-write (tablas): `canonical_invoices` (84k), `canonical_payments` (42k), `canonical_payment_allocations` (25k), `canonical_credit_notes` (2.2k), `canonical_tax_events` (398), `canonical_account_payments` (17k), `canonical_activities` (184k)
+- Operativo MVs (refresh sp11/sp12 hourly): `canonical_sale_orders` (12k), `canonical_purchase_orders` (5.7k), `canonical_order_lines` (32k), `canonical_deliveries` (25k), `canonical_manufacturing` (5k)
+- Append-only fact: `canonical_stock_moves` (1.64M, 853 MB) — espejo silver de `odoo_stock_moves` con `move_category` derivado
+
+**Reconciliación + MDM:**
+- `reconciliation_issues` (245k rows, 692 MB; retention 30d via pg_cron `recon_issues_retention_cleanup`)
+- `mdm_manual_overrides` (audit/bridge)
+- `source_links` (172k traceability links)
+- `audit_runs` + `audit_tolerances` (invariantes config + history; retention 90d)
+
+**MVs intermedias (refresh hourly via sp11/sp12):**
+- `mv_entry_lines_flat` (308k, P&L drilldown)
+- `mv_stock_move_account_matches` (350k, residual 501.01)
+- `mv_bom_standard_cost`, `mv_mo_actual_material_cost` (BOM real cost)
+
+**Legacy MVs (NO en convención canonical_*/mv_*, refresh `refresh-all-matviews` cada 2h):**
+- `client_reorder_predictions`, `payment_predictions`, `cashflow_projection`
+- `inventory_velocity`, `dead_stock_analysis`, `purchase_price_intelligence`
+- `customer_product_matrix`, `accounting_anomalies`, `bom_duplicate_components`
+- `ar_aging_detail`, `ops_delivery_health_weekly`, `journal_flow_profile`
+- `product_real_cost`, `real_sale_price`
+
+#### GOLD — vistas SQL no materializadas, evaluadas on-read
+
+**9 vistas activas (todas con consumers y datos vivos):**
+| Vista | Filas | Para |
+|---|---|---|
+| `gold_company_360` | 4,511 | Detalle por empresa (revenue, AR/AP, OTD, tier) |
+| `gold_ceo_inbox` | 50 | Inbox priorizado (`reconciliation_issues` con context) |
+| `gold_pl_statement` | 60 | P&L mensual (60 meses) |
+| `gold_cashflow` | 1 | Snapshot cash + AR + AP |
+| `gold_revenue_monthly` | 20,542 | Revenue mensual por empresa |
+| `gold_balance_sheet` | 106 | Balance sheet por período |
+| `gold_reconciliation_health` | 1 | Health score global recon |
+| `gold_company_odoo_sat_drift` | 1,942 | Drift Odoo↔SAT por empresa |
+| `gold_product_performance` | 6,016 | Ranking productos |
+| `gold_sale_chain_trace` | 12,401 | SO → delivery → invoice → payment |
+
+> **Audit 2026-04-29 — dropped 3 views sin consumers:** `v_mo_material_variance`, `gold_state_mismatch_watchlist`, `gold_inventory_valuation_drift_monthly`. Migration `20260429_drop_unused_gold_views.sql`.
+
+### Pipelines de datos
+
+1. **Odoo → Bronze** (qb19 addon, hourly push)
+   - 24 tablas, último sync verificado 2026-04-28 19:48 UTC (todas <2h freshness, excepto `odoo_workorders` 24h por baja prioridad)
+   - Bug `account_balances` 'tuple' fixeado en qb19 commit `ccec751c`
+2. **SAT → Bronze** (Syntage webhook + pull-sync)
+   - Real-time webhooks + nightly pull (`syntage/cron-daily` 5:00 AM)
+   - Bug `matcher_payment` resuelto con stub (2026-04-28); webhook ya no falla
+3. **Gmail → Bronze** (pipeline `sync-emails`, every 30 min)
+4. **Bronze → Silver** (pg_cron + Bronze triggers)
+   - Triggers `auto_link_*` en INSERT/UPDATE de bronze
+   - `matcher_*()` family ejecutada cada 2h (`silver_sp3_matcher_all_pending`)
+   - Refresh canonical aggregations cada 30min/45min
+   - MVs canonical refresh cada 2h (`refresh-all-matviews`)
+   - MVs sp11/sp12 refresh cada hora
+5. **Silver → Reconciliation Issues** (pg_cron)
+   - `silver_sp2_reconcile_hourly` (HH:05): invariantes con `cadence='hourly'`
+   - `silver_sp2_reconcile_2h` (HH:15 every 2h): invariantes con `cadence='2h'`
+   - `silver_sp4_reconcile_daily` (6:30 AM): invariantes daily
+   - `silver_sp2_refresh_canonical_nightly` (3:30 AM): full refresh
+   - 16+ invariantes activas (`audit_tolerances` controla cadence)
+6. **Silver → Gold** (vistas evaluadas on-read, sin pg_cron — la "frescura" la limita el último refresh upstream)
+7. **Gold → Frontend** (`src/lib/queries/**` con `unstable_cache` 60-300s para gold/canonical reads; uncached para fiscal/syntage webhook-driven)
+8. **Frontend → Agentes → Insights** (orchestrate cada hora, 8 directores activos — ver sección "Agentes de IA")
+
+### Health checks (estado verificado 2026-04-28 19:50 UTC)
+
+- **Bronze ingest:** 0 errores en últimas 6h (vs 49 errores en 7d antes de fixes 28-abr)
+- **Silver canonical:** todos los matchers corren, FKs validadas
+- **Gold:** 12/12 vistas vivas devolviendo datos
+- **pg_cron:** 15 jobs activos, todos con `active=true`
+- **Recent warnings (6h):** 9 syntage_webhook (transient), 2 health_check, 1 odoo_push, 1 data_quality (no críticos)
+
+---
+
+## Mapeo Odoo → Supabase (campos)
+
+### res.partner → `contacts` + `companies`
+
+| Campo Odoo | Campo Supabase | Tabla | Notas |
+|---|---|---|---|
+| `id` | `odoo_partner_id` | contacts, companies | ID unico del partner |
+| `name` | `name` / `canonical_name` | contacts / companies | canonical_name es lowercase para dedup |
+| `email` | `email` | contacts | Puede tener multiples (separados por `;,`) |
+| `vat` | `rfc` | companies | RFC fiscal mexicano |
+| `customer_rank` | `is_customer` | contacts, companies | `> 0` = es cliente |
+| `supplier_rank` | `is_supplier` | contacts, companies | `> 0` = es proveedor |
+| `parent_id` | `company` (text) | contacts | Nombre de la empresa padre |
+| `country_id.name` | `country` | companies | |
+| `city` | `city` | companies | |
+| `category_id` | — | — | Tags de Odoo, no sincronizados aun |
+| `property_payment_term_id` | — | — | Terminos de pago, no sincronizados |
+| `commercial_partner_id` | — | — | Se usa para resolver el partner comercial |
+
+### product.product → `odoo_products`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_product_id` | ID unico |
+| `name` | `name` | Nombre largo del producto |
+| `default_code` | `internal_ref` | **REFERENCIA INTERNA** — usar este para display (ej: WM4032OW152) |
+| `categ_id.complete_name` | `category` | Ruta completa de categoria |
+| `uom_id.name` | `uom` | Unidad de medida |
+| `detailed_type` / `type` | `product_type` | Odoo 19 renombro `type` → `detailed_type` |
+| `qty_available` | `stock_qty` | Stock on-hand |
+| `free_qty` | — | Se usa para calcular `reserved_qty = qty_available - free_qty` |
+| — | `reserved_qty` | Calculado: `qty_available - free_qty` |
+| — | `available_qty` | Calculado: `stock_qty - reserved_qty` |
+| `standard_price` | `standard_price` | Costo del producto |
+| `lst_price` | `list_price` | Precio de lista (venta) |
+| `active` | `active` | |
+| `barcode` | `barcode` | |
+| `weight` | `weight` | |
+
+### sale.order → `odoo_sale_orders`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_order_id` | |
+| `name` | `name` | Ej: SO/2026/0001 |
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | Empresa comercial |
+| `user_id.name` | `salesperson_name` | **Vendedor asignado** |
+| `user_id.email` | `salesperson_email` | |
+| `user_id.id` | `salesperson_user_id` | FK para routing de insights |
+| `team_id.name` | `team_name` | Equipo de ventas |
+| `amount_total` | `amount_total` | Con IVA |
+| `amount_untaxed` | `amount_untaxed` | Sin IVA |
+| `margin` | `margin` | Margen en MXN |
+| — | `margin_percent` | Calculado: `margin / amount_untaxed * 100` |
+| `currency_id.name` | `currency` | Default MXN |
+| `state` | `state` | sale, done |
+| `date_order` | `date_order` | |
+| `commitment_date` | `commitment_date` | Fecha prometida |
+
+### sale.order.line / purchase.order.line → `odoo_order_lines`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` / `-id` | `odoo_line_id` | **Negativo para purchase** (evita collision) |
+| `order_id.id` | `odoo_order_id` | |
+| `order_id.partner_id` | `odoo_partner_id` | Empresa comercial |
+| `product_id.id` | `odoo_product_id` | |
+| `order_id.name` | `order_name` | Ej: SO/2026/0001 |
+| `order_id.date_order` | `order_date` | |
+| — | `order_type` | `sale` o `purchase` |
+| `order_id.state` | `order_state` | |
+| `product_id.name` | `product_name` | Nombre largo |
+| `product_id.default_code` | `product_ref` | **REFERENCIA INTERNA** — usar para display |
+| `product_uom_qty` | `qty` | Sale lines. Purchase usa `product_qty` con fallback |
+| `price_unit` | `price_unit` | |
+| `discount` | `discount` | % de descuento |
+| `price_subtotal` | `subtotal` | |
+| `currency_id.name` | `currency` | |
+
+### account.move → `odoo_invoices`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | |
+| `name` | `name` | Ej: INV/2026/03/0173 |
+| `move_type` | `move_type` | out_invoice, out_refund, in_invoice, in_refund |
+| `amount_total` | `amount_total` | |
+| `amount_residual` | `amount_residual` | Lo que falta por cobrar |
+| `currency_id.name` | `currency` | |
+| `invoice_date` | `invoice_date` | Fecha de factura |
+| `invoice_date_due` | `due_date` | Fecha de vencimiento |
+| `state` | `state` | posted |
+| `payment_state` | `payment_state` | not_paid, partial, paid, in_payment |
+| — | `days_overdue` | Calculado: `today - due_date` si vencida |
+| `ref` | `ref` | Referencia libre |
+
+### account.move.line → `odoo_invoice_lines`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_line_id` | |
+| `move_id.id` | `odoo_move_id` | |
+| `move_id.partner_id` | `odoo_partner_id` | |
+| `move_id.name` | `move_name` | |
+| `move_id.move_type` | `move_type` | |
+| `move_id.invoice_date` | `invoice_date` | |
+| `product_id.id` | `odoo_product_id` | |
+| `product_id.name` | `product_name` | |
+| `product_id.default_code` | `product_ref` | **REFERENCIA INTERNA** |
+| `quantity` | `quantity` | |
+| `price_unit` | `price_unit` | |
+| `discount` | `discount` | |
+| `price_subtotal` | `price_subtotal` | |
+| `price_total` | `price_total` | Con IVA |
+| `display_type` | — | Se filtran: line_section, line_note, payment_term, tax, rounding |
+
+### purchase.order → `odoo_purchase_orders`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_order_id` | |
+| `name` | `name` | Ej: P00123 |
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | |
+| `user_id.name` | `buyer_name` | **Comprador asignado** |
+| `user_id.email` | `buyer_email` | |
+| `user_id.id` | `buyer_user_id` | FK para routing de insights |
+| `amount_total` | `amount_total` | |
+| `amount_untaxed` | `amount_untaxed` | |
+| `currency_id.name` | `currency` | |
+| `state` | `state` | purchase, done |
+| `date_order` | `date_order` | |
+| `date_approve` | `date_approve` | |
+
+### stock.picking → `odoo_deliveries`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `partner_id.commercial_partner_id` | `odoo_partner_id` | |
+| `name` | `name` | Ej: TL/OUT/12781 |
+| `picking_type_id.name` | `picking_type` | |
+| `origin` | `origin` | Documento origen (SO) |
+| `scheduled_date` | `scheduled_date` | |
+| `date_done` | `date_done` | |
+| `state` | `state` | draft, confirmed, assigned, done, cancel |
+| — | `is_late` | Calculado: `state not done/cancel AND scheduled_date < now` |
+| — | `lead_time_days` | Calculado: `(date_done - create_date) / 86400` |
+
+### odoo_payments (extraido de account.move)
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `partner_id` | `odoo_partner_id` | |
+| — | `name` | `PAY-{invoice.name}` |
+| `move_type` | `payment_type` | inbound (out_invoice) / outbound |
+| `amount_total - amount_residual` | `amount` | Monto pagado |
+| `write_date` | `payment_date` | Proxy de fecha real de pago |
+| — | `state` | posted |
+
+### crm.lead → `odoo_crm_leads`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_lead_id` | |
+| `partner_id` | `odoo_partner_id` | |
+| `name` | `name` | |
+| `type` | `lead_type` | lead / opportunity |
+| `stage_id.name` | `stage` | |
+| `expected_revenue` | `expected_revenue` | |
+| `probability` | `probability` | 0-100 |
+| `date_deadline` | `date_deadline` | |
+| — | `days_open` | Calculado: `now - create_date` |
+| `user_id.name` | `assigned_user` | |
+
+### mail.activity → `odoo_activities` (full refresh)
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| — | `odoo_partner_id` | Resuelto via `res_model/res_id` → partner |
+| `activity_type_id.name` | `activity_type` | |
+| `summary` / `note` | `summary` | |
+| `res_model` | `res_model` | |
+| `res_id` | `res_id` | |
+| `date_deadline` | `date_deadline` | |
+| `user_id.name` | `assigned_to` | |
+| — | `is_overdue` | Calculado: `date_deadline < today` |
+
+### hr.employee → `odoo_employees`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_employee_id` | |
+| `user_id.id` | `odoo_user_id` | Link a odoo_users |
+| `name` | `name` | |
+| `work_email` | `work_email` | |
+| `work_phone` / `mobile_phone` | `work_phone` | |
+| `department_id.name` | `department_name` | |
+| `department_id.id` | `department_id` | |
+| `job_title` | `job_title` | |
+| `job_id.name` | `job_name` | |
+| `parent_id.name` | `manager_name` | |
+| `parent_id.id` | `manager_id` | |
+| `coach_id.name` | `coach_name` | |
+
+### hr.department → `odoo_departments`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_department_id` | |
+| `name` | `name` | |
+| `parent_id.name` | `parent_name` | |
+| `parent_id.id` | `parent_id` | |
+| `manager_id.name` | `manager_name` | |
+| `manager_id.id` | `manager_id` | |
+| `member_ids` | `member_count` | COUNT de miembros |
+
+### res.users → `odoo_users`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_user_id` | |
+| `name` | `name` | |
+| `email` / `login` | `email` | |
+| hr.employee.`department_id.name` | `department` | Via employee map |
+| hr.employee.`job_id.name` / `job_title` | `job_title` | |
+| mail.activity count | `pending_activities_count` | Pre-calculado |
+| mail.activity overdue count | `overdue_activities_count` | Pre-calculado |
+
+### stock.warehouse.orderpoint → `odoo_orderpoints`
+
+| Campo Odoo | Campo Supabase | Notas |
+|---|---|---|
+| `id` | `odoo_orderpoint_id` | |
+| `product_id.id` | `odoo_product_id` | |
+| `product_id.name` | `product_name` | |
+| `warehouse_id.name` | `warehouse_name` | |
+| `location_id.complete_name` | `location_name` | |
+| `product_min_qty` | `product_min_qty` | Minimo para reorden |
+| `product_max_qty` | `product_max_qty` | Maximo |
+| `qty_to_order` | `qty_to_order` | |
+| `product_id.qty_available` | `qty_on_hand` | Stock actual |
+| `product_id.virtual_available` | `qty_forecast` | Stock pronosticado |
+| `trigger` | `trigger_type` | auto / manual |
+
+### Convenciones de nombres
+
+- **`odoo_*_id`** — ID del registro en Odoo (para dedup y cross-reference)
+- **`company_id`** — FK a `companies.id` en Supabase (auto-linked por triggers)
+- **`odoo_partner_id`** — FK al partner comercial en Odoo (se usa para resolver `company_id`)
+- **`product_name`** — Nombre largo del producto en Odoo
+- **`product_ref`** / **`internal_ref`** — `default_code` de Odoo = **REFERENCIA INTERNA** (preferir para display)
+- **`synced_at`** — Timestamp de la ultima sincronizacion
+
+5. **CEO → Feedback → Learning** (cada 4h)
+   - CEO actua o descarta insights
+   - Learning pipeline convierte feedback en memorias
+   - Agentes mejoran con cada ciclo
+
+---
+
+## Decisión 2026-09-16: el frontend se retira; pipelines a Supabase Edge Functions
+
+> El CEO no usa el frontend de Next.js (0 visitas en 7 días; las vistas de
+> negocio viven en Odoo: `quimibond_cash_flow`, `qb_capacidad_costeo`, SGI) y
+> la cuenta de Vercel está en plan Hobby. **Los crons de Vercel están apagados
+> desde el 2026-09-16** y todo lo que sí se usa corre en `supabase/functions/*`
+> (Deno) disparado por `pg_cron` + `pg_net` (`invoke_edge`). Secretos en Vault
+> vía RPC `edge_secret`: `cron_secret`, `google_service_account_json`,
+> `anthropic_api_key`, `syntage_api_key`, `syntage_webhook_secret`. Buzones en
+> `gmail_accounts`. Consumidores de la memoria: Claude por MCP + correo diario.
+> Diseño, cutover, incidente del backfill y checklist en
+> `docs/memoria-quimibond-diseno.md` → "Cambio de rumbo".
+
+## Jobs pg_cron → Edge Functions (vivos)
+
+| Job | Cuándo | Edge Function | Qué hace |
+|---|---|---|---|
+| `memoria_sync_emails` | */30 min | `sync-emails` (52 llamadas, una por buzón) | Sync incremental de Gmail, ingest v2 completo |
+| `memoria_backfill_sweep` | cada minuto | `backfill-sweep` (2 cuentas/min) | Re-ingesta v2 del histórico desde 2025-10-01 (`email_backfill_state`) |
+| `memoria_attachments_extract` | cada minuto | `attachments-extract` | Baja adjuntos ≤3 MB a Storage y extrae texto (chicos primero, presupuesto de CPU) |
+| `memoria_watchdog` | :05 cada hora | `health` | Salud de jobs (`memoria_cron_health`), push de contactos de Odoo (`odoo_push_last_events`), Gmail, errores → correo al CEO máx. 1/día |
+| `memoria_email_digest` | 12:45 UTC | `email-digest` | Resumen ejecutivo del correo 24 h (Claude) → `email_digests` + correo HTML |
+| `memoria_extract_pending` | :40 cada 2 h | `email-extract` `{task:"pending"}` | Pendientes accionables por hilo → `email_pending_actions` |
+| `memoria_extract_demand` | :50 cada 2 h | `email-extract` `{task:"demand"}` | Demanda en cuerpos de correo → `customer_demand_signals` |
+| `memoria_extract_demand_files` | :55 cada 2 h | `email-extract` `{task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
+| `memoria_ligas` | cada 10 min | SQL `memoria_link_recent('3 days')` | Ligas determinísticas: contactos nuevos por dominio de empresa de Odoo, `sender_contact_id`, `company_id`, agregados y `conv_key` del hilo, ritmo del contacto |
+| `memoria_consolidar` | cada 5 min | `memory-consolidate` (10 conversaciones/corrida, Sonnet) | Resumen vivo por conversación + hechos con vigencia + grafo → `memoria_thread_summaries`, `memoria_facts`, `kg_nodes`/`kg_edges` |
+| `memoria_grafo_nocturno` | 08:15 UTC | SQL `kg_refresh_deterministic()` | Nodos/aristas que salen de los datos (empresas de Odoo, contactos, buzones, usuarios, quién atiende a quién) |
+
+## Memoria Fase 3 (2026-09-18): ligas, resúmenes vivos, hechos y grafo
+
+> **Hallazgo que lo motivó:** desde que se apagaron los pipelines de Vercel, el
+> ingest v2 creaba hilos pero **no ligaba** `sender_contact_id` (0 % desde el
+> 14-sep) ni `threads.company_id` (9 hilos con empresa de 17,530 en 30 días).
+> La pestaña Memoria de Odoo y los extractores estaban ciegos a lo nuevo.
+> `memoria_link_recent()` lo repara y corre cada 10 min (backfill de 60 días
+> hecho el 18-sep: 251 contactos nuevos, 25k correos ligados, 34k hilos
+> recalculados).
+
+**Una conversación = un resumen.** Gmail abre un hilo por buzón: el mismo
+intercambio copiado a 3 buzones son 3 `threads`. `threads.conv_key` = Message-ID
+raíz (`references_hdr[1]` o `message_id_hdr` del correo más antiguo; fallback
+`gmail_thread_id`). `memoria_hilos_pendientes()` agrupa por `conv_key` (hilo
+canónico = menor id, `thread_ids` hermanos) y `memoria_hilo_mensajes()` devuelve
+los correos sin duplicar. En 30 días: 15,155 hilos = 8,727 conversaciones.
+
+**Qué entra a la cola** (`20260918c`): empresas de Odoo (`odoo_partner_id`,
+cliente o proveedor, dominio no genérico) con alguien de fuera en la
+conversación, de 2+ correos o de 1 correo reciente (14 d) de la contraparte.
+Prioridad: ya resumidas con correo nuevo → multi-correo → recientes. Sin el
+filtro entraban conversaciones 100 % internas (empleados dados de alta como
+partner, el banco) y 31k conversaciones; con él, ~1.5k de rezago.
+
+**Tablas nuevas:**
+
+| Tabla | Qué guarda |
+|---|---|
+| `memoria_thread_summaries` | Por conversación (PK `thread_id` canónico, `conv_key`, `thread_ids`): `tema`, `resumen`, `estado` (abierto/cerrado/informativo), `esperando_a` (nosotros/ellos/nadie), `tono`, `acuerdos`, `pendientes`, `summarized_through`, `version`. Se rehace incremental (resumen anterior + correos nuevos) cuando `last_activity > summarized_through`. |
+| `memoria_facts` | Hechos con vigencia por nodo (empresa o contacto): `categoria` (condiciones_pago, precio, producto, logistica, calidad, contacto_clave, proceso, preferencia, riesgo, otro), `hecho`, `vigente_desde/hasta`, `status`, `confianza`, `evidencia` (hilo + correos), `veces`. Dedup por hash del texto; repetido ⇒ `veces+1`, confianza +0.1. |
+| `kg_nodes` | Nodos: `empresa` (key = companies.id), `contacto` (email), `usuario` (email Odoo), `buzon` (gmail_accounts), `hilo` (threads.id), `producto`, `tema`. `props` jsonb, `source` determinista/claude. |
+| `kg_edges` | Aristas con peso y evidencia: `trabaja_en`, `persona_de`, `atiende` / `atiende:<area>`, `escribe_a`, `sobre` (hilo→empresa), `participa` (contacto/buzón→hilo). Únicas por (src, dst, rel). |
+
+**RPCs para consumir la memoria (Odoo y Claude por MCP):**
+- `memoria_brief(p_company_id | p_odoo_partner_id)` → ficha jsonb: empresa,
+  encargados (buzón, área, %), contactos, hechos vigentes, últimas 12
+  conversaciones resumidas, stats. La pestaña Memoria de Odoo (`qb_memoria`
+  1.2) la muestra como "Quién la atiende", "Lo que sabemos" y "Conversaciones".
+- `memoria_buscar(p_texto, p_company_id, p_limit)` → búsqueda websearch en
+  español sobre resúmenes y hechos. **Cómo preguntarle a la memoria hoy:** por
+  MCP, `select * from memoria_buscar('condiciones de pago shawmut')` y luego
+  `memoria_brief` de la empresa; Claude arma la respuesta con eso y Odoo.
+- `memoria_guardar_consolidacion(thread_id, payload, model)` la usa la Edge
+  Function; `kg_upsert_node/edge` para escribir al grafo desde SQL.
+
+**Costo y ritmo:** Sonnet, ~5.8k tokens de entrada y ~1.1k de salida por
+conversación (`token_usage.endpoint = 'memory-consolidate'`); 10 conversaciones
+por corrida de 5 min ≈ 2,900/día máximo. Salida `max_tokens 3000`; si Claude se
+corta, la llamada falla explícitamente (no se guarda JSON a medias).
+
+**Deuda conocida:** hechos casi duplicados con distinta redacción (dedup solo
+por hash exacto); los primeros 51 resúmenes incluyeron conversaciones internas
+(antes del filtro 3c); `contacts.role` se llena desde `personas` solo si estaba
+vacío. Siguiente: pendientes de `memoria_thread_summaries` → obligaciones en
+Odoo; "pregúntale a la memoria" desde la ficha del contacto; memoria de
+decisiones del CEO.
+
+> **2026-09-17 — Supabase solo para lo que Odoo no tiene.** El SAT vive en Odoo
+> (addon `quimibond_sat` de qb19: CFDI, comparación al centavo, complementos de
+> pago, alerta diaria). Se apagó `memoria_syntage_daily` (el webhook de Syntage
+> apunta a Odoo), se desactivaron los jobs pg_cron de silver/gold (lista de
+> jobids y cómo revertir en `docs/memoria-quimibond-diseno.md` → "Supabase solo
+> para lo que Odoo no tiene") y el push de qb19 quedó en `contacts` únicamente
+> (`quimibond_intelligence.push_models`). Las tablas `odoo_*`, `syntage_*`,
+> `canonical_*` y `gold_*` siguen existiendo pero **ya no se refrescan**: no
+> tomar cifras de ahí; la fuente es Odoo por MCP.
+
+Incidente 2026-09-17: con compute Small la base pasó 9 h saturada en IO (backfill +
+adjuntos cada minuto sobre `emails` de 3.4 GB) y el watchdog no avisó porque
+consulta la misma base. Compute ahora **Medium** (1 GB de buffers). Cadencia de
+contención si se repite: backfill `*/2` con `invoke_edge_backfill_pending(1)`,
+adjuntos `*/5`. Detalle en `docs/memoria-quimibond-diseno.md`.
+
+Reglas aprendidas el 2026-09-16: nunca abanicar decenas de invocaciones largas
+a la vez (52 backfills simultáneos tiraron la base 40 min); `emails` no debe
+tener índice HNSW (818 MB contra 256 MB de buffers: cada update costaba
+segundos); una Edge Function tiene 2 s de CPU por invocación, así que los
+extractores de adjuntos trabajan con presupuesto de bytes.
+
+**Apagados sin sustituto (crons viejos de Vercel):** `analyze`, `embeddings`,
+`auto-fix`, `cleanup`, `identity-resolution`, `enrich-companies`, `briefing`,
+`snapshot`, `reconcile`, `refresh-views`, `refresh-cogs-*`, `retention`,
+`dq-check`, `data-quality-check`, `finanzas/*`, `verify-follow-ups`. Alimentaban
+páginas del frontend retirado; revisar antes de borrar código si Odoo lee sus tablas.
+
+## Agentes de IA — DESACTIVADOS (2026-08-05)
+
+> **Decisión CEO 2026-08-05:** los 8 directores fueron desactivados
+> (`ai_agents.is_active=false`) y sus 68 insights activos archivados. Datos:
+> de 37,168 insights históricos solo 3% fue accionado. Reemplazo: alertas
+> determinísticas en `/hoy` (piso de cash, cobranza por riesgo, entregas
+> tarde, recompras vencidas). Reversible con
+> `UPDATE ai_agents SET is_active=true WHERE slug='...'`.
+> El rediseño del frontend (vistas `/hoy` y `/dinero`, 2026-08-05) es la
+> dirección nueva: 5 vistas, cero IA especulativa, salud de datos visible.
+> La sección siguiente se conserva como referencia histórica.
+
+## [HISTÓRICO] Agentes de IA — 8 Directores
+
+Round-robin via `/api/agents/orchestrate` (Vercel cron, hourly). Cada director
+corre con Sonnet 4.6, max 5 insights por corrida, confianza ≥80%, dedup por
+(agent + company + título) en ventana 7d.
+
+### Directores activos (vivos en `ai_agents` con `is_active=true`)
+
+| Slug | Nombre | Dominio | Que analiza |
+|---|---|---|---|
+| **comercial** | Director Comercial | comercial | Reorden risk, top clientes, márgenes, concentración, CRM, churn LTV, RFM |
+| **financiero** | Director Financiero | financiero | Cobranza vencida, payment predictions, runway, FX exposure, working capital |
+| **operaciones** | Director de Operaciones | operaciones_dir | OTD, entregas tardías, manufactura, inventario, stockouts, orderpoints |
+| **compras** | Director de Compras | compras | Proveedores top, single-source, price anomalies, urgent stockouts |
+| **costos** | Director de Costos | costos | COGS contable vs BOM, normalización P&L, margen contributivo, overhead |
+| **riesgo** | Director de Riesgo | riesgo_dir | Concentración cliente, contactos críticos, riesgo cartera, drift |
+| **equipo** | Director de Equipo | equipo_dir | Backlog por persona, métricas equipo, actividades pendientes/vencidas |
+| **compliance** | Director Cumplimiento Fiscal | compliance | CFDIs sin respaldo, declaraciones, blacklist 69-B, opinión cumplimiento |
+
+### Agentes legacy (deactivated 2026-04-05, conservados en DB con `is_active=false`)
+
+`sales`, `finance`, `operations`, `risk`, `growth`, `meta`, `data_quality`,
+`odoo`, `cleanup`, `relationships`, `suppliers`, `predictive` — quedaron en
+la tabla por compatibilidad histórica pero no se ejecutan. La orquestación
+real son los 8 directores. **NO usar estos slugs** al hablar del sistema vivo.
+
+---
+
+## Routing de Insights
+
+Cada insight se asigna automaticamente a un responsable via trigger.
+Los patrones son regex sobre `category` (case-insensitive); el primero que
+coincide gana (priority asc).
+
+| Patrón categoría | Departamento | Responsable |
+|---|---|---|
+| `payment\|factura\|cobr\|cartera\|credito\|overdue` | Cobranza | Sandra Dávila |
+| `ventas\|sales\|crm\|lead\|oportunidad\|upsell\|cross-sell\|churn\|revenue` | Ventas | Guadalupe Guerrero García |
+| `relationship\|comunicacion\|sentimiento\|contact\|engagement` | Ventas | Guadalupe Guerrero García |
+| `operations\|entrega\|delivery\|despacho\|logistic\|envio` | Logística | Dario Manriquez |
+| `manufactura\|produccion\|operaciones\|mrp\|linea\|paro` | Producción | Guadalupe Ramos |
+| `stock\|inventario\|almacen\|desabasto\|reorder\|warehouse` | Almacén | Gustavo Delgado |
+| `calidad\|quality\|inflamabilidad\|muestra\|prueba` | Calidad | Oscar Gonzalez |
+| `compra\|purchase\|proveedor\|supplier\|materia.prima\|cadena.suministro` | Compras | Elena Delgado Ruiz |
+| `innovacion\|desarrollo\|diseño\|producto.nuevo` | Innovación | Jessica Francisco |
+| `planeacion\|forecast\|capacidad` | Planeación | Paris César Villordo |
+| `employee\|empleado\|rh\|nomina\|hr\|team\|equipo` | RH | Miguel Medina |
+| `sistema\|data\|datos\|schema\|pipeline\|agente\|tech` | Sistemas | Mariano Dominguez |
+| `growth\|crecimiento\|expansion\|mercado\|estrateg` | Dirección | Jose J. Mizrahi |
+| `risk\|riesgo\|amenaza\|concentracion` | Dirección | Jose J. Mizrahi |
+
+Configurado en tabla `insight_routing` (columna `category_pattern` regex)
+→ `departments` → `odoo_users` (todo por FK, no texto). Para añadir/cambiar,
+INSERT/UPDATE en `insight_routing` — el trigger `route_insight` corre on
+INSERT en `agent_insights`.
+
+---
+
+## Self-improvement (auto-mejora)
+
+### Feedback Loop
+1. CEO actua o descarta insight → señal positiva/negativa
+2. Learning pipeline analiza feedback por agente + tipo + severidad
+3. Crea memorias: "CEO actua en riesgos financieros 90% del tiempo"
+4. Memorias se cargan en la siguiente corrida del agente
+5. Agente mejora sus prompts basado en memorias
+
+### Auto-fix (cada 30 min)
+- Linkea emails a contactos/empresas
+- Resuelve entity_ids
+- Llena nombres de contactos
+- Deduplica empresas/entidades
+- Cierra insights que ya se resolvieron
+
+### Auto-validate (cada 30 min)
+- Verifica insights contra datos actuales de Odoo
+- Factura pagada → insight auto-resuelto
+- Entrega completada → insight auto-resuelto
+- Contacto respondio → insight auto-resuelto
+- Insight >7 dias → auto-expirado
+
+### Schema Evolution (diario, 6am)
+- Claude analiza problemas de datos
+- Genera SQL seguro (CREATE TABLE, ADD COLUMN, CREATE INDEX)
+- `execute_safe_ddl()` valida contra allowlist
+- NUNCA: DROP, TRUNCATE, DELETE sin WHERE
+- Todo loggeado en `schema_changes`
+
+---
+
+## Base de datos (Supabase)
+
+> **2026-04-22 (SP1):** 18 objetos dropeados (8 views + 5 MVs + 5 tables). Ver `docs/superpowers/plans/2026-04-21-silver-sp1-audit-notes.md`. SP2+ construye `canonical_*` tables como sucesores.
+
+### Silver Canonical Tables (SP2 — 2026-04-22)
+
+Pattern A dual-source canonical layer for reconciliation Odoo↔SAT.
+
+| Tabla | Rows | Purpose |
+|---|---|---|
+| `canonical_invoices` | ~88k | Golden invoice record; SP3 MDM adds canonical_companies FK |
+| `canonical_payments` | ~43k | Golden payment (Odoo bank + SAT complementos) |
+| `canonical_payment_allocations` | ~25k | Payment→invoice links (SAT doctos_relacionados) |
+| `canonical_credit_notes` | ~2.2k | Egresos (E / out_refund / in_refund) |
+| `canonical_tax_events` | ~400 | Retentions + returns + electronic_accounting (Odoo match SP4) |
+| `mdm_manual_overrides` | 20 | Unified bridge table; replaces invoice_bridge_manual, payment_bridge_manual, products_fiscal_map |
+
+**Reconciliation runtime:**
+- `run_reconciliation(key text DEFAULT NULL)` — runs enabled invariantes
+- `compute_priority_scores()` — updates `reconciliation_issues.priority_score`
+- pg_cron: `silver_sp2_reconcile_hourly` (HH:05), `silver_sp2_reconcile_2h` (HH:15 /2h), `silver_sp2_refresh_canonical_nightly` (03:30)
+
+**16 active invariantes:** invoice.{amount_mismatch, state_mismatch_posted_cancelled, state_mismatch_cancel_vigente, date_drift, pending_operationalization, missing_sat_timbrado, posted_without_uuid, credit_note_orphan}, payment.{registered_without_complement, complement_without_payment}, plus 6 additional registered by tasks.
+
+**SP3 done (2026-04-23):** canonical_companies (4,359 rows / 2,162 shadows) + canonical_contacts (2,063) + canonical_products (6,004) + MDM matchers + FK backfill. Pattern A tables FKs validated (6). See section below.
+
+**SP4 next:** Pattern B MVs (orders/deliveries/inventory), evidence layer, 31-invariant engine cutover, gold views.
+
+### Silver MDM (SP3 — 2026-04-23)
+
+Pattern C master data management layer:
+
+| Tabla | Rows | Purpose |
+|---|---|---|
+| `canonical_companies` | ~4,359 (2,197 Odoo + ~2,162 shadows) | Golden company record. Quimibond self = id=868 |
+| `canonical_contacts` | ~2,063 | Golden contact (email UNIQUE case-insensitive) |
+| `canonical_products` | ~6,004 | Golden product (internal_ref UNIQUE) |
+| `canonical_employees` | ~179 | View over canonical_contacts for internal_* types |
+| `source_links` | ~172k+ | Traceability: {canonical_entity, source, source_id} links |
+| `mdm_manual_overrides` | extended | action/source_link_id/payload/expires_at/is_active/revoke_reason per §6.4 |
+
+**Matcher functions (pg_cron 2h + Bronze triggers):**
+- `matcher_company(rfc, name, domain, autocreate_shadow)` — deterministic tie-break (prefer is_internal > !shadow > lowest id)
+- `matcher_contact(email, name, domain)` — email exact > domain
+- `matcher_product(internal_ref, name)` — ref exact > fuzzy name
+- `matcher_all_pending()` — pg_cron silver_sp3_matcher_all_pending (HH:35 /2h)
+- `matcher_company_if_new_rfc(e_rfc, e_name, r_rfc, r_name)` — Bronze trigger on syntage_invoices
+- `matcher_invoice_quick(uuid)` — fast FK resolution for newly-stamped invoices
+
+**Manual override functions:**
+- `mdm_merge_companies(a, b, user, note)` — merge two canonical_companies, re-point FKs
+- `mdm_link_invoice(canonical_id, sat_uuid, odoo_id, user, note)` — manual SAT↔Odoo link
+- `mdm_revoke_override(override_id, user, reason)` — reverse manual override
+
+**FK structure (post-SP3):**
+- canonical_invoices: `emisor_canonical_company_id`, `receptor_canonical_company_id` → canonical_companies; `salesperson_contact_id` → canonical_contacts.
+- canonical_payments: `counterparty_canonical_company_id` → canonical_companies.
+- canonical_credit_notes: `emisor_canonical_company_id`, `receptor_canonical_company_id` → canonical_companies.
+
+**Bronze auto-match triggers:**
+- `trg_cc_from_odoo` on `companies` INSERT/UPDATE → auto-create canonical_companies
+- `trg_sat_invoice_matcher` on `syntage_invoices` INSERT → shadow RFC creation via matcher_company_if_new_rfc
+- Plus the 3 canonical_contacts triggers from Task 6 (odoo_users, odoo_employees, contacts)
+- Plus the canonical_products trigger from Task 9 (odoo_products)
+- Plus the 3 source_links triggers from Task 13 (canonical_companies/contacts/products)
+
+**SP4 next:** Pattern B MVs (orders/deliveries/inventory), evidence layer (email_signals/ai_extracted_facts/attachments/manual_notes), 31-invariante engine cutover, gold views.
+
+**Known dead bridges in current data (future data-quality work):**
+- `odoo_account_payments.ref` 100% empty → num_operacion match = 0 rows
+- `odoo_chart_of_accounts` ISR retenido uses `113.%` and `213.%` prefixes (not `216%` as plan assumed)
+
+### Tablas principales
+
+**Core:**
+- `companies` — Empresas (canonical_name lowercase, dedup trigger)
+- `contacts` — Contactos (email lowercase, entity_id linked)
+- `departments` — Departamentos con lead responsable
+
+**Communication:**
+- `emails` — Emails de Gmail (kg_processed flag)
+- `threads` — Hilos de conversacion
+- `email_recipients` — Destinatarios
+
+**Knowledge Graph:**
+- `entities` — Personas, empresas, productos (canonical_name lowercase)
+- `facts` — Hechos verificables con confianza
+- `entity_relationships` — Relaciones entre entidades
+
+**Intelligence:**
+- `agent_insights` — Insights generados por agentes (con company_id, contact_id, assignee FK)
+- `agent_runs` — Historial de ejecuciones
+- `agent_memory` — Memorias persistentes entre corridas
+- `ai_agents` — Definiciones de agentes
+
+**Odoo:**
+- `odoo_users`, `odoo_employees`, `odoo_departments`
+- `odoo_products`, `odoo_invoices`, `odoo_invoice_lines`, `odoo_payments`
+- `odoo_account_payments`, `odoo_chart_of_accounts`, `odoo_account_balances`, `odoo_bank_balances`
+- `odoo_order_lines`, `odoo_sale_orders`, `odoo_purchase_orders`
+- `odoo_deliveries`, `odoo_crm_leads`, `odoo_activities`
+- `odoo_manufacturing`, `odoo_orderpoints`
+- `cfdi_documents` — CFDIs parseados de email XML (tipo I/N/P, con UUID para cruce)
+
+**Puente op↔fiscal (Fase 2.5):**
+- `invoice_bridge_manual` — Reconciliaciones manuales Odoo↔SAT por operador
+- `payment_bridge_manual` — Reconciliaciones manuales de pagos Odoo↔SAT
+- `products_fiscal_map` — Mapping producto Odoo → clave SAT/UNSPSC (seeded top 20 SKUs)
+
+**Metrics:**
+- `health_scores` — Scores calculados por contacto
+- `employee_metrics`, `department_metrics`
+- `company_behavior`
+
+**System:**
+- `pipeline_logs` — Log de todas las operaciones
+- `schema_changes` — Audit trail de cambios de schema
+- `odoo_models_catalog` — Catalogo de modelos Odoo (synced vs not)
+- `insight_routing` — Reglas de routing por departamento
+
+### Triggers automaticos
+
+| Trigger | Tabla | Que hace |
+|---|---|---|
+| `normalize_company_name` | companies | Fuerza lowercase, previene duplicados |
+| `normalize_entity_name` | entities | Fuerza lowercase |
+| `normalize_contact_email` | contacts | Fuerza lowercase |
+| `auto_link_invoice_company` | odoo_invoices | Linkea company_id por odoo_partner_id |
+| `auto_link_order_company` | odoo_order_lines | Linkea company_id |
+| `auto_link_delivery_company` | odoo_deliveries | Linkea company_id |
+| `auto_link_contact_entity` | contacts | Linkea entity_id por email |
+| `auto_link_company_entity` | companies | Linkea entity_id por odoo_id o nombre |
+| `route_insight` | agent_insights | Asigna responsable por departamento |
+| `trg_link_sale_order` | odoo_sale_orders | Linkea company_id |
+| `trg_link_purchase_order` | odoo_purchase_orders | Linkea company_id |
+
+### RPCs
+
+| Funcion | Que hace |
+|---|---|
+| `execute_safe_ddl()` | Ejecuta SQL seguro con allowlist |
+| `deduplicate_all()` | Merge duplicados de empresas y entidades |
+| `link_orphan_insights()` | Linkea insights a empresas por nombre |
+| `fix_all_company_links()` | Linkea invoices/orders a empresas |
+| `resolve_company_by_name()` | Fuzzy match de empresa |
+| `get_agents_overview()` | Dashboard de agentes |
+| `get_employee_dashboard()` | Metricas de empleados |
+| `get_department_comparison()` | Comparacion de departamentos |
+| `cashflow_runway()` | Alerta de cash flow: dias hasta que no alcanza para nomina |
+| `reconcile_invoice_manually()` | Crea entrada en invoice_bridge_manual para link Odoo↔SAT manual |
+| `reconcile_payment_manually()` | Crea entrada en payment_bridge_manual para pago Odoo↔SAT manual |
+| `match_unlinked_invoices_by_composite()` | Diagnóstico: retorna invoices sin UUID match para reconciliación manual |
+
+---
+
+## Frontend (Next.js 15)
+
+### Paginas
+
+| Ruta | Descripcion |
+|---|---|
+| `/inbox` | Inbox de insights — desktop: lista, mobile: swipe Tinder |
+| `/inbox/insight/[id]` | Detalle con trazabilidad hasta email original |
+| `/dashboard` | Centro de control con KPIs, agentes, equipo |
+| `/agents` | 8 directores activos con status, insights, boton ejecutar |
+| `/companies` | Lista de empresas con filtros |
+| `/companies/[id]` | Detalle con 10 tabs |
+| `/contacts` | Lista con health score visual |
+| `/contacts/[id]` | Detalle con 7 tabs |
+| `/employees` | Empleados con metricas de acciones |
+| `/departments` | Areas con KPIs y responsables |
+| `/emails` | Lista de emails |
+| `/threads` | Hilos con urgencia |
+| `/briefings` | Briefings diarios |
+| `/chat` | Chat RAG con Claude |
+| `/knowledge` | Browser del Knowledge Graph |
+| `/system` | Ciclos, pipeline, Odoo sync, token usage |
+| `/sistema/odoo-pendientes` | Registro central de fixes pendientes en Odoo (con problema, fix concreto, workaround actual, impacto estimado, dueño). Cada acción tiene `action_key` slug; banners inline en páginas relevantes referencian ese key. |
+| `/reporte` | Index de reportes mensuales (selector de mes) |
+| `/reporte/[YYYY-MM]` | Reporte mensual de cierre con CFO sintetizado por Claude (Opus 4.7), drivers MoM, one-offs detectados, recomendaciones priorizadas. Imprimible / exportable a PDF |
+
+### API Routes
+
+| Ruta | Metodo | Descripcion |
+|---|---|---|
+| `/api/cycle/run` | GET | Ciclo rapido (extract → heal → validate) |
+| `/api/agents/orchestrate` | GET/POST | Ejecuta 1 agente (round-robin) |
+| `/api/agents/run` | POST | Ejecuta agente especifico |
+| `/api/agents/auto-fix` | GET/POST | Repara datos automaticamente |
+| `/api/agents/validate` | GET/POST | Valida insights contra Odoo |
+| `/api/agents/learn` | GET/POST | Feedback → memorias |
+| `/api/agents/evolve` | GET/POST | Schema evolution con Claude |
+| `/api/pipeline/analyze` | GET/POST | Procesa 1 cuenta de email |
+| `/api/pipeline/health-scores` | GET/POST | Recalcula scores |
+| `/api/pipeline/briefing` | GET/POST | Genera briefing diario |
+| `/api/pipeline/embeddings` | GET/POST | Vectores pgvector |
+| `/api/pipeline/reconcile` | GET/POST | Auto-cierra acciones resueltas |
+| `/api/pipeline/sync-emails` | GET/POST | Sync Gmail |
+| `/api/chat` | POST | Chat RAG con Claude |
+| `/api/enrich/company` | POST | Enriquecer empresa con IA |
+| `/api/enrich/contact` | POST | Enriquecer contacto con IA |
+
+---
+
+## /finanzas — P&L limpio (régimen AVCO + variable costing implícito)
+
+Quimibond-específico. La sección P&L de `/finanzas` muestra **dos vistas**:
+P&L contable (lo que dice Odoo, AVCO al despacho) y P&L limpio (régimen
+actual con MP separada de MOD+overhead).
+
+### Régimen contable real (confirmado con CEO 2026-05-04)
+
+- **Valuación de inventario: AVCO** (Average Cost), NO Standard.
+- **Workcenters: solo TEJIDO CIRCULAR** (40 máquinas, $74.57/hr) configurado,
+  go-live MAYO 2026. Acabado, Tintorería, Entretelas, Inspección/Empaque
+  NO tienen workcenter → MOD+OH NO se absorbe al PT al producirse.
+- **Resultado: variable costing implícito.** El PT en almacén carga solo
+  MP via AVCO; MOD+OH viven en gastos del período (501.06 + 504.01).
+- **Pre-1-abril-2026: BOMs incluían MOD+gastos como componentes** vía
+  productos token RSI56. Esto absorbía MOD+OH al PT al producirse y se
+  ajustaba mensualmente con CAPA. **Esos productos fueron archivados el
+  1-abr-2026** → ya no se hace ajuste mensual.
+- **501.01.01 ya NO está "inflado por CAPA"** — es el COGS real AVCO al
+  despacho. Si hay gap vs BOM-recursivo, es por contaminación AVCO
+  histórica del PT (pre-abril) o régimen actual sin absorción.
+
+Ver pending action `pnl-limpio-rewrite-avco-regimen` y
+`revaluar-inventario-pt-contaminacion-avco` (~$6.34M de PT contaminado).
+
+### El "P&L limpio" como reformulación, no como fix
+
+Antes (premisa incorrecta): "swap 501.01.01 por BOM-recursivo para
+quitar CAPA duplicada". **Esa premisa quedó obsoleta** — el swap ya no
+"limpia" un bug; **reformula** el COGS a "qué costaría con la estructura
+de BOMs nueva (sólo MP) sin contaminación AVCO histórica".
+
+Para cada producto vendido en el período:
+1. Tomar la BOM activa (recursiva — bajamos todos los niveles).
+2. Para hojas (MP comprada): `qty × avg_cost_mxn` de canonical_products.
+3. Para importados (sufijo " I"): short-circuit a `avg_cost_mxn` directo
+   (ya incluye flete/aduana/agente vía AVCO de compras).
+4. Multiplicar por la cantidad vendida (out_invoice − out_refund).
+
+El **costo primo BOM** es solo MP. MOD y overhead se reportan APARTE
+por departamento usando los 3 RPCs nuevos:
+
+- `get_nomina_by_cost_center(p_period)` — parsea NOMINAS journal `ref`
+  para asignar 501.06 a TEJIDO/ACABADO/TINTORERIA/etc.
+- `get_overhead_by_cost_center(p_period)` — prorratea 504.01 según
+  `overhead_account_assignment` (luz→TEJIDO, gas→ACABADO, agua→TINT,
+  agujados→TEJIDO) y `rent_lot_assignment` (4 lotes).
+- `get_production_by_cost_center(p_period)` — qty producida por proceso
+  para calcular burden rate por unidad.
+
+| Cuenta | Concepto | P&L contable | P&L limpio |
+|---|---|---|---|
+| `501.01.01` | COGS AVCO al despacho | Como está | **Reemplazado por** BOM-recursivo MP |
+| `501.01.02` | COSTO PRIMO (cierre, ya inactivo post-abril) | Como está | Como está |
+| `501.01.08` | DIFERENCIAS POR CONTEO (shrinkage físico) | Como está | Como está |
+| `501.06.*` | MOD por departamento | Línea aparte | Línea aparte (con split por depto) |
+| `502.*` | Compras de importación | Línea aparte | Línea aparte |
+| `504.01.*` (excl. 0008) | Overhead fábrica | Línea aparte | Línea aparte (con split por depto) |
+| `504.08-23` | Depreciación fábrica | Línea aparte | Línea aparte |
+| `6xx + 613` | Gastos operativos (admin, ventas) | Línea aparte | Línea aparte |
+| `7xx` | Otros ingresos / gastos | Después de EBIT | Después de EBIT |
+
+### Estructura del P&L (contable + limpio, alineada a Odoo)
+
+Ambas vistas usan la misma estructura del Estado de Resultados de Odoo,
+para que cualquier subtotal cuadre con el reporte oficial. Solo difieren
+en la fila de 501.01.01:
+
+```
+Ventas de producto (4xx)
+− Costo de ingresos:
+    501.01.01 AVCO  /  Costo primo BOM-recursivo   ← reformulación
+  + 501.01.02 COSTO PRIMO (residual cierre)
+  + 501.01.08 DIFERENCIAS POR CONTEO
+  + Mano de obra directa (501.06)         [splittable por depto]
+  + Compras de importación (502)
+  + Overhead fábrica (504.01)              [splittable por depto]
+= Ganancia bruta
+− Gasto de operación (6xx, sin dep CORPO)
+= Ingreso de operación (EBIT)
++ Otros ingresos (7xx + 503 + 899: FX, intereses, venta activo)
+− Depreciación (504.08-23 fábrica + 613 CORPO)
+= UTILIDAD NETA
+```
+
+El **margen contributivo material** (= ventas − costo primo BOM) sigue
+existiendo como KPI dedicado en la fila 2 de `/contabilidad`, pero no
+como subtotal dentro de la tabla.
+
+### Validación: residual 501.01.01 vs BOM
+
+El P&L limpio muestra la fila **`Δ vs P&L contable`** que prueba que
+cuadra. La fórmula:
+
+```
+residual_501.01.01 = cogs501_01_01_actual − costoPrimo_BOM
+neta_limpia − neta_contable == residual_501.01.01   (exacto)
+```
+
+Interpretación correcta (ya NO "CAPA inflada"):
+- `residual > 0`: AVCO al despacho > BOM puro. Causa: contaminación AVCO
+  histórica del PT (MOD+gastos absorbidos pre-abril) + costo MP real
+  diferente al avg_cost canonical (precios MP cambiaron).
+- `residual < 0`: AVCO < BOM. Raro; puede pasar si el PT viejo se vendió
+  a costo histórico bajo y MP nueva está cara.
+- `residual ≈ 0`: BOM y AVCO alineados — régimen estable.
+
+### Otras secciones del P&L
+
+Encima de PnlLimpioTable hay otras dos cards que viven en el mismo bloque:
+
+- **PnlNormalizedCard**: detecta one-offs y ajustes year-end vía RPC
+  `get_pnl_normalization_adjustments`. Categorías: venta_activo_fijo,
+  siniestros_incobrables, otros_ingresos_extraordinarios,
+  ajuste_inventario_year_end (501.01.02 atípico),
+  depreciacion_catch_up (504.08-23 atípico). Calcula
+  `utilidad_normalizada = utilidad_reportada + Σ impactos detectados`.
+- **BreakEvenCard**: ventas para break-even = gastos_fijos / margen_contributivo_pct.
+
+### Archivos
+
+| Archivo | Qué hace |
+|---|---|
+| `src/lib/queries/sp13/finanzas/pnl.ts` | KPIs P&L (ventas, utilidad bruta/neta, gastos op por categoría) |
+| `src/lib/queries/sp13/finanzas/cogs-adjusted.ts` | Compara COGS contable vs BOM recursiva |
+| `src/lib/queries/sp13/finanzas/cogs-monthly.ts` | Serie histórica mensual con cache (`cogs_monthly_cache`) |
+| `src/lib/queries/sp13/finanzas/cogs-per-product.ts` | Top productos vendidos con desglose BOM |
+| `src/lib/queries/sp13/finanzas/mp-quality.ts` | % MP con avg_cost, top productos, BOM completeness |
+| `src/lib/queries/sp13/finanzas/pnl-normalized.ts` | One-offs detectados + utilidad normalizada |
+| `src/app/finanzas/page.tsx` (PnlLimpioTable) | Render de la tabla |
+
+### RPCs silver
+
+- `get_cogs_recursive_mp(date_from, date_to)` — costo primo recursivo
+- `_compute_cogs_comparison_monthly` — backfill del cache mensual
+- `refresh_cogs_monthly_cache` — refresh disparado por Vercel cron
+- `get_pnl_normalization_adjustments(date_from, date_to)` — one-offs
+
+### Boundary fix YTD
+
+Las funciones silver usaban `period < to_char(p_date_to, 'YYYY-MM')`,
+que para YTD parcial (e.g. `to=2026-04-25`) excluía abril. Fix:
+`period <= to_char((p_date_to - 1 day)::date, 'YYYY-MM')`. Ver
+migration `20260424_cogs_monthly_cache_boundary_fix.sql`.
+
+### Pending actions Odoo (2026-05-04)
+
+Cuando el sistema descubre un problema cuya causa raíz está en la
+configuración de Odoo (no se puede arreglar 100% en silver), se registra
+en `odoo_pending_actions` con:
+
+- `action_key` (slug estable para vincular desde código)
+- `area`, `severity`, `title`
+- `problem_description` (qué pasa hoy)
+- `fix_in_odoo` (pasos concretos)
+- `workaround_in_silver` (qué hace el sistema mientras tanto)
+- `estimated_impact_mxn` por mes
+- `evidence_url` (donde el CEO ve la evidencia)
+- `status` (open/in_progress/resolved/wont_fix), `assignee`
+
+**Componente**: `<OdooPendingBanner actionKey="..." />` muestra el banner
+inline con ribbon de severidad + link al detalle. Si la acción está
+resuelta o no existe, no renderiza nada (safe).
+
+**Página central**: `/sistema/odoo-pendientes` con todas las acciones
+agrupadas por status, severidad pillada, fix step-by-step expandido.
+
+**Pattern**: cuando descubras un problema Odoo en una nueva auditoría,
+INSERT en `odoo_pending_actions` (idempotente por action_key UNIQUE)
+y agrega `<OdooPendingBanner actionKey="tu-slug" />` en la página
+donde es relevante.
+
+### Subcuentas 501.01: split en 3 buckets (2026-05-04 audit)
+
+La cuenta contable 501.01 tiene **3 subcuentas distintas**, no una sola.
+Tratarlas como bucket único mezclaba 3 conceptos diferentes:
+
+| Subcuenta | Naturaleza | Tratamiento limpio |
+|---|---|---|
+| **501.01.01 Cost of sales** | COGS AVCO al despacho (incluye contaminación AVCO histórica pre-abril) | **Reemplazado por** costo primo BOM-recursivo |
+| **501.01.02 COSTO PRIMO** | Cuenta de cierre histórica para CAPA mensual (RSI56 archivado 1-abr-2026 → ya casi vacía) | NO se quita — vive en contable Y limpio |
+| **501.01.08 DIFERENCIAS POR CONTEO** | Shrinkage físico (faltantes, scrap, errores conteo) | NO se quita — pérdida real visible |
+
+**El residual MP real** = `501.01.01 − costoPrimo BOM`. Es lo que
+`getPnlKpis` reporta vía `cogs501_01_01Mxn`. Refleja contaminación AVCO
+histórica + diferencias de costo MP real vs canonical.avg_cost.
+
+`PnlComparisonTable` muestra cada subcuenta como línea separada cuando
+no es cero. Si shrinkage (501.01.08) > $200k, se anota como atípico
+(abril 2026 fue $379k — investigar inventario).
+
+**Trend 501.01.08 (Quimibond 2026):**
+- Ene: −$11k (ajuste pequeño)
+- Feb: +$4k
+- Mar: +$62k
+- Abr: **+$379k** (35× el promedio histórico)
+
+Crecimiento exponencial = señal operativa de inventario que necesita
+atención: faltantes físicos, scrap no documentado, o errores de captura
+en conteos.
+
+> **⚠️ Restated (auditoría 2026-07-02, corregido 2026-07-03):** este trend
+> quedó obsoleto — el GL fue re-trabajado a mano. Abril hoy muestra +$210k
+> (no $379k) y junio ~$0 porque los asientos del conteo físico de junio
+> ($6.4M de cargos originales) fueron **CANCELADOS** por el CEO el 2-jul.
+> (La versión original de esta nota decía "$3.57M fueron a parar a equity
+> 999998" — era un falso positivo: la fila de 999998 en odoo_account_balances
+> es SINTÉTICA, ver corrección abajo.) Ver
+> `docs/audit-2026-07-02-inventario-contabilidad.md`.
+
+### Auditoría inventario↔contabilidad (2026-07-02) — correcciones de premisas
+
+Auditoría completa en `docs/audit-2026-07-02-inventario-contabilidad.md`.
+Correcciones a "verdades" documentadas arriba:
+
+1. **El CAPA mensual NO murió el 1-abr-2026.** El journal CAPA DE VALORACIÓN
+   siguió capitalizando COGS→inventario todo 2026 ($15.07M ene–jun: débito
+   115.03.01/115.04.01, crédito 501.01.01). El saldo de WIP 115.03.01
+   ($15.45M) es ~87% estos asientos manuales, no producción real (~50 MOs
+   abiertas). Pending action `capa-valoracion-manual-detener`.
+2. **115.01.01 "Inventario" existe desde jun-2026 y está NEGATIVA** (−$3.14M
+   al 2-jul): categorías re-apuntadas sin asiento de transferencia. Además hay
+   vendibles en categorías "Producto en Proceso/*" que despachan COGS desde
+   115.03.01. Pending action `cuentas-valuacion-categoria-realinear`.
+3. **Ediciones de líneas de asientos posteados no re-sincronizaban**: el
+   filtro incremental de `_push_account_entries_stock` era por
+   `move.write_date` y las ediciones de línea no lo tocan → `lines_stock`,
+   `mv_entry_lines_flat` y `mv_stock_move_account_matches` pueden mostrar
+   versiones viejas del GL. Fixeado en qb19 (`line_ids.write_date` en el
+   domain). Para históricos: re-push heavy con
+   `last_heavy_sync_date='2026-05-31'`. `odoo_account_balances` (rebuild
+   completo horario) es la única verdad garantizada del GL.
+4. Programa de revaluación al costo reconstruido: pending action
+   `revaluacion-inventario-costo-reconstruido` (GL $51.6M vs físico $43.1M;
+   PT a MP+fab $17.76M vs AVCO $11.95M; MP a último costo ~$39.0M).
+5. **La fila 999998 de `odoo_account_balances` es SINTÉTICA** (corrección
+   2026-07-03): `_push_account_balances` la fabrica como utilidad neta del
+   período para que `gold_balance_sheet` cuadre — equity_unaffected no tiene
+   move lines reales en Odoo. Cuadra al centavo con Σingresos−Σgastos.
+   **NUNCA usarla como evidencia de asientos manuales a equity.** El "$3.57M
+   del conteo de junio a 999998" del hallazgo F3 era esta fila mal leída; en
+   realidad los asientos del conteo fueron CANCELADOS. Verificado con el
+   filtro `999%` nuevo del sync (qb19): 0 líneas reales de 999998 all-time.
+   La guardia `inventory.equity_999998_manual` lee `lines_stock` desde
+   `20260703b_999998_synthetic_guard_fix.sql`.
+
+### Productos importados ("I") y notas de crédito (2026-05-04)
+
+Migration `20260504_pnl_limpio_imports_and_refunds_fix.sql` corrige dos
+asimetrías del COGS BOM-recursivo:
+
+1. **Importados — sufijo " I":** 119 SKUs marcados como import (terminan
+   en " I" en `internal_ref`). 89 de ellos tienen BOM activa, pero la
+   BOM sólo refleja el costo del proveedor extranjero + un componente
+   token "GASTOS IND DE IMPORTACIÓN". Flete/aduana/agente sólo viven
+   en `avg_cost_mxn` (Odoo moving-average de las compras). Por eso el
+   BOM-recursivo subestimaba ~13% el costo (ej. WM4032NG152 I:
+   BOM=$4.55 vs avg_cost=$7.51).
+   **Fix:** `get_bom_raw_material_cost_per_unit` hace short-circuit y
+   retorna `avg_cost_mxn` directo cuando `internal_ref ~ ' ?I$'`.
+
+2. **Notas de crédito (out_refund):** revenue 4xx ya viene neto (las
+   NCs ajustan el saldo contable), pero el COGS recursivo sólo sumaba
+   `out_invoice` y nunca restaba devoluciones. Asimetría → COGS
+   sobreestimado por el costo de mercancía devuelta.
+   **Fix:** `get_cogs_recursive_mp` ahora UNIONa `out_refund` con qty
+   negativa, dedupado por (move, product, qty_abs, kind) para no
+   mezclar facturas y NCs del mismo producto.
+
+**Lepezo sale-leaseback:** la "venta" de la rama ICOMATEX a Leasing
+Lepezo en marzo 2026 ($11.35M factura INV/2026/03/0173) fue un
+**leaseback financiero**, no una venta real. Trazas en libros:
+- 252.01.0004 PRESTAMOS BANCARIOS LEPEZO: +$12M en mar (pasivo LP)
+- 252.01.0001 PRESTAMOS BANCA MIFEL: −$1.97M en mar (refinanció Mifel)
+- 704.23.0003 UTILIDAD VENTA ACTIVO: −$574k (gain contable one-off)
+- 704.23.0001 OTROS INGRESOS: −$1.50M en mar (vs ~$0 normal)
+- **701.11.0001 ARRENDAMIENTO FINANCIERO: $1.08M/mes recurrente** (era
+  $525k pre-leaseback; subió a $1.08M en mar y se mantiene en abr)
+- La rama sigue operativa en Quimibond; el "ingreso" fue financiamiento
+  con la rama como garantía.
+
+`get_pnl_normalization_adjustments` ya detecta los one-offs de marzo:
+- `venta_activo_fijo` ($574k impacto)
+- `otros_ingresos_extraordinarios` ($1.50M, threshold >$500k)
+
+Marzo normalizado: 1,29M reportado − 2,07M one-offs = **−0,78M
+(comparable apples-to-apples con abril −0,98M)**.
+
+### Subproductos (SALDO/DESPERDICIO) = costo MP $0 (2026-06-02)
+
+Migration `20260602_byproduct_saldo_zero_cost.sql` elimina el doble conteo
+de MP en subproductos:
+
+- **Problema**: los productos `SALDO*` nacen como subproducto de las mismas
+  MOs que el producto principal (verificado en canonical_stock_moves:
+  produccion_pt con valor asignado). Su MP ya está en la receta BOM del
+  producto principal. El modelo BOM-recursivo les cobraba además su
+  `avg_cost_mxn` (fallback de leaf sin BOM) → la misma MP contada 2 veces.
+  Doble conteo 2025: **$4.50M** (7.6% del costo MP). Generaba márgenes
+  falsos de −1,537%.
+- **Regla**: la MP se cobra UNA sola vez (en la BOM del producto principal).
+  Subproductos y desperdicios → costo MP $0. Su venta es recuperación pura
+  de margen.
+- **Mecánica**: `canonical_products.is_byproduct` (backfill por patrón
+  `^(SALDO|DESPERDICIO)`) + short-circuit en
+  `get_bom_raw_material_cost_per_unit` (también en hojas del árbol BOM).
+  Cache source `byproduct_zero`. Flag `subproducto_costo_cero` en
+  `get_cogs_per_product`.
+- **El contable NO cambia**: el cost-share de Odoo a subproductos es
+  correcto en AVCO (reduce el costo del producto principal). La asimetría
+  contable-vs-BOM queda visible en la fila "Δ vs P&L contable".
+- **Costo MP 2025 corregido**: $59.15M → **$54.65M** (margen contributivo
+  MP ~67.5% → ~70%).
+- Si Quimibond crea subproductos con otro naming, marcar
+  `is_byproduct = true` manualmente en canonical_products.
+
+### IEPS triplet (productos con tabaco/alcohol — N/A para textil pero
+documentado por completitud):
+Algunas líneas en odoo_invoice_lines vienen como triplet
+(lista+, descuento−, neta+). Para qty: `DISTINCT ON (line_id)`. Para
+revenue: sum de las 3 líneas (cancelan aritméticamente). Sin esto, qty
+o revenue se cuentan 2x.
+
+### IMPORTANTE para futuras sesiones
+
+- **NO es un "bug de CAPA duplicada"**: la premisa antigua (Standard
+  valuation con CAPA inflando 501.01.01) era incorrecta. Quimibond usa
+  AVCO. El P&L limpio es una **reformulación**, no un fix — muestra qué
+  pasaría con la estructura de BOMs nueva (post-1-abril, solo MP) si no
+  hubiera contaminación AVCO histórica del PT.
+- **No mezclar 501.01.01 AVCO con BOM-MP**: son conceptos distintos.
+  501.01.01 = AVCO al despacho (incluye MOD+OH absorbido pre-abril del
+  PT viejo). costoPrimo BOM = qué costaría con BOMs actuales (sólo MP).
+  La diferencia es contaminación + drift de precios MP, no un bug.
+- **MOD y overhead se reportan APARTE por departamento**: usar los 3
+  RPCs (`get_nomina_by_cost_center`, `get_overhead_by_cost_center`,
+  `get_production_by_cost_center`) y las 3 tablas (`cost_center_config`,
+  `overhead_account_assignment`, `rent_lot_assignment`).
+- **El residual debe cuadrar al peso**: si `Δ vs contable ≠ residual_501.01.01`,
+  hay un bug en cómo se sumaron las cuentas. Investigar antes de seguir.
+- **Period filter unificado**: solo usar `?period=` (no `pl_period`,
+  removido). HistorySelector global controla todo el P&L.
+- **Workcenters mayo 2026**: Tejido Circular fue go-live el primer
+  proceso. Acabado/Tintorería/Entretelas/Empaque siguen pendientes.
+  Cuando se configuren, MOD+OH se absorberá al PT al producirse y el
+  régimen pasará de variable costing implícito a absorbing costing.
+
+---
+
+## /contabilidad/centros-de-costo — MOD + Overhead por departamento
+
+Implementado 2026-05-04 para descomponer 501.06 (MOD) y 504.01 (overhead
+fábrica) por proceso productivo. Permite calcular burden rate
+(MXN por unidad producida) para cuando se configuren los workcenters
+faltantes en Odoo.
+
+### Tablas (silver, manual seed)
+
+| Tabla | Filas | Qué define |
+|---|---|---|
+| `cost_center_config` | 12 | Catálogo de centros: TEJIDO, ACABADO, TINTORERIA, ENTRETELAS, INSP_EMPAQUE, MANTENIMIENTO, ALMACEN, CALIDAD, LIMPIEZA, ADMIN, DISENO, RH_COMPRAS. Cada uno con `nature` (fabril_directo / fabril_indirecto / admin), `output_uom`, `has_workcenter`, `workcenter_go_live_date`, `nomina_ref_pattern` (regex para parser de NOMINAS journal ref) |
+| `overhead_account_assignment` | 5 | Mapping cuenta_504.01.* → cost_center con allocation_pct. Direct: luz→TEJIDO, gas→ACABADO, agua→TINTORERIA, agujados→TEJIDO. Otras cuentas no mapeadas se prorratean por participación de fabril_directos |
+| `rent_lot_assignment` | 5 | 4 lotes según breakdown del CEO: Lote 9 planta tint+acabado $356,934 (50/50), Lote 10 entretelas $352,062 (100% ENTRETELAS), Lote 9,10 oficinas Tejido $284,269 (100% TEJIDO admin), Lote 10 oficinas RH+Compras $219,509 (100% RH_COMPRAS) |
+
+### RPCs
+
+- **`get_nomina_by_cost_center(p_period date)`** — agrupa cuentas 501.06.*
+  por centro usando regex sobre `journal.ref` de NOMINAS (ej. "NOMINA TEJIDO
+  Q1 ABRIL 2026" → TEJIDO). Si el ref no matchea ningún pattern, queda en
+  bucket `SIN_CLASIFICAR`.
+- **`get_overhead_by_cost_center(p_period date)`** — combina 3 fuentes:
+  1. Asignaciones directas via `overhead_account_assignment`.
+  2. Renta via `rent_lot_assignment`.
+  3. Cuentas 504.01.* no mapeadas: prorrateadas por `production_qty` de
+     centros fabril_directos (TEJIDO+ACABADO+TINTORERIA+ENTRETELAS).
+- **`get_production_by_cost_center(p_period date)`** — qty producida por
+  proceso según mrp_production + categoría de producto (TEJIDO_CIRCULAR
+  produce kg crudos, ACABADO produce mt acabados, etc.).
+
+### Burden rate (resultado abril 2026)
+
+| Centro | Nómina | Overhead | Producción | Burden /unit |
+|---|---|---|---|---|
+| TEJIDO | $358k | $621k | 67k kg | $14.47/kg |
+| ACABADO | $265k | $1.59M | 1.5M mt | $1.22/mt |
+| TINTORERIA | $247k | ~$300k | 99k kg | $5.55/kg |
+| ENTRETELAS | $209k | ~$400k | 297k mt | $2.05/mt |
+| INSP_EMPAQUE | $266k | ~$50k | (mixto) | n/a sin allocator |
+
+(Anomalía abril: ACABADO overhead $1.59M es alto porque renta $677k de
+abril es 39% menor a marzo — ver pending action `investigate-renta-abril-baja`.)
+
+### La rama (OP-ACA) — costo por metro (2026-06-02)
+
+Card `RamaBurdenCard` en `/contabilidad/centros-de-costo`, RPC
+`get_rama_burden_monthly(p_months_back)`. Por mes:
+
+- **Gas $/metro** = gasto gas (504.01.0003, fallback compras GASLP) ÷
+  metros terminados en órdenes `TL/OP-ACA` (state=done). **Alerta >$0.75/mt**.
+- **Gastos de fabricación $/metro** = (MOD 501.06 + OH fábrica 504.01,
+  **sin costo primo MP**) ÷ metros OP-ACA. Columna extra con depreciación
+  fábrica (504.08-23).
+
+Hallazgos iniciales (Ene-May 2026): gas $0.61–$1.00/mt (prom $0.73),
+fabricación $4.62–$7.51/mt (prom $6.26). El precio del litro de gas es
+estable (~$8.70-$9.15); la variación del $/mt viene de la eficiencia —
+la rama tiene costo fijo de calentamiento, así que <750k mt/mes dispara
+el costo unitario. OP-ACA existe en Odoo desde enero 2026 (no hay 2025).
+Query: `src/lib/queries/sp13/finanzas/rama-burden.ts`, migration
+`20260602b_rama_burden_monthly.sql`.
+
+### Costo reconstruido por producto (absorption "por fuera", 2026-06-03)
+
+Página `/contabilidad/costo-reconstruido`. Reconstruye el costo total por
+producto fuera de la contabilidad, con 3 capas:
+
+1. **Costo primo MP con ÚLTIMO costo de compra** (no avg). RPC
+   `get_bom_mp_cost_lastcost` + helper `get_leaf_last_cost_mxn`: explosión
+   BOM recursiva donde cada hoja usa `subtotal_mxn/qty` de la última compra
+   (ya en MXN), fallback a avg_cost. Subproductos→$0, importados→última compra.
+2. **Factor $/metro** (`get_cost_factors_monthly`, por mes): gastos ÷ metros
+   de referencia producidos (**OP-ACA + OP-V10**). Dos factores:
+   - Fabricación = MOD (501.06) + OH fábrica (504.01) + depreciación (504.08-23)
+   - Operación = 6xx completo (incluye CORPO)
+3. **Costo reconstruido** = primo + factor_fab + factor_op, con % de cada
+   capa (`get_full_cost_reconstruction(p_period)`).
+
+`get_meters_produced_vs_sold` compara metros fabricados (referencia) vs
+vendidos (uom='m', dedup DISTINCT ON). Ratio v/p <1 = construyes inventario.
+
+**Hallazgo (abril 2026):** factor total ~$9.14/mt. Jerseys ligeros (WJ042,
+A55BL86) tienen costo primo bajo pero cargan el mismo overhead/metro → % de
+gastos 60%+ y margen a costo absorbido NEGATIVO, aunque su margen de MP se
+vea alto. Señal de precios que no cubren el costo fijo por metro. Total
+abril: MP 43%, fabricación 41%, operación 16%, margen absorbido 15%.
+
+**Supuesto:** factor por metro se suma por unidad (1 unidad ≈ 1 metro).
+Migration `20260603_full_cost_reconstruction.sql`, query `cost-reconstruction.ts`.
+
+**Productos en kg (2026-06-04):** el factor $/metro SOLO aplica a productos
+con uom='m'. Los kg (y Servicio/Pieza) se separan en su propia sección con
+solo costo de MP + margen material, porque 1 kg de tela ≈ varios metros y
+cargarles el factor por unidad los distorsionaba (subabsorbían: 22% de
+ventas, ~4% del gasto fab). No hay gramaje en Odoo para convertir kg→m.
+`nonMeterRows`/`nonMeterTotals` en el snapshot.
+
+**% sobre ventas (2026-06-04):** las columnas por producto son % vs VENTAS
+(MP/ventas, Fab/ventas, Op/ventas) — Fab/ventas resaltada (ámbar ≥50%,
+rojo ≥100% = fabricar cuesta más que el precio). Soporte YTD: reconstruye
+cada mes con su factor y agrega por producto.
+
+**Tela vendida en kg → conversión a metros (2026-06-04):** la tela se
+produce/inspecciona en metros pero parte se vende por peso (kg). Para
+costearla con el mismo factor $/metro se convierte kg→metros vía tabla
+`product_uom_conversion` (m_per_kg por SKU):
+- Fuente 1 **CVU** (órdenes TL/CVU que consumen metros y producen kg = la
+  conversión real de la empresa). Fuente 2 fallback **gramaje×ancho** del
+  ref (IWJ045...160 = 45 g/m² × 1.60 m → 13.9 m/kg). Ambas coinciden ~5%.
+- `get_full_cost_reconstruction` aplica `factor × m_per_kg` a productos kg
+  (metros-equivalentes). Sin conversión (desperdicio/servicio/pieza) → solo MP.
+- Hallazgo: costeada completa, la tela en kg da **margen negativo** a precios
+  actuales; incluirla baja el margen absorbido total de abril a ~breakeven.
+- Migrations `20260604d_product_uom_conversion.sql`,
+  `20260604e_full_cost_reconstruction_kg_conversion.sql`. Tabla overridable.
+
+**Reparto por PESO (kg) (2026-06-04, vigente):** evolución del reparto por
+metro. Una tela de 140 g/m² consume ~3× recursos que una de 45 g/m² por metro,
+así que el factor es **$/kg**: fabricación ÷ kg inspeccionados, operación ÷ kg
+vendidos. Peso por unidad en tabla `product_kg_per_unit` (fuentes: CVU 1:1 real
+> gramaje(3 díg)×ancho del ref > weight Odoo; kg nativos=1; overridable).
+**Importados (' I$') NO cargan fabricación** (solo inspección/reempaque): fuera
+del denominador fab y fab_unit=0. Sin peso → aparte. `factor_fab_kg`/
+`factor_op_kg` en get_cost_factors_monthly; migrations `20260604i/j/k`.
+Pendiente fase "específico": híbrido por driver (inspección/empaque por metro,
+químicos/energía por peso, mapeando cuentas).
+
+**Peso por unidad — fuentes y prioridad (2026-06-04l):** `product_kg_per_unit`
+se rellena con esta prioridad (overridable con `source='manual'`):
+1. `kg_native` — productos uom=kg → 1.
+2. `cvu` — conversión medida real (órdenes TL/CVU 1:1). Empírica, gana.
+3. `ref_gramaje` — gramaje del ref SOLO si el primer bloque numérico tras las
+   letras tiene EXACTAMENTE 3 dígitos (×ancho/100/1000). Spec de ingeniería,
+   confiable para greige/jersey.
+4. `bom_weight` — peso recursivo desde la receta (`get_bom_weight_per_unit` +
+   `leaf_kg_per_unit`): explota la BOM y suma kg de cada hoja (hilo/químico en
+   kg directo; tela base en m × su kg/m; agua uom=L y servicios se ignoran).
+   Para productos SIN gramaje limpio, p.ej. **códigos de resina de 4 dígitos**
+   (ZN4032, AT9032, WP4032 — el 4032/9032 es la resina, NO gramaje).
+5. `odoo_weight` — último recurso (campo inconsistente: unos guardan kg/m,
+   otros g/m²; solo se acepta rango 0.01–1.5).
+   **Bug corregido:** el heurístico viejo `^[A-Za-z]+(\d{3})` malinterpretaba
+   los códigos de resina (403/903 como g/m²) y ZN4032BL152 caía a
+   odoo_weight=0.48 kg/m (~5× inflado; real por BOM ≈0.092). El guard de
+   "exactamente 3 dígitos" + bom_weight lo arreglan. ref_gramaje va ANTES que
+   bom_weight porque la receta sobre-estima en algunos (WC090…=1.48, irreal
+   para 90 g/m²; gramaje da 0.153). Migration `20260604l_product_kg_bom_weight.sql`.
+
+**Maestro de pesos de Jessica (2026-06-05l):** se cargó el peso autoritativo de
+los productos del Excel industrial (`volumen_industrial`, hojas `kg totales del
+año` + `CONFECCIÓN`) como `source='manual'`. Cada producto trae gramaje (g/m²) +
+ancho de rama (m); `kg_per_unit = gramaje/1000 × ancho_rama` (= 1/Rdto de la
+hoja, verificado al peso). Se sobre-escribieron **29 productos** que estaban en
+`bom_weight` o sin peso — todos los de **código de resina** (4032/9032: WM4032,
+ZN4032, WP4032, WNY4032, WNS4032, WTT4032, WR4032, WN4032) más XJ14021GO165. El
+BOM SOBRE-ESTIMABA estos 18–44% (merma de hilo + agua de la receta dentro del
+peso), inflando el overhead/operación que se les repartía. Ejemplos: WM4032OW152
+0.1043→0.0654 (−37%), ZN4032BL152 0.0920→0.0631 (−31%), WNY4032BL151 0.2744→
+0.2079 (−24%), XJ14021GO165 0.4153→0.2310 (−44%). **NO se tocaron** los que ya
+estaban en `cvu` (medición real en planta, manda sobre la spec) ni `ref_gramaje`
+(gramaje limpio del ref): coinciden con el maestro dentro de ~5%. Maestro
+overridable. Migration `20260605l_weight_master_jessica.sql`. Cache v17→v18.
+
+**Plan de Capacidades — hoja `capacidad instalada` (2026-06-12):** segundo Excel
+(`Copia_de_Copia_de_Plan_de_capacidades.xlsx`) con la capacidad de las DOS ramas
+(stenters) de acabado UNITECH + BRUCKNER. Aporta 3 cosas:
+1. **Capacidad instalada de acabado (rama):** ~**1.19M m/mes** sin tiempo extra,
+   ~**1.75M m/mes** con T.Extra (ambas ramas). UNITECH 1,727 m/h, BRUCKNER
+   1,831 m/h; 360 hrs/mes (turnos 48+42 hrs/sem). Útil como denominador de
+   utilización vs metros realmente acabados (rama burden / cost center ACABADO).
+2. **Tabla de rendimiento por producto acabado (73 SKUs):** peso (g/m²), ancho de
+   rama (m), rendimiento (m/kg) — `gram` y `rend` coinciden exacto. Misma fuente
+   de ingeniería que el maestro de Jessica; sirvió para extender pesos: 62 de 73
+   ya coincidían con ref_gramaje/cvu/manual; se llenaron 7 sin peso y se
+   corrigieron 4 en bom_weight (familia WD038 jersey ligero ±13-18%). Migration
+   `20260612_weight_master_capacidad_instalada.sql`. Cache v18→v19. (OJO:
+   WN075Q66JBL205 y XJ140Q21JGO165 traen ancho inconsistente con su código en
+   esta hoja —205→1.65— pero ya están en `manual` del maestro, protegidos.)
+3. **Ritmo de tejido (hoja TEJIDO):** ~**8.75–9.4 kg/h por máquina** de tejido
+   circular (greige). Está por debajo del `std_kg_per_machine_hour=11` del
+   workcenter, pero dentro del rango 8.3–12.6 que ya documentamos (varía por
+   galga). No se cambió el std; queda como dato de referencia si se recalibra.
+   kg/hr de la RAMA (acabado) por producto: 100–225 kg/h (≠ tejido).
+
+**Ruteo de fabricación por PROCESO — entretelas (2026-06-12c):** el costo
+reconstruido aplicaba el factor blendeado (tejido+tintorería+acabado, ~$5.5/m)
+a TODOS los productos en metros. Las **entretelas NO pasan por ese tren**: se
+fabrican en carda / **puntos** (aplicación de resina, proceso nuevo) / espolvoreo
+/ perfoquim / impregnación / termofijado — todo en el centro ENTRETELAS. El
+blendeado las sobre-costeaba (A70BL155: fab $5.47/m falso). Fix:
+- **Clasificación por CATEGORÍA de Odoo**: `category ILIKE '%Entretela%' AND NOT
+  '%Importaci%'`. Las familias (Carda/Puntos/Espolvoreo/Perfoquim/Impregnación/
+  Termofijado) viven en la categoría del producto; importadas siguen con fab=0.
+- **`get_entretela_fab_factor_monthly`**: factor $/m = (MOD centro ENTRETELAS +
+  renta contractual Lote 10 $352,062/mes + `entretela_overhead_extra_mxn`
+  configurable) ÷ metros de entretela producidos, suavizado 12m. ~**$2.3/m** en
+  2026 (cuadra con el $2.05 documentado), vs $5.5 blendeado.
+- **`get_full_cost_reconstruction`**: las entretelas usan ese factor (fallback al
+  blendeado para periodos sin producción de carda, p.ej. pre-2026). Resultado:
+  46 entretelas vendidas 2026-05 pasan de margen negativo a **+40% promedio**;
+  las telas NO se mueven. Migration `20260612c_entretela_process_routing.sql`.
+  Cache v19→v20.
+- **Luz de la carda**: NO se separó. Los energéticos (504.01.0001, $5-53k/mes) no
+  correlacionan con la producción de carda (OP-CAR feb-2026+) — están dominados
+  por tejido. Queda el knob `entretela_overhead_extra_mxn` (default 0) para que
+  el CEO sume energía/depreciación de carda si la cuantifica.
+- **Fase 1**: rutea entretelas a su factor; el pool de tela quedó intacto
+  (todavía con MOD+renta de entretelas dentro). Migration `20260612c`.
+- **Fase 2 (2026-06-12d, vigente)**: split quirúrgico. `get_cost_factors_monthly`
+  ahora resta del pool de tela el costo de entretelas (MOD ENTRETELAS + renta
+  contractual Lote 10) del numerador y sus metros/kg del denominador, SOLO para
+  los dos factores que costean (`factor_fab_peso_kg_smooth`/`largo_m_smooth`).
+  Guard 2026+ (effective_from de la renta). Op y columnas legacy intactas;
+  entretelas no se ven afectadas (usan su factor). **Efecto: la fabricación de
+  TODA la tela sube ~+11% prom** (X140 fab $10.62→$12.87, margen −2.3%→−9.2%;
+  WJ053 +14.8%→+6.6%) — correcto: se quita el subsidio que la entretela (ligera)
+  le daba a la tela al diluir el denominador en kg. Migration
+  `20260612d_tela_pool_split_phase2.sql`. Cache v20→v21.
+
+**Operación por % de ventas (2026-06-12e):** antes la operación (6xx admin/ventas)
+se repartía por **kg vendidos**, penalizando a las telas pesadas por metro. Pero
+admin/ventas escalan con cuánto vendes en pesos, no con kilos. Ahora
+`get_full_cost_reconstruction`: `op_unit = op_pct × precio_venta`, donde
+`op_pct = Σ gastos 6xx ÷ Σ ventas` 12m suavizado (guard `op_pool>0` excluye el
+cierre de diciembre con op negativo). ~17.9% en 2026. Respeta la eficiencia: la
+pesada deja de pagar op de más por su peso. `gastos_op_total = op_pct × revenue`.
+Migration `20260612e_op_por_ventas.sql`.
+
+**Entretelas TEJIDAS llevan tejido+tintorería (2026-06-12f):** el ruteo de
+`20260612c` mandaba TODAS las entretelas a carda-only, pero la familia "Puntos"
+(resina) está mezclada: ~31 de base **tejido circular (tejida)** + ~15 carda.
+Las tejidas (ZN4032, WP4032, WNS/WNY/WR/WM/WTT 4032 — "tejido circular
+fusionable") SÍ pasan por tejido y tintorería. Fix en `get_full_cost_reconstruction`:
+- **entretela tejida** (`name ~ 'tejido circular'|'tejida'` sin 'no tejida'):
+  `fab = peso_kg × factor_peso (tejido+tintorería) + factor_entretela (puntos)`.
+  SIN factor largo (rama/acabado, que no usan).
+- **entretela carda** (no tejida): solo `factor_entretela` (~$2.3/m).
+- Resultado: tejidas pasan de margen +37-40% a ~**+7-12%** (alineadas con telas
+  de peso comparable, p.ej. WJ053 +6%); carda no cambian (~+42%). Clasificador
+  por nombre, corregible. Migration `20260612f_entretela_tejida_tintoreria.sql`.
+  Cache v21→v22.
+
+**Auditoría costo por depto/familia + fix doble conteo (2026-06-12g):** revisión
+de que el GL se reparte sin duplicados. Se halló sobre-absorción: la Fase 2
+había sacado del denominador de PESO TODOS los kg de entretela, pero las tejidas
+SÍ consumen tejido+tintorería y SÍ pagan la tarifa de peso → su costo de tejido
+se contaba 2 veces (~$295k/mes). Fix en `get_cost_factors_monthly`: del
+denominador de peso solo se restan los kg de entretela **CARDA** (las tejidas se
+quedan). El denominador de largo sigue restando todos los metros de entretela.
+Tras el fix, la sobre-absorción residual (~$754k en mayo) es **suavizado**: el GL
+de fab varía $5.4–7.3M/mes pero mayo cayó a $3.9M (timing de renta), y el factor
+suavizado refleja el promedio → se promedia en el año, no es duplicado.
+Migration `20260612g_tela_pool_carda_only_denom.sql`. Cache v22→v23.
+
+**Clasificador robusto + página de auditoría (2026-06-12h/i):** la regla
+tejida/carda se unificó a: tejida = entretela, `name NOT ~ 'no tejid'` y
+(`'tejido circular'|'tejida'|categoría 'Puntos'`); carda = el resto. Captura las
+resin de Puntos sin "tejido circular" en el nombre (p.ej. WM4032AZ160) que antes
+se sub-costeaban. Misma regla en `get_full_cost_reconstruction` y el denominador
+de `get_cost_factors_monthly` (`20260612h`). Cache v23→v24.
+Nueva página **`/contabilidad/auditoria-costos`**: reconciliación GL ↔ absorbido
+por departamento (centro de costo) y por familia de producto, con drift por mes
+(suavizado, no duplicado). RPCs `get_cost_audit_by_department` /
+`get_cost_audit_by_family` (`20260612i`), query `cost-audit.ts`.
+
+**Costeo por MARGEN DE CONTRIBUCIÓN (2026-06-12j):** corrección de mejor
+práctica. El costo reconstruido (absorción total) sirve para el P&L pero
+distorsiona decisiones de precio/mezcla porque reparte costos FIJOS por unidad.
+CEO confirmó: **solo la energía (luz/gas/agua, 504.01.0001/0003/0004) es
+variable**; MOD ($3M, plantilla), renta, depreciación, otros OH y operación
+(6xx) son FIJOS (~$7.6M/mes). Nueva página **`/contabilidad/margen-contribucion`**:
+- Costo variable/u = MP (último costo) + energía ($/kg × peso). Importados sin energía.
+- **Contribución = precio − costo variable**; un producto vale la pena si CM>0
+  aunque su costo absorbido salga negativo (ej. X140: absorbido −9% pero CM
+  +$14/m / 43% → sí conviene venderlo, aporta a fijos).
+- Fijos = costo del período; **punto de equilibrio** = fijos prom 12m ÷ CM%.
+  Mayo 2026: CM global 61.7%, fijos ~$7.6M/mes, break-even ~$12.3M ventas/mes,
+  **0 productos con contribución negativa**.
+- Tabla `costing_variable_accounts` (editable: qué cuentas son variables). RPCs
+  `get_contribution_by_product`, `get_fixed_costs_monthly`. Query
+  `contribution-margin.ts`. La absorción (costo-reconstruido) se mantiene para P&L.
+
+**Explorador de costos por producto (2026-06-17):** página **`/contabilidad/costos-producto`**
+con buscador sobre TODOS los productos vendibles (~2,931, vendidos o no — el
+reporte de costo-reconstruido solo muestra los vendidos). Tabla materializada
+`product_cost_catalog` (PK odoo_product_id) + `refresh_product_cost_catalog(p_period)`;
+refresh nocturno dentro de `/api/pipeline/refresh-cogs-monthly`. Desglose por
+unidad: MP (último costo BOM), energía (variable $/kg×peso), costo variable, fab
+absorbido por proceso (tela/entretela), costo absorbido, precio referencia
+(**prom 12m con qty DEDUPLICADA por el triplet lista/desc/neta** — sin dedup el
+precio sale ~1/3, p.ej. X140 $11 falso vs $34 real), op, contribución y márgenes.
+Reusa la clasificación del modelo. Migration `20260617_product_cost_catalog.sql`,
+query `product-cost-catalog.ts`. **Nota:** el qty del triplet (3 líneas, misma
+cantidad) requiere `DISTINCT ON (move, product, quantity)` en cualquier cálculo
+de precio/qty — varios productos textiles lo tienen pese a "IEPS N/A".
+
+**Arrendamiento de MAQUINARIA en fabricación (2026-06-19):** el CEO confirmó que
+el leaseback financiero **701.11.0001** ($4.54M YTD Ene–May, ~$909k/mes) es el
+arrendamiento de la maquinaria PRODUCTIVA — NO es la renta de la nave/oficinas
+(504.01.0008 planta + 603.45 oficinas). Son activos distintos. Como la maquinaria
+se usa para producir, su costo es overhead fijo de fabricación (análogo a la
+depreciación de maquinaria propia). Antes vivía 100% debajo del EBIT y no tocaba
+ningún costo de producto. Fix: se agregó `account_code LIKE '701.11%'` al filtro
+`fab` de la CTE `gastos` en `get_cost_factors_monthly`. Es "general toda la
+producción" → fluye por el split híbrido peso/largo del pool de tela (las
+entretelas usan su propio factor, intacto — la maquinaria arrendada es del tren
+de tela). **Efecto: pool de fab Ene–May $27.76M → $32.30M (+16%); factor por
+unidad +16%.** Cobertura del pool (absorbido en vendibles vendidos YTD) baja de
+~95% a ~90% (el resto queda en inventario/no-vendibles). El P&L financiero
+(`pnl.ts`) NO cambia: 701.11 sigue debajo del EBIT (es costeo gerencial, no
+contable). Migration `20260619_machinery_lease_in_fab.sql`. Cache:
+cost-reconstruction v24→v25, cost-audit v1→v2, product-cost-catalog v5→v6.
+
+**Desglose por componente en la UI (2026-06-19):** `/contabilidad/costos-producto`
+ahora es expandible — clic en un producto abre el desglose completo: **MP por
+receta** (Hilo/Colorante/Químicos/Resina/Fibra/Semiterminado/Maquila/Otros;
+importados=landed), **Fabricación** abierta en sus 8 componentes GL (MOD, luz,
+gas, agua, renta planta, otros OH, depreciación, maquinaria) y **Operación** en
+3 (602 admin/ventas, 603 corporativo, otros). Mecánica: `get_cost_pool_composition(p_period)`
+da el % de cada componente del pool (YTD del año, ventana limpia sin el reverso
+de cierre de diciembre); la UI multiplica `fab_unit × share` / `op_unit × share`
+(desglose proporcional — mismo mix para todos; entretelas usan factor propio así
+que su split interno es indicativo). La MP se materializa en `product_mp_breakdown`
+(refresh nocturno en `/api/pipeline/refresh-cogs-monthly`, escalada a `mp_unit`).
+Migration `20260619b_product_cost_detail.sql`. Cache product-cost-catalog v6→v7.
+
+**Árbol de categorías NUEVO + costo_bucket (2026-07-03):** el CEO reorganizó
+product.category en Odoo con niveles semánticos (1º ESTADO→cuenta 115.x,
+2º CONSTRUCCIÓN→factor de costeo, 3º PRODUCTO→cuenta de venta; el MERCADO se
+deriva: entretela⇒confección 401.01.01, tela⇒industrial 401.01.02). Árbol PT:
+`Tejido Circular/{Industrial (telas), Entretela fusionable tejida}`,
+`No Tejido/{Entretela fusionable, Entretela sin resina, Perfoquim}`,
+`Importación (" I")`, `Subproducto`. PP espejo de la nomenclatura de refs
+(H=crudo→Tejido Circular, I=teñido→Teñido, J=terminado→PT, " IT"→PP/Importación,
+prefijo I=presentación en kg). La clasificación tela/ent_tejida/ent_carda está
+CENTRALIZADA en **`costo_bucket(cat,name,ref)`** — todas las funciones de costeo
+la llaman; migration `20260703e_costo_bucket_arbol_nuevo.sql` la extendió a las
+rutas nuevas (Perfoquim ya no contiene "Entretela"; "fusionable tejida" reemplaza
+la pista "Puntos") conservando los patrones viejos como fallback. Si se agregan
+hojas al árbol, tocar SOLO costo_bucket. Caches: cost-reconstruction v26,
+cost-audit v3, product-cost-catalog v8, cost-centers v2, workcenter-standard v4,
+contribution v2.
+
+**Importados y gastos de OPERACIÓN (2026-06-04m):** los importados (' I') NO
+cargan fabricación (solo se inspeccionan/reempacan) PERO SÍ deben cargar
+operación (admin/ventas aplican a todo lo vendido). No traían peso (código de
+resina + BOM stub → sin fuente), así que conv=0 y quedaban sin op. Fix:
+heredan el peso de su **gemelo nacional** (mismo ref sin ' I', p.ej.
+'WP4032BL152 I' → 'WP4032BL152'); el gemelo debe ser tela en metros (uom='m')
+y SUSTITUYE cualquier odoo_weight propio (igual de poco confiable: WP4032BL152
+I traía 0.54, ~5× vs gemelo 0.106). Así entran al denominador de op (kg
+vendidos) y reciben su parte; fab sigue en 0 por el guard `is_import` (' I$').
+source='import_twin'. Migration `20260604m_import_twin_weight.sql`.
+
+**Factor $/kg suavizado (2026-06-04n):** el factor mensual oscila mucho (gasto
+fábrica ~fijo $5.5M ÷ kg inspeccionados volátiles 75k–112k → abr $72/kg vs may
+$38/kg), metiendo ruido en el margen por producto (X140NT165 saltaba −16%…+3%
+mes a mes). `get_cost_factors_monthly` agrega 3 columnas suavizadas
+(`factor_fab_kg_smooth`/`factor_op_kg_smooth`/`factor_total_kg_smooth`) =
+**promedio móvil ponderado 12m** (Σ gasto ÷ Σ kg sobre ventana, window function
+`ROWS BETWEEN 11 PRECEDING AND CURRENT ROW`, solo meses válidos para no
+contaminar con cierre anual). `get_full_cost_reconstruction` usa el suavizado;
+el crudo se conserva para auditar la volatilidad en la UI (sección 1 muestra
+ambos). Con esto X140 queda estable en ~−8% (señal honesta: tela pesada cuyo
+precio no cubre el costo absorbido). Migration `20260604n_cost_factors_smoothed.sql`.
+
+**Fabricación HÍBRIDA por driver (2026-06-05g):** repartir 100% de la
+fabricación por PESO sobre-castigaba a las telas pesadas (tienen menos metros
+por kg, y los procesos que corren por metro no tardan más con tela pesada).
+Drivers (confirmados con CEO): **TEJIDO + TINTORERIA → peso (kg)** (hilo,
+químicos, agua, calor); **ACABADO MOD/línea + ENTRETELAS + inspección → largo
+(metros)** (velocidad de línea); **GAS de acabado (504.01.0003) → peso** (secar
+tela pesada consume más gas/metro). Split ~**67% peso / 33% largo**
+(`costing_config.fab_weight_share`=0.67, editable; era 0.47 antes de mover el gas).
+`get_cost_factors_monthly` expone `factor_fab_peso_kg_smooth` (ws × fab/kg) y
+`factor_fab_largo_m_smooth` ((1-ws) × fab/metro). `get_full_cost_reconstruction`
+aplica: tela en m → `kg_per_m × peso_kg + largo_m`; tela en kg → `peso_kg +
+m_per_kg × largo_m`. Resultado (mayo): peso $26.61/kg + largo $2.85/m → X140
+pesado baja fab −33% ($13.08→$8.74/m), ligeros suben (estaban subsidiados), el
+promedio paga igual. Operación sigue por peso (kg). Migration
+`20260605g_fab_hybrid_driver.sql`.
+
+**Auditoría producto×producto (2026-06-05):** revisión de invariantes en todos
+los meses de 2026. Hallazgos:
+- **MP de importados sin costo propio → gemelo nacional.** KP2032T11GO152 I
+  ($196k venta) salía con MP=$0 (sin compras ni avg_cost). `get_bom_mp_cost_lastcost`
+  y `get_bom_raw_material_cost_per_unit` ahora heredan el MP del gemelo nacional
+  (ref sin ' I', tela en metros) cuando el importado no tiene costo propio. Solo
+  cambió ese 1 producto (los demás importados conservan su landed cost). Margen
+  86.5% → 46.9%. Migration `20260605_import_mp_twin_fallback.sql`.
+- **BOMs infladas (Odoo data) — WC090Q11JNT170, WJ055Q23JNT165.** Su receta
+  consume ~10× el peso físico de la tela → MP recursivo inflado ($78/m, $32/m) →
+  márgenes falsos −378%/−182%. Es error de captura en Odoo (cantidad de salida o
+  componentes por lote vs por metro). Registrado en `odoo_pending_actions`
+  (`bom-cantidades-infladas-wc090-wj055`) + `<OdooPendingBanner>` en la página.
+- **Confirmados como señal real (no bug):** kg-remanentes vendidos bajo costo
+  (1 kg ≈ varios metros, absorbe bien), telas pesadas vendidas baratas
+  (X140), y servicios/Pieza con MP=0 y margen 100%.
+- **AT9032BL152 — peso CVU malo, corregido (2026-06-05b).** El CEO confirmó que
+  AT9032 pesa 72 g/m² con resina; CVU lo midió 0.244 kg/m (~2× inflado, único
+  outlier de CVU vs BOM). Override manual a 0.072×1.52=0.1094 kg/m
+  (`source='manual'`, sobrevive re-seeds). Margen feb −101.7% → −16.5%. NO era
+  tela pesada — era medición CVU errónea. Migration `20260605b_at9032_weight_override.sql`.
+- Invariante `costo_total = MP + fab + op` se cumple al 100%; ningún importado
+  carga fabricación; 0 productos con MP fallback a avg genérico.
+
+**[Histórico] Denominador por tipo de gasto (2026-06-04):** fabricación ÷ **inspeccionado**
+(lo producido; lo no vendido queda en inventario); operación ÷ **vendido**
+(metros vendidos-equivalentes = m + kg×m_per_kg). `get_cost_factors_monthly`
+expone `factor_op_vendido` y `metros_vendidos_equiv`;
+`get_full_cost_reconstruction` usa `factor_fab_insp` + `factor_op_vendido`.
+Funciona para 2024-2025 (inspección y gastos existen; solo "fabricado/acabado"
+OP-ACA es 2026-only). Subproductos SALDO/DESPERDICIO se excluyen del reporte.
+Migrations `20260604g/h`. Página reordenada: sección "tres metros" eliminada.
+
+**Denominador inspección vs acabado (2026-06-04):** migration
+`20260604_cost_factors_inspection.sql` agrega metros de INSPECCIÓN (TL/INSP,
+move_category transfer_interno, el gate final que mide toda la tela vendible)
+como denominador alternativo. `get_cost_factors_monthly` y
+`get_meters_produced_vs_sold` devuelven ambos. La página muestra los dos
+factores lado a lado para comparar; el costeo por producto sigue en
+ACABADO (OP-ACA+V10) hasta decidir el oficial. Inspección da factor más bajo
+(más metros: ene $9.88→$6.36); riesgo de doble conteo por reinspección.
+
+### Costo estándar del workcenter, mes con mes (2026-06-05c)
+
+Card `WorkcenterStandardCard` en `/contabilidad/centros-de-costo`, RPC
+`get_cost_center_cost_monthly(p_cost_center, p_months_back)` + tabla
+`workcenter_cost_config` (editable). Sirve para fijar el **costo/hora** del
+workcenter en Odoo (`costs_hour` = máquina/overhead, `employee_costs_hour` =
+MOD) sin depender del GL volátil.
+
+- **El GL mensual es inservible como costo estándar**: la renta se paga según
+  flujo (un mes $0, el siguiente al doble), hay reverso de cierre anual
+  (dic-2025 renta −$7.6M) y la energía se factura con rezago. Por eso la renta
+  se toma **contractual fija** de `rent_lot_assignment` (Tejido $284,269/mes),
+  no del GL.
+- Componentes por mes: MOD (`get_nomina_by_cost_center`), renta contractual,
+  energía/servicios + mantto/otros (`get_overhead_by_cost_center`), y
+  depreciación de maquinaria = `504.08 × machine_deprec_pct` (config, 50% para
+  Tejido — **confirmar con activo fijo**).
+- Las **horas-máquina se DERIVAN de producción** (kg ÷ `std_kg_per_machine_hour`,
+  11 para circular), NO de las duraciones de workorders: éstas son basura
+  (órdenes de 432 kg/h con tiempo casi 0 a 5 kg/h con 578h = orden abierta sin
+  cerrar; `duration_expected`=0). Producción completa via
+  `get_production_by_cost_center`. Registrado en `odoo_pending_actions`
+  (`workorder-tiempos-no-confiables`) — el fix real es cerrar workorders en Odoo.
+- La query (`workcenter-standard.ts`) normaliza: promedia los meses válidos
+  (excluye total≤0 del cierre y el mes corriente) ÷ horas objetivo.
+- **Componentes limpios (2026-06-05d):** energia_servicios = cuentas 504.01
+  DIRECTAMENTE mapeadas al centro (consumo real); mantto_otros = pool 504.01 no
+  mapeado ÷ MOD-share entre fabriles (SIN depreciación); deprec_maquinaria =
+  sólo 504.08 × pct (sin 504.23 amortización de instalaciones ni 504.01.0035
+  gastos de importación). Esto evita el doble conteo de depreciación que tenía
+  la primera versión (usaba el pool de get_overhead que ya la incluía).
+- **Resultado Tejido (16 meses):** costo normalizado $1.28M/mes ÷ ~8,900
+  horas-máquina (de producción) → `costs_hour` ≈ $94, `employee_costs_hour`
+  ≈ $50, total ≈ $144/h. (Con las horas infladas de workorders salía ~$126;
+  los tiempos rotos la subestimaban ~12%.) Su config actual $74.57 + $29.65 =
+  $104 sub-absorbe ~30%. Editable en `workcenter_cost_config`
+  (`std_kg_per_machine_hour`, `machine_deprec_pct`).
+
+### Fix mapeo de energía por centro (2026-06-05d)
+
+`overhead_account_assignment` tenía la cuenta grande de agua sin mapear:
+**`504.01.0004 AGUA` ($230k/mes, el teñido) no estaba asignada** → caía al pool
+y se prorrateaba mal; TINTORERIA salía con ~$4,745 de overhead (sólo tenía
+"504.01.0013 AGUA OFICINAS" $4k). Fix: mapear `504.01.0004 AGUA → TINTORERIA`.
+Ahora Tintorería carga su agua (~$189k) y el pool de "otros" baja para los
+demás. Mapeo actual: ENERGÉTICOS→TEJIDO, GAS→ACABADO, AGUJADOS→TEJIDO,
+AGUA→TINTORERIA, GASTOS_IMPORTACION→ADMINISTRACION (aislado de fabril).
+**Pendiente CEO:** ¿ENERGÉTICOS (electricidad $110k) es 100% Tejido o se
+reparte con tintorería/acabado? Por ahora todo a Tejido.
+
+### Migration
+
+`supabase/migrations/20260504_cost_centers_overhead.sql` — schema +
+seed + RPCs. Idempotente con ON CONFLICT en seeds.
+`supabase/migrations/20260605c_workcenter_standard_cost.sql` — config +
+RPC del costo estándar mensual.
+
+---
+
+## /finanzas — Cash projection (modelo realista day-by-day)
+
+Sección "¿Qué va a pasar con el efectivo?" en /finanzas. Proyecta saldo
+de cash día-a-día en horizontes de 13/30/90 días. Combina cuatro
+fuentes y aplica varias correcciones para no ser ni demasiado
+optimista ni pesimista.
+
+### Fuente 1: AR/AP factura por factura — `cashflow_projection`
+
+Tabla pre-computada que tiene una fila por factura abierta:
+
+| flow_type | Significado |
+|---|---|
+| `receivable_detail` | Factura emitida (AR) — entra a cash |
+| `payable_detail` | Factura recibida (AP) — sale de cash |
+| `receivable_by_month` | Agregado mensual (ignorado en projection.ts) |
+
+Cada fila trae `projected_date = due_date_resolved`,
+`amount_residual` (residual nominal), y `expected_amount = residual ×
+collection_probability` donde la prob viene del aging bucket:
+
+| Aging | Prob |
+|---|---|
+| Fresca (no vencida) | 95% |
+| 1-30d vencida | 85% |
+| 31-60d | 70% |
+| 61-90d | 50% |
+| 90+ | 25% |
+
+Para AR usamos `expected_amount` (con prob aplicada). Para AP usamos
+`amount_residual` (al proveedor le debemos el monto completo, sin
+descuento por aging).
+
+### Fuente 2: Recurrentes — RPC `get_cash_projection_recurring`
+
+Patrón histórico de los últimos 3 meses cerrados, proyectado al
+calendario típico:
+
+| Categoría | Día del mes | Cuentas |
+|---|---|---|
+| `nomina` | 15 + último día (quincenas) | 501.06.* (excl. 0020-23) + 602.01-25 + 603.01-25 |
+| `impuestos_sat` | 17 del mes siguiente | 501.06.0020 + 0023 (IMSS patrón + otros mensuales) + 602.26-29 + 603.26-29 (retenciones e ISN) |
+| `sar_infonavit` | 17 meses pares (feb/abr/jun/ago/oct/dic) | 501.06.0021 (SAR) + 501.06.0022 (INFONAVIT) — accrual mensual ×2 cada bimestre |
+| `renta` | 1 | 504.01.0008 + 603.45.* |
+| `servicios` | 10 | 504.01.0002-0043 (energía/agua/gas/mtto) |
+| `arrendamiento` | 5 | 701.11.* |
+| `ventas_proyectadas` | diario, today + DSO | 4xx run rate × 0.85 prob |
+
+DSO se calcula dinámico: `AR_open / (avg_revenue / 30)`, capped
+[15, 120] días.
+
+### Fuente 3: Saldo inicial — `canonical_bank_balances`
+
+`opening = SUM(current_balance_mxn WHERE classification='cash')`.
+
+### Cuatro correcciones críticas aplicadas en projection.ts
+
+#### 1. AP delay por proveedor (RPC `get_ap_payment_delay_v2`)
+
+Antes: asumía que pagamos AP en el due date al 100%. Crash de cash falso.
+Ahora: por cada proveedor, calcular delay promedio histórico
+`payment_date_odoo - due_date_resolved` de últimos 6 meses (mín. 3
+facturas pagadas, cap 0-90d). Aplicar al `projected_date`. Si sample <10
+usa median (más robusto que avg). Sin histórico → 0d default
+(conservador, paga en due date).
+
+```
+adjustedDate = max(today, dueDate + supplierDelay)
+```
+
+#### 2. AR delay por cliente (RPC `get_ar_collection_delay_v2`)
+
+Antes: asumía cobranza en due date — optimista.
+Ahora: análogo a AP pero para AR. Cap 0-180d. La prob del aging bucket
+se mantiene (es ortogonal: el delay mide CUÁNDO, la prob mide CUÁNTO).
+
+Validación reciente: 116 clientes con histórico, 965 facturas. Mediana
+delay 9d, p75 28d, máx 172d. Promedio ponderado 22d después del
+vencimiento.
+
+#### 3. Partes relacionadas — flag `is_related_party`
+
+Columna `canonical_companies.is_related_party boolean`. Marcadas
+manualmente por RFC en migration `20260426_ap_delay_related_party.sql`:
+
+| RFC | Partner |
+|---|---|
+| GQU920609JNA | Grupo Quimibond, S.C. (matriz / holding) |
+| MITJ991130TV7 | José Jaime Mizrahi Tuachi |
+| MIDJ4003178X9 | José Mizrahi Daniel |
+| MIPJ691003QJ1 | Jacobo Mizrahi Penhos |
+| AOMS630418PP1 | Salomón Ancona Mizrahi |
+
+AP a partes relacionadas:
+- **En projection.ts**: pushed 180d fuera del horizonte. Categoría
+  separada `ap_intercompania`. NO contamina `outflowByDay` ni
+  `totalOutflow` ni markers.
+- **En obligations.ts**: cuenta 205.04 → categoría
+  `partes_relacionadas` propia. KPI principal cambia a "Operativo
+  (sin intercompañía)" y aparece KPI separado "Intercompañía".
+
+Importante: el saldo principal del $12.81M en 205.04.0001 es préstamo
+de accionista de dic-2021 sin actividad reciente — vive a nivel GL,
+no como facturas. El push 180d es preventivo (por si en el futuro
+emiten factura), no correctivo de hoy.
+
+#### 4. Anti doble-conteo recurrentes ya facturados
+
+Antes: si el arrendador emitió factura de renta de abril, entraba al
+`cashflow_projection` AP Y el recurring overlay también la proyectaba
+para el día 1. $1.37M renta contado 2x. Mismo bug con servicios y
+arrendamiento.
+
+Ahora: para las 3 categorías que llegan como factura del proveedor
+(`renta`, `servicios`, `arrendamiento`), se omite la proyección
+recurrente si `projected_date < hoy`. Asumimos que la factura del
+mes corriente ya está capturada en AP.
+
+Nómina, impuestos_sat y ventas_proyectadas siguen proyectándose
+siempre — no llegan como factura.
+
+#### 5. Past-due spread (anti-cliff)
+
+Para AR/AP que ya rebasaron su fecha esperada incluso después del
+delay, en vez de "dump on today" (cliff artificial el día 1) se
+distribuyen sobre una ventana mínima de 14 días usando un hash estable
+de `invoice_name`. Determinístico y evita que el chart muestre un
+acantilado el día de hoy cuando hay backlog grande de past-due
+(típico: ~91% del residual de Quimibond está past-due).
+
+```
+window = max(supplierDelay, 14)
+offset = stableHash(invoiceName) % window
+adjustedDate = today + offset
+```
+
+### Estructura de salida (`CashProjection`)
+
+```ts
+{
+  horizonDays: 13 | 30 | 90,
+  openingBalance, closingBalance, minBalance, minBalanceDate,
+  totalInflow, totalOutflow, totalInflowNominal,
+  avgCollectionProbability, overdueInflowCount, safetyFloor,
+  points: [{ date, balance, inflow, outflow }],     // día por día
+  markers: [{ date, kind, amount, label, category, ... }],  // ≥$50k
+  categoryTotals: [{ category, categoryLabel, flowType, amountMxn }],
+}
+```
+
+UI muestra 4 partes:
+1. **CashProjectionChart** — area chart con balance + markers coloreados
+   por categoría (verde inflow, naranja `impuestos_sat`, rojo outflow)
+2. **ProjectionTimeline** — eventos agrupados por semana ("Esta
+   semana", "Próxima semana", "Semana del X-Y") con net por semana
+3. **CashCategoryBreakdown** — totales por categoría (inflow/outflow)
+4. **SummaryStat** — saldo inicial / inflows / outflows / saldo proyectado
+
+### Archivos
+
+| Archivo | Qué hace |
+|---|---|
+| `src/lib/queries/sp13/finanzas/projection.ts` | Lógica principal, aplica las 5 correcciones, retorna CashProjection |
+| `src/app/finanzas/_components/cash-projection-chart.tsx` | Chart con markers coloreados |
+| `src/app/finanzas/page.tsx` (ProjectionBlock + ProjectionTimeline + CashCategoryBreakdown) | Render |
+
+### RPCs silver involucrados
+
+- `get_cash_projection_recurring(p_horizon_days, p_lookback_months)` — nómina/renta/servicios/arrendamiento/impuestos_sat/ventas_proyectadas
+- `get_ap_payment_delay_v2(p_lookback_months)` — delay AP por proveedor + flag is_related_party
+- `get_ar_collection_delay_v2(p_lookback_months)` — delay AR por cliente
+
+### Migrations relevantes
+
+- `20260425_cash_projection_recurring.sql` (v1 — nómina sin separar SAT)
+- `20260425_cash_projection_recurring_v2_taxes.sql` (separa impuestos_sat día 17)
+- `20260426_ap_delay_related_party.sql` (RPC + is_related_party + 5 RFCs marcados)
+- `20260426_ar_collection_delay.sql` (RPC AR delay)
+- `20260427_recurring_v3_bimestral.sql` (split SAR/INFONAVIT bimestral del IMSS/ISR mensual)
+
+### Cache
+
+`unstable_cache` key bumpeada con cada cambio significativo
+(actualmente `sp13-finanzas-cash-projection-v7`). Bumpear al modificar
+la lógica para invalidar Vercel ISR.
+
+### IMPORTANTE para futuras sesiones
+
+- **El modelo viejo era OPTIMISTA** (no pesimista como pareciera). El
+  AP wall asumía pago en due date y el AR wave asumía cobranza en due
+  date — ambos compensados. Al fixear ambos, el net empeora (más
+  realista). Si alguien dice "el dashboard ahora se ve más feo",
+  defender los cambios: la realidad es esa.
+- **No tocar la prob por aging bucket**: las 95/85/70/50/25 son un
+  proxy razonable hasta que se calcule prob por cliente histórica.
+  Mejorar eso sería opción separada.
+- **El intercompañía a 180d es un workaround**: la solución real es
+  no traer al cashflow_projection las facturas de partes relacionadas
+  desde la silver. Si en el futuro alguien construye SP4+, considerar
+  excluir `is_related_party` ahí.
+- **`is_related_party` se popla manual**: no hay matcher automático.
+  Si Quimibond agrega nuevos accionistas/empresas hermanas, hay que
+  marcarlas con UPDATE en migration.
+- **Cache key**: si modificas projection.ts, bumpear v7 → v8.
+
+---
+
+## Addon Odoo (qb19)
+
+**Ubicacion:** `addons/quimibond_intelligence/`
+**Version:** 19.0.30.0.0
+**Dependencias:** base, sale, purchase, account, stock, crm, mail
+
+### Archivos
+
+| Archivo | LOC | Descripcion |
+|---|---|---|
+| `models/sync_push.py` | ~1500 | Push Odoo → Supabase (20 modelos) |
+| `models/sync_pull.py` | ~200 | Pull Supabase → Odoo (comandos, contactos) |
+| `models/supabase_client.py` | ~110 | REST client para Supabase |
+| `models/sync_log.py` | ~25 | Modelo de log de sync |
+
+### Crons Odoo
+
+| Frecuencia | Que hace |
+|---|---|
+| Cada 1 hora | Push completo a Supabase (20 tablas) |
+| Cada 5 minutos | Pull comandos + contactos nuevos |
+
+### Modelos sincronizados (20)
+
+| Odoo Model | Supabase Table | Status |
+|---|---|---|
+| res.partner | contacts + companies | Synced |
+| product.product | odoo_products | Synced |
+| sale.order.line + purchase.order.line | odoo_order_lines | Synced |
+| res.users + hr.employee | odoo_users | Synced |
+| account.move (facturas) | odoo_invoices | Synced |
+| account.move.line (líneas factura) | odoo_invoice_lines | Synced |
+| account.move (pagos proxy) | odoo_payments | Synced |
+| account.payment (pagos reales) | odoo_account_payments | Synced |
+| account.account | odoo_chart_of_accounts | Synced |
+| account.move.line (balances agregados) | odoo_account_balances | Synced |
+| account.journal (banco/caja) | odoo_bank_balances | Synced |
+| stock.picking | odoo_deliveries | Synced |
+| crm.lead | odoo_crm_leads | Synced |
+| mail.activity | odoo_activities | Synced |
+| mrp.production | odoo_manufacturing | Synced |
+| hr.employee | odoo_employees | Synced |
+| hr.department | odoo_departments | Synced |
+| sale.order | odoo_sale_orders | Synced |
+| purchase.order | odoo_purchase_orders | Synced |
+| stock.warehouse.orderpoint | odoo_orderpoints | Synced |
+
+### Vistas financieras (SQL views)
+
+| Vista | Que muestra |
+|---|---|
+| `pl_estado_resultados` | P&L mensual: ingresos, costo ventas, gastos, utilidad bruta/operativa |
+| `cash_position` | Saldos bancarios (solo cuentas con movimiento) |
+| `expense_breakdown` | Desglose de gastos por cuenta y periodo |
+| `payment_analysis` | Pagos con empresa, banco, método, conciliación |
+| `cfo_dashboard` | Resumen ejecutivo: efectivo, deuda tarjetas, CxC, CxP, 30d metrics |
+| `cash_flow_aging` | Aging de cartera por empresa (1-30, 31-60, 61-90, 90+) |
+| `margin_analysis` | Análisis de márgenes por producto y cliente |
+| `working_capital` | Capital de trabajo: efectivo + CxC - CxP, ratios de liquidez |
+| `cfdi_invoice_match` | Cruce CFDI ↔ factura via UUID (matched/unmatched/no_uuid) |
+
+### Modelos pendientes
+
+| Odoo Model | Prioridad | Valor |
+|---|---|---|
+| account.payment.term | Medium | Prediccion de pago |
+| res.partner.category | Medium | Segmentacion de clientes |
+| mrp.bom | Medium | Costos de produccion |
+| product.pricelist | Low | Analisis de precios |
+
+---
+
+## Guardrails de seguridad
+
+1. **Schema changes:** `execute_safe_ddl()` solo permite CREATE, ALTER ADD, CREATE INDEX. BLOQUEA DROP, TRUNCATE, DELETE.
+2. **Data changes:** Auto-fix solo linkea y llena — nunca borra.
+3. **Insights:** Confianza <65% auto-filtrada. >7 dias auto-expirada.
+4. **Duplicados:** Triggers de normalizacion + dedup cada 30 min.
+5. **Odoo agent:** Solo analiza y recomienda — no modifica Odoo.
+6. **Audit trail:** Todas las operaciones loggeadas en pipeline_logs y schema_changes.
+
+### RLS posture (decisión 2026-04-28, audit P2-8)
+
+**Postura adoptada: anon-key seguro / RLS no requerido.**
+
+- El frontend (Next.js 15 server components) accede a Supabase via
+  **`SUPABASE_SERVICE_KEY` exclusivamente**, en `getServiceClient()`
+  (`src/lib/supabase-server.ts`). Service role bypassea RLS por diseño.
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` se setea en env vars pero **no se usa**
+  para reads del backend; queda disponible solo para futuros client
+  components que requieran RLS (no hay ninguno hoy).
+- Auth UI no expone anon-key a usuarios externos — la app está detrás
+  de `AUTH_PASSWORD` middleware (single-tenant, CEO-only).
+
+**Por eso los 49 ERROR-level lints de RLS están suprimidos conscientemente:**
+no aplican al modelo de acceso real. Si en el futuro se agrega un cliente
+público (móvil, embed externo, multi-tenant), revisitar y cerrar RLS por
+tabla con policies por rol antes de exponer anon-key.
+
+**No habilitar RLS sin auditar uso de service vs anon en queries** —
+romperia getServiceClient flows que asumen bypass.
+
+---
+
+## Environment Variables
+
+### Vercel (quimibond-intelligence)
+```
+NEXT_PUBLIC_SUPABASE_URL=https://tozqezmivpblmcubmnpi.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=...
+SUPABASE_SERVICE_KEY=...
+ANTHROPIC_API_KEY=sk-ant-...
+AUTH_PASSWORD=...
+CRON_SECRET=...
+```
+
+### Odoo.sh (qb19)
+```
+quimibond_intelligence.supabase_url=https://tozqezmivpblmcubmnpi.supabase.co
+quimibond_intelligence.supabase_service_key=...
+```
+
+---
+
+## Deployment
+
+### Frontend (Vercel)
+- Push a `main` → auto-deploy (frontend retirado desde 2026-09-16; el deploy solo mantiene las rutas API vivas)
+- **Sin crons en `vercel.json`** (2026-09-17): los pipelines corren en Supabase (pg_cron + Edge Functions). El plan Hobby rechazaba todo deploy con crons sub-diarios ("Deployment failed" en cada PR desde el 16-sep).
+- Vercel Hobby
+
+### Backend (Odoo.sh)
+- Branch `quimibond` = produccion
+- Push a `main` → merge a `quimibond` manualmente
+- `odoo-update quimibond_intelligence` desde shell
+- NO cambiar version del manifest (causa build failure por errores pre-existentes de Odoo Studio)

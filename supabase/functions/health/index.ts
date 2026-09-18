@@ -7,8 +7,8 @@
  *      vía RPC memoria_cron_health) — antes eran los crons de Vercel.
  *   2. Sync de Odoo: solo contactos/empresas (odoo_push_last_events,
  *      método 'contacts'), que es lo único que la memoria consume desde
- *      2026-09-17. El SAT vive ahora en Odoo (addon quimibond_sat), así
- *      que ya no se vigila Syntage aquí.
+ *      2026-09-17. El SAT vive en Odoo (addon quimibond_sat de qb19) y
+ *      desde 2026-09-18 Supabase solo guarda la memoria de correo.
  *   3. Gmail (edad del último correo guardado).
  *   4. Errores level=error en pipeline_logs (3 h).
  *
@@ -23,7 +23,7 @@ import { sendMail, mailDefaults } from "../_shared/mailer.ts";
 const JOB_INTERVALS: Record<string, number> = {
   memoria_sync_emails: 30,
   memoria_attachments_extract: 2,
-  memoria_backfill_sweep: 1, // solo se exige mientras haya cuentas pendientes
+  memoria_backfill_sweep: 1, // solo se exige mientras haya cuentas pendientes (desprogramado 2026-09-18: backfill 52/52 terminado)
   memoria_watchdog: 60,
 };
 

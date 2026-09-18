@@ -715,3 +715,39 @@ Para comparar: `analyze` con Haiku sobre 500 chars por correo cuesta hoy \~US$40
 - Código: `quimibond-intelligence` en `main` (commit `0288ba6`), archivos `src/lib/pipeline/gmail.ts`, `email-persist.ts`, `src/app/api/pipeline/{sync-emails,analyze,embeddings,extract-pending,extract-demand,email-digest,backfill-sweep}/route.ts`, `src/lib/analyst/tools.ts`, `vercel.json`.
 - Base de datos: consultas de solo lectura sobre `pg_class`, `pg_stat_user_tables`, `information_schema`, `cron.job`, `pg_indexes` en el proyecto `tozqezmivpblmcubmnpi`, 16-sep-2026.
 - Antecedentes: `qb19/PLAN_CEREBRO_V2.md` (sección 5.2, memoria contextual propuesta en marzo 2026), `CLAUDE.md` de ambos repos.
+
+## Limpieza 2026-09-18: Supabase solo con la memoria
+
+Decisión del CEO ("Supabase solo guarda lo que Odoo no tiene; aprovechar Odoo
+sin duplicar"). Se borró del proyecto `tozqezmivpblmcubmnpi` todo lo que
+duplicaba a Odoo o al SAT, con cinco migraciones aplicadas directo en Supabase
+(`limpieza_20260918_01_triggers` … `limpieza_20260918_05_schema_ingestion`).
+Copia idempotente y documentada en el repo:
+`supabase/migrations/20260918d_limpieza_supabase_solo_memoria.sql`.
+
+| Qué se borró | Detalle | Hoy vive en |
+| --- | --- | --- |
+| Bronze Odoo | Todas las `odoo_*` (facturas, pedidos, productos, saldos, stock…) | Odoo por MCP |
+| Bronze SAT | `syntage_*` (12 tablas), `cfdi_documents`, `email_cfdi_links` | Odoo, addon `quimibond_sat` |
+| Silver | `canonical_*` (tablas y MVs), `reconciliation_issues`, `source_links`, `mdm_manual_overrides`, `audit_*`, `data_integrity_*`, `mrp_boms`/`mrp_bom_lines` | Odoo |
+| Gold y análisis | `gold_*` (10), `mv_*` (4), 26 vistas/MVs legacy y financieras | Odoo (SGI, `quimibond_cash_flow`) |
+| Costeo | `product_cost_catalog`, `bom_recursive_cost_cache`, `product_kg_per_unit`, `cost_center_config`, `overhead_account_assignment`, `rent_lot_assignment`, `workcenter_cost_config`, `costing_*`, `product_uom_conversion`, `product_mp_breakdown`, `product_real_avg_cost`, `cogs_monthly_cache` | Odoo, addon `qb_capacidad_costeo` |
+| Agentes de IA | `agent_insights`, `agent_runs`, `agent_memory`, `ai_agents`, `briefings`, `action_items`, `insight_*` | Retirados (2026-08-05) |
+| Grafo viejo | `entities`, `entity_relationships`, `facts`, `ai_extracted_facts` | `memoria_facts`, `kg_nodes`, `kg_edges` |
+| Sueltas | `odoo_pending_actions` (exportada a `qb19/docs/HALLAZGOS_ODOO_PENDIENTES_2026-09-18.md`), `departments`, `data_sources`, `manual_notes`, `schema_changes` | — |
+| Triggers y FKs | En `companies`/`contacts`: `trg_cc_from_odoo`, `trg_classify_company_entity_type`, `trg_auto_source` ×2, `trg_cct_from_contact`, `trg_auto_resolve_contact_identity` y las FKs a `entities`/`data_sources` | — |
+| Funciones | ~660 (por patrón de nombre y por mención a tablas borradas; quedan 32) | — |
+| Jobs pg_cron | 33 (silver/gold, Syntage, `memoria_backfill_sweep` porque el backfill terminó 52/52); quedan 10 `memoria_*` | — |
+| Esquema | `ingestion` completo | — |
+
+**Tamaño:** 9.4 GB → 5.0 GB (`emails` es 4.0 GB de los 5.0).
+
+**`odoo_users` se conservó** (44 filas): es la única tabla `odoo_*` que sigue
+recibiendo push desde qb19, porque el grafo (`kg_refresh_deterministic`, nodos
+`usuario`) y la vista `memoria_encargados` la necesitan para saber qué persona
+de Quimibond atiende a cada empresa.
+
+**Pendiente en el dashboard de Supabase** (no hay herramienta aquí): borrar las
+Edge Functions `syntage-daily`, `syntage-webhook` y `query-intelligence`, que
+ya no existen en el repo. `backfill-sweep` se queda desplegada sin job por si
+hay que re-sembrar un backfill.
