@@ -65,7 +65,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 |---|---|
 | `emails` (317k, 4.0 GB) | Correo completo: `body_full`, `body_html`, `body_clean` (sin citas ni firma), headers de threading (`message_id_hdr`, `in_reply_to_hdr`, `references_hdr`), `cc`/`bcc`, `labels`, `raw_storage_path` (JSON de Gmail en `email-raw`), `ingest_version` (1 legacy cortado a 5k chars, 2 completo), `sender_contact_id`, `company_id` |
 | `threads` (166k) | Un hilo por buzón de Gmail; `conv_key` agrupa los hilos hermanos de una misma conversación; `company_id`, `last_activity`, agregados |
-| `email_attachments` (430k) | Un registro por adjunto: sha256, ruta en `email-attachments`, `extracted_text` (PDF/Excel/Word/CSV), `extract_status`/`skip_reason`/`attempts`, `claimed_at` (reclamo del extractor), `texto_tsv` (tsvector generado + GIN para `memoria_buscar`). **Solo se extraen adjuntos de correos de 2026** (decisión CEO 2026-09-18); los anteriores quedan `skipped` con `antes_2026`. El mismo archivo aparece 3 veces (un correo por buzón): al leer, deduplicar por `sha256` |
+| `email_attachments` (430k) | Un registro por adjunto: sha256, ruta en `email-attachments`, `extracted_text` (PDF/Excel/Word/CSV/**XML**), `extract_status`/`skip_reason`/`attempts`, `claimed_at` (reclamo del extractor), `texto_tsv` (tsvector generado + GIN para `memoria_buscar`). **Solo se extraen adjuntos de correos de 2026** (decisión CEO 2026-09-18); los anteriores quedan `skipped` con `antes_2026`. Los **XML** (CFDI del SAT: facturas, complementos de pago, nómina) se guardan como **resumen legible** (`_shared/xml-text.ts`: emisor, receptor, UUID, totales, conceptos, pagos, empleado), nunca el XML crudo con sello y certificado; otros XML se aplanan a `Elemento: atributo=valor`. Re-encolados los 18k de 2026 el 2026-09-18 (`20260919f`). El mismo archivo aparece 3 veces (un correo por buzón): al leer, deduplicar por `sha256` |
 | `email_backfill_state` (52) | Cursor del backfill v2 por buzón (`since`, `page_token`, `done`). Terminado 52/52 |
 | `gmail_accounts` (52) | Buzones sincronizados; `active=false` saca uno del sync |
 | `sync_state` (52) | `last_history_id` de Gmail por buzón (cursor incremental; no avanza si falla el insert) |
@@ -185,7 +185,7 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 
 **Edge Function:** editar `supabase/functions/<nombre>/index.ts` (código común
 en `_shared/`: `env.ts`, `gmail.ts`, `claude.ts`, `mailer.ts`, `email-parse.ts`,
-`email-clean.ts`, `email-persist.ts`, `digest-email-html.ts`) y desplegar con
+`email-clean.ts`, `email-persist.ts`, `xml-text.ts`, `digest-email-html.ts`) y desplegar con
 `supabase functions deploy <nombre> --no-verify-jwt --project-ref tozqezmivpblmcubmnpi`
 o con el MCP de Supabase (`deploy_edge_function`). Probar a mano con
 `select invoke_edge('<nombre>', '{}'::jsonb)`; el resultado queda en
@@ -251,6 +251,7 @@ está desplegada.
 - `emails` aún carga `body` (compat), `embedding` sin índice y columnas de
   proceso viejas; la Fase 5 (drop) reduce la tabla a la mitad.
 - El watchdog vigila la base desde la misma base: hace falta un ping externo.
+- Los tests de vitest cubren también `supabase/functions/_shared/xml-text.ts` (`src/__tests__/pipeline/xml-text.test.ts`); el resto de `_shared` no tiene tests automáticos.
 - Adjuntos (2026-09-18): el texto entra a la memoria desde esa fecha; las
   ~1.5k conversaciones ya resumidas no se rehacen con sus adjuntos hasta que
   llegue correo nuevo. Las 60k imágenes (`image_vision_phase3`) siguen fuera.
