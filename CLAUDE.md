@@ -65,7 +65,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 |---|---|
 | `emails` (317k, 4.0 GB) | Correo completo: `body_full`, `body_html`, `body_clean` (sin citas ni firma), headers de threading (`message_id_hdr`, `in_reply_to_hdr`, `references_hdr`), `cc`/`bcc`, `labels`, `raw_storage_path` (JSON de Gmail en `email-raw`), `ingest_version` (1 legacy cortado a 5k chars, 2 completo), `sender_contact_id`, `company_id` |
 | `threads` (166k) | Un hilo por buzón de Gmail; `conv_key` agrupa los hilos hermanos de una misma conversación; `company_id`, `last_activity`, agregados |
-| `email_attachments` (430k) | Un registro por adjunto: sha256, ruta en `email-attachments`, `extracted_text` (PDF/Excel/Word/CSV), `status`/`skip_reason`/`attempts` |
+| `email_attachments` (430k) | Un registro por adjunto: sha256, ruta en `email-attachments`, `extracted_text` (PDF/Excel/Word/CSV), `extract_status`/`skip_reason`/`attempts`, `claimed_at` (reclamo del extractor), `texto_tsv` (tsvector generado + GIN para `memoria_buscar`). **Solo se extraen adjuntos de correos de 2026** (decisión CEO 2026-09-18); los anteriores quedan `skipped` con `antes_2026`. El mismo archivo aparece 3 veces (un correo por buzón): al leer, deduplicar por `sha256` |
 | `email_backfill_state` (52) | Cursor del backfill v2 por buzón (`since`, `page_token`, `done`). Terminado 52/52 |
 | `gmail_accounts` (52) | Buzones sincronizados; `active=false` saca uno del sync |
 | `sync_state` (52) | `last_history_id` de Gmail por buzón (cursor incremental; no avanza si falla el insert) |
@@ -101,8 +101,9 @@ conversaciones, stats). Odoo también lee directo `memoria_encargados`,
 `threads`, `email_pending_actions` y `customer_demand_signals`.
 
 **Consumidas por Claude por MCP:** `memoria_buscar(p_texto, p_company_id, p_limit)`
-(búsqueda websearch en español sobre resúmenes y hechos) y luego
-`memoria_brief` de la empresa. Ejemplo:
+(búsqueda websearch en español sobre resúmenes, hechos y **texto de adjuntos**;
+las filas `tipo='adjunto'` traen nombre de archivo, fecha y fragmento resaltado)
+y luego `memoria_brief` de la empresa. Ejemplo:
 `select * from memoria_buscar('condiciones de pago shawmut')`.
 
 **Consumidas por Edge Functions:**
@@ -112,7 +113,8 @@ conversaciones, stats). Odoo también lee directo `memoria_encargados`,
 | `ingest_emails_v2` | `sync-emails`, `backfill-sweep` | Upsert de correos; solo actualiza si `ingest_version` entrante es mayor |
 | `analyst_query` | `email-extract`, `email-digest` | SELECT de solo lectura parametrizado para armar el contexto de Claude |
 | `memoria_hilos_pendientes` | `memory-consolidate` | Cola de conversaciones por `conv_key` (hilo canónico + hermanos) |
-| `memoria_hilo_mensajes` | `memory-consolidate` | Correos de una conversación sin duplicar entre buzones |
+| `memoria_hilo_mensajes` | `memory-consolidate` | Correos de una conversación sin duplicar entre buzones, con `adjuntos_texto` (texto de hasta 3 adjuntos por correo, dedup por sha256, 2,500 caracteres cada uno) |
+| `memoria_adjuntos_reusar_hermanos`, `memoria_adjuntos_reclamar` | `attachments-extract` | Heredar sha/archivo/texto entre buzones (mismo Message-ID) sin volver a bajar; reclamar lotes con `FOR UPDATE SKIP LOCKED` + `claimed_at` para correr dos invocaciones por minuto |
 | `memoria_guardar_consolidacion` | `memory-consolidate` | Escribe resumen, hechos y grafo en una transacción |
 | `get_unanswered_client_threads`, `get_silent_customers` | `email-digest` | Hilos de cliente sin respuesta y clientes callados |
 | `expire_email_pending_actions` | `email-extract` | Vence pendientes viejos |
@@ -151,7 +153,7 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 | Job | Cuándo (UTC) | Qué corre | Qué hace |
 |---|---|---|---|
 | `memoria_sync_emails` | `*/30` | `invoke_edge_per_account('sync-emails')` | Sync incremental de Gmail (History API), 52 llamadas de ~1 s |
-| `memoria_attachments_extract` | cada minuto | `attachments-extract` | Baja adjuntos a Storage y extrae texto, chicos primero, con presupuesto de CPU. **Nunca en paralelo** |
+| `memoria_attachments_extract` | cada minuto | `attachments-extract` ×2 (`generate_series(1, 2)`) | Baja adjuntos a Storage y extrae texto, chicos primero, con presupuesto de CPU (700 KB parseados y 45 s por invocación). Las dos invocaciones se reparten la cola con `memoria_adjuntos_reclamar`; ~100 filas/min (2026-09-18) |
 | `memoria_consolidar` | `*/5` | `memory-consolidate` | 10 conversaciones por corrida con Sonnet → resumen, hechos, grafo |
 | `memoria_ligas` | `*/10` | SQL `memoria_link_recent('3 days')` | Ligas determinísticas correo ↔ contacto ↔ empresa ↔ conversación |
 | `memoria_watchdog` | `:05` | `health` | Salud de jobs, push de Odoo, Gmail y errores; correo al CEO máx. 1/día |
@@ -249,6 +251,11 @@ está desplegada.
 - `emails` aún carga `body` (compat), `embedding` sin índice y columnas de
   proceso viejas; la Fase 5 (drop) reduce la tabla a la mitad.
 - El watchdog vigila la base desde la misma base: hace falta un ping externo.
+- Adjuntos (2026-09-18): el texto entra a la memoria desde esa fecha; las
+  ~1.5k conversaciones ya resumidas no se rehacen con sus adjuntos hasta que
+  llegue correo nuevo. Las 60k imágenes (`image_vision_phase3`) siguen fuera.
+  Cola inicial: 111k filas de 2026 (~40k documentos distintos), ~1 día al
+  ritmo actual; el sync de Gmail las va sumando.
 - **Siguientes:** pendientes de `memoria_thread_summaries` → obligaciones en
   Odoo (`qb_obligation.create_candidate`); "pregúntale a la memoria" desde la
   ficha del contacto; memoria de decisiones del CEO; borrar `src/` y Vercel

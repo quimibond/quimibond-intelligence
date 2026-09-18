@@ -2,7 +2,7 @@
  * memory-consolidate (Edge Function) — resumen vivo por conversación + hechos
  * con vigencia + grafo, con Claude (Sonnet, lote).
  *
- * Cada corrida (pg_cron memoria_consolidar, */5 min) toma las conversaciones de
+ * Cada corrida (pg_cron memoria_consolidar, cada 5 min) toma las conversaciones de
  * clientes/proveedores de Odoo con correo posterior a su último resumen
  * (RPC memoria_hilos_pendientes: una fila por conversación, agrupando los hilos
  * que Gmail abre por buzón), lee sus mensajes sin duplicar
@@ -18,7 +18,9 @@ import { serviceClient, authorizeCron, json, pipelineLog, readBody, type Client 
 import { anthropicClient, claudeJSON, MODEL_BULK } from "../_shared/claude.ts";
 
 const TIME_BUDGET_MS = 110_000;
-const MAX_CHARS = 14_000;
+const MAX_CHARS = 18_000;
+const MAX_ADJ_CHARS_MSG = 2_500; // texto de adjuntos por correo
+const MAX_ADJ_CHARS_CONV = 8_000; // y por conversación
 const NOISE_SENDER = /(no-?reply|postmaster|mailer-daemon|notificacion|notification|newsletter|digest|mailer|automated|donotreply)/i;
 
 interface Pending {
@@ -48,6 +50,7 @@ interface Msg {
   subject: string | null;
   cuerpo: string;
   adjuntos: string | null;
+  adjuntos_texto: string | null;
 }
 interface Consolidado {
   tema: string;
@@ -83,14 +86,23 @@ Reglas estrictas:
 - "hechos" son cosas que siguen siendo verdad después de esta conversación: condiciones de pago pactadas, precios acordados, productos que compra, requisitos de calidad o empaque, ventanas de entrega, quién decide, preferencias de trato, riesgos (quejas repetidas, atrasos de pago). Máximo 6. NO conviertas cada mensaje en un hecho.
 - "personas": los correos que participan (máximo 8, los más relevantes), con su lado. Rol solo si el texto lo dice o lo hace evidente (firma, cargo).
 - Si hay un "Resumen anterior", intégralo: el resumen nuevo describe TODA la conversación hasta hoy, no solo los correos nuevos; conserva los acuerdos que siguen vigentes y quita los pendientes ya resueltos.
+- Los bloques "[adjunto: nombre] …" son el texto extraído de archivos adjuntos (cotizaciones, órdenes, fichas, releases). Úsalos igual que el cuerpo: de ahí salen precios, cantidades, claves y condiciones. Si el texto es una tabla aplanada, léela con cuidado.
 - Español neutro, sin adjetivos de relleno. Nunca copies firmas ni avisos legales.`;
 
-function fmtMsg(m: Msg): string {
+function fmtMsg(m: Msg, adjBudget: { left: number }): string {
   const who = m.sender_type === "internal" ? "QUIMIBOND" : "CONTRAPARTE";
   const to = m.recipient ? ` → ${String(m.recipient).slice(0, 120)}` : "";
   const cc = m.cc ? ` (cc ${String(m.cc).slice(0, 80)})` : "";
   const adj = m.adjuntos ? `\n[adjuntos: ${m.adjuntos.slice(0, 200)}]` : "";
-  return `[${String(m.email_date).slice(0, 16).replace("T", " ")}] ${who} ${m.sender}${to}${cc}\n${m.cuerpo.replace(/\s+/g, " ").trim()}${adj}`;
+  // Texto de los adjuntos (memoria_hilo_mensajes ya lo dedup por sha256 y lo
+  // recorta a 2,500 por archivo); aquí se acota por correo y por conversación.
+  let txt = "";
+  if (m.adjuntos_texto && adjBudget.left > 200) {
+    txt = m.adjuntos_texto.slice(0, Math.min(MAX_ADJ_CHARS_MSG, adjBudget.left));
+    adjBudget.left -= txt.length;
+    txt = `\n${txt}`;
+  }
+  return `[${String(m.email_date).slice(0, 16).replace("T", " ")}] ${who} ${m.sender}${to}${cc}\n${m.cuerpo.replace(/\s+/g, " ").trim()}${adj}${txt}`;
 }
 
 async function consolidateOne(supabase: Client, client: any, p: Pending, model: string) {
@@ -123,10 +135,11 @@ async function consolidateOne(supabase: Client, client: any, p: Pending, model: 
   // Presupuesto de caracteres: los más recientes completos, los viejos recortados.
   const parts: string[] = [];
   let used = 0;
+  const adjBudget = { left: MAX_ADJ_CHARS_CONV };
   const ordered = [...context.map((m) => ({ m, ctx: true })), ...fresh.map((m) => ({ m, ctx: false }))];
   for (let i = ordered.length - 1; i >= 0; i--) {
     const { m, ctx } = ordered[i];
-    let txt = fmtMsg(m);
+    let txt = fmtMsg(m, ctx ? { left: 0 } : adjBudget);
     if (ctx) txt = `(ya resumido) ${txt.slice(0, 700)}`;
     const room = MAX_CHARS - used;
     if (room <= 300) break;

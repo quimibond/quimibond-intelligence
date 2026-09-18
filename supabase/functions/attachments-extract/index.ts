@@ -2,20 +2,27 @@
  * attachments-extract (Edge Function) — baja adjuntos pendientes de Gmail,
  * los deduplica por sha256 en el bucket `email-attachments` y extrae texto
  * (Excel/CSV con xlsx, Word con mammoth, PDF con unpdf, texto plano).
- * Reemplaza a /api/pipeline/attachments-extract de Vercel.
  *
- * Límite de 2 s de CPU por invocación: se procesan pocos archivos por corrida
- * (pg_cron cada 2 min) con un presupuesto de bytes parseados (un xlsx de 1 MB
- * ya consume ~1 s de CPU), y `attempts` se incrementa ANTES de procesar, así
- * un archivo que agota la CPU no se reintenta para siempre: al tercer intento
- * la fila queda `failed` (skip_reason cpu_limit) en la siguiente corrida.
+ * Límite de 2 s de CPU por invocación: se parsea hasta BYTE_BUDGET bytes por
+ * corrida (un xlsx de 1 MB ya consume ~1 s de CPU). Los adjuntos se reclaman
+ * por lotes chicos con el RPC memoria_adjuntos_reclamar (attempts++ y
+ * claimed_at ANTES de procesar, FOR UPDATE SKIP LOCKED), así:
+ *   - pg_cron puede lanzar dos invocaciones por minuto sin que se pisen;
+ *   - un archivo que agota la CPU no se reintenta para siempre: al tercer
+ *     intento la fila queda `failed` (skip_reason cpu_limit).
+ * Antes de reclamar, memoria_adjuntos_reusar_hermanos() copia sha/archivo/
+ * texto a las copias del mismo correo en otros buzones (mismo Message-ID):
+ * el mismo PDF llega a 3 buzones y solo se baja y parsea una vez.
+ * Solo correos de 2026 (decisión CEO 2026-09-18; el filtro vive en el RPC).
  */
+import { Buffer } from "node:buffer";
 import { serviceClient, authorizeCron, json, pipelineLog } from "../_shared/env.ts";
 import { GmailClient, GmailApiError, loadServiceAccount, decodeBase64Url } from "../_shared/gmail.ts";
 
 const BUCKET = "email-attachments";
-const BATCH = 8;
+const CLAIM = 8; // filas por reclamo: si la CPU nos mata, solo estas cargan un intento de más
 const BYTE_BUDGET = 700_000; // bytes parseados por invocación antes de parar
+const WALL_BUDGET_MS = 45_000; // el cron lanza otra corrida al minuto; no encimarse de más
 const MAX_DOWNLOAD_BYTES = 3_000_000; // más grande ni se baja: decodificar 12 MB de base64 ya revienta la CPU
 const MAX_TEXT_CHARS = 200_000;
 const MAX_ATTEMPTS = 3;
@@ -31,7 +38,8 @@ interface PendingRow {
   mime_type: string;
   size_bytes: number;
   attempts: number;
-  emails: { account: string; gmail_message_id: string } | { account: string; gmail_message_id: string }[] | null;
+  account: string;
+  gmail_message_id: string;
 }
 
 type Kind = "pdf" | "sheet" | "docx" | "text" | "other";
@@ -83,8 +91,11 @@ async function extractText(kind: Kind, bytes: Uint8Array): Promise<string | null
       return parts.join("\n\n");
     }
     case "docx": {
+      // Con `npm:` Deno carga la build de Node de mammoth, que espera `buffer`
+      // (Buffer de Node), no `arrayBuffer` (build de navegador). Con
+      // arrayBuffer fallaba el 100 % de los .docx: "Could not find file in options".
       const mammoth = await import("npm:mammoth@1.8.0");
-      const r = await mammoth.extractRawText({ arrayBuffer: bytes.buffer as ArrayBuffer });
+      const r = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
       return r.value ?? "";
     }
     case "text":
@@ -131,7 +142,12 @@ Deno.serve(async (req: Request) => {
   if (!sa) return json({ error: "GOOGLE_SERVICE_ACCOUNT_JSON no configurado" }, 503);
 
   const started = Date.now();
-  const stats = { done: 0, failed: 0, skipped: 0, reused: 0, bytes: 0, deferred: 0 };
+  const stats = { done: 0, failed: 0, skipped: 0, reused: 0, hermanos: 0, bytes: 0, queued: 0, lotes: 0 };
+
+  // Hermanos: lo que otro buzón ya bajó se hereda sin tocar Gmail.
+  const { data: hermanos, error: hermErr } = await supabase.rpc("memoria_adjuntos_reusar_hermanos", { p_desde: "30 minutes" });
+  if (hermErr) console.error("[attachments-extract] memoria_adjuntos_reusar_hermanos:", hermErr.message);
+  stats.hermanos = Number(hermanos ?? 0);
 
   // Filas que agotaron intentos (la CPU mató la invocación a medio archivo): cerrarlas.
   const { data: exhaustedRows } = await supabase
@@ -149,113 +165,107 @@ Deno.serve(async (req: Request) => {
     .eq("extract_status", "pending")
     .gt("size_bytes", MAX_DOWNLOAD_BYTES);
 
-  // Chicos primero: más archivos por corrida dentro del presupuesto de CPU.
-  const { data: pending, error } = await supabase
-    .from("email_attachments")
-    .select("id, email_id, gmail_attachment_id, filename, mime_type, size_bytes, attempts, emails!inner(account, gmail_message_id)")
-    .eq("extract_status", "pending")
-    .lt("attempts", MAX_ATTEMPTS)
-    .lte("size_bytes", MAX_DOWNLOAD_BYTES)
-    .order("size_bytes", { ascending: true })
-    .limit(BATCH);
-  if (error) return json({ error: error.message }, 500);
-
-  const rows = (pending ?? []) as unknown as PendingRow[];
-  if (!rows.length) return json({ ok: true, queued: 0, message: "Sin adjuntos pendientes" });
-
   const bucket = supabase.storage.from(BUCKET);
   const clients = new Map<string, GmailClient>();
 
-  for (const row of rows) {
-    if (stats.bytes >= BYTE_BUDGET) {
-      stats.deferred++;
-      continue; // presupuesto de CPU agotado: queda pending para la siguiente corrida
+  // Lotes chicos hasta agotar el presupuesto de bytes parseados o de tiempo.
+  while (stats.bytes < BYTE_BUDGET && Date.now() - started < WALL_BUDGET_MS) {
+    const { data: claimed, error } = await supabase.rpc("memoria_adjuntos_reclamar", { p_batch: CLAIM, p_max_bytes: MAX_DOWNLOAD_BYTES, p_max_attempts: MAX_ATTEMPTS });
+    if (error) {
+      if (!stats.lotes) return json({ error: error.message }, 500);
+      console.error("[attachments-extract] memoria_adjuntos_reclamar:", error.message);
+      break;
     }
-    const email = Array.isArray(row.emails) ? row.emails[0] : row.emails;
-    const now = new Date().toISOString();
-    // attempts++ antes de procesar: si la CPU nos mata a medio archivo, no se repite eternamente
-    await supabase.from("email_attachments").update({ attempts: row.attempts + 1, updated_at: now }).eq("id", row.id);
-    const exhausted = row.attempts + 1 >= MAX_ATTEMPTS;
-    if (!email) {
-      await supabase.from("email_attachments").update({ extract_status: "failed", last_error: "email sin cuenta" }).eq("id", row.id);
-      stats.failed++;
-      continue;
-    }
-    try {
-      let gmail = clients.get(email.account);
-      if (!gmail) {
-        gmail = new GmailClient(sa, email.account);
-        clients.set(email.account, gmail);
-      }
-      const dl = await download(gmail, email.gmail_message_id, row);
-      if (!dl) {
+    const rows = (claimed ?? []) as PendingRow[];
+    if (!rows.length) break;
+    stats.lotes++;
+    stats.queued += rows.length;
+
+    for (const row of rows) {
+      const now = new Date().toISOString();
+      const exhausted = row.attempts >= MAX_ATTEMPTS; // attempts ya viene incrementado por el reclamo
+      try {
+        let gmail = clients.get(row.account);
+        if (!gmail) {
+          gmail = new GmailClient(sa, row.account);
+          clients.set(row.account, gmail);
+        }
+        const dl = await download(gmail, row.gmail_message_id, row);
+        if (!dl) {
+          await supabase
+            .from("email_attachments")
+            .update({ extract_status: "failed", last_error: "adjunto no encontrado en Gmail", updated_at: now })
+            .eq("id", row.id);
+          stats.failed++;
+          continue;
+        }
+        const sha = await sha256Hex(dl.bytes);
+        const path = `${sha}.${extOf(row.filename, row.mime_type)}`;
+        const { data: twin } = await supabase
+          .from("email_attachments")
+          .select("storage_path, extracted_text, extract_status")
+          .eq("sha256", sha)
+          .not("storage_path", "is", null)
+          .neq("id", row.id)
+          .limit(1)
+          .maybeSingle();
+
+        let storagePath: string | undefined = twin?.storage_path ?? undefined;
+        let text: string | null | undefined = twin?.extract_status === "done" ? (twin.extracted_text as string | null) : undefined;
+        if (!storagePath) {
+          // Gmail a veces reporta un tipo sin "/" (p.ej. "pdf"); Storage lo rechaza como Content-Type.
+          const contentType = /^[\w.+-]+\/[\w.+-]+$/.test(row.mime_type ?? "") ? row.mime_type : "application/octet-stream";
+          const { error: upErr } = await bucket.upload(path, dl.bytes, { contentType, upsert: true });
+          if (upErr) throw new Error(`storage: ${upErr.message}`);
+          storagePath = path;
+        } else {
+          stats.reused++;
+        }
+        const kind = kindOf(row.filename, row.mime_type);
+        if (text === undefined) {
+          stats.bytes += dl.bytes.length; // solo el parseo cuesta CPU; el texto reutilizado no
+          text = await extractText(kind, dl.bytes);
+        }
+        const tooLarge = (kind === "pdf" || kind === "sheet") && text === null;
+        const noExtractor = kind === "other" || tooLarge;
         await supabase
           .from("email_attachments")
-          .update({ extract_status: "failed", last_error: "adjunto no encontrado en Gmail", updated_at: now })
+          .update({
+            gmail_attachment_id: dl.attachmentId,
+            sha256: sha,
+            storage_path: storagePath,
+            extracted_text: text ? text.slice(0, MAX_TEXT_CHARS) : null,
+            extract_status: noExtractor ? "skipped" : "done",
+            skip_reason: noExtractor ? (tooLarge ? `${kind}_too_large` : "no_extractor") : null,
+            last_error: null,
+            updated_at: new Date().toISOString(),
+          })
           .eq("id", row.id);
-        stats.failed++;
-        continue;
+        if (noExtractor) stats.skipped++;
+        else stats.done++;
+      } catch (err) {
+        const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
+        console.error(`[attachments-extract] ${row.filename} (email ${row.email_id}):`, message);
+        await supabase
+          .from("email_attachments")
+          .update({ extract_status: exhausted ? "failed" : "pending", last_error: message, updated_at: new Date().toISOString() })
+          .eq("id", row.id);
+        if (exhausted) stats.failed++;
       }
-      const sha = await sha256Hex(dl.bytes);
-      const path = `${sha}.${extOf(row.filename, row.mime_type)}`;
-      const { data: twin } = await supabase
-        .from("email_attachments")
-        .select("storage_path, extracted_text, extract_status")
-        .eq("sha256", sha)
-        .not("storage_path", "is", null)
-        .neq("id", row.id)
-        .limit(1)
-        .maybeSingle();
-
-      let storagePath: string | undefined = twin?.storage_path ?? undefined;
-      let text: string | null | undefined = twin?.extract_status === "done" ? (twin.extracted_text as string | null) : undefined;
-      if (!storagePath) {
-        const { error: upErr } = await bucket.upload(path, dl.bytes, { contentType: row.mime_type || "application/octet-stream", upsert: true });
-        if (upErr) throw new Error(`storage: ${upErr.message}`);
-        storagePath = path;
-      } else {
-        stats.reused++;
-      }
-      const kind = kindOf(row.filename, row.mime_type);
-      if (text === undefined) {
-        stats.bytes += dl.bytes.length; // solo el parseo cuesta CPU; el texto reutilizado no
-        text = await extractText(kind, dl.bytes);
-      }
-      const tooLarge = (kind === "pdf" || kind === "sheet") && text === null;
-      const noExtractor = kind === "other" || tooLarge;
-      await supabase
-        .from("email_attachments")
-        .update({
-          gmail_attachment_id: dl.attachmentId,
-          sha256: sha,
-          storage_path: storagePath,
-          extracted_text: text ? text.slice(0, MAX_TEXT_CHARS) : null,
-          extract_status: noExtractor ? "skipped" : "done",
-          skip_reason: noExtractor ? (tooLarge ? `${kind}_too_large` : "no_extractor") : null,
-          last_error: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", row.id);
-      if (noExtractor) stats.skipped++;
-      else stats.done++;
-    } catch (err) {
-      const message = (err instanceof Error ? err.message : String(err)).slice(0, 500);
-      console.error(`[attachments-extract] ${row.filename} (email ${row.email_id}):`, message);
-      await supabase
-        .from("email_attachments")
-        .update({ extract_status: exhausted ? "failed" : "pending", last_error: message, updated_at: new Date().toISOString() })
-        .eq("id", row.id);
-      if (exhausted) stats.failed++;
+      if (stats.bytes >= BYTE_BUDGET || Date.now() - started >= WALL_BUDGET_MS) break;
     }
   }
 
+  // Lo reclamado y no procesado (presupuesto agotado a mitad del lote) vuelve a
+  // ser elegible a los 3 minutos por claimed_at; no hace falta tocarlo aquí.
   const elapsed = Math.round((Date.now() - started) / 1000);
+  if (!stats.queued && !stats.hermanos) return json({ ok: true, queued: 0, message: "Sin adjuntos pendientes" });
   await pipelineLog(
     supabase,
     "attachments_extract",
     stats.failed > 0 ? "warning" : "info",
-    `Adjuntos: ${stats.done} extraídos, ${stats.reused} reutilizados, ${stats.skipped} sin extractor, ${stats.failed} fallidos, ${stats.deferred} diferidos (${rows.length} en lote, ${Math.round(stats.bytes / 1024)} KB, ${elapsed}s)`,
-    { ...stats, queued: rows.length, elapsed_s: elapsed },
+    `Adjuntos: ${stats.done} extraídos, ${stats.reused} reutilizados, ${stats.hermanos} hermanos, ${stats.skipped} sin extractor, ${stats.failed} fallidos (${stats.queued} en ${stats.lotes} lotes, ${Math.round(stats.bytes / 1024)} KB, ${elapsed}s)`,
+    { ...stats, elapsed_s: elapsed },
   );
-  return json({ ok: true, ...stats, queued: rows.length, elapsed_s: elapsed });
+  return json({ ok: true, ...stats, elapsed_s: elapsed });
 });
