@@ -1,7 +1,8 @@
 /**
  * attachments-extract (Edge Function) — baja adjuntos pendientes de Gmail,
  * los deduplica por sha256 en el bucket `email-attachments` y extrae texto
- * (Excel/CSV con xlsx, Word con mammoth, PDF con unpdf, texto plano).
+ * (Excel/CSV con xlsx, Word con mammoth, PDF con unpdf, texto plano, XML:
+ * los CFDI del SAT como resumen legible con _shared/xml-text.ts).
  *
  * Límite de 2 s de CPU por invocación: se parsea hasta BYTE_BUDGET bytes por
  * corrida (un xlsx de 1 MB ya consume ~1 s de CPU). Los adjuntos se reclaman
@@ -23,6 +24,7 @@
 import { Buffer } from "node:buffer";
 import { serviceClient, authorizeCron, json, pipelineLog, readBody } from "../_shared/env.ts";
 import { GmailClient, GmailApiError, loadServiceAccount, decodeBase64Url } from "../_shared/gmail.ts";
+import { xmlToText } from "../_shared/xml-text.ts";
 
 const BUCKET = "email-attachments";
 const CLAIM = 8; // filas por reclamo: si la CPU nos mata, solo estas cargan un intento de más
@@ -47,7 +49,7 @@ interface PendingRow {
   gmail_message_id: string;
 }
 
-type Kind = "pdf" | "sheet" | "docx" | "text" | "other";
+type Kind = "pdf" | "sheet" | "docx" | "xml" | "text" | "other";
 
 function extOf(filename: string, mime: string): string {
   const m = filename.toLowerCase().match(/\.([a-z0-9]{1,6})$/);
@@ -57,6 +59,7 @@ function extOf(filename: string, mime: string): string {
   if (/ms-excel/.test(mime)) return "xls";
   if (/wordprocessingml/.test(mime)) return "docx";
   if (mime === "text/csv") return "csv";
+  if (mime === "text/xml" || mime === "application/xml") return "xml";
   if (mime === "text/plain") return "txt";
   return "bin";
 }
@@ -66,6 +69,7 @@ function kindOf(filename: string, mime: string): Kind {
   if (ext === "pdf" || mime === "application/pdf") return "pdf";
   if (["xlsx", "xls", "xlsm", "csv", "tsv"].includes(ext) || /spreadsheetml|ms-excel|text\/csv/.test(mime)) return "sheet";
   if (ext === "docx" || /wordprocessingml/.test(mime)) return "docx";
+  if (ext === "xml" || mime === "text/xml" || mime === "application/xml") return "xml";
   if (["txt", "md", "json", "log"].includes(ext) || mime.startsWith("text/")) return "text";
   return "other";
 }
@@ -103,6 +107,8 @@ async function extractText(kind: Kind, bytes: Uint8Array): Promise<string | null
       const r = await mammoth.extractRawText({ buffer: Buffer.from(bytes) });
       return r.value ?? "";
     }
+    case "xml":
+      return xmlToText(new TextDecoder("utf-8").decode(bytes));
     case "text":
       return new TextDecoder("utf-8").decode(bytes);
     default:
