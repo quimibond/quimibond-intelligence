@@ -14,9 +14,14 @@
  * texto a las copias del mismo correo en otros buzones (mismo Message-ID):
  * el mismo PDF llega a 3 buzones y solo se baja y parsea una vez.
  * Solo correos de 2026 (decisión CEO 2026-09-18; el filtro vive en el RPC).
+ *
+ * Modo prioritario: body { email_ids: [..] } o { gmail_message_ids: [..] }
+ * reclama solo los adjuntos de esos correos (p.ej. la nómina de la semana
+ * para la verificación). Se invoca las veces que haga falta hasta que
+ * responda queued 0.
  */
 import { Buffer } from "node:buffer";
-import { serviceClient, authorizeCron, json, pipelineLog } from "../_shared/env.ts";
+import { serviceClient, authorizeCron, json, pipelineLog, readBody } from "../_shared/env.ts";
 import { GmailClient, GmailApiError, loadServiceAccount, decodeBase64Url } from "../_shared/gmail.ts";
 
 const BUCKET = "email-attachments";
@@ -141,6 +146,17 @@ Deno.serve(async (req: Request) => {
   const sa = await loadServiceAccount(supabase);
   if (!sa) return json({ error: "GOOGLE_SERVICE_ACCOUNT_JSON no configurado" }, 503);
 
+  // Modo prioritario: correos concretos en vez de la cola general.
+  const body = await readBody(req);
+  let emailIds: number[] | null = null;
+  if (Array.isArray(body.email_ids) && body.email_ids.length) {
+    emailIds = body.email_ids.map(Number).filter((n) => Number.isFinite(n));
+  } else if (Array.isArray(body.gmail_message_ids) && body.gmail_message_ids.length) {
+    const { data: ems } = await supabase.from("emails").select("id").in("gmail_message_id", body.gmail_message_ids.map(String));
+    emailIds = ((ems ?? []) as { id: number }[]).map((e) => e.id);
+    if (!emailIds.length) return json({ error: "ningún correo con esos gmail_message_ids" }, 404);
+  }
+
   const started = Date.now();
   const stats = { done: 0, failed: 0, skipped: 0, reused: 0, hermanos: 0, bytes: 0, queued: 0, lotes: 0 };
 
@@ -170,7 +186,7 @@ Deno.serve(async (req: Request) => {
 
   // Lotes chicos hasta agotar el presupuesto de bytes parseados o de tiempo.
   while (stats.bytes < BYTE_BUDGET && Date.now() - started < WALL_BUDGET_MS) {
-    const { data: claimed, error } = await supabase.rpc("memoria_adjuntos_reclamar", { p_batch: CLAIM, p_max_bytes: MAX_DOWNLOAD_BYTES, p_max_attempts: MAX_ATTEMPTS });
+    const { data: claimed, error } = await supabase.rpc("memoria_adjuntos_reclamar", { p_batch: CLAIM, p_max_bytes: MAX_DOWNLOAD_BYTES, p_max_attempts: MAX_ATTEMPTS, p_email_ids: emailIds });
     if (error) {
       if (!stats.lotes) return json({ error: error.message }, 500);
       console.error("[attachments-extract] memoria_adjuntos_reclamar:", error.message);
@@ -264,8 +280,8 @@ Deno.serve(async (req: Request) => {
     supabase,
     "attachments_extract",
     stats.failed > 0 ? "warning" : "info",
-    `Adjuntos: ${stats.done} extraídos, ${stats.reused} reutilizados, ${stats.hermanos} hermanos, ${stats.skipped} sin extractor, ${stats.failed} fallidos (${stats.queued} en ${stats.lotes} lotes, ${Math.round(stats.bytes / 1024)} KB, ${elapsed}s)`,
-    { ...stats, elapsed_s: elapsed },
+    `Adjuntos${emailIds ? ` (prioridad: ${emailIds.length} correos)` : ""}: ${stats.done} extraídos, ${stats.reused} reutilizados, ${stats.hermanos} hermanos, ${stats.skipped} sin extractor, ${stats.failed} fallidos (${stats.queued} en ${stats.lotes} lotes, ${Math.round(stats.bytes / 1024)} KB, ${elapsed}s)`,
+    { ...stats, elapsed_s: elapsed, email_ids: emailIds ?? undefined },
   );
   return json({ ok: true, ...stats, elapsed_s: elapsed });
 });
