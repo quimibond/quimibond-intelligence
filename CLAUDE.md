@@ -59,7 +59,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 
 ## Inventario de Supabase (esquema `public`, verificado 2026-09-18)
 
-### Tablas (21)
+### Tablas (28)
 
 | Tabla | Qué guarda |
 |---|---|
@@ -83,6 +83,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 | `email_digests` | Resúmenes diarios generados (JSON + HTML enviado) |
 | `pipeline_logs` (20k) | Log de todas las Edge Functions (`phase`, `level`, `details.runtime='edge'`); el watchdog escribe `phase='watchdog'` |
 | `token_usage` (9k) | Tokens por llamada a Claude (`endpoint`, modelo, entrada/salida) |
+| `senales_config` (62) / `senales` / `senales_lotes` / `situaciones` / `situacion_reglas` / `situacion_corridas` / `buzon_personas` | **Situación de la empresa** (sección propia abajo): catálogo de señales, una fila por hecho vigente (Odoo o memoria), lotes por señal, situaciones agrupadas y redactadas por Claude, reglas del director, corridas del bot, personas detrás de buzones compartidos |
 
 ### Vistas (4)
 
@@ -93,7 +94,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 | `odoo_push_last_events` | Último evento de push por método desde `pipeline_logs` | `health` (edad del push de `contacts`) |
 | `claude_cost_summary` | Costo de Claude por endpoint y día desde `token_usage` | Humanos / Claude por MCP |
 
-### Funciones SQL / RPCs (32)
+### Funciones SQL / RPCs (32 de memoria + 25 de situación)
 
 **Consumidas por Odoo (`qb_memoria`):** `memoria_brief(p_company_id | p_odoo_partner_id)`
 → ficha jsonb (empresa, encargados, contactos, hechos vigentes, últimas 12
@@ -132,6 +133,8 @@ del hilo), `memoria_thread_conv_key`, `kg_refresh_deterministic`,
 `auto_resolve_contact_company`, `resolve_contact_by_email`,
 `extract_company_payment_terms`.
 
+**Situación de la empresa:** ver la sección propia (ingesta, ciclo, lectura por MCP).
+
 **Helpers y triggers:** `memoria_email_addr`, `memoria_email_name`,
 `memoria_generic_domain`, `extract_email`, `normalize_company_name`,
 `normalize_contact_email`, `companies_sanitize_name`, `set_updated_at`.
@@ -148,7 +151,7 @@ pg_cron y las funciones), `google_service_account_json`, `anthropic_api_key`.
 Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 `cron_secret`.
 
-## Jobs pg_cron → Edge Functions (10, todos `memoria_*`)
+## Jobs pg_cron → Edge Functions (11)
 
 | Job | Cuándo (UTC) | Qué corre | Qué hace |
 |---|---|---|---|
@@ -162,6 +165,7 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 | `memoria_extract_demand` | `:50` cada 2 h | `email-extract {task:"demand"}` | Demanda en cuerpos → `customer_demand_signals` |
 | `memoria_extract_demand_files` | `:55` cada 2 h | `email-extract {task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
 | `memoria_grafo_nocturno` | 08:15 | SQL `kg_refresh_deterministic()` | Nodos y aristas que salen de los datos (empresas, contactos, buzones, quién atiende a quién) |
+| `situacion_respaldo` | `:20` | `situacion-consolidar {origen:"cron"}` **solo si** no hubo corrida en 50 min | Respaldo del bot de situaciones; el disparo normal es por evento (`senales_push_terminado`, al terminar el push de Odoo) |
 
 `backfill-sweep` sigue desplegada pero sin job: el backfill v2 desde
 2025-10-01 terminó (52/52). Para re-sembrarlo, insertar en
@@ -170,16 +174,86 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 
 ## Odoo ↔ Supabase (qb19, addon `quimibond_intelligence`)
 
-- **Push cada hora:** `contacts` (contactos + empresas, con RFC) y
-  `odoo_users`. Parámetro `quimibond_intelligence.push_models` (default
-  `contacts`; ya no hay tablas `odoo_*` a donde empujar el resto).
+- **Push cada hora:** `contacts` (contactos + empresas, con RFC),
+  `odoo_users` (+ `buzon_personas` desde `qb_memoria`) y `senales` (una
+  llamada a `senales_ingestar` por señal; al terminar, `senales_push_terminado`
+  dispara el bot). Parámetro `quimibond_intelligence.push_models` (default
+  `contacts,users,senales`; ya no hay tablas `odoo_*` a donde empujar el resto).
 - **Pull cada 5 min:** `sync_commands` pendientes.
-- El watchdog avisa si el push de `contacts` lleva > 6 h sin éxito
-  (`odoo_push_last_events`).
+- El watchdog avisa si el push de `contacts` lleva > 6 h sin éxito, el de
+  `senales` > 3 h, o el bot > 3 h sin corrida terminada
+  (`odoo_push_last_events`, `situacion_corridas`); lo que ve entra al mapa
+  como señal `job_caido`.
 - `qb_memoria` lee la memoria por REST con la service key y la muestra en la
   pestaña Memoria del contacto ("Quién la atiende", "Lo que sabemos",
   "Conversaciones"); su cron nocturno escribe los dueños aprendidos desde
   `memoria_encargados`.
+
+## Situación de la empresa (plan A, 2026-09-19/20)
+
+Spec y plan: `qb19/docs/superpowers/specs/2026-09-18-situacion-empresa-design.md`
+y `qb19/docs/superpowers/plans/2026-09-18-situacion-plan-a.md`. Un **mapa
+vivo de lo que está pasando** en la empresa para que el director decida qué
+delega y a quién. Las cifras siguen viviendo en Odoo: aquí solo hay **señales**
+(hechos con modelo + id, nunca tablas espejo) y su lectura.
+
+**Flujo:** Odoo (`_push_senales`, cada hora, ~50 consultas) y la memoria
+(`senales_memoria`: 9 señales de correo como `cliente_sin_respuesta`,
+`reclamacion_cliente`, `compromiso_correo`, `cliente_callado`) → `senales` (una
+fila por hecho vigente, episodios por clave, lote completo por señal: lo que no
+viene se resuelve) → `senales_actualizar` (calidad: viva / antigua /
+vencida_memoria / zombie / dato_malo / ignorada) → `situacion_guardar`
+(agrupa por `senales_config.agrupar_por`, una situación por `senal|agrupador`,
+estado abierta / empeoro / mejoro / resuelta / descartada / delegada, higiene
+para zombis y datos malos) → **bot `situacion-consolidar`** (Sonnet, effort low,
+JSON cerrado): título, resumen, recomendación, severidad dentro de la banda de
+la señal, responsable sugerido (`odoo_users`), fusiones entre duplicados.
+La IA nunca toca clave, documentos, evidencia ni estado.
+
+**Tablas:** `senales_config` (catálogo de 62 señales: área, tipo, fuente,
+umbrales, `agrupar_por`, `agregar`, `cada_horas`, `sin_datos_horas`,
+`severidad_base/max`, `reglas_calidad`), `senales`, `senales_lotes`,
+`situaciones` (con `version`/`ia_version`, `historia` jsonb, `fusionada_en`),
+`situacion_reglas` (ignorar / severidad fija / responsable fijo, del director),
+`situacion_corridas`, `buzon_personas`.
+
+**Leer por MCP (Claude):**
+
+```sql
+select * from situacion_mapa(null, 'viva', 3, 40);        -- área, calidad, severidad mínima, límite
+select situacion_contexto(615);                            -- todo lo que vio el bot para una situación
+select * from situacion_por_persona(68);                   -- lo que le tocaría a una persona
+select situacion_higiene();                                -- zombis y datos malos con su limpieza recomendada
+select situacion_salud();                                  -- lotes, corridas, costo, señales sin datos
+select * from claude_cost_summary where endpoint = 'situacion-consolidar';
+```
+
+**RPCs del bot y de ingesta:** `senales_ingestar(p_senal, p_fuente, p_corrida, p_filas)`
+(Odoo y watchdog; lote malformado → `ok=false`, nada se toca),
+`senales_push_terminado(p_corrida, p_origen)` (Odoo, al final del push →
+`invoke_edge('situacion-consolidar')`), `situacion_ciclo` (memoria → calidad →
+situaciones; lo llama el bot en cada corrida), `situacion_candidatas`,
+`situacion_contexto`, `situacion_redactar`, `situacion_corrida_cerrar`.
+Cuerpo del bot: `{origen, batch (≤ 40), id (solo esa), sin_ia: true, corrida}`.
+
+**Cómo agregar una señal:** una fila en `senales_config` y, si es de Odoo, una
+función `@senal('nombre')` en `qb19/addons/quimibond_intelligence/models/senales/`;
+si es de correo, un bloque más en `senales_memoria`. El bot no se toca.
+
+**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-4]_*.sql`,
+cada una termina en `RAISE EXCEPTION 'PRUEBA_OK'` (el error esperado deshace
+todo). Prompt y validación del JSON: `src/__tests__/pipeline/situacion-prompt.test.ts`.
+
+**Costo y ritmo (2026-09-20):** ~2k tokens de entrada y ~400 de salida por
+situación (~US$0.01); máximo 40 candidatas por corrida y una corrida por hora
+≈ US$10/día si el mapa cambia mucho, centavos en régimen. Primera corrida:
+1,919 señales de memoria → 613 situaciones.
+
+**Desviaciones respecto al spec:** (1) los 74 registros de `qb.obligation` no se
+copian; se puentean en vivo con la señal `obligacion_legado` hasta que el plan B
+retire el módulo. (2) `cliente_callado` solo usa el correo (la parte de pedidos
+llega con el push de Odoo). (3) `indicador_financiero_rojo` se agrupa por nombre
+de indicador.
 
 ## Cómo desplegar
 
@@ -217,6 +291,12 @@ está desplegada.
 - El cursor de Gmail (`sync_state.last_history_id`) no avanza si falla el
   insert. Sanear NUL y surrogates sueltos antes de `ingest_emails_v2`.
 - Supabase no guarda cifras de negocio: no crear tablas espejo de Odoo.
+- **PostgREST carga `safeupdate`** (rol `authenticator`): cualquier `UPDATE` o
+  `DELETE` sin `WHERE` falla con "UPDATE requires a WHERE clause" **aunque esté
+  dentro de una función** llamada por RPC (Odoo, Edge Functions, MCP), incluso
+  sobre tablas temporales; el `WHERE` de una subconsulta no cuenta. Los tests
+  SQL (rol `postgres`) no lo detectan. Poner `WHERE true` (migraciones
+  `20260919g/h`).
 
 ## Memoria Fase 3 (2026-09-18): ligas, resúmenes vivos, hechos y grafo
 
@@ -257,6 +337,12 @@ está desplegada.
   llegue correo nuevo. Las 60k imágenes (`image_vision_phase3`) siguen fuera.
   Cola inicial: 111k filas de 2026 (~40k documentos distintos), ~1 día al
   ritmo actual; el sync de Gmail las va sumando.
+- Situación, plan B: correo diario desde el mapa (`situacion-digest`, retiro de
+  `email-digest`), decisiones y reglas persistentes desde MCP
+  (`situacion_decidir`), delegación a actividades de Odoo (`sync_commands`),
+  app `qb_situacion` en Odoo y retiro de `qb_obligation`. Las ~600
+  situaciones iniciales se redactan a 40 por hora (≈ 15 h) antes de la primera
+  revisión del CEO.
 - **Siguientes:** pendientes de `memoria_thread_summaries` → obligaciones en
   Odoo (`qb_obligation.create_candidate`); "pregúntale a la memoria" desde la
   ficha del contacto; memoria de decisiones del CEO; borrar `src/` y Vercel

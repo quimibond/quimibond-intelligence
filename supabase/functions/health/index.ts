@@ -11,6 +11,8 @@
  *      desde 2026-09-18 Supabase solo guarda la memoria de correo.
  *   3. Gmail (edad del último correo guardado).
  *   4. Errores level=error en pipeline_logs (3 h).
+ *   5. Situación de la empresa: push de señales de Odoo y última corrida del
+ *      bot situacion-consolidar; lo que ve entra al mapa como señal job_caido.
  *
  * Si hay problemas: log phase='watchdog' level='error' y UN correo al CEO
  * como máximo cada 24 h (sendMail; requiere scope gmail.send — si no,
@@ -91,6 +93,21 @@ Deno.serve(async (req: Request) => {
     issues.push({ kind: "odoo_stale", detail: `odoo contacts: ${pushAgeHours === null ? "?" : Math.round(pushAgeHours)}h sin push exitoso (esperado cada 1h, umbral 6h)` });
   }
 
+  // 2b. Push de señales de Odoo (cada hora; umbral 3 h) y última corrida terminada del bot de situaciones (umbral 3 h).
+  //     situacion_respaldo no va en JOB_INTERVALS porque corre condicional (solo si no hubo corrida en 50 min).
+  const { data: lastSenales } = await supabase.from("odoo_push_last_events").select("created_at").eq("method", "senales").eq("status", "success")
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  const senalesAgeH = lastSenales?.created_at ? (now - new Date(lastSenales.created_at).getTime()) / 3600000 : null;
+  if (senalesAgeH === null || senalesAgeH > 3) {
+    issues.push({ kind: "odoo_stale", detail: `odoo senales: ${senalesAgeH === null ? "?" : Math.round(senalesAgeH)}h sin push exitoso (esperado cada 1h, umbral 3h)` });
+  }
+  const { data: lastRun } = await supabase.from("situacion_corridas").select("terminada_en").not("terminada_en", "is", null)
+    .order("terminada_en", { ascending: false }).limit(1).maybeSingle();
+  const botAgeH = lastRun?.terminada_en ? (now - new Date(lastRun.terminada_en).getTime()) / 3600000 : null;
+  if (botAgeH === null || botAgeH > 3) {
+    issues.push({ kind: "cron_stale", detail: `situacion-consolidar: ${botAgeH === null ? "nunca ha terminado" : Math.round(botAgeH) + "h sin corrida terminada"} (umbral 3h)` });
+  }
+
   // 3. Gmail
   const { data: lastEmail } = await supabase.from("emails").select("email_date").order("email_date", { ascending: false }).limit(1).maybeSingle();
   const emailAgeHours = lastEmail?.email_date ? (now - new Date(lastEmail.email_date).getTime()) / 3600000 : null;
@@ -112,6 +129,14 @@ Deno.serve(async (req: Request) => {
     const phases = [...new Set(errs.map((e) => e.phase))];
     issues.push({ kind: "pipeline_errors", detail: `${errs.length} errores en 3h en: ${phases.join(", ")} — primero: "${errs[0].message?.slice(0, 120)}"` });
   }
+
+  // 5. Situación: lo que el watchdog ve entra al mapa como señal job_caido (fuente watchdog), lista completa (vacía = todo resuelto).
+  const filas = issues.filter((i) => i.kind !== "pipeline_errors").map((i) => ({
+    clave: `job_caido:${i.kind}:${i.detail.split(":")[0].trim().replace(/\s+/g, "_").slice(0, 60)}`,
+    valor: 1, valor_texto: i.detail.slice(0, 300), payload: { kind: i.kind },
+  }));
+  const { data: lote, error: loteErr } = await supabase.rpc("senales_ingestar", { p_senal: "job_caido", p_fuente: "watchdog", p_corrida: crypto.randomUUID(), p_filas: filas });
+  if (loteErr || !(lote as { ok?: boolean })?.ok) console.warn("[health] senales_ingestar job_caido", loteErr?.message ?? lote);
 
   const healthy = issues.length === 0;
   let emailSent = false;
