@@ -49,6 +49,7 @@ Reglas estrictas:
 - La recomendación nombra la acción, al responsable y el documento (número de factura, OP, pedido, hilo).
 - "duplicados": fusionar solo si es EL MISMO asunto con la misma contraparte (p.ej. la promesa de pago del correo y la cartera vencida de ese cliente); si dudas, "distinta". Nunca te fusiones a ti misma.
 - Respeta las reglas del director listadas (ignorar, severidad fija, responsable fijo).
+- La descripción de la señal explica CÓMO se calcula (umbrales, listas, qué se aparta como dato_malo); no la conviertas en hechos sobre esta contraparte. Lo que aplica a este caso ya viene en calidad, valor_texto y payload: si no dice "parte relacionada", "dato_malo" o "zombie", no lo es y no lo menciones.
 - Español neutro, sin adjetivos de relleno, sin copiar correos completos ni firmas. No repitas el contexto: resume.`;
 
 const J = (x: unknown, max: number) => {

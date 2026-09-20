@@ -20,6 +20,7 @@ import { SYSTEM, armarContexto, validarSalida, type Contexto } from "./prompt.ts
 const TIME_BUDGET_MS = 110_000;
 const MAX_CANDIDATAS = 40;
 const PROMPT_CHARS = 16_000;
+const CONCURRENCIA = 4;   // llamadas a Claude en paralelo: una tarda ~7 s; en serie solo caben ~15 por corrida
 
 async function redactarUna(supabase: Client, client: Anthropic, id: number, model: string, corridaId: number) {
   const { data: ctx, error } = await supabase.rpc("situacion_contexto", { p_id: id });
@@ -75,17 +76,24 @@ Deno.serve(async (req: Request) => {
   if (!client) {
     if (ids.length) errores.push("anthropic_api_key no configurado (env ni Vault)");
   } else {
-    for (const id of ids) {
-      if (Date.now() - started > TIME_BUDGET_MS) { errores.push(`presupuesto de tiempo agotado con ${ids.length - ok - errores.length} candidatas sin redactar`); break; }
-      try {
-        const r = await redactarUna(supabase, client, id, model, corridaId);
-        ok++; fusiones += r.fusiones; results.push(r);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        errores.push(`#${id}: ${message.slice(0, 200)}`);   // se reintenta en la siguiente corrida (ia_version sigue < version)
-        results.push({ id, error: message.slice(0, 200) });
+    // Pool de CONCURRENCIA trabajadores sobre la misma cola; cada uno se detiene al agotarse el presupuesto de tiempo.
+    const cola = [...ids];
+    let sinTiempo = 0;
+    const trabajador = async () => {
+      for (let id = cola.shift(); id !== undefined; id = cola.shift()) {
+        if (Date.now() - started > TIME_BUDGET_MS) { sinTiempo++; cola.unshift(id); return; }
+        try {
+          const r = await redactarUna(supabase, client, id, model, corridaId);
+          ok++; fusiones += r.fusiones; results.push(r);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          errores.push(`#${id}: ${message.slice(0, 200)}`);   // se reintenta en la siguiente corrida (ia_version sigue < version)
+          results.push({ id, error: message.slice(0, 200) });
+        }
       }
-    }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCIA, ids.length) }, trabajador));
+    if (sinTiempo) errores.push(`presupuesto de tiempo agotado con ${cola.length} candidatas sin redactar`);
   }
 
   // 4. Tokens de esta corrida (token_usage) y cierre.
