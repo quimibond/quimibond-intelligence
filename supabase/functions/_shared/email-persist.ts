@@ -37,9 +37,8 @@ export function classifyAttachment(a: ParsedAttachment): { status: "pending" | "
     if (a.size < IMAGE_MIN_BYTES) return { status: "skipped", reason: "image_small" };
     return { status: "skipped", reason: "image_vision_phase3" };
   }
-  if (mime === "text/xml" || mime === "application/xml" || name.endsWith(".xml")) {
-    return { status: "skipped", reason: "cfdi_xml" };
-  }
+  // XML (CFDI incluidos) SÍ se extrae desde 2026-09-18: attachments-extract los
+  // resume (xml-text.ts) en vez de guardar el XML crudo con sello y certificado.
   if (name.endsWith(".p7s") || name.endsWith(".ics") || name.endsWith(".vcf") || mime === "application/pkcs7-signature") {
     return { status: "skipped", reason: "signature_or_calendar" };
   }
