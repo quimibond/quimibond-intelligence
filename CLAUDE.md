@@ -240,14 +240,18 @@ Cuerpo del bot: `{origen, batch (≤ 40), id (solo esa), sin_ia: true, corrida}`
 función `@senal('nombre')` en `qb19/addons/quimibond_intelligence/models/senales/`;
 si es de correo, un bloque más en `senales_memoria`. El bot no se toca.
 
-**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-4]_*.sql`,
+**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-5]_*.sql`,
 cada una termina en `RAISE EXCEPTION 'PRUEBA_OK'` (el error esperado deshace
 todo). Prompt y validación del JSON: `src/__tests__/pipeline/situacion-prompt.test.ts`.
 
 **Costo y ritmo (2026-09-20):** ~2k tokens de entrada y ~400 de salida por
 situación (~US$0.01); máximo 40 candidatas por corrida y una corrida por hora
 ≈ US$10/día si el mapa cambia mucho, centavos en régimen. Primera corrida:
-1,919 señales de memoria → 613 situaciones.
+1,919 señales de memoria → 613 situaciones. **Freno (2026-09-22,
+`20260922a`):** una situación ya redactada no vuelve a Claude antes de 6 h
+(`situacion_candidatas`); las nuevas pasan de inmediato. Si
+`claude_cost_summary` muestra al bot con cientos de llamadas al día, buscar
+situaciones con `version` alta: es parpadeo, no cambio real.
 
 **Desviaciones respecto al spec:** (1) los 74 registros de `qb.obligation` no se
 copian; se puentean en vivo con la señal `obligacion_legado` hasta que el plan B
@@ -291,6 +295,14 @@ está desplegada.
 - El cursor de Gmail (`sync_state.last_history_id`) no avanza si falla el
   insert. Sanear NUL y surrogates sueltos antes de `ingest_emails_v2`.
 - Supabase no guarda cifras de negocio: no crear tablas espejo de Odoo.
+- **Nada que llame a Claude puede reintentar para siempre** (2026-09-22). Tres
+  fugas pagaban la misma llamada cada hora: señales de memoria que se
+  autoexcluían al quedar `vencida_memoria` (resolver → reaparecer → redactar),
+  la tolerancia ±5 % calculada como `valor × 1.05` con valores negativos
+  (mismo número = "empeoró"), y `extract-demand-files` truncado en
+  `max_tokens` sin marcar el correo como leído. Regla: el filtro de una señal
+  se evalúa sobre el dato, no sobre el estado de la propia señal; todo
+  extractor marca el insumo como procesado también cuando falla.
 - **PostgREST carga `safeupdate`** (rol `authenticator`): cualquier `UPDATE` o
   `DELETE` sin `WHERE` falla con "UPDATE requires a WHERE clause" **aunque esté
   dentro de una función** llamada por RPC (Odoo, Edge Functions, MCP), incluso
