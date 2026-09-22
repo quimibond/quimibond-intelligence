@@ -240,7 +240,7 @@ Cuerpo del bot: `{origen, batch (≤ 40), id (solo esa), sin_ia: true, corrida}`
 función `@senal('nombre')` en `qb19/addons/quimibond_intelligence/models/senales/`;
 si es de correo, un bloque más en `senales_memoria`. El bot no se toca.
 
-**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-4]_*.sql`,
+**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-5]_*.sql`,
 cada una termina en `RAISE EXCEPTION 'PRUEBA_OK'` (el error esperado deshace
 todo). Prompt y validación del JSON: `src/__tests__/pipeline/situacion-prompt.test.ts`.
 
