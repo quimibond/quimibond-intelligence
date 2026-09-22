@@ -212,9 +212,10 @@ async function sheetToText(bytes: Uint8Array): Promise<string> {
 async function taskDemandFiles(supabase: Client, client: any, started: number) {
   const sa = await loadServiceAccount(supabase);
   if (!sa) throw new Error("google_service_account_json no configurado");
+  // El mismo correo llega a varios buzones (un emails.id por buzón): basta leerlo una vez (message_id_hdr).
   const { data: candidates } = await supabase.rpc("analyst_query", {
     p_sql: `SELECT e.id AS email_id, e.thread_id, e.company_id, c.name AS company_name,
-        e.subject, e.gmail_message_id, e.account, e.attachments
+        e.subject, e.gmail_message_id, e.account, e.attachments, e.message_id_hdr
       FROM emails e
       JOIN companies c ON c.id = e.company_id AND c.is_customer AND coalesce(c.lifetime_value,0) > 0
       WHERE e.sender_type = 'external'
@@ -224,10 +225,18 @@ async function taskDemandFiles(supabase: Client, client: any, started: number) {
         AND (e.subject ~* '(release|forecast|programa|recolec|pedido|demanda|requerimiento|schedule|CW[0-9])'
           OR e.attachments::text ~* '(release|forecast|programa|pedido|demanda|schedule)')
         AND NOT EXISTS (SELECT 1 FROM demand_scan_log s WHERE s.email_id = e.id AND s.attachments_scanned)
+        AND NOT EXISTS (SELECT 1 FROM demand_scan_log s JOIN emails e2 ON e2.id = s.email_id
+                        WHERE s.attachments_scanned AND e.message_id_hdr IS NOT NULL AND e2.message_id_hdr = e.message_id_hdr)
       ORDER BY e.email_date DESC
       LIMIT 4`,
   });
-  const emails = Array.isArray(candidates) ? candidates : [];
+  const seen = new Set<string>();
+  const emails = (Array.isArray(candidates) ? candidates : []).filter((e: { message_id_hdr: string | null }) => {
+    if (!e.message_id_hdr) return true;
+    if (seen.has(e.message_id_hdr)) return false;
+    seen.add(e.message_id_hdr);
+    return true;
+  });
   let signals = 0;
   let scanned = 0;
   let files = 0;
@@ -266,7 +275,7 @@ async function taskDemandFiles(supabase: Client, client: any, started: number) {
           model: MODEL_BULK,
           system: DEMAND_FILES_SYSTEM,
           user: `Cliente: ${em.company_name ?? "?"}\nAsunto del correo: ${em.subject ?? ""}\n\n${texts.join("\n\n")}`,
-          max_tokens: 2500,
+          max_tokens: 6000,   // con 2500 se truncaba el 95 % de las respuestas (forecasts largos) y el correo se reintentaba cada 2 h
           effort: "low",
         }, "extract-demand-files");
         lines = (Array.isArray(result) ? result : []).filter((l) => Number(l.qty) > 0).slice(0, 25);
@@ -279,6 +288,8 @@ async function taskDemandFiles(supabase: Client, client: any, started: number) {
       scanned++;
     } catch (err) {
       console.error(`[extract-demand-files] email ${em.email_id}`, err instanceof Error ? err.message : err);
+      // Se marca como leído aunque falle: sin esto el mismo correo se volvía a mandar a Claude cada 2 h, para siempre.
+      await supabase.from("demand_scan_log").upsert({ email_id: em.email_id, attachments_scanned: true, attachment_signals: 0 }, { onConflict: "email_id" });
     }
   }
   await pipelineLog(supabase, "extract_demand", "info", `Demanda (adjuntos): ${signals} líneas de ${files} archivos en ${scanned} correos`, { signals, files, scanned, source: "attachments" });
