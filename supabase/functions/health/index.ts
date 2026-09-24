@@ -28,7 +28,7 @@ const JOB_INTERVALS: Record<string, number> = {
   memoria_attachments_extract: 2,
   memoria_backfill_sweep: 1, // solo se exige mientras haya cuentas pendientes (desprogramado 2026-09-18: backfill 52/52 terminado)
   memoria_watchdog: 60,
-  situacion_digest: 1440, // diario 12:30 UTC; umbral 2.5x = 60 h, así un día fallido avisa al siguiente
+  situacion_digest: 720, // diario 12:30 UTC; 720 × 2.5 = 30 h: si el correo de las 12:30 no sale, el watchdog de las 19:05 avisa ese mismo día
 };
 
 interface Issue {
