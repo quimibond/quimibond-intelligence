@@ -22,7 +22,7 @@ RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, pg_tem
 DECLARE
   -- La variable se llama `sit` (no `s`): plpgsql resolvería `s.senal` de los SELECT como la variable y no como el alias de tabla.
   g record; sit record; n_nuevas int := 0; n_act int := 0; n_res int := 0; n_ign int := 0; n_sin int := 0;
-  v_estado text; v_cambio text; v_evento jsonb; v_sin_datos text[]; v_cerrado_n int; v_cerrado numeric;
+  v_estado text; v_cambio text; v_sin_datos text[]; v_cerrado_n int; v_cerrado numeric;
 BEGIN
   -- Señales cuyo último lote bueno es más viejo que sin_datos_horas: no se tocan sus situaciones.
   SELECT coalesce(array_agg(c.senal), '{}') INTO v_sin_datos
@@ -185,6 +185,7 @@ CREATE OR REPLACE FUNCTION public.situacion_cambios(p_desde timestamptz DEFAULT 
 RETURNS jsonb LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = public, pg_temp AS $$
 DECLARE v_out jsonb; v_hasta timestamptz := now(); v_areas jsonb := '[]'; a record; v_area jsonb; l text;
 BEGIN
+  p_desde := coalesce(p_desde, now() - interval '24 hours');   -- un NULL explícito (MCP/PostgREST) se salta el default
   DROP TABLE IF EXISTS _cambios;
   CREATE TEMP TABLE _cambios AS
   SELECT s.id, s.area, s.tipo, s.senal, s.titulo, s.severidad, s.estado, s.calidad,
@@ -210,8 +211,9 @@ BEGIN
 
   FOR a IN SELECT DISTINCT area FROM _cambios WHERE lista IS NOT NULL ORDER BY area LOOP
     v_area := jsonb_build_object('area', a.area, 'abiertas', (SELECT count(*) FROM _cambios x WHERE x.area = a.area AND x.estado NOT IN ('resuelta', 'descartada')));
+    -- Cada lista va recortada a 25 filas y al lado su conteo real (n_<lista>), para que el correo diga "25 de 209".
     FOREACH l IN ARRAY ARRAY['nuevas', 'empeoradas', 'mejoradas', 'resueltas', 'delegadas', 'graves'] LOOP
-      v_area := v_area || jsonb_build_object(l, (
+      v_area := v_area || jsonb_build_object('n_' || l, (SELECT count(*) FROM _cambios x WHERE x.area = a.area AND x.lista = l)) || jsonb_build_object(l, (
         SELECT coalesce(jsonb_agg(jsonb_build_object('id', x.id, 'titulo', x.titulo, 'senal', x.senal, 'tipo', x.tipo, 'contraparte', x.contraparte,
                  'severidad', x.severidad, 'estado', x.estado, 'calidad', x.calidad, 'dias_abierta', x.dias_abierta, 'responsable', x.responsable,
                  'delegada_a', x.delegada_a, 'delegacion_estado', x.delegacion_estado, 'recomendacion', x.recomendacion, 'ultimo_cambio', x.ultimo_cambio,
@@ -232,7 +234,11 @@ BEGIN
       'zombie', (SELECT count(*) FROM senales WHERE resuelta_en IS NULL AND calidad = 'zombie'),
       'dato_malo', (SELECT count(*) FROM senales WHERE resuelta_en IS NULL AND calidad = 'dato_malo')),
     'salud', jsonb_build_object(
-      'odoo_push_edad_h', (SELECT round(extract(epoch FROM now() - max(created_at)) / 3600, 1) FROM odoo_push_last_events WHERE method = 'senales' AND status = 'success'),
+      -- Edad del último push de señales que SÍ terminó bien, leída de pipeline_logs (la vista odoo_push_last_events
+      -- guarda solo el último evento por método: filtrarla por success daba NULL justo cuando el push falla).
+      'odoo_push_edad_h', (SELECT round(extract(epoch FROM now() - max(created_at)) / 3600, 1) FROM pipeline_logs
+                           WHERE phase = 'odoo_push' AND details->>'method' = 'senales' AND details->>'status' = 'success'),
+      'odoo_push_status', (SELECT status FROM odoo_push_last_events WHERE method = 'senales'),
       'bot_terminada_en', (SELECT max(terminada_en) FROM situacion_corridas),
       'sin_datos', (SELECT coalesce(jsonb_agg(c.senal), '[]') FROM senales_config c WHERE c.activa AND c.fuente = 'odoo'
                     AND EXISTS (SELECT 1 FROM senales s WHERE s.senal = c.senal AND s.resuelta_en IS NULL)
@@ -248,7 +254,7 @@ BEGIN
   DROP TABLE IF EXISTS _cambios;
   RETURN v_out;
 END $$;
-COMMENT ON FUNCTION public.situacion_cambios(timestamptz) IS 'Lo que cambió desde p_desde (spec §7.1): por área nuevas, empeoradas, mejoradas, resueltas, delegadas y lo grave (sev ≥ 4) que sigue abierto; rezago (antiguas); ignoradas, reglas vigentes, higiene, salud y totales. Única fuente del correo diario. Ejemplo MCP: select situacion_cambios(now() - interval ''1 day'').';
+COMMENT ON FUNCTION public.situacion_cambios(timestamptz) IS 'Lo que cambió desde p_desde (spec §7.1): por área nuevas, empeoradas, mejoradas, resueltas, delegadas y lo grave (sev ≥ 4) que sigue abierto (listas de 25 con su conteo real n_<lista>); rezago (antiguas); ignoradas, reglas vigentes, higiene, salud (edad y estado del push de señales, bot, sin_datos) y totales. Única fuente del correo diario. Ejemplo MCP: select situacion_cambios(now() - interval ''1 day'').';
 
 -- 5. Bitácora del correo diario de situación (sustituye a email_digests para este correo).
 CREATE TABLE IF NOT EXISTS public.situacion_digests (
@@ -265,6 +271,7 @@ CREATE TABLE IF NOT EXISTS public.situacion_digests (
   created_at    timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS situacion_digests_fecha_idx ON public.situacion_digests (fecha DESC);
+COMMENT ON TABLE public.situacion_digests IS 'Una fila por envío del correo diario de situación (situacion-digest): ventana (desde/hasta), el JSON de situacion_cambios que lo alimentó, la narrativa de Claude, si se mandó y con qué error; trigger = cron | manual.';
 REVOKE ALL ON public.situacion_digests FROM public, anon, authenticated;
 
 INSERT INTO pipeline_logs (level, phase, message, details)
