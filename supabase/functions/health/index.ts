@@ -11,8 +11,9 @@
  *      desde 2026-09-18 Supabase solo guarda la memoria de correo.
  *   3. Gmail (edad del último correo guardado).
  *   4. Errores level=error en pipeline_logs (3 h).
- *   5. Situación de la empresa: push de señales de Odoo y última corrida del
- *      bot situacion-consolidar; lo que ve entra al mapa como señal job_caido.
+ *   5. Situación de la empresa: push de señales de Odoo, última corrida del
+ *      bot situacion-consolidar y el correo diario de situación (job
+ *      situacion_digest); lo que ve entra al mapa como señal job_caido.
  *
  * Si hay problemas: log phase='watchdog' level='error' y UN correo al CEO
  * como máximo cada 24 h (sendMail; requiere scope gmail.send — si no,
@@ -27,6 +28,7 @@ const JOB_INTERVALS: Record<string, number> = {
   memoria_attachments_extract: 2,
   memoria_backfill_sweep: 1, // solo se exige mientras haya cuentas pendientes (desprogramado 2026-09-18: backfill 52/52 terminado)
   memoria_watchdog: 60,
+  situacion_digest: 1440, // diario 12:30 UTC; umbral 2.5x = 60 h, así un día fallido avisa al siguiente
 };
 
 interface Issue {
