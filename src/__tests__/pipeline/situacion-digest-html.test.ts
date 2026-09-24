@@ -49,6 +49,18 @@ describe("situacion-digest-html", () => {
     expect(txt).toContain("Salud del mapa: en orden");
     expect(txt).toContain("Ventana: 2026-09-23 12:30 UTC → 2026-09-24 12:30 UTC");
   });
+  it("el estado de la delegación (distinto de 'creada') se ve igual en HTML y en texto", () => {
+    const conError: Cambios = { ...cambios, areas: [{ ...cambios.areas[0], delegadas: [item(30, { estado: "delegada", delegada_a: "Luis", delegacion_estado: "error" })] }] };
+    const { html, txt } = render(conError);
+    expect(html).toContain("delegada a Luis (error)");
+    expect(txt).toContain("delegada a Luis (error)");
+    // "creada" es el estado normal y no se imprime en ninguna de las dos versiones.
+    const normal = render(cambios);
+    expect(normal.html).toContain("delegada a Luis");
+    expect(normal.html).not.toContain("(creada)");
+    expect(normal.txt).toContain("delegada a Luis");
+    expect(normal.txt).not.toContain("(creada)");
+  });
   it("una fila de rezago con la forma exacta de la RPC (sin redactada) trae su recomendación y no dice 'sin redactar'", () => {
     const rpc: RezagoItem = { id: 70, area: "compras", titulo: "OC sin confirmar · Textil Sur", contraparte: "Textil Sur", severidad: 3, dias_abierta: 45, responsable: "Ana", recomendacion: "Llamar al proveedor", ultimo_cambio: null };
     const { html, txt } = render({ ...cambios, rezago: [rpc] }, true);

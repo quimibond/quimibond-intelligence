@@ -69,16 +69,16 @@ function saludTexto(c: Cambios): { texto: string; alerta: boolean } {
   return { texto: `Salud del mapa: ${partes.length ? partes.join(" · ") : "en orden"}`, alerta: partes.length > 0 };
 }
 
-/** Meta de una fila: contraparte · días · a quién (delegada o responsable). Texto plano, sin escapar. */
-function metaFila(x: CambiosFila, conEstadoDelegacion: boolean): string[] {
+/** Meta de una fila: contraparte · días · a quién (delegada, con su estado si no es "creada", o responsable). Texto plano, sin escapar. */
+function metaFila(x: CambiosFila): string[] {
   const quien = x.delegada_a
-    ? `delegada a ${x.delegada_a}${conEstadoDelegacion && x.delegacion_estado && x.delegacion_estado !== "creada" ? ` (${x.delegacion_estado})` : ""}`
+    ? `delegada a ${x.delegada_a}${x.delegacion_estado && x.delegacion_estado !== "creada" ? ` (${x.delegacion_estado})` : ""}`
     : x.responsable ? `→ ${x.responsable}` : null;
   return [x.contraparte, `${x.dias_abierta} días`, quien].filter((s): s is string => Boolean(s));
 }
 
 function linea(x: CambiosFila): string {
-  const meta = metaFila(x, true).map(esc).join(" · ");
+  const meta = metaFila(x).map(esc).join(" · ");
   const sinRedactar = x.redactada === false;
   const rec = sinRedactar
     ? `<div style="color:${C.faint};margin-top:2px"><em>sin redactar aún</em>${x.valor_texto ? ` · ${esc(x.valor_texto)}` : ""}</div>`
@@ -132,7 +132,7 @@ export function renderSituacionDigestText(input: DigestInput): string {
   if (input.narrativaMd?.trim()) out.push(input.narrativaMd.trim(), "");
   const fila = (x: CambiosFila) => {
     const sinRedactar = x.redactada === false;
-    return `  [${x.severidad}] ${x.titulo} — ${metaFila(x, false).join(" · ")}` +
+    return `  [${x.severidad}] ${x.titulo} — ${metaFila(x).join(" · ")}` +
       (sinRedactar ? `\n      (sin redactar aún${x.valor_texto ? `: ${x.valor_texto}` : ""})` : x.recomendacion ? `\n      ${x.recomendacion}` : "");
   };
   if (sinCambios(c)) {
