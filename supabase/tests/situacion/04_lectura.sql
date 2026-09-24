@@ -1,3 +1,6 @@
+-- Lectura (20260919e). Las llamadas a situacion_mapa llevan p_limit 10000: en producción hay > 100 situaciones
+-- vivas de finanzas con severidad mayor que la de _prueba (default 2) y el mapa ordena por severidad; con el
+-- default (100) la fila de prueba queda fuera aunque el mapa esté bien (visto el 2026-09-24).
 DO $t$
 DECLARE r jsonb; c uuid := gen_random_uuid(); sid bigint; sid2 bigint; m record;
 BEGIN
@@ -12,11 +15,11 @@ BEGIN
   SELECT id INTO sid FROM situaciones WHERE clave = '_prueba|partner:990000001';
 
   -- mapa: la situación viva sale; la de higiene no (calidad zombie) salvo p_calidad = NULL.
-  SELECT * INTO m FROM situacion_mapa('finanzas') WHERE id = sid;
+  SELECT * INTO m FROM situacion_mapa('finanzas', 'viva', 1, 10000) WHERE id = sid;
   ASSERT m.id IS NOT NULL AND m.dias_abierta = 0 AND m.calidad = 'viva' AND m.ultimo_cambio LIKE 'creada%', 'mapa: ' || row_to_json(m)::text;
-  ASSERT NOT EXISTS (SELECT 1 FROM situacion_mapa('finanzas') WHERE senal = '_prueba' AND calidad = 'zombie'), 'zombie fuera del mapa por defecto';
-  ASSERT EXISTS (SELECT 1 FROM situacion_mapa('finanzas', NULL) WHERE senal = '_prueba' AND calidad = 'zombie'), 'p_calidad NULL trae todas';
-  ASSERT NOT EXISTS (SELECT 1 FROM situacion_mapa('comercial') WHERE senal = '_prueba'), 'filtro por área';
+  ASSERT NOT EXISTS (SELECT 1 FROM situacion_mapa('finanzas', 'viva', 1, 10000) WHERE senal = '_prueba' AND calidad = 'zombie'), 'zombie fuera del mapa por defecto';
+  ASSERT EXISTS (SELECT 1 FROM situacion_mapa('finanzas', NULL, 1, 10000) WHERE senal = '_prueba' AND calidad = 'zombie'), 'p_calidad NULL trae todas';
+  ASSERT NOT EXISTS (SELECT 1 FROM situacion_mapa('comercial', 'viva', 1, 10000) WHERE senal = '_prueba'), 'filtro por área';
 
   -- contexto: señales, documentos, contraparte, hermanas, reglas, historia.
   r := situacion_contexto(sid);
@@ -42,7 +45,7 @@ BEGIN
   SELECT * INTO m FROM situaciones WHERE id = sid;
   ASSERT m.titulo = 'Cartera de prueba' AND m.severidad = 4 AND m.ia_version = m.version AND m.ia_modelo = 'modelo-x' AND m.estado = 'abierta' AND m.clave = '_prueba|partner:990000001', 'redactar escribe solo lo suyo y recorta severidad a la banda: ' || row_to_json(m)::text;
   ASSERT (SELECT fusionada_en FROM situaciones WHERE id = sid2) = sid, 'fusionada_en';
-  ASSERT NOT EXISTS (SELECT 1 FROM situacion_mapa('finanzas') WHERE id = sid2), 'la fusionada sale del mapa';
+  ASSERT NOT EXISTS (SELECT 1 FROM situacion_mapa('finanzas', 'viva', 1, 10000) WHERE id = sid2), 'la fusionada sale del mapa';
   ASSERT NOT EXISTS (SELECT 1 FROM situacion_candidatas(40) WHERE id = sid), 'ya redactada no es candidata';
   RAISE EXCEPTION 'PRUEBA_OK';
 END $t$;

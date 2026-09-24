@@ -14,7 +14,10 @@ resume en conversaciones, hechos con vigencia y un grafo. Se consume desde:
 1. **Claude por MCP** (Supabase + Odoo) en las sesiones de trabajo del CEO.
 2. **Odoo**: pestaña Memoria del contacto (addon `qb_memoria` de qb19) y
    pendientes → obligaciones (`qb_obligation`).
-3. **El correo diario** (`email-digest`, 12:45 UTC) al CEO.
+3. **El correo diario de situación** (`situacion-digest`, 12:30 UTC) al CEO:
+   lo que cambió en el mapa desde el último correo. El resumen de correo
+   `email-digest` (12:45) se retiró como job el 2026-09-24; la función sigue
+   desplegada hasta el paso 6 del plan B.
 
 **Stack:** Supabase (Postgres + pg_cron + pg_net + Vault + Storage) y Edge
 Functions en Deno (`supabase/functions/*`). Proyecto `tozqezmivpblmcubmnpi`,
@@ -59,7 +62,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 
 ## Inventario de Supabase (esquema `public`, verificado 2026-09-18)
 
-### Tablas (28)
+### Tablas (29)
 
 | Tabla | Qué guarda |
 |---|---|
@@ -80,10 +83,10 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 | `email_pending_actions` (455) | Pendientes accionables por hilo (extraídos por Claude), con vencimiento y `expire_email_pending_actions` |
 | `customer_demand_signals` (752) | Señales de demanda halladas en cuerpos y adjuntos (Excel/CSV) |
 | `demand_scan_log` | Qué correos/adjuntos ya se escanearon por demanda |
-| `email_digests` | Resúmenes diarios generados (JSON + HTML enviado) |
+| `email_digests` | Resúmenes diarios de `email-digest` (JSON + HTML enviado); sin filas nuevas desde 2026-09-24 |
 | `pipeline_logs` (20k) | Log de todas las Edge Functions (`phase`, `level`, `details.runtime='edge'`); el watchdog escribe `phase='watchdog'` |
 | `token_usage` (9k) | Tokens por llamada a Claude (`endpoint`, modelo, entrada/salida) |
-| `senales_config` (62) / `senales` / `senales_lotes` / `situaciones` / `situacion_reglas` / `situacion_corridas` / `buzon_personas` | **Situación de la empresa** (sección propia abajo): catálogo de señales, una fila por hecho vigente (Odoo o memoria), lotes por señal, situaciones agrupadas y redactadas por Claude, reglas del director, corridas del bot, personas detrás de buzones compartidos |
+| `senales_config` (62) / `senales` / `senales_lotes` / `situaciones` / `situacion_reglas` / `situacion_corridas` / `situacion_digests` / `buzon_personas` | **Situación de la empresa** (sección propia abajo): catálogo de señales, una fila por hecho vigente (Odoo o memoria), lotes por señal, situaciones agrupadas y redactadas por Claude, reglas del director, corridas del bot, una fila por correo diario enviado, personas detrás de buzones compartidos |
 
 ### Vistas (4)
 
@@ -94,7 +97,7 @@ cuenta propia. No tocar `src/`, `package.json` ni Vercel sin esa decisión.
 | `odoo_push_last_events` | Último evento de push por método desde `pipeline_logs` | `health` (edad del push de `contacts`) |
 | `claude_cost_summary` | Costo de Claude por endpoint y día desde `token_usage` | Humanos / Claude por MCP |
 
-### Funciones SQL / RPCs (32 de memoria + 25 de situación)
+### Funciones SQL / RPCs (32 de memoria + 26 de situación)
 
 **Consumidas por Odoo (`qb_memoria`):** `memoria_brief(p_company_id | p_odoo_partner_id)`
 → ficha jsonb (empresa, encargados, contactos, hechos vigentes, últimas 12
@@ -117,9 +120,10 @@ y luego `memoria_brief` de la empresa. Ejemplo:
 | `memoria_hilo_mensajes` | `memory-consolidate` | Correos de una conversación sin duplicar entre buzones, con `adjuntos_texto` (texto de hasta 3 adjuntos por correo, dedup por sha256, 2,500 caracteres cada uno) |
 | `memoria_adjuntos_reusar_hermanos`, `memoria_adjuntos_reclamar` | `attachments-extract` | Heredar sha/archivo/texto entre buzones (mismo Message-ID) sin volver a bajar; reclamar lotes con `FOR UPDATE SKIP LOCKED` + `claimed_at` para correr dos invocaciones por minuto. **Prioridad:** `select invoke_edge('attachments-extract', '{"gmail_message_ids": ["…"]}')` (o `email_ids`) extrae ya los adjuntos de esos correos; repetir hasta que el log diga 0 en lote |
 | `memoria_guardar_consolidacion` | `memory-consolidate` | Escribe resumen, hechos y grafo en una transacción |
-| `get_unanswered_client_threads`, `get_silent_customers` | `email-digest` | Hilos de cliente sin respuesta y clientes callados |
+| `get_unanswered_client_threads`, `get_silent_customers` | `email-digest` | Hilos de cliente sin respuesta y clientes callados. Sin job desde 2026-09-24; se borran con la función en el paso 6 del plan B |
+| `situacion_cambios` | `situacion-digest` | Única fuente del correo diario de situación (ver sección propia) |
 | `expire_email_pending_actions` | `email-extract` | Vence pendientes viejos |
-| `memoria_cron_health` | `health` | Lee `cron.job_run_details` por job |
+| `memoria_cron_health` | `health` | Lee `cron.job_run_details` por job (`memoria_%` y `situacion_%`) |
 | `edge_secret` | todas | Lee un secreto de Vault |
 
 **Infraestructura (pg_cron → Edge):** `invoke_edge(fn, body)`,
@@ -160,13 +164,16 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 | `memoria_consolidar` | `*/5` | `memory-consolidate` | 10 conversaciones por corrida con Sonnet → resumen, hechos, grafo |
 | `memoria_ligas` | `*/10` | SQL `memoria_link_recent('3 days')` | Ligas determinísticas correo ↔ contacto ↔ empresa ↔ conversación |
 | `memoria_watchdog` | `:05` | `health` | Salud de jobs, push de Odoo, Gmail y errores; correo al CEO máx. 1/día |
-| `memoria_email_digest` | 12:45 | `email-digest` (Opus) | Resumen ejecutivo del correo de 24 h → `email_digests` + correo HTML |
+| `situacion_digest` | 12:30 | `situacion-digest` (Opus, solo la narrativa) | Correo diario del mapa desde `situacion_cambios` → `situacion_digests` + correo HTML |
 | `memoria_extract_pending` | `:40` cada 2 h | `email-extract {task:"pending"}` (Sonnet) | Pendientes por hilo → `email_pending_actions` |
 | `memoria_extract_demand` | `:50` cada 2 h | `email-extract {task:"demand"}` | Demanda en cuerpos → `customer_demand_signals` |
 | `memoria_extract_demand_files` | `:55` cada 2 h | `email-extract {task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
 | `memoria_grafo_nocturno` | 08:15 | SQL `kg_refresh_deterministic()` | Nodos y aristas que salen de los datos (empresas, contactos, buzones, quién atiende a quién) |
 | `situacion_respaldo` | `:20` | `situacion-consolidar {origen:"cron"}` **solo si** no hubo corrida en 50 min | Respaldo del bot de situaciones; el disparo normal es por evento (`senales_push_terminado`, al terminar el push de Odoo) |
 
+`memoria_email_digest` (12:45, `email-digest`) se desprogramó el 2026-09-24
+(`20260924b`); la función y sus dos RPCs siguen desplegadas hasta el paso 6.
+Rollback mientras tanto: volver a programarlo con `cron.schedule`.
 `backfill-sweep` sigue desplegada pero sin job: el backfill v2 desde
 2025-10-01 terminó (52/52). Para re-sembrarlo, insertar en
 `email_backfill_state` y volver a programar `memoria_backfill_sweep`
@@ -182,14 +189,16 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 - **Pull cada 5 min:** `sync_commands` pendientes.
 - El watchdog avisa si el push de `contacts` lleva > 6 h sin éxito, el de
   `senales` > 3 h, o el bot > 3 h sin corrida terminada
-  (`odoo_push_last_events`, `situacion_corridas`); lo que ve entra al mapa
-  como señal `job_caido`.
+  (`odoo_push_last_events`, `situacion_corridas`), y si el job
+  `situacion_digest` lleva > 30 h sin corrida exitosa (`JOB_INTERVALS` 720 min
+  × 2.5: si el correo de las 12:30 no sale, avisa a las 19:05 del mismo día);
+  lo que ve entra al mapa como señal `job_caido`.
 - `qb_memoria` lee la memoria por REST con la service key y la muestra en la
   pestaña Memoria del contacto ("Quién la atiende", "Lo que sabemos",
   "Conversaciones"); su cron nocturno escribe los dueños aprendidos desde
   `memoria_encargados`.
 
-## Situación de la empresa (plan A, 2026-09-19/20)
+## Situación de la empresa (plan A 2026-09-19/20; plan B paso 4 2026-09-24)
 
 Spec y plan: `qb19/docs/superpowers/specs/2026-09-18-situacion-empresa-design.md`
 y `qb19/docs/superpowers/plans/2026-09-18-situacion-plan-a.md`. Un **mapa
@@ -205,22 +214,30 @@ viene se resuelve) → `senales_actualizar` (calidad: viva / antigua /
 vencida_memoria / zombie / dato_malo / ignorada) → `situacion_guardar`
 (agrupa por `senales_config.agrupar_por`, una situación por `senal|agrupador`,
 estado abierta / empeoro / mejoro / resuelta / descartada / delegada, higiene
-para zombis y datos malos) → **bot `situacion-consolidar`** (Sonnet, effort low,
+para zombis y datos malos; desde `20260924a` una `delegada` **sigue delegada**
+al empeorar o mejorar, el cambio queda en `historia` "(sigue delegada)" y en
+`ultimo_cambio`, porque la actividad vive en Odoo) → **bot `situacion-consolidar`** (Sonnet, effort low,
 JSON cerrado): título, resumen, recomendación, severidad dentro de la banda de
 la señal, responsable sugerido (`odoo_users`), fusiones entre duplicados.
 La IA nunca toca clave, documentos, evidencia ni estado.
 
 **Tablas:** `senales_config` (catálogo de 62 señales: área, tipo, fuente,
 umbrales, `agrupar_por`, `agregar`, `cada_horas`, `sin_datos_horas`,
-`severidad_base/max`, `reglas_calidad`), `senales`, `senales_lotes`,
-`situaciones` (con `version`/`ia_version`, `historia` jsonb, `fusionada_en`),
-`situacion_reglas` (ignorar / severidad fija / responsable fijo, del director),
-`situacion_corridas`, `buzon_personas`.
+`severidad_base/max`, `reglas_calidad`, `en_mapa`: `false` solo en
+`delegacion_estado`, que se ingiere y se ve en `situacion_salud` pero no forma
+situaciones propias; su estado se refleja en la situación delegada), `senales`,
+`senales_lotes`, `situaciones` (con `version`/`ia_version`, `historia` jsonb,
+`fusionada_en`), `situacion_reglas` (ignorar / severidad fija / responsable
+fijo, del director), `situacion_corridas`, `situacion_digests` (una fila por
+correo diario: `fecha`, `desde`/`hasta`, `cambios` jsonb, `narrativa_md`,
+`emailed`, `email_error`, `trigger` cron|manual, `modelo`), `buzon_personas`.
 
 **Leer por MCP (Claude):**
 
 ```sql
-select * from situacion_mapa(null, 'viva', 3, 40);        -- área, calidad, severidad mínima, límite
+select * from situacion_mapa(null, 'viva', 3, 40);        -- área, calidad, severidad mínima, límite; al final `delegada_a` y `delegacion_estado`
+select situacion_cambios(now() - interval '1 day');       -- lo que cambió desde esa hora (NULL = 24 h): la fuente del correo diario
+select cambios->'totales', narrativa_md from situacion_digests order by id desc limit 1;  -- el último correo enviado
 select situacion_contexto(615);                            -- todo lo que vio el bot para una situación
 select * from situacion_por_persona(68);                   -- lo que le tocaría a una persona
 select situacion_higiene();                                -- zombis y datos malos con su limpieza recomendada
@@ -240,7 +257,7 @@ Cuerpo del bot: `{origen, batch (≤ 40), id (solo esa), sin_ia: true, corrida}`
 función `@senal('nombre')` en `qb19/addons/quimibond_intelligence/models/senales/`;
 si es de correo, un bloque más en `senales_memoria`. El bot no se toca.
 
-**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-5]_*.sql`,
+**Pruebas en seco (SQL, rol postgres):** `supabase/tests/situacion/0[0-6]_*.sql`,
 cada una termina en `RAISE EXCEPTION 'PRUEBA_OK'` (el error esperado deshace
 todo). Prompt y validación del JSON: `src/__tests__/pipeline/situacion-prompt.test.ts`.
 
@@ -257,19 +274,72 @@ situaciones con `version` alta: es parpadeo, no cambio real.
 copian; se puentean en vivo con la señal `obligacion_legado` hasta que el plan B
 retire el módulo. (2) `cliente_callado` solo usa el correo (la parte de pedidos
 llega con el push de Odoo). (3) `indicador_financiero_rojo` se agrupa por nombre
-de indicador.
+de indicador. (4) `delegacion_estado` no forma situaciones propias (`en_mapa`).
+(5) **Cierre humano pegajoso** (2026-09-24; el spec solo dice "hecha ⇒
+resuelta"): como `situacion_guardar` reabre las `resuelta` cuya señal sigue
+viva, una actividad hecha con las facturas aún vencidas volvería a `abierta` en
+la misma corrida. Por eso `situacion_delegacion_confirmar('hecha')` y
+`situacion_decidir('resuelta')` (paso 5) dejan `evidencia.cerrada_manual =
+{n, valor, fecha, por}`: mientras la señal no crezca (más señales, o valor >
+valor cerrado + 5 % de |valor|) la situación sigue `resuelta`; si crece, reabre
+como `empeoro` con historia "reapareció tras cierre manual" y la marca se quita;
+la marca caduca cuando la señal desaparece, así que un episodio nuevo reaparece
+como `abierta`. `descartada` sigue como en plan A (nunca reabre sola).
+
+### Correo diario (`situacion-digest`, plan B paso 4, 2026-09-24)
+
+Sustituye a `email-digest`. Job `situacion_digest` a las 12:30 UTC (06:30
+CDMX). **Única fuente:** `situacion_cambios(p_desde)` (VOLATILE, usa tabla
+temporal; `NULL` = 24 h): por área las listas `nuevas`, `empeoradas`,
+`mejoradas`, `resueltas`, `delegadas`, `graves` (sev ≥ 4 abiertas), cada una
+cortada a 25 con el conteo real en `n_<lista>` (el correo dice "25 de 209");
+una situación cae en una sola lista (resueltas → delegadas → empeoradas →
+mejoradas → nuevas → graves); más `rezago` (abiertas con calidad `antigua`,
+30 días por default),
+`ignoradas`, `reglas_vigentes`, `higiene {zombie, dato_malo}`, `salud
+{odoo_push_edad_h, odoo_push_status, bot_terminada_en, sin_datos}` y `totales`.
+
+- **Ventana:** desde el `hasta` del último digest del cron **que sí se mandó**
+  (`emailed = true`) si tiene menos de 60 h; si no, 24 h. `{"desde": "<iso>"}`
+  la fija a mano. Un cron con el correo fallido no deja fuera del correo
+  siguiente los cambios de su ventana.
+- **Claude:** Opus (`MODEL_MAIN`, effort medium, `max_tokens` 8000) escribe solo
+  la narrativa "Lo que decidiría hoy", y solo cuando hay algo que decidir
+  (cambios o graves abiertas; en la práctica cada día). El resto del correo
+  sale del JSON tal cual (`_shared/situacion-digest-html.ts`, HTML + texto
+  plano, sin Deno, probado con vitest). Prompt en `situacion-digest/prompt.ts`
+  (`entradaParaClaude` recorta filas y listas hasta caber, nunca corta el JSON).
+- **Salida:** correo HTML + texto al CEO por `_shared/mailer.ts` con asunto
+  "🗺️ Situación — YYYY-MM-DD: N empeoraron, N nuevas, N graves" (o "sin
+  cambios"); una fila en `situacion_digests`; `pipeline_logs` con
+  `phase = 'situacion_digest'` (info / warning si falló el correo / error);
+  `token_usage.endpoint = 'situacion-digest'`.
+- **Probar sin mandar correo:** `select invoke_edge('situacion-digest', '{"manual": true}'::jsonb)`
+  (genera y guarda con `trigger = 'manual'`; `{"sin_ia": true}` omite a Claude).
+- **Re-mandar un día:** `select invoke_edge('situacion-digest', '{"desde":"2026-09-23T12:30:00Z"}'::jsonb)`.
+- **Aceptación:** comparar el correo con `select cambios->'totales', narrativa_md
+  from situacion_digests order by id desc limit 1` y con
+  `situacion_cambios('<desde de esa fila>')`: mismas listas.
+- **Costo:** ~19k tokens de entrada y ~1.3k de salida por corrida (≈ US$0.13/día).
 
 ## Cómo desplegar
 
 **Edge Function:** editar `supabase/functions/<nombre>/index.ts` (código común
 en `_shared/`: `env.ts`, `gmail.ts`, `claude.ts`, `mailer.ts`, `email-parse.ts`,
-`email-clean.ts`, `email-persist.ts`, `xml-text.ts`, `digest-email-html.ts`) y desplegar con
+`email-clean.ts`, `email-persist.ts`, `xml-text.ts`, `email-html.ts` (helpers
+HTML de correo: `esc`, `inlineMd`, `mdToHtml`, `layout`, `fmtInt`),
+`situacion-digest-html.ts`, `digest-email-html.ts`) y desplegar con
 `supabase functions deploy <nombre> --no-verify-jwt --project-ref tozqezmivpblmcubmnpi`
 o con el MCP de Supabase (`deploy_edge_function`). Probar a mano con
 `select invoke_edge('<nombre>', '{}'::jsonb)`; el resultado queda en
 `pipeline_logs`. Claude en las funciones: SDK `npm:@anthropic-ai/sdk` en
-`_shared/claude.ts`; digest con `claude-opus-5`, extractores y consolidación
-con `claude-sonnet-5` (effort low), tokens a `token_usage`.
+`_shared/claude.ts`; correo de situación con `claude-opus-5` (effort medium),
+extractores y consolidación con `claude-sonnet-5` (effort low), tokens a
+`token_usage`. Los módulos puros de `_shared` (`xml-text.ts`, `email-html.ts`,
+`situacion-digest-html.ts`, `situacion-digest/prompt.ts`) se prueban con vitest
+desde `src/__tests__/pipeline/` (`npx vitest run`); `tsconfig.json` lleva
+`allowImportingTsExtensions` porque se importan entre sí con `.ts` (Deno) y
+`tsc` los sigue desde los tests.
 
 **Migración:** archivo `supabase/migrations/YYYYMMDD<letra>_<tema>.sql`,
 idempotente (`IF NOT EXISTS`, `CREATE OR REPLACE`), aplicada con
@@ -343,18 +413,24 @@ está desplegada.
 - `emails` aún carga `body` (compat), `embedding` sin índice y columnas de
   proceso viejas; la Fase 5 (drop) reduce la tabla a la mitad.
 - El watchdog vigila la base desde la misma base: hace falta un ping externo.
-- Los tests de vitest cubren también `supabase/functions/_shared/xml-text.ts` (`src/__tests__/pipeline/xml-text.test.ts`); el resto de `_shared` no tiene tests automáticos.
+- Los tests de vitest cubren `_shared/xml-text.ts`, `email-html.ts`, `situacion-digest-html.ts` y `situacion-digest/prompt.ts` (`src/__tests__/pipeline/`); el resto de `_shared` (Gmail, mailer, persistencia) no tiene tests automáticos.
 - Adjuntos (2026-09-18): el texto entra a la memoria desde esa fecha; las
   ~1.5k conversaciones ya resumidas no se rehacen con sus adjuntos hasta que
   llegue correo nuevo. Las 60k imágenes (`image_vision_phase3`) siguen fuera.
   Cola inicial: 111k filas de 2026 (~40k documentos distintos), ~1 día al
   ritmo actual; el sync de Gmail las va sumando.
-- Situación, plan B: correo diario desde el mapa (`situacion-digest`, retiro de
-  `email-digest`), decisiones y reglas persistentes desde MCP
-  (`situacion_decidir`), delegación a actividades de Odoo (`sync_commands`),
-  app `qb_situacion` en Odoo y retiro de `qb_obligation`. Las ~600
-  situaciones iniciales se redactan a 40 por hora (≈ 15 h) antes de la primera
-  revisión del CEO.
+- Situación, plan B (paso 4 hecho el 2026-09-24): faltan decisiones y reglas
+  persistentes desde MCP (`situacion_decidir`), delegación a actividades de
+  Odoo (`sync_commands` con `payload`), app `qb_situacion` en Odoo y retiro de
+  `qb_obligation`.
+- `email-digest` y sus RPCs `get_unanswered_client_threads` /
+  `get_silent_customers` siguen desplegadas sin job hasta que el CEO acepte el
+  correo de situación (Tarea 6.4, `20260926a` las retira). Mientras,
+  `digest-email-html.ts` duplica lo que ya vive en `email-html.ts`.
+- El cliente de Anthropic en `_shared/claude.ts` va sin `timeout` (solo
+  `maxRetries: 3`): una llamada colgada consume la invocación entera.
+- `pipeline_logs` nunca se poda (20k filas el 18-sep y creciendo con cada
+  corrida de cada función).
 - **Siguientes:** pendientes de `memoria_thread_summaries` → obligaciones en
   Odoo (`qb_obligation.create_candidate`); "pregúntale a la memoria" desde la
   ficha del contacto; memoria de decisiones del CEO; borrar `src/` y Vercel
