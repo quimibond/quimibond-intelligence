@@ -13,9 +13,9 @@ export function esc(s: string): string {
   return String(s ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** Negritas e itálicas dentro de una línea ya escapada. */
+/** Negritas e itálicas dentro de una línea ya escapada. Un `*` suelto entre espacios (2 * 3) no es itálica. */
 export function inlineMd(s: string): string {
-  return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/(^|[^*])\*([^*]+)\*/g, "$1<em>$2</em>");
+  return esc(s).replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>").replace(/\*(\S(?:[^*]*\S)?)\*/g, "<em>$1</em>");
 }
 
 /** Markdown mínimo → HTML de correo: `## `, `### `, `- ` y párrafos. Todo lo demás se trata como texto. */
@@ -58,6 +58,8 @@ ${footerHtml ? `<tr><td style="padding:14px 28px;border-top:1px solid ${C.lineSo
 </table></td></tr></table></body></html>`;
 }
 
+/** Entero con separador de miles; null, NaN o Infinity salen como 0. */
 export function fmtInt(n: number | null | undefined): string {
-  return Number(n ?? 0).toLocaleString("en-US");
+  const v = Number(n);
+  return (Number.isFinite(v) ? Math.round(v) : 0).toLocaleString("en-US");
 }
