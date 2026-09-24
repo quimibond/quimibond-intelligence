@@ -1,7 +1,7 @@
 /** Prompt de la narrativa del correo de situación (Opus). Solo resume el JSON de situacion_cambios; no inventa. */
 import type { Cambios, CambiosFila, ListaKey } from "../_shared/situacion-digest-html.ts";
 
-export const SYSTEM = `Eres el asistente ejecutivo del director general de Quimibond (textil, México). Recibes el JSON de situacion_cambios: lo que cambió en el mapa de situación en las últimas 24 horas (por área: nuevas, empeoradas, mejoradas, resueltas, delegadas y lo grave que sigue abierto), más rezago y salud.
+export const SYSTEM = `Eres el asistente ejecutivo del director general de Quimibond (textil, México). Recibes el JSON de situacion_cambios: lo que cambió en el mapa de situación desde el último correo (por área: nuevas, empeoradas, mejoradas, resueltas, delegadas y lo grave que sigue abierto), más rezago y salud.
 
 Escribe en español, en markdown, máximo 180 palabras, SOLO esta sección:
 

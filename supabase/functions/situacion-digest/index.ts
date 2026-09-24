@@ -1,11 +1,12 @@
 /**
  * situacion-digest (Edge Function) — el correo diario de situación al director (spec §7.2).
  * Sustituye a email-digest. Una sola fuente: situacion_cambios(p_desde). Claude (Opus) solo
- * escribe "Lo que decidiría hoy"; las listas salen del JSON tal cual (situacion-digest-html.ts).
+ * escribe "Lo que decidiría hoy" (siempre que haya algo que decidir: cambios o graves abiertas);
+ * las listas salen del JSON tal cual (situacion-digest-html.ts).
  *
  * Disparo: pg_cron `situacion_digest` 12:30 UTC (06:30 CDMX). Body opcional:
  *   { "manual": true }       genera y guarda sin mandar correo
- *   { "desde": "<iso>" }     ventana desde esa hora (default: el `hasta` del último digest del cron, o 24 h)
+ *   { "desde": "<iso>" }     ventana desde esa hora (default: el `hasta` del último correo del cron que sí se mandó, o 24 h)
  *   { "sin_ia": true }       sin narrativa (prueba barata)
  */
 import { serviceClient, authorizeCron, json, pipelineLog, readBody } from "../_shared/env.ts";
@@ -15,8 +16,13 @@ import { renderSituacionDigestHtml, renderSituacionDigestText, type Cambios } fr
 import { SYSTEM, entradaParaClaude } from "./prompt.ts";
 
 const TZ = "America/Mexico_City";
-/** Si el último correo del cron tiene menos de estas horas, la ventana arranca en su `hasta` (cubre un día fallido); si no, 24 h. */
+/**
+ * Si el último correo del cron que sí se mandó tiene menos de estas horas, la ventana arranca en su `hasta`
+ * (cubre un día fallido: lo no enviado se vuelve a incluir); si no, 24 h.
+ */
 const MAX_VENTANA_H = 60;
+/** Salida visible acotada por el prompt (~180 palabras); el presupuesto cubre además el razonamiento de Opus. */
+const MAX_TOKENS = 8000;
 const LISTAS = ["nuevas", "empeoradas", "mejoradas", "resueltas", "delegadas", "graves"] as const;
 
 Deno.serve(async (req: Request) => {
@@ -27,12 +33,13 @@ Deno.serve(async (req: Request) => {
   const manual = body.manual === true;
   const trigger = manual ? "manual" : "cron";
   const started = Date.now();
+  let desde: string | null = typeof body.desde === "string" && body.desde ? body.desde : null;   // fuera del try: el log de error dice qué ventana intentó
 
   try {
-    // 1. Ventana: desde el `hasta` del último correo del cron si tiene menos de 60 h; si no, 24 h.
-    let desde: string | null = typeof body.desde === "string" && body.desde ? body.desde : null;
+    // 1. Ventana: desde el `hasta` del último correo del cron que sí se mandó, si tiene menos de 60 h; si no, 24 h.
+    //    Un digest del cron con emailed=false no avanza la ventana: sus cambios se vuelven a mandar al día siguiente.
     if (!desde) {
-      const { data: ult, error: ultErr } = await supabase.from("situacion_digests").select("hasta").eq("trigger", "cron").order("hasta", { ascending: false }).limit(1).maybeSingle();
+      const { data: ult, error: ultErr } = await supabase.from("situacion_digests").select("hasta").eq("trigger", "cron").eq("emailed", true).order("hasta", { ascending: false }).limit(1).maybeSingle();
       if (ultErr) throw new Error(`situacion_digests: ${ultErr.message}`);
       const ultimo = ult?.hasta ? Date.parse(String(ult.hasta)) : NaN;
       const reciente = Number.isFinite(ultimo) && ultimo > started - MAX_VENTANA_H * 3600_000;
@@ -43,8 +50,10 @@ Deno.serve(async (req: Request) => {
     if (!cambios || typeof cambios !== "object") throw new Error("situacion_cambios devolvió vacío");
     const c = cambios as Cambios;
     const totales = c.totales ?? {};
+    // `hasta` es el now() de la RPC; si faltara, el de aquí: la fila se escribe siempre (sobre todo si el correo ya salió).
+    const hasta = new Date(c.hasta ?? Date.now()).toISOString();
 
-    // 2. Narrativa (Opus) solo si hubo cambios.
+    // 2. Narrativa: Opus siempre que haya algo que decidir (cambios o graves abiertas).
     const hayCambios = LISTAS.some((k) => (totales[k] ?? 0) > 0);
     let narrativa = "";
     let modelo: string | null = null;
@@ -52,7 +61,7 @@ Deno.serve(async (req: Request) => {
       const client = await anthropicClient(supabase);
       if (!client) throw new Error("anthropic_api_key no configurado (env ni Vault)");
       modelo = MODEL_MAIN;
-      narrativa = await claudeText(client, supabase, { model: MODEL_MAIN, system: SYSTEM, user: entradaParaClaude(c), max_tokens: 1200, effort: "medium" }, "situacion-digest");
+      narrativa = await claudeText(client, supabase, { model: MODEL_MAIN, system: SYSTEM, user: entradaParaClaude(c), max_tokens: MAX_TOKENS, effort: "medium" }, "situacion-digest");
     }
 
     // 3. Render y correo.
@@ -75,19 +84,19 @@ Deno.serve(async (req: Request) => {
 
     // 4. Bitácora y log.
     const { error: insErr } = await supabase.from("situacion_digests").insert({
-      fecha, desde, hasta: c.hasta, cambios: c, narrativa_md: narrativa || null, emailed, email_error: emailError, trigger, modelo,
+      fecha, desde, hasta, cambios: c, narrativa_md: narrativa || null, emailed, email_error: emailError, trigger, modelo,
     });
     if (insErr) throw new Error(`situacion_digests insert: ${insErr.message}${emailed ? " (el correo sí se mandó)" : ""}`);
     const elapsed_s = Math.round((Date.now() - started) / 1000);
     await pipelineLog(supabase, "situacion_digest", emailError ? "warning" : "info",
       `Situación digest (${trigger}): ${JSON.stringify(totales)} emailed=${emailed}${emailError ? ` — ${emailError}` : ""} (${elapsed_s}s)`,
-      { trigger, desde, hasta: c.hasta, totales, emailed, email_error: emailError, modelo, elapsed_s });
-    return json({ ok: true, trigger, desde, hasta: c.hasta, totales, emailed, email_error: emailError, modelo, elapsed_s, narrativa, texto });
+      { trigger, desde, hasta, totales, emailed, email_error: emailError, modelo, elapsed_s });
+    return json({ ok: true, trigger, desde, hasta, totales, emailed, email_error: emailError, modelo, elapsed_s, narrativa, texto });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     const elapsed_s = Math.round((Date.now() - started) / 1000);
     console.error("[situacion-digest]", message);
-    await pipelineLog(supabase, "situacion_digest", "error", `Situación digest falló (${trigger}): ${message.slice(0, 300)}`, { trigger, elapsed_s });
-    return json({ error: message, trigger, elapsed_s }, 500);
+    await pipelineLog(supabase, "situacion_digest", "error", `Situación digest falló (${trigger}): ${message.slice(0, 300)}`, { trigger, desde, error: message, elapsed_s });
+    return json({ error: message, trigger, desde, elapsed_s }, 500);
   }
 });

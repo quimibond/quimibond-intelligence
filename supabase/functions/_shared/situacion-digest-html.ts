@@ -111,7 +111,7 @@ export function renderSituacionDigestHtml(input: DigestInput): string {
     </tr></table>`;
   const narrativa = input.narrativaMd?.trim() ? `<div style="margin-top:16px">${mdToHtml(input.narrativaMd)}</div>` : "";
   const cuerpo = sinCambios(c)
-    ? `<p style="margin:18px 0;font:14px/1.5 ${FONT};color:${C.body}">Sin cambios en las últimas 24 horas. ${fmtInt(t.abiertas ?? 0)} situaciones siguen abiertas.</p>`
+    ? `<p style="margin:18px 0;font:14px/1.5 ${FONT};color:${C.body}">Sin cambios desde el último correo. ${fmtInt(t.abiertas ?? 0)} situaciones siguen abiertas.</p>`
     : c.areas.map(bloqueArea).join("");
   const rezago = esLunes && c.rezago?.length
     ? `<h2 style="margin:22px 0 4px;font:600 16px/1.3 ${FONT};color:${C.ink}">Rezago <span style="font-weight:400;color:${C.faint};font-size:13px">· sin cambio en más de 30 días</span></h2>
@@ -136,7 +136,7 @@ export function renderSituacionDigestText(input: DigestInput): string {
       (sinRedactar ? `\n      (sin redactar aún${x.valor_texto ? `: ${x.valor_texto}` : ""})` : x.recomendacion ? `\n      ${x.recomendacion}` : "");
   };
   if (sinCambios(c)) {
-    out.push(`Sin cambios en las últimas 24 horas. ${t.abiertas ?? 0} situaciones siguen abiertas.`, "");
+    out.push(`Sin cambios desde el último correo. ${t.abiertas ?? 0} situaciones siguen abiertas.`, "");
   } else {
     for (const a of c.areas) {
       const partes = LISTAS.filter(([k]) => a[k]?.length);

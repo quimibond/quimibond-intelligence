@@ -75,7 +75,10 @@ describe("situacion-digest-html", () => {
     const vacio: Cambios = { ...cambios, areas: [], rezago: [], totales: { nuevas: 0, empeoradas: 0, mejoradas: 0, resueltas: 0, delegadas: 0, graves: 0, abiertas: 43, rezago: 0 } };
     const { html, txt } = render(vacio);
     expect(html).toContain("Sin cambios");
-    expect(txt).toContain("Sin cambios en las últimas 24 horas. 43 situaciones siguen abiertas.");
+    expect(txt).toContain("Sin cambios desde el último correo. 43 situaciones siguen abiertas.");   // la ventana puede ser de hasta 60 h: no promete 24 h
+    expect(html).toContain("Sin cambios desde el último correo. 43 situaciones siguen abiertas.");
+    expect(html).not.toContain("24 horas");
+    expect(txt).not.toContain("24 horas");
     // Sin cambios se decide por las listas, no por totales: un área con listas vacías (aunque traiga n_*) no pinta bloque.
     const soloConteos: Cambios = { ...cambios, areas: [{ area: "sistemas", abiertas: 9, nuevas: [], empeoradas: [], mejoradas: [], resueltas: [], delegadas: [], graves: [], n_graves: 9 }], rezago: [] };
     const r = render(soloConteos);
