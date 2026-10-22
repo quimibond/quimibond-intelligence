@@ -31,6 +31,10 @@ const JOB_INTERVALS: Record<string, number> = {
   situacion_digest: 720, // diario 12:30 UTC; 720 × 2.5 = 30 h: si el correo de las 12:30 no sale, el watchdog de las 19:05 avisa ese mismo día
 };
 
+// Push de Odoo (contactos y señales) y bot de situaciones: corren una vez al día (2026-10-22).
+const PUSH_ODOO_UMBRAL_H = 30;
+const BOT_UMBRAL_H = 30;
+
 interface Issue {
   kind: "cron_stale" | "cron_failing" | "odoo_stale" | "gmail_stale" | "pipeline_errors";
   detail: string;
@@ -81,7 +85,8 @@ Deno.serve(async (req: Request) => {
     }
   }
 
-  // 2. Odoo: el push horario de qb19 solo manda contactos/empresas (push_models=contacts).
+  // 2. Odoo: el push de qb19 corre una vez al día (04:48 UTC, decisión 2026-10-22: el cron de Odoo es
+  //    diario por costo). Umbral 30 h: avisa si se salta una noche.
   const { data: lastPush } = await supabase
     .from("odoo_push_last_events")
     .select("created_at")
@@ -91,23 +96,24 @@ Deno.serve(async (req: Request) => {
     .limit(1)
     .maybeSingle();
   const pushAgeHours = lastPush?.created_at ? (now - new Date(lastPush.created_at).getTime()) / 3600000 : null;
-  if (pushAgeHours === null || pushAgeHours > 6) {
-    issues.push({ kind: "odoo_stale", detail: `odoo contacts: ${pushAgeHours === null ? "?" : Math.round(pushAgeHours)}h sin push exitoso (esperado cada 1h, umbral 6h)` });
+  if (pushAgeHours === null || pushAgeHours > PUSH_ODOO_UMBRAL_H) {
+    issues.push({ kind: "odoo_stale", detail: `odoo contacts: ${pushAgeHours === null ? "?" : Math.round(pushAgeHours)}h sin push exitoso (esperado diario, umbral ${PUSH_ODOO_UMBRAL_H}h)` });
   }
 
-  // 2b. Push de señales de Odoo (cada hora; umbral 3 h) y última corrida terminada del bot de situaciones (umbral 3 h).
+  // 2b. Push de señales de Odoo (diario; umbral 30 h) y última corrida terminada del bot de situaciones
+  //     (umbral 30 h): corre al terminar el push y una vez más con situacion_respaldo (11:50 UTC, antes del correo).
   //     situacion_respaldo no va en JOB_INTERVALS porque corre condicional (solo si no hubo corrida en 50 min).
   const { data: lastSenales } = await supabase.from("odoo_push_last_events").select("created_at").eq("method", "senales").eq("status", "success")
     .order("created_at", { ascending: false }).limit(1).maybeSingle();
   const senalesAgeH = lastSenales?.created_at ? (now - new Date(lastSenales.created_at).getTime()) / 3600000 : null;
-  if (senalesAgeH === null || senalesAgeH > 3) {
-    issues.push({ kind: "odoo_stale", detail: `odoo senales: ${senalesAgeH === null ? "?" : Math.round(senalesAgeH)}h sin push exitoso (esperado cada 1h, umbral 3h)` });
+  if (senalesAgeH === null || senalesAgeH > PUSH_ODOO_UMBRAL_H) {
+    issues.push({ kind: "odoo_stale", detail: `odoo senales: ${senalesAgeH === null ? "?" : Math.round(senalesAgeH)}h sin push exitoso (esperado diario, umbral ${PUSH_ODOO_UMBRAL_H}h)` });
   }
   const { data: lastRun } = await supabase.from("situacion_corridas").select("terminada_en").not("terminada_en", "is", null)
     .order("terminada_en", { ascending: false }).limit(1).maybeSingle();
   const botAgeH = lastRun?.terminada_en ? (now - new Date(lastRun.terminada_en).getTime()) / 3600000 : null;
-  if (botAgeH === null || botAgeH > 3) {
-    issues.push({ kind: "cron_stale", detail: `situacion-consolidar: ${botAgeH === null ? "nunca ha terminado" : Math.round(botAgeH) + "h sin corrida terminada"} (umbral 3h)` });
+  if (botAgeH === null || botAgeH > BOT_UMBRAL_H) {
+    issues.push({ kind: "cron_stale", detail: `situacion-consolidar: ${botAgeH === null ? "nunca ha terminado" : Math.round(botAgeH) + "h sin corrida terminada"} (umbral ${BOT_UMBRAL_H}h)` });
   }
 
   // 3. Gmail

@@ -169,7 +169,7 @@ Las funciones se despliegan con `verify_jwt=false`; la autorización es el
 | `memoria_extract_demand` | `:50` cada 2 h | `email-extract {task:"demand"}` | Demanda en cuerpos → `customer_demand_signals` |
 | `memoria_extract_demand_files` | `:55` cada 2 h | `email-extract {task:"demand_files"}` | Demanda en Excel/CSV adjuntos |
 | `memoria_grafo_nocturno` | 08:15 | SQL `kg_refresh_deterministic()` | Nodos y aristas que salen de los datos (empresas, contactos, buzones, quién atiende a quién) |
-| `situacion_respaldo` | `:20` | `situacion-consolidar {origen:"cron"}` **solo si** no hubo corrida en 50 min | Respaldo del bot de situaciones; el disparo normal es por evento (`senales_push_terminado`, al terminar el push de Odoo) |
+| `situacion_respaldo` | 11:50 | `situacion-consolidar {origen:"cron"}` **solo si** no hubo corrida en 50 min | Segunda y última corrida del día del bot, 40 min antes del correo; la primera es por evento (`senales_push_terminado`, al terminar el push diario de Odoo). Hasta el 2026-10-22 era cada hora (`20261022a`, por costo) |
 
 `memoria_email_digest` (12:45, `email-digest`) se desprogramó el 2026-09-24
 (`20260924b`); la función y sus dos RPCs siguen desplegadas hasta el paso 6.
@@ -181,14 +181,17 @@ Rollback mientras tanto: volver a programarlo con `cron.schedule`.
 
 ## Odoo ↔ Supabase (qb19, addon `quimibond_intelligence`)
 
-- **Push cada hora:** `contacts` (contactos + empresas, con RFC),
+- **Push una vez al día** (cron de Odoo a las 04:48 UTC; está así en la base
+  desde antes del 2026-09-18 y el CEO lo dejó diario el 2026-10-22 por costo):
+  `contacts` (contactos + empresas, con RFC),
   `odoo_users` (+ `buzon_personas` desde `qb_memoria`) y `senales` (una
   llamada a `senales_ingestar` por señal; al terminar, `senales_push_terminado`
   dispara el bot). Parámetro `quimibond_intelligence.push_models` (default
   `contacts,users,senales`; ya no hay tablas `odoo_*` a donde empujar el resto).
 - **Pull cada 5 min:** `sync_commands` pendientes.
-- El watchdog avisa si el push de `contacts` lleva > 6 h sin éxito, el de
-  `senales` > 3 h, o el bot > 3 h sin corrida terminada
+- El watchdog avisa si el push de `contacts` o el de `senales` lleva > 30 h
+  sin éxito, o el bot > 30 h sin corrida terminada (umbrales de 6 h y 3 h
+  hasta el 2026-10-22, que con el push diario daban alarma falsa)
   (`odoo_push_last_events`, `situacion_corridas`), y si el job
   `situacion_digest` lleva > 30 h sin corrida exitosa (`JOB_INTERVALS` 720 min
   × 2.5: si el correo de las 12:30 no sale, avisa a las 19:05 del mismo día);
@@ -262,8 +265,9 @@ cada una termina en `RAISE EXCEPTION 'PRUEBA_OK'` (el error esperado deshace
 todo). Prompt y validación del JSON: `src/__tests__/pipeline/situacion-prompt.test.ts`.
 
 **Costo y ritmo (2026-09-20):** ~2k tokens de entrada y ~400 de salida por
-situación (~US$0.01); máximo 40 candidatas por corrida y una corrida por hora
-≈ US$10/día si el mapa cambia mucho, centavos en régimen. Primera corrida:
+situación (~US$0.01); máximo 40 candidatas por corrida. Con el respaldo cada
+hora el bot corría ~22 veces al día (US$83 en 30 días al 2026-10-22); desde
+`20261022a` corre dos veces (tras el push diario y a las 11:50 UTC). Primera corrida:
 1,919 señales de memoria → 613 situaciones. **Freno (2026-09-22,
 `20260922a`):** una situación ya redactada no vuelve a Claude antes de 6 h
 (`situacion_candidatas`); las nuevas pasan de inmediato. Si
