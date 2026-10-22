@@ -41,7 +41,7 @@ Dónde vive hoy cada cosa que se fue:
 | Antes en Supabase | Hoy |
 |---|---|
 | CFDI, complementos de pago, comparación Odoo↔SAT (`syntage_*`, `canonical_invoices`…) | Odoo, addon `quimibond_sat` (qb19). El webhook de Syntage apunta a Odoo. |
-| Costeo, P&L limpio, centros de costo, costo reconstruido | Odoo, addon `qb_capacidad_costeo` |
+| Costeo, P&L limpio, centros de costo, costo reconstruido | Odoo, addons `qb_costeo` y `qb_cotizador` (el anterior, `qb_capacidad_costeo`, se retiró el 2026-10-22) |
 | Indicadores y tableros del CEO (`gold_*`, `/hoy`, `/dinero`) | Odoo, SGI (`quimibond_sgi`) y `quimibond_cash_flow` |
 | Agentes de IA / insights | Retirados (2026-08-05); sin sustituto |
 | `odoo_pending_actions` | `qb19/docs/HALLAZGOS_ODOO_PENDIENTES_2026-09-18.md` |
