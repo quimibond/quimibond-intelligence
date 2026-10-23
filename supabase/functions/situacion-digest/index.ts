@@ -53,6 +53,10 @@ Deno.serve(async (req: Request) => {
     // `hasta` es el now() de la RPC; si faltara, el de aquí: la fila se escribe siempre (sobre todo si el correo ya salió).
     const hasta = new Date(c.hasta ?? Date.now()).toISOString();
 
+    // Montos del negocio para ordenar la narrativa por impacto; si la RPC falla, la narrativa sale sin ellos.
+    const { data: negocio, error: negErr } = await supabase.rpc("situacion_negocio");
+    if (negErr) console.warn("[situacion-digest] situacion_negocio:", negErr.message);
+
     // 2. Narrativa: Opus siempre que haya algo que decidir (cambios o graves abiertas).
     const hayCambios = LISTAS.some((k) => (totales[k] ?? 0) > 0);
     let narrativa = "";
@@ -61,7 +65,7 @@ Deno.serve(async (req: Request) => {
       const client = await anthropicClient(supabase);
       if (!client) throw new Error("anthropic_api_key no configurado (env ni Vault)");
       modelo = MODEL_MAIN;
-      narrativa = await claudeText(client, supabase, { model: MODEL_MAIN, system: SYSTEM, user: entradaParaClaude(c), max_tokens: MAX_TOKENS, effort: "medium" }, "situacion-digest");
+      narrativa = await claudeText(client, supabase, { model: MODEL_MAIN, system: SYSTEM, user: entradaParaClaude(c, undefined, negErr ? undefined : negocio), max_tokens: MAX_TOKENS, effort: "medium" }, "situacion-digest");
     }
 
     // 3. Render y correo.

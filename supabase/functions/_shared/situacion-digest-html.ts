@@ -32,7 +32,6 @@ export interface DigestInput { dateLabel: string; narrativaMd: string; cambios: 
 
 const AREAS: Record<string, string> = { finanzas: "Finanzas", comercial: "Comercial", operaciones: "Operaciones", compras: "Compras", calidad_sgi: "Calidad / SGI", rh: "RH", sistemas: "Sistemas", direccion: "Dirección" };
 const LISTAS: [ListaKey, string][] = [["empeoradas", "Empeoraron"], ["nuevas", "Nuevas"], ["graves", "Graves que siguen abiertas"], ["delegadas", "Delegadas"], ["mejoradas", "Mejoraron"], ["resueltas", "Resueltas"]];
-const BOT_MAX_H = 3;
 
 const sevColor = (s: number) => (s >= 5 ? C.dangerInk : s === 4 ? C.warnInk : C.muted);
 /** Sin cambios = ninguna lista de ningún área trae filas (de las listas, no de `totales`: HTML y texto no pueden discrepar). */
@@ -47,26 +46,6 @@ function tituloLista(a: CambiosArea, k: ListaKey, titulo: string, conLargo: bool
   const total = a[`n_${k}`];
   if (total != null && total > n) return `${titulo} (${fmtInt(n)} de ${fmtInt(total)})`;
   return conLargo ? `${titulo} (${fmtInt(n)})` : titulo;
-}
-
-/** Horas entre `hasta` (el now() de la RPC) y un instante; null si alguno no es fecha. */
-function horasDesde(iso: string | null | undefined, hasta: string): number | null {
-  const t = Date.parse(iso ?? "");
-  if (Number.isNaN(t)) return null;
-  const ref = Date.parse(hasta ?? "");
-  return Math.round(((Number.isNaN(ref) ? Date.now() : ref) - t) / 36e4) / 10;
-}
-
-/** Salud del mapa: una línea con las alertas (push, señales sin datos, bot, estado del push) o "en orden". */
-function saludTexto(c: Cambios): { texto: string; alerta: boolean } {
-  const salud = c.salud ?? { odoo_push_edad_h: null, bot_terminada_en: null, sin_datos: [] };
-  const partes: string[] = [];
-  if (salud.odoo_push_edad_h == null || salud.odoo_push_edad_h > 3) partes.push(`push de Odoo ${salud.odoo_push_edad_h == null ? "sin registro" : `hace ${salud.odoo_push_edad_h} h`}`);
-  if (salud.sin_datos?.length) partes.push(`${salud.sin_datos.length} señal(es) sin datos: ${salud.sin_datos.slice(0, 6).join(", ")}`);
-  const botH = horasDesde(salud.bot_terminada_en, c.hasta);
-  if (botH == null || botH > BOT_MAX_H) partes.push(`bot sin corrida terminada${botH == null ? "" : ` hace ${botH.toFixed(1)} h`}`);
-  if (salud.odoo_push_status && salud.odoo_push_status !== "success") partes.push(`último push: ${salud.odoo_push_status}`);
-  return { texto: `Salud del mapa: ${partes.length ? partes.join(" · ") : "en orden"}`, alerta: partes.length > 0 };
 }
 
 /** Meta de una fila: contraparte · días · a quién (delegada, con su estado si no es "creada", o responsable). Texto plano, sin escapar. */
@@ -117,9 +96,8 @@ export function renderSituacionDigestHtml(input: DigestInput): string {
     ? `<h2 style="margin:22px 0 4px;font:600 16px/1.3 ${FONT};color:${C.ink}">Rezago <span style="font-weight:400;color:${C.faint};font-size:13px">· sin cambio en más de 30 días</span></h2>
        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">${c.rezago.map((x) => linea({ ...x, titulo: `${nombreArea(x.area)}: ${x.titulo}` })).join("")}</table>`
     : "";
-  const salud = saludTexto(c);
-  const pie = `${fmtInt(c.ignoradas)} ignoradas por tus reglas (${fmtInt(c.reglas_vigentes)} reglas) · higiene: ${fmtInt(c.higiene?.zombie)} zombis, ${fmtInt(c.higiene?.dato_malo)} datos malos` +
-    (salud.alerta ? `<br><span style="color:${C.dangerInk}">${esc(salud.texto)}</span>` : `<br>${esc(salud.texto)}`) +
+  // Sin salud del mapa ni higiene: son del funcionamiento de los sistemas, no de la empresa (CEO 2026-10-23).
+  const pie = `${fmtInt(c.ignoradas)} ignoradas por tus reglas (${fmtInt(c.reglas_vigentes)} reglas)` +
     `<br>Ventana: ${esc(fmtVentana(c.desde))} → ${esc(fmtVentana(c.hasta))}. Detalle por MCP: <code>select situacion_contexto(&lt;id&gt;)</code>.`;
   return layout(`Situación — ${input.dateLabel}`, head + narrativa + cuerpo + rezago, pie);
 }
@@ -147,8 +125,7 @@ export function renderSituacionDigestText(input: DigestInput): string {
     }
   }
   if (esLunes && c.rezago?.length) { out.push("REZAGO (sin cambio en más de 30 días)"); for (const x of c.rezago) out.push(fila({ ...x, titulo: `${nombreArea(x.area)}: ${x.titulo}` })); out.push(""); }
-  out.push(`${c.ignoradas} ignoradas por tus reglas (${c.reglas_vigentes} reglas) · higiene: ${c.higiene?.zombie ?? 0} zombis, ${c.higiene?.dato_malo ?? 0} datos malos`);
-  out.push(saludTexto(c).texto);
+  out.push(`${c.ignoradas} ignoradas por tus reglas (${c.reglas_vigentes} reglas)`);
   out.push(`Ventana: ${fmtVentana(c.desde)} → ${fmtVentana(c.hasta)}`);
   return out.join("\n");
 }
