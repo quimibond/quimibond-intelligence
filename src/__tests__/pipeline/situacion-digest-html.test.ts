@@ -32,10 +32,10 @@ describe("situacion-digest-html", () => {
     expect(html).toContain("Luis");                       // delegada a
     expect(html).toContain("<strong>ACME</strong>");      // narrativa en HTML
     expect(html).toContain("12 ignoradas");
-    expect(html).toContain("1,500");                      // higiene con separador de miles
+    expect(html).not.toContain("zombis");                 // higiene y salud del mapa ya no van en el correo
     expect(html).not.toContain("Rezago");                 // solo lunes
     expect(html).toContain("sin redactar");               // graves sin redacción se marcan
-    expect(html).toContain("Salud del mapa: en orden");
+    expect(html).not.toContain("Salud del mapa");
     expect(html).toContain("2026-09-23 12:30 UTC → 2026-09-24 12:30 UTC");
   });
   it("los lunes agrega el bloque de rezago y el texto plano dice lo mismo", () => {
@@ -46,7 +46,7 @@ describe("situacion-digest-html", () => {
     expect(txt).toContain("REZAGO");                      // en texto plano los encabezados van en mayúsculas
     expect(txt).toContain("Cobrar F/1 <hoy>");   // texto plano: sin escapar
     expect(txt).not.toContain("&lt;");
-    expect(txt).toContain("Salud del mapa: en orden");
+    expect(txt).not.toContain("Salud del mapa");
     expect(txt).toContain("Ventana: 2026-09-23 12:30 UTC → 2026-09-24 12:30 UTC");
   });
   it("el estado de la delegación (distinto de 'creada') se ve igual en HTML y en texto", () => {
@@ -87,7 +87,7 @@ describe("situacion-digest-html", () => {
     expect(r.txt).toContain("Sin cambios");
     expect(r.txt).not.toContain("SISTEMAS");
   });
-  it("listas recortadas dicen 'n de total' y el push con estado distinto de success se avisa", () => {
+  it("listas recortadas dicen 'n de total' y el estado del push no se menciona", () => {
     // La RPC corta cada lista a 25 filas y manda el conteo real en n_<lista>.
     const recortado: Cambios = {
       ...cambios,
@@ -99,25 +99,10 @@ describe("situacion-digest-html", () => {
     expect(txt).toContain("Graves que siguen abiertas (1 de 209)");
     expect(html).toContain("Empeoraron (1)");             // n igual al largo: título normal
     expect(txt).not.toContain("Empeoraron (1 de");
-    expect(html).toContain("último push: error");
-    expect(txt).toContain("último push: error");
-    expect(html).not.toContain("en orden");               // con alerta no se dice "en orden"
-    // Sin n_<lista> ni estado del push (o success) no se agrega nada.
+    expect(html).not.toContain("push");                   // la plomería no es asunto del director
+    expect(txt).not.toContain("push");
     const normal = render(cambios);
     expect(normal.html).not.toContain(" de 209");
-    expect(normal.html).not.toContain("último push");
-    expect(normal.txt).not.toContain("último push");
-  });
-  it("salud: bot sin corrida o con más de 3 h se avisa con las horas contra `hasta`", () => {
-    const viejo = render({ ...cambios, salud: { odoo_push_edad_h: 0.7, bot_terminada_en: "2026-09-24T07:00:00Z", sin_datos: [] } });
-    expect(viejo.html).toContain("bot sin corrida terminada hace 5.5 h");
-    expect(viejo.txt).toContain("bot sin corrida terminada hace 5.5 h");
-    expect(viejo.html).not.toContain("en orden");
-    const nulo = render({ ...cambios, salud: { odoo_push_edad_h: 0.7, bot_terminada_en: null, sin_datos: [] } });
-    expect(nulo.txt).toContain("Salud del mapa: bot sin corrida terminada");
-    const varias = render({ ...cambios, salud: { odoo_push_edad_h: 5, bot_terminada_en: "2026-09-24T12:20:00Z", sin_datos: ["a", "b"] } });
-    expect(varias.txt).toContain("Salud del mapa: push de Odoo hace 5 h · 2 señal(es) sin datos: a, b");
-    expect(varias.txt).not.toContain("en orden");
   });
   it("escapa los títulos en HTML y los deja crudos en texto", () => {
     const feo: Cambios = { ...cambios, areas: [{ ...cambios.areas[0], nuevas: [item(20, { titulo: "<script>alert(1)</script>", contraparte: null }), item(21, { titulo: 'Pedido "urgente" · ACME' })] }] };
@@ -161,7 +146,12 @@ describe("situacion-digest/prompt", () => {
     expect(txt).toContain("Cartera vencida · ACME 1");
     expect(txt).toContain('"id":1');
     expect(JSON.parse(txt)).toMatchObject({ totales: grande.totales });
+    expect(JSON.parse(txt)).not.toHaveProperty("salud");
+    expect(JSON.parse(txt)).not.toHaveProperty("higiene");
+    const conNegocio = JSON.parse(entradaParaClaude(grande, 20_000, { montos_mxn: { cartera_vencida: { total: 10_000_000, empresas: 57 } } }));
+    expect(conNegocio.negocio.montos_mxn.cartera_vencida.total).toBe(10_000_000);
     expect(SYSTEM.toLowerCase()).toContain("json");
+    expect(SYSTEM).toContain("Qué nunca entra");
     expect(SYSTEM).toContain("situacion_cambios");
     expect(SYSTEM).toContain("sin enlaces ni URLs");
   });
