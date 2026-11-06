@@ -28,3 +28,17 @@ jobs:
       # Build is validated by Vercel on every PR (preview deployment).
       # Running it here with a placeholder Supabase URL causes prerender
       # failures on ISR pages that fetch real data, producing false negatives.
+
+  adjuntos-grandes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: scripts/adjuntos-grandes/requirements.txt
+      - run: pip install -r scripts/adjuntos-grandes/requirements.txt
+      - name: Pruebas del extractor de adjuntos grandes
+        working-directory: scripts/adjuntos-grandes
+        run: python -m pytest -q
